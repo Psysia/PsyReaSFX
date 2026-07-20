@@ -1,6 +1,7 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.14-rc3
+-- @version 0.6.15-rc4
 -- @author Psysia
+-- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
 --   v0.5.1 将顶层辅助函数从 local function 改为脚本环境函数，
 --   避免 Lua 主 chunk 超过 200 个活动局部变量的编译限制。
@@ -57,14 +58,14 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.14 Stable RC3"
+local VERSION = "0.6.15 Stable RC4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
 
 -- Fill this after the public repository is created, for example:
 -- https://github.com/Psysia/PsyReaSFX
-local PROJECT_URL = ""
+local PROJECT_URL = "https://github.com/Psysia/PsyReaSFX"
 
 local PROJ = 0
 
@@ -777,7 +778,6 @@ I18N_EN = {
   ["元数据"] = "Metadata",
   ["隐藏元数据"] = "Hide metadata",
   ["显示元数据"] = "Show metadata",
-  ["专注"] = "Focus",
   ["退出专注"] = "Exit focus",
   ["输入关键词或描述声音…  category:impact  status:candidate  -exclude"] =
     "Type keywords or describe a sound…  category:impact  status:candidate  -exclude",
@@ -847,7 +847,6 @@ I18N_EN = {
   ["按 Library 筛选"] = "Filter by Library",
   ["复制路径"] = "Copy path",
   ["PsyReaSFX 使用说明"] = "PsyReaSFX user guide",
-  ["界面主题"] = "Appearance",
   ["自定义强调色 #RRGGBB"] = "Custom accent #RRGGBB",
   ["应用自定义"] = "Apply custom color",
   ["显示左侧导航"] = "Show left navigation",
@@ -1020,11 +1019,8 @@ I18N_EN = {
   ["版本、版权与项目主页"] = "Version, copyright and project page",
   ["GitHub 项目主页 ↗"] = "GitHub project page ↗",
   ["GitHub 项目主页 · 待配置"] = "GitHub project page · not configured",
-  ["Aether 风格字段预设"] = "Aether field preset",
-  ["Forge 紧凑预设"] = "Forge compact preset",
   ["Forge 紧凑"] = "Forge Compact",
   ["Aether 标准"] = "Aether Standard",
-  ["应用 Forge 紧凑列表"] = "Apply Forge compact list",
   ["运行环境"] = "Runtime environment",
   ["REAPER 版本"] = "REAPER version",
   ["操作系统"] = "Operating system",
@@ -1058,6 +1054,142 @@ I18N_EN = {
   ["用于故障排查和兼容性确认。"] = "For troubleshooting and compatibility checks.",
   ["正式发布前需要补齐的软件身份与支持信息。"] = "Software identity and support information to complete before release.",
   ["文档目录不存在："] = "Documentation directory not found: ",
+  ["版本、扩展和路径信息集中放在此处，便于故障排查。"] =
+    "Version, extensions, and path information are collected here for troubleshooting.",
+  ["波形缓存"] = "Waveform cache",
+  ["可以迁移已有缓存，或切换到新的空目录。源音频不会被移动。"] =
+    "Move the existing cache or switch to a new empty folder. Source audio is never moved.",
+  ["默认："] = "Default: ",
+  ["重建和重置不会删除硬盘中的源音频文件。"] =
+    "Rebuild and reset actions do not delete source audio files from disk.",
+  ["重建数据库会保留音效库路径并重新扫描；恢复出厂会删除 PsyReaSFX 的配置、集合、历史、索引和当前缓存，但不会删除源音频文件。"] =
+    "Rebuilding keeps library paths and rescans them. Factory reset removes PsyReaSFX settings, collections, history, indexes, and the current cache, but never deletes source audio.",
+  ["预设会同时调整密度、表面层级、列表字段与预览控制台。"] =
+    "Presets adjust density, surface hierarchy, visible columns, and the preview console together.",
+  ["单行高密度列表、Artwork、时长与扁平表面。"] =
+    "Dense single-line rows with Artwork, duration, and flat surfaces.",
+  ["平衡密度、分层模块与完整预览控制台。"] =
+    "Balanced density, layered modules, and the full preview console.",
+  ["审阅模式"] = "Review mode",
+  ["更大行高、高对比与完整元数据字段。"] =
+    "Larger rows, stronger contrast, and the complete metadata field set.",
+  ["这些选项会直接改变列表信息密度和底部控制区。"] =
+    "These options directly change result density and the bottom control area.",
+  ["表面层级"] = "Surface hierarchy",
+  ["Artwork 只在可见行或当前选中素材中按需加载。"] =
+    "Artwork loads on demand only for visible rows and the selected file.",
+  ["启用 Artwork"] = "Enable Artwork",
+  ["元数据封面固定在顶部"] = "Pin metadata Artwork at the top",
+  ["清空 Artwork 缓存"] = "Clear Artwork cache",
+  ["应用 Forge 紧凑列表"] = "Apply Forge compact list",
+  ["界面主题"] = "Interface theme",
+  ["主题决定强调色；波形和已播放文字可单独配置。"] =
+    "The theme controls the accent; waveform and played-text colors remain independently configurable.",
+  ["波形配色"] = "Waveform palette",
+  ["普通、选中、已播放、标记、选区、播放指针与 Region。"] =
+    "Normal, selected, played, marked, selection, playhead, and Region colors.",
+  ["256 点是默认值，较旧版本的 128 点至少提升一倍；512 点适合较宽的 Waveform 列。"] =
+    "256 points is the default and doubles the older 128-point resolution; 512 points suits wider Waveform columns.",
+  ["预缓存会逐个处理素材并写入磁盘缓存。处理会在鼠标交互时让步，不会把整库高精度波形同时保存在内存中。"] =
+    "Precache processes files one at a time and writes to disk. It yields during mouse interaction and never holds an entire library of high-resolution waveforms in memory.",
+  ["最小间隔"] = "Minimum gap",
+  ["Region 前置"] = "Region pre-roll",
+  ["Region 后置"] = "Region post-roll",
+  ["使用 REAPER CalculateNormalization 按需计算；结果写入 loudness_v1.tsv。"] =
+    "Calculated on demand with REAPER CalculateNormalization and cached in loudness_v1.tsv.",
+  ["响度匹配仍使用快速波形估算，仅影响试听；上方显示值使用 REAPER 精确响度计算。"] =
+    "Loudness matching uses a fast waveform estimate and affects preview only; displayed metrics use REAPER's precise loudness calculation.",
+  ["启用估算响度匹配"] = "Enable estimated loudness matching",
+  ["没有结果。添加音效库、扫描或修改搜索词。"] =
+    "No results. Add a library, scan, or change the search query.",
+  ["当前集合为空："] = "This collection is empty: ",
+  ["新建集合不会删除或移动原始音效库。返回全部素材后选择声音，再使用右键菜单或“加入所选”添加到集合。"] =
+    "Creating a collection does not delete or move source libraries. Return to All sounds, select files, then use the context menu or Add selected.",
+  ["等待"] = "Waiting",
+  ["分析中…"] = "Analyzing…",
+  ["扫描完成"] = "Scan complete",
+  ["首次扫描"] = "Initial scan",
+  ["恢复未完成导入"] = "Resume incomplete import",
+  ["添加音效库"] = "Add library",
+  ["拖到 REAPER 编排区需要 SWS Extension"] =
+    "Dragging to the REAPER arrange view requires SWS Extension",
+  ["未安装 SWS：Media Explorer 无法由脚本精确定位到点击位置"] =
+    "SWS is not installed: Media Explorer cannot seek precisely to the clicked position",
+  ["重新分析当前素材响度"] = "Reanalyze current-file loudness",
+  ["[项目] "] = "[Project] ",
+  ["波形缓存目录没有变化"] = "Waveform cache directory was not changed",
+  ["新旧缓存目录不能互相嵌套"] = "The old and new cache folders cannot contain one another",
+  ["已切换波形缓存目录；旧缓存仍保留"] = "Waveform cache directory changed; the old cache was kept",
+  ["当前已经使用默认缓存目录"] = "The default cache directory is already in use",
+  ["请先在大波形中建立有效选区"] = "Create a valid selection in the large waveform first",
+  ["Region 已保存"] = "Region saved",
+  ["该 Region 已存在或选区无效"] = "This Region already exists or the selection is invalid",
+  ["Region 已删除"] = "Region deleted",
+  ["没有可撤销的瞬态检测结果"] = "There is no transient-detection result to undo",
+  ["当前素材没有瞬态 Region 建议"] = "The current file has no transient Region suggestions",
+  ["正在准备高精度波形并检测瞬态…"] = "Preparing a high-resolution waveform and detecting transients…",
+  ["已取消待执行的瞬态检测"] = "Pending transient detection canceled",
+  ["素材时长不可用"] = "File duration is unavailable",
+  ["未检测到超过当前阈值的瞬态"] = "No transients exceeded the current threshold",
+  ["没有新增瞬态 Region"] = "No new transient Regions were created",
+  ["已清空 Artwork 缓存；可见素材将重新查找封面"] =
+    "Artwork cache cleared; Artwork will be rediscovered for visible files",
+  ["请等待当前扫描或导入完成后再预缓存"] = "Wait for the current scan or import to finish before precaching",
+  ["高精度波形预缓存已经在运行"] = "High-resolution waveform precache is already running",
+  ["当前范围没有可预缓存的素材"] = "There are no files to precache in the current scope",
+  ["已取消拖拽：请释放到 REAPER 编排区"] = "Drag canceled: release over the REAPER arrange view",
+  ["目录不存在或无法访问："] = "Folder does not exist or cannot be accessed: ",
+  ["已清除本次已播放高亮"] = "Current played highlights cleared",
+  ["已应用 Forge 紧凑列表预设"] = "Forge compact list preset applied",
+  ["下方大波形单击定位，拖动建立并试听选区。"] =
+    "Click the large waveform to seek; drag to create and preview a selection.",
+  ["表头固定置顶；右键表头选择字段；拖动分隔线调整列宽。"] =
+    "The header remains pinned. Right-click it to choose fields and drag dividers to resize columns.",
+  ["列表：单击单选；Ctrl+单击追加或取消；"] =
+    "List: click to select; Ctrl-click to add or remove;",
+  ["Shift+单击连续选择；Ctrl+A 全选当前结果。"] =
+    "Shift-click selects a range; Ctrl+A selects all current results.",
+  ["试听：Space 播放或停止；点击列表小波形可从对应位置试听；"] =
+    "Preview: Space plays or stops; click a list waveform to preview from that position;",
+  ["插入：Enter 插入；Ctrl+Enter 插入新轨；"] =
+    "Insert: Enter inserts; Ctrl+Enter inserts on a new track;",
+  ["列表素材和下方波形选区可拖到 REAPER 编排区。"] =
+    "Drag result files or the lower waveform selection into the REAPER arrange view.",
+  ["工作区：顶部“导航”“元数据”“专注模式”可折叠左右面板。"] =
+    "Workspace: use Navigation, Metadata, and Focus mode at the top to collapse the side panels.",
+  ["F9 切换左栏，F10 切换右栏，F11 切换专注模式。"] =
+    "F9 toggles the left panel, F10 the right panel, and F11 Focus mode.",
+  ["集合：可创建播放列表或项目素材箱。"] =
+    "Collections: create playlists or project bins.",
+  ["保存搜索：保存当前关键词、库筛选、状态筛选、集合和排序条件，"] =
+    "Saved searches retain the current query, library, status, collection, and sort settings,",
+  ["右键素材可加入集合、设置候选/已采用/已排除状态。"] =
+    "Right-click files to add them to collections or set Candidate, Approved, or Rejected status.",
+  ["瞬态检测"] = "Transient detection",
+  ["瞬态 Region 建议"] = "Transient Region suggestions",
+  ["阈值越低越敏感；平滑可抑制细碎尖峰；手动 Region 不会被替换。"] =
+    "Lower thresholds are more sensitive; smoothing suppresses small spikes; manual Regions are never replaced.",
+  ["PsyReaSFX：分轨插入多个素材"] = "PsyReaSFX: insert files on separate tracks",
+  ["PsyReaSFX：拖拽素材到编排区"] = "PsyReaSFX: drag files to the arrange view",
+  ["从 PsyReaSFX 插入音频"] = "Insert audio from PsyReaSFX",
+  ["从 PsyReaSFX 中删除该音效库？"] = "Remove this library from PsyReaSFX?",
+  ["删除 PsyReaSFX 集合？"] = "Delete this PsyReaSFX collection?",
+  ["不会删除磁盘音频文件。"] = "Audio files on disk will not be deleted.",
+  ["不会删除磁盘中的音频文件。"] = "Audio files on disk will not be deleted.",
+  ["将清空 PsyReaSFX 数据库和波形缓存，然后重新扫描现有音效库。\n\n继续吗？"] =
+    "This clears the PsyReaSFX database and waveform cache, then rescans existing libraries.\n\nContinue?",
+  ["这会删除全部音效库路径、收藏、播放列表、保存搜索、历史、索引、波形缓存和界面设置。\n\n继续吗？"] =
+    "This removes all library paths, favorites, playlists, saved searches, history, indexes, waveform cache, and interface settings.\n\nContinue?",
+  ["是否将现有波形缓存移动到新目录？\n\n是：移动已有缓存并切换。\n否：直接切换，旧目录保持不变。\n取消：不修改。"] =
+    "Move the existing waveform cache to the new folder?\n\nYes: move the cache and switch.\nNo: switch directly and keep the old folder.\nCancel: make no changes.",
+  ["恢复默认缓存目录，并移动现有缓存？"] = "Restore the default cache directory and move the existing cache?",
+  ["无法保存 Region 数据"] = "Unable to save Region data",
+  ["无法保存响度缓存"] = "Unable to save loudness cache",
+  ["已设置 Artwork"] = "Artwork set",
+  ["瞬态检测设置…"] = "Transient detection settings…",
+  ["拖到编排区需要 SWS Extension"] = "Dragging to the arrange view requires SWS Extension",
+  ["保存搜索：保存当前关键词、库筛选、状态筛选、集合和排序条件，之后可从左栏一键恢复。"] =
+    "Saved searches retain the current query, library, status, collection, and sort settings and can be restored from the left panel.",
 }
 
 I18N_PREFIX_EN = {
@@ -1089,6 +1221,15 @@ I18N_PREFIX_EN = {
     "Import canceled; completed files were retained",
   ["媒体文件无法读取"] = "Unable to read media file",
   ["文件不存在："] = "File not found: ",
+  ["目录不存在或无法访问："] = "Folder does not exist or cannot be accessed: ",
+  ["波形建立失败："] = "Waveform generation failed: ",
+  ["已切换缓存目录："] = "Cache directory changed: ",
+  ["当前集合为空："] = "This collection is empty: ",
+  ["默认："] = "Default: ",
+  ["扫描 "] = "Scan ",
+  ["重建 "] = "Rebuild ",
+  ["已更新保存搜索："] = "Updated saved search: ",
+  ["已清空 Artwork 缓存；"] = "Artwork cache cleared; ",
   ["由 Media Explorer 试听"] = "Previewing through Media Explorer",
   ["无法建立试听源"] = "Unable to create preview source",
   ["SWS 试听对象创建失败"] = "Unable to create SWS preview object",
@@ -1161,6 +1302,106 @@ I18N_PATTERNS_EN = {
   {
     "^(%d+) 个素材批量编辑。勾选字段后才会写入。$",
     "Batch editing %1 files. Enable a field before writing it.",
+  },
+  {
+    "^扫描完成：(%d+) 个音频，移除 (%d+) 个，([%d%.]+) 秒$",
+    "Scan complete: %1 files, %2 removed, %3 s",
+  },
+  {
+    "^导入完成：(%d+) 个可用，(%d+) 个失败，([%d%.]+) 秒$",
+    "Import complete: %1 available, %2 failed, %3 s",
+  },
+  {
+    "^已选择 (%d+) 个素材$",
+    "%1 files selected",
+  },
+  {
+    "^列表波形精度已设置为 (%d+) 点；新精度将按需建立缓存$",
+    "List waveform resolution set to %1 points; the new cache will be built on demand",
+  },
+  {
+    "^预缓存完成：新生成 (%d+)，已有缓存 (%d+)，失败 (%d+)，([%d%.]+) 秒$",
+    "Precache complete: %1 generated, %2 cached, %3 failed, %4 s",
+  },
+  {
+    "^开始预缓存 (%d+) 个素材的 (%d+) 点高精度波形$",
+    "Started %2-point high-resolution precache for %1 files",
+  },
+  {
+    "^已恢复上次浏览高亮：(%d+) 项$",
+    "Restored %1 previous browsing highlights",
+  },
+  {
+    "^已撤销上次检测，移除 (%d+) 个瞬态 Region$",
+    "Undid the last detection and removed %1 transient Regions",
+  },
+  {
+    "^已清除 (%d+) 个瞬态 Region 建议$",
+    "Cleared %1 transient Region suggestions",
+  },
+  {
+    "^已生成 (%d+) 个瞬态 Region 建议；可在 Region 列表中撤销或清除$",
+    "Generated %1 transient Region suggestions; undo or clear them from the Region list",
+  },
+  {
+    "^从 ([%d%.]+)%% 开始试听：(.+)$",
+    "Previewing from %1%%: %2",
+  },
+  {
+    "^已切换缓存目录：移动 (%d+)，失败 (%d+)$",
+    "Cache directory changed: %1 moved, %2 failed",
+  },
+  {
+    "^已向“(.+)”加入 (%d+) 个素材$",
+    "Added %2 files to “%1”",
+  },
+  {
+    "^已从“(.+)”移除 (%d+) 个素材$",
+    "Removed %2 files from “%1”",
+  },
+  {
+    "^已将 (%d+) 个素材标记为“(.+)”$",
+    "Marked %1 files as “%2”",
+  },
+  {
+    "^已选择 (%d+) 个素材$",
+    "%1 files selected",
+  },
+  {
+    "^已在 ([%d%.]+) 秒放置 (%d+) 个素材$",
+    "Placed %2 files at %1 s",
+  },
+  {
+    "^高精度预缓存 (%d+) 点%s+(%d+) / (%d+)%s+新生成 (%d+)%s+已有 (%d+)%s+失败 (%d+)$",
+    "%1-point precache  %2 / %3  generated %4  cached %5  failed %6",
+  },
+  {
+    "^(.+)：正在扫描 (%d+) 个目录…$",
+    "%1: scanning %2 folders…",
+  },
+  {
+    "^(.+)：扫描完成，正在分析并建立 (%d+) 个波形…$",
+    "%1: scan complete; analyzing and building %2 waveforms…",
+  },
+  {
+    "^(.+)：分析元数据并建立波形%s+(%d+) / (%d+)%s+失败 (%d+)$",
+    "%1: analyzing metadata and building waveforms  %2 / %3  failed %4",
+  },
+  {
+    "^从 PsyReaSFX 中删除该音效库？\n\n(.+)\n\n不会删除磁盘中的音频文件。$",
+    "Remove this library from PsyReaSFX?\n\n%1\n\nAudio files on disk will not be deleted.",
+  },
+  {
+    "^删除 PsyReaSFX 集合？\n\n(.+)\n\n不会删除磁盘音频文件。$",
+    "Delete this PsyReaSFX collection?\n\n%1\n\nAudio files on disk will not be deleted.",
+  },
+  {
+    "^已新建(.+)“(.+)”，并加入 (%d+) 个当前所选素材；可在左侧点击打开$",
+    "Created %1 “%2” and added %3 selected files; open it from the left panel",
+  },
+  {
+    "^已新建(.+)“(.+)”；当前列表保持不变，可在左侧点击打开$",
+    "Created %1 “%2”; the current list remains unchanged and can be opened from the left panel",
   },
 }
 
@@ -4737,10 +4978,11 @@ function create_collection(kind)
   state.collections_dirty = true
   state.config_dirty = true
 
-  local type_label =
+  local type_label = translate_ui_text(
     kind == "project"
       and "项目素材箱"
       or "播放列表"
+  )
 
   if added > 0 then
     set_status(
@@ -10495,12 +10737,22 @@ function draw_sidebar()
 
     local prefix =
       collection.kind == "project"
-      and "[项目] "
+      and translate_ui_text("[项目] ")
       or ""
+
+    local collection_name = collection.name
+
+    if state.language == "en" then
+      if collection_name == "新播放列表" then
+        collection_name = "New playlist"
+      elseif collection_name == "当前项目" then
+        collection_name = "Current project"
+      end
+    end
 
     sidebar_item(
       prefix
-        .. compact(collection.name, 20)
+        .. compact(collection_name, 20)
         .. "  "
         .. tostring(collection_item_count(collection))
         .. "##collection_"
@@ -11452,45 +11704,6 @@ function column_layout(width)
           item.width + extra / recipients
       end
     end
-  elseif total > width then
-    local overflow = total - width
-    local capacity = 0
-
-    for _, item in ipairs(items) do
-      capacity = capacity
-        + math.max(
-          0,
-          item.width
-            - item.definition.minimum
-        )
-    end
-
-    if capacity > 0 then
-      for _, item in ipairs(items) do
-        local item_capacity =
-          math.max(
-            0,
-            item.width
-              - item.definition.minimum
-          )
-
-        local reduction =
-          overflow * item_capacity / capacity
-
-        item.width =
-          math.max(
-            item.definition.minimum,
-            item.width - reduction
-          )
-      end
-    else
-      local scale = width / minimum_total
-
-      for _, item in ipairs(items) do
-        item.width =
-          item.definition.minimum * scale
-      end
-    end
   end
 
   local offset = 0
@@ -11503,17 +11716,19 @@ function column_layout(width)
     by_key[item.definition.key] = item
   end
 
-  if #items > 0 then
+  if #items > 0 and offset < width then
     items[#items].width =
       items[#items].width + (width - offset)
 
     items[#items].x1 = width
+    offset = width
   end
 
   return {
     items = items,
     by_key = by_key,
-    width = width,
+    width = math.max(width, offset),
+    viewport_width = width,
   }
 end
 
@@ -11698,7 +11913,9 @@ function draw_list_header(
   draw_list,
   x,
   y,
-  layout
+  layout,
+  viewport_x0,
+  viewport_x1
 )
   ImGui.DrawList_AddRectFilled(
     draw_list,
@@ -11742,9 +11959,9 @@ function draw_list_header(
 
   if ImGui.IsMouseHoveringRect(
     ctx,
-    x,
+    viewport_x0 or x,
     y,
-    x + layout.width,
+    viewport_x1 or (x + layout.width),
     y + HEADER_H
   ) and ImGui.IsMouseClicked(ctx, 1) then
     ImGui.OpenPopup(
@@ -12385,24 +12602,19 @@ function draw_results()
   local width, height =
     ImGui.GetContentRegionAvail(ctx)
 
-  local list_width =
+  local viewport_width =
     math.max(1, width - 4)
 
   local layout =
-    column_layout(list_width)
+    column_layout(viewport_width)
+
+  local list_width = layout.width
 
   local header_x, header_y =
     ImGui.GetCursorScreenPos(ctx)
 
   local draw_list =
     ImGui.GetWindowDrawList(ctx)
-
-  draw_list_header(
-    draw_list,
-    header_x,
-    header_y,
-    layout
-  )
 
   local cursor_y =
     ImGui.GetCursorPosY(ctx)
@@ -12417,8 +12629,11 @@ function draw_results()
     "results_scroll_area",
     width,
     math.max(1, height - HEADER_H),
-    0
+    0,
+    ImGui.WindowFlags_HorizontalScrollbar
   ) then
+    state.results_scroll_x = ImGui.GetScrollX(ctx)
+
     if #state.results == 0 then
       ImGui.Spacing(ctx)
 
@@ -12482,7 +12697,7 @@ function draw_results()
 
       ImGui.Dummy(
         ctx,
-        1,
+        list_width,
         #state.results * ROW_H
       )
 
@@ -12503,6 +12718,15 @@ function draw_results()
   end
 
   ImGui.EndChild(ctx)
+
+  draw_list_header(
+    draw_list,
+    header_x - (state.results_scroll_x or 0),
+    header_y,
+    layout,
+    header_x,
+    header_x + viewport_width
+  )
 end
 
 ----------------------------------------------------------------
@@ -14210,7 +14434,8 @@ function draw_bottom(asset)
   ImGui.Spacing(ctx)
   draw_control_deck(asset)
 
-  local selection_text = "完整文件"
+  local selection_text =
+    translate_ui_text("完整文件")
 
   if has_selection() and asset.duration > 0 then
     local start_sec =
@@ -14219,14 +14444,25 @@ function draw_bottom(asset)
     local end_sec =
       asset.duration * state.region_end
 
-    selection_text =
+    selection_text = translate_ui_text(
       string.format(
         "选区 %.3f–%.3f 秒 / %.3f 秒",
         start_sec,
         end_sec,
         end_sec - start_sec
       )
+    )
   end
+
+  local channel_text = translate_ui_text(
+    state.preview_channel_mode == "left"
+      and "左声道"
+      or state.preview_channel_mode == "right"
+        and "右声道"
+        or state.preview_channel_mode == "mono"
+          and "单声道"
+          or "原始"
+  )
 
   local match_text =
     state.loudness_match
@@ -14246,7 +14482,7 @@ function draw_bottom(asset)
         .. string.format(
           "　|　Regions %d　|　%s　|　%s",
           #asset_regions(asset),
-          state.preview_channel_mode,
+          channel_text,
           match_text
         )
     )

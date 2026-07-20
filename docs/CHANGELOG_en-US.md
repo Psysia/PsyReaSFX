@@ -1,5 +1,28 @@
 # PsyReaSFX Changelog
 
+## 0.6.15 Stable RC4
+
+### English localization
+
+- Completed the English audit for Settings, Maintenance, Appearance, Waveforms,
+  help, status messages, and the bottom preview summary.
+- Added English rules for dynamic scan, import, precache, transient, collection,
+  and cache-migration messages.
+- User-authored filenames, library names, metadata, and collection names remain
+  untouched.
+
+### Results table
+
+- Added a horizontal scrollbar when visible fields exceed the workspace width.
+- Kept the pinned header synchronized with horizontally scrolled rows.
+- Preserved configured column widths instead of forcing every field into the
+  current window.
+
+### Project page
+
+- Added compact-workspace and Focus-mode screenshots to the README.
+- Preserved the GitHub project URL in script metadata and About.
+
 ## 0.6.14 Stable RC3
 
 ### Previous-session highlights
