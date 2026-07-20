@@ -1,0 +1,16 @@
+# PsyReaSFX runtime data
+config.tsv
+index_v3.tsv
+collections_v1.tsv
+saved_searches_v1.tsv
+history_v1.tsv
+last_played_session_v1.tsv
+regions_v1.tsv
+loudness_v1.tsv
+wave_cache_v3/
+
+# Common local files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak

@@ -1,9 +1,9 @@
-# PsyReaSFX 0.6.13 Stable RC2
+# PsyReaSFX 0.6.14 Stable RC3
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC2)
+**Release stage:** 0.6 stable candidate (RC1)
 
 ## Documentation
 
@@ -19,15 +19,13 @@ PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, regio
 
 ## Installation
 
-Load `PsyReaSFX_v0_6_13_Stable_RC2.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
+Load `PsyReaSFX_v0_6_14_Stable_RC3.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_13_Stable_RC2.lua
+PsyReaSFX_v0_6_14_Stable_RC3.lua
 README.md
-LICENSE
-.gitignore
 docs/
   USER_GUIDE_zh-CN.md
   USER_GUIDE_en-US.md
@@ -45,13 +43,17 @@ The user guide and changelog are maintained as separate bilingual documents, whi
 - Added an About page with runtime details, data/document paths, diagnostics, and release identity placeholders.
 
 
-## 0.6.13 Stable RC2 highlights
+## 0.6.14 Stable RC3 highlights
 
 - Saves the current yellow played-highlight set as a lightweight previous-session snapshot.
 - Adds manual restore, current-view clear, saved-snapshot clear, and optional startup restore.
 - Keeps the full preview history independent from the yellow highlight snapshot.
 - Fixes color swatches so the click reaches `ColorEdit3` and opens the picker.
 - This package is the 0.6 stable candidate. After REAPER-side verification, it can be promoted to the final 0.6 stable build without adding new features.
+
+
+## 0.6.14 Stable RC3 highlights
+
 - Removes the redundant Preview and Collections menus from the top bar.
 - Uses original PsyReaSFX preset names: Forge Compact and Aether Standard.
 - Adds a configurable waveform-cache directory.
@@ -60,6 +62,12 @@ The user guide and changelog are maintained as separate bilingual documents, whi
 - Reduces About to a minimal product, version, copyright, and GitHub card.
 - Copyright is © 2026 Psysia. All rights reserved.
 - A single `PROJECT_URL` constant is reserved for the future GitHub repository.
-## License
 
-Copyright © 2026 Psysia. PsyReaSFX is source-available software for personal, non-commercial use only. Redistribution and commercial use are prohibited. See [LICENSE](LICENSE) for the complete terms.
+
+## 0.6.14 Stable RC3 highlights
+
+- Fixes the English sort caption so both the prefix and active sort field are localized.
+- Adds a persistent `project_url.txt` value under the PsyReaSFX data directory.
+- Preserves a hard-coded `PROJECT_URL`.
+- When the new script has an empty URL, it can migrate `PROJECT_URL`, `@link`, or `@website` from an adjacent older PsyReaSFX script.
+- The migrated project homepage is then independent from later script-file replacements.

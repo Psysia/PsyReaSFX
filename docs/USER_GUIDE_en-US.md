@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.13 Stable RC2 User Guide
+# PsyReaSFX 0.6.14 Stable RC3 User Guide
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain pre
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_13_Stable_RC2.lua`.
+4. Load `PsyReaSFX_v0_6_14_Stable_RC3.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -56,8 +56,8 @@ Pages:
 - **General**: language, panels, insertion naming and fades;
 - **Appearance**: full interface presets, density, surface hierarchy, console, Artwork and state colors;
 - **Waveforms**: resolution, precache, navigation, transients and loudness;
-- **Maintenance**: runtime details, data and documentation paths, diagnostics, cache-directory controls, database rebuilding, and factory reset;
-- **About**: product name, version, author, copyright, and GitHub project page.
+- **Maintenance**: cache, database rebuild and factory reset;
+- **About**: product version, runtime details, data paths, diagnostics, and support identity.
 
 ### Interface presets
 
@@ -114,11 +114,14 @@ Settings → About
 
 The page shows:
 
-- the PsyReaSFX version and author;
-- the copyright notice;
-- a GitHub project-page link, enabled after the repository URL is configured.
+- PsyReaSFX version and author;
+- REAPER, operating system, ReaImGui, and SWS status;
+- current preview backend;
+- data directory;
+- open-data-folder and open-documentation-folder actions;
+- copyable diagnostics.
 
-REAPER, operating-system, ReaImGui, SWS, preview-backend, data-directory, documentation-directory and diagnostic information are grouped under Maintenance.
+License, official website, and support-contact fields are currently placeholders.
 
 
 ## 5. Libraries

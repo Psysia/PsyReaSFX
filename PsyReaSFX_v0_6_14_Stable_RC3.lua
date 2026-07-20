@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.13-rc2
+-- @version 0.6.14-rc3
 -- @author Psysia
 -- @maintenance
 --   v0.5.1 将顶层辅助函数从 local function 改为脚本环境函数，
@@ -57,7 +57,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.13 Stable RC2"
+local VERSION = "0.6.14 Stable RC3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -143,6 +143,9 @@ local DATA_DIR =
 
 local CONFIG_FILE =
   DATA_DIR .. SEP .. "config.tsv"
+
+local PROJECT_URL_FILE =
+  DATA_DIR .. SEP .. "project_url.txt"
 
 local DATABASE_FILE =
   DATA_DIR .. SEP .. "index_v3.tsv"
@@ -2160,6 +2163,177 @@ function ensure_dirs()
     state.wave_cache_dir
       or DEFAULT_WAVE_CACHE_DIR
   )
+end
+
+
+function read_small_text_file(path)
+  local file = io.open(path, "rb")
+
+  if not file then
+    return ""
+  end
+
+  local content =
+    file:read(8192) or ""
+
+  file:close()
+  return content
+end
+
+function write_project_url_file(url)
+  url = trim(url or "")
+
+  if url == "" then
+    return false
+  end
+
+  reaper.RecursiveCreateDirectory(
+    DATA_DIR,
+    0
+  )
+
+  local file =
+    io.open(
+      PROJECT_URL_FILE,
+      "wb"
+    )
+
+  if not file then
+    return false
+  end
+
+  file:write(url, "\n")
+  file:close()
+  return true
+end
+
+function extract_project_url_from_text(content)
+  content = tostring(content or "")
+
+  local patterns = {
+    'local%s+PROJECT_URL%s*=%s*"([^"]+)"',
+    "local%s+PROJECT_URL%s*=%s*'([^']+)'",
+    "%-%-%s*@link%s+(https?://%S+)",
+    "%-%-%s*@website%s+(https?://%S+)",
+  }
+
+  for _, pattern in ipairs(patterns) do
+    local value =
+      content:match(pattern)
+
+    value = trim(value or "")
+
+    if value:match("^https?://") then
+      return value
+    end
+  end
+
+  return ""
+end
+
+function extract_project_url_from_script(path)
+  if not path or path == "" then
+    return ""
+  end
+
+  return extract_project_url_from_text(
+    read_small_text_file(path)
+  )
+end
+
+function find_project_url_in_sibling_scripts()
+  if SCRIPT_DIR == "" then
+    return ""
+  end
+
+  local current_name =
+    basename(SCRIPT_FILE)
+
+  local candidates = {}
+  local index = 0
+
+  while true do
+    local filename =
+      reaper.EnumerateFiles(
+        SCRIPT_DIR,
+        index
+      )
+
+    if not filename then
+      break
+    end
+
+    if filename ~= current_name
+      and filename:match(
+        "^PsyReaSFX.*%.lua$"
+      ) then
+      candidates[#candidates + 1] =
+        filename
+    end
+
+    index = index + 1
+  end
+
+  table.sort(
+    candidates,
+    function(a, b)
+      return a > b
+    end
+  )
+
+  for _, filename in ipairs(candidates) do
+    local value =
+      extract_project_url_from_script(
+        join_path(
+          SCRIPT_DIR,
+          filename
+        )
+      )
+
+    if value ~= "" then
+      return value
+    end
+  end
+
+  return ""
+end
+
+function load_or_migrate_project_url()
+  local hardcoded =
+    trim(PROJECT_URL or "")
+
+  if hardcoded ~= "" then
+    PROJECT_URL = hardcoded
+    write_project_url_file(hardcoded)
+    return
+  end
+
+  local persisted =
+    trim(
+      read_small_text_file(
+        PROJECT_URL_FILE
+      )
+    )
+
+  if persisted:match("^https?://") then
+    PROJECT_URL = persisted
+    return
+  end
+
+  local embedded =
+    extract_project_url_from_script(
+      SCRIPT_FILE
+    )
+
+  if embedded == "" then
+    embedded =
+      find_project_url_in_sibling_scripts()
+  end
+
+  if embedded ~= "" then
+    PROJECT_URL = embedded
+    write_project_url_file(embedded)
+  end
 end
 
 function copy_file(source_path, target_path)
@@ -10670,13 +10844,31 @@ function draw_toolbar()
 end
 
 function draw_sub_toolbar()
-  local labels = {
+  local labels_zh = {
     name = "名称",
     duration = "时长",
     library = "音效库",
     used = "最近插入",
     previewed = "最近试听",
   }
+
+  local labels_en = {
+    name = "Name",
+    duration = "Duration",
+    library = "Library",
+    used = "Recently inserted",
+    previewed = "Recently previewed",
+  }
+
+  local labels =
+    state.language == "en"
+      and labels_en
+      or labels_zh
+
+  local sort_prefix =
+    state.language == "en"
+      and "Sort: "
+      or "排序："
 
   local breadcrumb = "Home"
 
@@ -10740,8 +10932,14 @@ function draw_sub_toolbar()
   ImGui.SameLine(ctx)
 
   if dark_button(
-    "排序：" .. (labels[state.sort_mode] or "名称"),
-    118
+    sort_prefix
+      .. (
+        labels[state.sort_mode]
+        or labels.name
+      ),
+    state.language == "en"
+      and 154
+      or 118
   ) then
     local next_mode = {
       name = "duration",
@@ -15076,6 +15274,12 @@ function build_diagnostics_text()
           state.wave_cache_dir
             or WAVE_CACHE_DIR
         ),
+      "Project URL: "
+        .. (
+          PROJECT_URL ~= ""
+            and PROJECT_URL
+            or "Not configured"
+        ),
       "Script file: " .. SCRIPT_FILE,
     },
     "\n"
@@ -17176,6 +17380,7 @@ reaper.atexit(cleanup)
 
 ensure_dirs()
 migrate_legacy_data()
+load_or_migrate_project_url()
 load_config()
 apply_wave_cache_directory(
   state.wave_cache_dir

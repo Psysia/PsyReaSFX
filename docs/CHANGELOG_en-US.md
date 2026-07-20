@@ -1,6 +1,6 @@
 # PsyReaSFX Changelog
 
-## 0.6.13 Stable RC2
+## 0.6.14 Stable RC3
 
 ### Previous-session highlights
 
@@ -21,7 +21,7 @@
 ### Stable candidate
 
 - No new major subsystem is added in this build.
-- This is the 0.6 Stable RC2 package.
+- This is the 0.6 Stable RC1 package.
 - After REAPER/ReaImGui/SWS verification, it can be promoted to final 0.6 Stable.
 
 ## 0.6.11
