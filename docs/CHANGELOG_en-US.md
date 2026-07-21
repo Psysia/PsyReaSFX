@@ -1,5 +1,40 @@
 # PsyReaSFX Changelog
 
+## 0.7.0 Beta 1
+
+### Transfer workflow
+
+- Added a dedicated Transfer panel and `Ctrl+T` shortcut for exporting the
+  current asset, its waveform selection, or multiple selected assets.
+- Added naming templates with `{name}`, `{category}`, `{subcategory}`,
+  `{library}`, `{index}`, `{date}`, and `{region}` tokens plus optional
+  lowercase conversion and Windows-safe filename cleanup.
+- Added WAV 24-bit PCM and FLAC output, source or fixed sample rates, and source,
+  mono, or stereo channel output.
+- Writes the current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings to
+  the rendered file.
+- Added render fade-in/fade-out and Peak, True Peak, or LUFS-I normalization.
+- Added increment, skip, and confirmed-overwrite collision handling plus
+  optional insertion of completed files into REAPER.
+
+### Project-state and performance safety
+
+- Transfer uses one temporary dry media item at a time instead of creating a
+  new full-library analysis or render queue in memory.
+- Captures and restores render settings, selected items and tracks, edit cursor,
+  time selection, and project dirty state after every file.
+- Removes the temporary track on success and failure paths and blocks Transfer
+  while the project is playing.
+- Batch Transfer uses complete source files; current-asset Transfer can use the
+  detailed-waveform selection.
+
+### Documentation and release channel
+
+- Updated the bilingual README, user guides, changelogs, and ReaPack index for
+  the 0.7 beta channel.
+- Retains 0.6.21 as the formal stable fallback while Transfer compatibility is
+  tested.
+
 ## 0.6.21 Stable
 
 ### Formal stable release

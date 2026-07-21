@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6 Stable User Guide (package 0.6.21)
+# PsyReaSFX 0.7 Beta 1 User Guide (package 0.7.0-beta.1)
 
 ## 1. Purpose
 
@@ -308,13 +308,59 @@ PsyReaSFX can:
 
 This is an internal PsyReaSFX-to-REAPER workflow, not general Windows file drag-and-drop.
 
-## 15. Collections and workflow
+## 15. Transfer export
+
+Open Transfer from the lower toolbar or press `Ctrl+T`. Transfer creates new
+audio files without modifying the source media.
+
+### Output and naming
+
+Choose an output directory and a naming template. Available tokens are:
+
+| Token | Value |
+|---|---|
+| `{name}` | Source filename without extension |
+| `{category}` | Category metadata |
+| `{subcategory}` | SubCategory metadata |
+| `{library}` | Library name |
+| `{index}` | Two-digit batch index |
+| `{date}` | Export date as `YYYYMMDD` |
+| `{region}` | Active saved Region, `selection`, or `full` |
+
+Names are sanitized for Windows filenames. Optional lowercase conversion is
+applied after token expansion.
+
+### Scope, format, and channels
+
+- Current asset: export the current waveform selection or the complete file.
+- Multiple selected assets: each complete source file is exported.
+- Format: WAV 24-bit PCM or FLAC using REAPER's default FLAC sink.
+- Sample rate: source, 44.1, 48, 96, or 192 kHz.
+- Channels: source channel count, mono, or stereo.
+
+### Processing and completion
+
+The exported audio includes the current Pitch, Rate, Gain, Reverse, and
+Preserve Pitch settings. Optional render fades and Peak, True Peak, or LUFS-I
+normalization are available. Name collisions can increment, skip, or overwrite
+after explicit confirmation. Completed files can optionally be inserted into
+REAPER.
+
+Transfer temporarily creates a dry media item, renders it with REAPER's native
+selected-media-item renderer, and restores the previous render settings,
+selection, cursor, time selection, and project dirty state. The temporary item
+is removed after every file, including failure paths.
+
+Beta 1 does not pass audio through track FX, sends, folders, or Master FX. Stop
+project playback before starting Transfer. Reverse Transfer requires SWS.
+
+## 16. Collections and workflow
 
 Create multiple playlists and project bins, add or remove files in bulk, and save search states including query text, library filter, collection, workflow status, and sort order.
 
 Workflow status values are Unmarked, Candidate, Approved, and Rejected. Workflow status is separate from the independent `marked` flag added in 0.6.8.
 
-## 16. Metadata and pinned Artwork
+## 17. Metadata and pinned Artwork
 
 The inspector edits Description, Keywords, Category, SubCategory, CatID, Library and Artwork path without modifying source audio metadata.
 
@@ -329,11 +375,11 @@ For a single selected asset, the full cover can be pinned above the scrolling me
 Artwork currently uses external PNG/JPEG files. Embedded artwork inside audio containers is not extracted in this version.
 
 
-## 17. Appearance and performance
+## 18. Appearance and performance
 
 ### Interface
 
-The application provides three complete presets, three density levels, three surface styles, adjustable columns, a fixed header, collapsible panels and a responsive preview console.
+The application maintains one compact, flat, responsive interface with adjustable columns, a fixed header, collapsible side panels, focus mode, and an adjustable preview workspace.
 
 ### Current performance strategy
 
@@ -355,7 +401,7 @@ The application provides three complete presets, three density levels, three sur
 - Regions, collections, history and loudness use separate lightweight files.
 
 
-## 18. Data files
+## 19. Data files
 
 | File | Purpose |
 |---|---|
@@ -371,7 +417,7 @@ The application provides three complete presets, three density levels, three sur
 
 Back up the entire PsyReaSFX data directory regularly.
 
-## 19. Shortcuts
+## 20. Shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -382,6 +428,7 @@ Back up the entire PsyReaSFX data directory regularly.
 | Ctrl+A | Select all current results |
 | Ctrl+F | Focus search |
 | Ctrl+R | Incremental scan |
+| Ctrl+T | Open Transfer |
 | F | Toggle favorite |
 | M | Toggle mark |
 | L | Toggle loop |
@@ -389,7 +436,7 @@ Back up the entire PsyReaSFX data directory regularly.
 | F10 | Toggle metadata inspector |
 | F11 | Toggle focus mode |
 
-## 20. Maintenance and troubleshooting
+## 21. Maintenance and troubleshooting
 
 The Maintenance tab can clear waveform caches, reset interface settings, rebuild the database while keeping roots, or perform a factory reset.
 
@@ -401,6 +448,6 @@ Common issues:
 - Some text is garbled: the source file metadata may use a legacy encoding.
 - Large libraries feel slow: hide unused columns, use focus mode, and do not run multiple PsyReaSFX versions.
 
-## 21. Development stage
+## 22. Development stage
 
-Package 0.6.21 is the formal 0.6 Stable release. Further 0.6.x builds are reserved for necessary stability fixes; new features move to the 0.7 Transfer stage.
+Package 0.7.0 Beta 1 starts the Transfer stage. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.

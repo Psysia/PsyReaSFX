@@ -1,5 +1,28 @@
 # PsyReaSFX 更新日志（简体中文）
 
+## 0.7.0 Beta 1
+
+### Transfer 工作流
+
+- 新增 Transfer 面板和 `Ctrl+T` 快捷键，可导出当前素材、当前大波形选区或多个已选素材。
+- 新增命名模板：`{name}`、`{category}`、`{subcategory}`、`{library}`、`{index}`、`{date}`、`{region}`，并支持统一小写和 Windows 安全文件名处理。
+- 新增 WAV 24-bit PCM 与 FLAC 输出；采样率可跟随源文件或固定为 44.1、48、96、192 kHz；声道可跟随源文件或转换为单声道、立体声。
+- 导出文件可写入当前 Pitch、Rate、Gain、Reverse 和 Preserve Pitch 设置。
+- 新增渲染淡入淡出和 Peak、True Peak、LUFS-I 标准化。
+- 新增自动递增、跳过、确认覆盖三种重名策略，并可在完成后自动插入 REAPER。
+
+### 工程状态与性能保护
+
+- Transfer 每次只建立一个临时干声媒体对象，不新增整库常驻内存分析或渲染队列。
+- 每个文件完成后恢复渲染设置、对象和轨道选择、编辑光标、时间选区及工程修改状态。
+- 成功和失败路径都会删除临时轨道；工程播放期间禁止开始 Transfer。
+- 批量 Transfer 使用完整源文件；当前素材 Transfer 可使用大波形选区。
+
+### 文档与发布渠道
+
+- 中英文 README、使用说明书、更新日志和 ReaPack 索引同步进入 0.7 Beta 渠道。
+- Transfer 完成兼容性测试前，0.6.21 继续作为正式稳定回退版本。
+
 ## 0.6.21 Stable
 
 ### 正式稳定版

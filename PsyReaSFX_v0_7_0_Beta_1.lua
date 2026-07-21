@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.21
+-- @version 0.7.0-beta.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -59,6 +59,11 @@
 --   - 时间指标与参数控制去除外框，仅图标按钮保留边框
 --   - 0.6 Stable：底部指标、摘要与状态统一文字基线
 --   - 预览摘要与状态移入指标行，下方面板按实际内容收口
+--   - 0.7 Transfer：完整文件或波形选区可渲染为新的音频文件
+--   - Transfer 支持命名模板、采样率、声道、淡化与响度标准化
+--   - 导出任务使用隔离临时对象，并在完成后恢复工程与渲染设置
+--   - 支持递增、跳过与明确确认后的覆盖策略
+--   - 可在导出后自动插入 REAPER，并记录最近传输结果
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -67,7 +72,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.21 Stable"
+local VERSION = "0.7.0 Beta 1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -162,6 +167,9 @@ local DATABASE_FILE =
 
 local DEFAULT_WAVE_CACHE_DIR =
   DATA_DIR .. SEP .. "wave_cache_v3"
+
+local DEFAULT_TRANSFER_DIR =
+  DATA_DIR .. SEP .. "Transfer"
 
 local WAVE_CACHE_DIR =
   DEFAULT_WAVE_CACHE_DIR
@@ -614,6 +622,27 @@ local state = {
   insert_suffix = "",
   insert_fade_ms = 5,
 
+  -- 0.7 Transfer 使用 REAPER 原生 selected-media-item 渲染。
+  -- 临时对象与工程渲染设置会在任务结束后恢复。
+  transfer_dir = DEFAULT_TRANSFER_DIR,
+  transfer_template = "{name}",
+  transfer_format = "wav24",
+  transfer_sample_rate = "source",
+  transfer_channels = "source",
+  transfer_scope = "selection",
+  transfer_collision = "increment",
+  transfer_fade_in_ms = 5,
+  transfer_fade_out_ms = 20,
+  transfer_normalize = "off",
+  transfer_normalize_target = -1,
+  transfer_insert_after = false,
+  transfer_lowercase = false,
+  transfer_popup_requested = 0,
+  transfer_running = false,
+  transfer_last_output = "",
+  transfer_last_outputs = {},
+  transfer_last_error = "",
+
   status = "准备就绪",
   status_error = false,
 
@@ -723,6 +752,71 @@ local state = {
 
 I18N_EN = {
   ["音效库"] = "Libraries",
+  ["传输"] = "Transfer",
+  ["Transfer 导出"] = "Transfer export",
+  ["Transfer 设置"] = "Transfer settings",
+  ["处理、命名与导出"] = "Processing, naming and export",
+  ["输出目录"] = "Output directory",
+  ["输出目录:,extrawidth=420"] = "Output directory:,extrawidth=420",
+  ["Transfer 使用独立目录，不修改源素材。"] = "Transfer uses an independent output directory and never modifies source media.",
+  ["打开输出目录"] = "Open output directory",
+  ["更改输出目录…"] = "Change output directory…",
+  ["恢复默认输出目录"] = "Restore default output directory",
+  ["命名模板"] = "Naming template",
+  ["可用字段：{name} {category} {subcategory} {library} {index} {date} {region}"] = "Fields: {name} {category} {subcategory} {library} {index} {date} {region}",
+  ["导出范围"] = "Export scope",
+  ["当前选区"] = "Current selection",
+  ["完整文件"] = "Full file",
+  ["没有有效选区时自动使用完整文件"] = "Use the full file automatically when no valid selection exists",
+  ["格式与范围"] = "Format and scope",
+  ["当前素材可导出波形选区；批量导出始终使用每个完整文件。"] = "The current asset can export its waveform selection; batch export always uses each full file.",
+  ["输出格式"] = "Output format",
+  ["WAV · 24-bit PCM"] = "WAV · 24-bit PCM",
+  ["FLAC · REAPER 默认"] = "FLAC · REAPER default",
+  ["采样率"] = "Sample rate",
+  ["跟随源文件"] = "Source rate",
+  ["声道"] = "Channels",
+  ["跟随源声道"] = "Source channels",
+  ["单声道"] = "Mono",
+  ["立体声"] = "Stereo",
+  ["淡入"] = "Fade in",
+  ["淡出"] = "Fade out",
+  ["处理"] = "Processing",
+  ["当前 Pitch、Rate、Gain、Reverse 与 Preserve Pitch 会写入导出文件。"] = "Current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings are written into the exported file.",
+  ["标准化"] = "Normalize",
+  ["关闭标准化"] = "Off",
+  ["Peak"] = "Peak",
+  ["True Peak"] = "True Peak",
+  ["LUFS-I"] = "LUFS-I",
+  ["目标值"] = "Target",
+  ["重名策略"] = "Name collision",
+  ["自动递增"] = "Increment",
+  ["跳过已有文件"] = "Skip existing",
+  ["允许覆盖"] = "Allow overwrite",
+  ["完成行为"] = "Completion",
+  ["自动递增是默认且最安全的重名策略。"] = "Increment is the default and safest collision policy.",
+  ["文件名转为小写"] = "Lowercase filename",
+  ["导出后插入 REAPER"] = "Insert into REAPER after export",
+  ["导出当前素材"] = "Export current asset",
+  ["导出所选素材"] = "Export selected assets",
+  ["打开 Transfer 面板"] = "Open Transfer panel",
+  ["最近输出"] = "Latest output",
+  ["尚未执行 Transfer"] = "No Transfer export yet",
+  ["正在导出…"] = "Exporting…",
+  ["请先选择素材"] = "Select an asset first",
+  ["工程正在播放，停止后再执行 Transfer"] = "Stop project playback before running Transfer",
+  ["请选择有效的输出目录"] = "Choose a valid output directory",
+  ["无法创建输出目录"] = "Could not create output directory",
+  ["Transfer 渲染失败"] = "Transfer render failed",
+  ["已跳过已有文件："] = "Skipped existing file: ",
+  ["Transfer 完成："] = "Transfer complete: ",
+  ["Transfer 部分完成"] = "Transfer partially completed",
+  ["覆盖现有文件？"] = "Overwrite existing file?",
+  ["此操作会替换磁盘上的同名文件："] = "This will replace the existing file on disk: ",
+  ["选择 Transfer 输出目录"] = "Choose Transfer output directory",
+  ["输出目录没有变化"] = "Output directory was not changed",
+  ["已更新 Transfer 输出目录"] = "Transfer output directory updated",
+  ["Transfer 只处理源素材与当前 Pitch / Rate / Gain / Reverse / Preserve Pitch，不经过工程轨道或 Master FX。"] = "Transfer processes the source with the current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings and does not pass through project tracks or Master FX.",
   ["试听"] = "Preview",
   ["视图"] = "View",
   ["集合"] = "Collections",
@@ -975,8 +1069,8 @@ I18N_EN = {
   ["恢复默认波形配色"] = "Reset waveform colors",
   ["显示优先级：选中 > 已标记 > 已播放 > 普通。标记使用 M 快捷键。"] =
     "Priority: Selected > Marked > Played > Normal. Use M to mark.",
-  ["其他：F 收藏；M 标记；L 循环；Ctrl+F 搜索；Ctrl+R 扫描。"] =
-    "Other: F favorite; M mark; L loop; Ctrl+F search; Ctrl+R scan.",
+  ["其他：F 收藏；M 标记；L 循环；Ctrl+F 搜索；Ctrl+R 扫描；Ctrl+T Transfer。"] =
+    "Other: F favorite; M mark; L loop; Ctrl+F search; Ctrl+R scan; Ctrl+T Transfer.",
   ["声道监听"] = "Channel audition",
   ["原始"] = "Original",
   ["左声道"] = "Left",
@@ -3190,6 +3284,60 @@ function load_config()
         state.insert_prefix = value or ""
       elseif name == "insert_suffix" then
         state.insert_suffix = value or ""
+      elseif name == "transfer_dir" then
+        state.transfer_dir =
+          normalize_slashes(trim(value or ""))
+        if state.transfer_dir == "" then
+          state.transfer_dir = DEFAULT_TRANSFER_DIR
+        end
+      elseif name == "transfer_template" then
+        state.transfer_template =
+          value ~= "" and value or "{name}"
+      elseif name == "transfer_format" then
+        state.transfer_format =
+          value == "flac" and "flac" or "wav24"
+      elseif name == "transfer_sample_rate" then
+        local valid_rates = {
+          source = true,
+          ["44100"] = true,
+          ["48000"] = true,
+          ["96000"] = true,
+          ["192000"] = true,
+        }
+        state.transfer_sample_rate =
+          valid_rates[value] and value or "source"
+      elseif name == "transfer_channels" then
+        state.transfer_channels =
+          value == "mono" and "mono"
+          or value == "stereo" and "stereo"
+          or "source"
+      elseif name == "transfer_scope" then
+        state.transfer_scope =
+          value == "full" and "full" or "selection"
+      elseif name == "transfer_collision" then
+        state.transfer_collision =
+          value == "skip" and "skip"
+          or value == "overwrite" and "overwrite"
+          or "increment"
+      elseif name == "transfer_fade_in_ms" then
+        state.transfer_fade_in_ms =
+          tonumber(value) or 5
+      elseif name == "transfer_fade_out_ms" then
+        state.transfer_fade_out_ms =
+          tonumber(value) or 20
+      elseif name == "transfer_normalize" then
+        state.transfer_normalize =
+          value == "peak" and "peak"
+          or value == "true_peak" and "true_peak"
+          or value == "lufs_i" and "lufs_i"
+          or "off"
+      elseif name == "transfer_normalize_target" then
+        state.transfer_normalize_target =
+          tonumber(value) or -1
+      elseif name == "transfer_insert_after" then
+        state.transfer_insert_after = value == "1"
+      elseif name == "transfer_lowercase" then
+        state.transfer_lowercase = value == "1"
       elseif name == "theme_preset" then
         local legacy_key =
           "sound" .. "ly"
@@ -3433,6 +3581,84 @@ function save_config()
   file:write(
     "setting\tinsert_suffix\t",
     escape_tsv(state.insert_suffix),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_dir\t",
+    escape_tsv(state.transfer_dir or DEFAULT_TRANSFER_DIR),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_template\t",
+    escape_tsv(state.transfer_template or "{name}"),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_format\t",
+    state.transfer_format,
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_sample_rate\t",
+    state.transfer_sample_rate,
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_channels\t",
+    state.transfer_channels,
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_scope\t",
+    state.transfer_scope,
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_collision\t",
+    state.transfer_collision,
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_fade_in_ms\t",
+    tostring(state.transfer_fade_in_ms),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_fade_out_ms\t",
+    tostring(state.transfer_fade_out_ms),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_normalize\t",
+    state.transfer_normalize,
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_normalize_target\t",
+    tostring(state.transfer_normalize_target),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_insert_after\t",
+    state.transfer_insert_after and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_lowercase\t",
+    state.transfer_lowercase and "1" or "0",
     "\n"
   )
 
@@ -8489,6 +8715,678 @@ function insert_asset(asset, new_track, bwf)
 end
 
 ----------------------------------------------------------------
+-- 0.7 Transfer rendering
+----------------------------------------------------------------
+
+function sanitize_transfer_name(value)
+  value = trim(tostring(value or ""))
+  value = value:gsub("[%z\1-\31]", "_")
+  value = value:gsub("[\\/:*?\"<>|]", "_")
+  value = value:gsub("%s+", " ")
+  value = value:gsub("[%. ]+$", "")
+  value = value:gsub("^%s+", "")
+
+  if value == "" then
+    value = "untitled"
+  end
+
+  if (utf8_length(value) or #value) > 160 then
+    value = utf8_prefix(value, 160)
+  end
+
+  if state.transfer_lowercase then
+    value = value:lower()
+  end
+
+  return value
+end
+
+function transfer_region_name(asset)
+  local regions = asset_regions(asset)
+  local active = regions[state.active_region_index or 0]
+
+  if active and trim(active.name or "") ~= "" then
+    return active.name
+  end
+
+  return has_selection() and "selection" or "full"
+end
+
+function expand_transfer_template(asset, index)
+  local value = state.transfer_template or "{name}"
+  local replacements = {
+    name = strip_extension(asset.name or ""),
+    category = asset.category or "",
+    subcategory = asset.subcategory or "",
+    library = asset.library or "",
+    index = string.format("%02d", tonumber(index) or 1),
+    date = os.date("%Y%m%d"),
+    region = transfer_region_name(asset),
+  }
+
+  value = value:gsub("{([%w_]+)}", function(key)
+    return replacements[key] ~= nil
+      and tostring(replacements[key])
+      or "{" .. key .. "}"
+  end)
+
+  return sanitize_transfer_name(value)
+end
+
+function transfer_format_info()
+  if state.transfer_format == "flac" then
+    -- RENDER_FORMAT expects a base64-encoded sink configuration.
+    -- "Y2FsZg==" decodes to REAPER's four-byte FLAC sink id, "calf".
+    return "flac", "Y2FsZg=="
+  end
+
+  -- REAPER's documented default WAV sink configuration:
+  -- WAV, 24-bit PCM, automatic WAV/RF64 selection.
+  return "wav", "ZXZhdw=="
+end
+
+function transfer_sample_rate(asset)
+  if state.transfer_sample_rate == "source" then
+    return math.max(0, math.floor(tonumber(asset.sample_rate) or 0))
+  end
+
+  return math.max(
+    0,
+    math.floor(tonumber(state.transfer_sample_rate) or 0)
+  )
+end
+
+function transfer_channel_count(asset)
+  if state.transfer_channels == "mono" then
+    return 1
+  elseif state.transfer_channels == "stereo" then
+    return 2
+  end
+
+  return clamp(
+    math.floor(tonumber(asset.channels) or 2),
+    1,
+    64
+  )
+end
+
+function transfer_normalize_flags()
+  local flags = 0
+
+  if state.transfer_normalize == "peak" then
+    flags = 1 | 4
+  elseif state.transfer_normalize == "true_peak" then
+    flags = 1 | 6
+  elseif state.transfer_normalize == "lufs_i" then
+    flags = 1
+  end
+
+  if (tonumber(state.transfer_fade_in_ms) or 0) > 0 then
+    flags = flags | 512
+  end
+
+  if (tonumber(state.transfer_fade_out_ms) or 0) > 0 then
+    flags = flags | 1024
+  end
+
+  return flags
+end
+
+function resolve_transfer_output(asset, index)
+  local extension_name = transfer_format_info()
+  local base = expand_transfer_template(asset, index)
+  local directory = normalize_slashes(trim(state.transfer_dir or ""))
+
+  if directory == "" then
+    directory = DEFAULT_TRANSFER_DIR
+  end
+
+  local candidate = join_path(
+    directory,
+    base .. "." .. extension_name
+  )
+
+  if not reaper.file_exists(candidate) then
+    return candidate, "new"
+  end
+
+  if state.transfer_collision == "skip" then
+    return nil, "skip", candidate
+  elseif state.transfer_collision == "overwrite" then
+    return candidate, "overwrite"
+  end
+
+  local suffix = 2
+
+  while suffix < 10000 do
+    local next_path = join_path(
+      directory,
+      string.format(
+        "%s_%02d.%s",
+        base,
+        suffix,
+        extension_name
+      )
+    )
+
+    if not reaper.file_exists(next_path) then
+      return next_path, "increment"
+    end
+
+    suffix = suffix + 1
+  end
+
+  return nil, "error", candidate
+end
+
+function capture_transfer_context()
+  local context = {
+    cursor = reaper.GetCursorPositionEx(PROJ),
+    dirty = reaper.GetSetProjectInfo(PROJ, "DIRTY", 0, false),
+    selected_items = {},
+    selected_tracks = {},
+    render_numbers = {},
+    render_strings = {},
+  }
+
+  local time_start, time_end =
+    reaper.GetSet_LoopTimeRange2(
+      PROJ,
+      false,
+      false,
+      0,
+      0,
+      false
+    )
+
+  context.time_start = time_start
+  context.time_end = time_end
+
+  for index = 0, reaper.CountSelectedMediaItems(PROJ) - 1 do
+    context.selected_items[#context.selected_items + 1] =
+      reaper.GetSelectedMediaItem(PROJ, index)
+  end
+
+  local master = reaper.GetMasterTrack(PROJ)
+
+  if master
+    and reaper.IsTrackSelected(master) then
+    context.selected_tracks[#context.selected_tracks + 1] = master
+  end
+
+  for index = 0, reaper.CountTracks(PROJ) - 1 do
+    local track = reaper.GetTrack(PROJ, index)
+
+    if track and reaper.IsTrackSelected(track) then
+      context.selected_tracks[#context.selected_tracks + 1] = track
+    end
+  end
+
+  local number_keys = {
+    "RENDER_SETTINGS",
+    "RENDER_BOUNDSFLAG",
+    "RENDER_CHANNELS",
+    "RENDER_SRATE",
+    "RENDER_STARTPOS",
+    "RENDER_ENDPOS",
+    "RENDER_TAILFLAG",
+    "RENDER_TAILMS",
+    "RENDER_ADDTOPROJ",
+    "RENDER_DITHER",
+    "RENDER_NORMALIZE",
+    "RENDER_NORMALIZE_TARGET",
+    "RENDER_BRICKWALL",
+    "RENDER_FADEIN",
+    "RENDER_FADEOUT",
+    "RENDER_FADEINSHAPE",
+    "RENDER_FADEOUTSHAPE",
+  }
+
+  for _, key in ipairs(number_keys) do
+    context.render_numbers[key] =
+      reaper.GetSetProjectInfo(PROJ, key, 0, false)
+  end
+
+  local string_keys = {
+    "RENDER_FILE",
+    "RENDER_PATTERN",
+    "RENDER_FORMAT",
+    "RENDER_FORMAT2",
+  }
+
+  for _, key in ipairs(string_keys) do
+    local _, value =
+      reaper.GetSetProjectInfo_String(PROJ, key, "", false)
+    context.render_strings[key] = value or ""
+  end
+
+  return context
+end
+
+function restore_transfer_context(context, temporary_track)
+  if temporary_track
+    and reaper.ValidatePtr2(PROJ, temporary_track, "MediaTrack*") then
+    reaper.DeleteTrack(temporary_track)
+  end
+
+  for key, value in pairs(context.render_numbers or {}) do
+    reaper.GetSetProjectInfo(PROJ, key, value, true)
+  end
+
+  for key, value in pairs(context.render_strings or {}) do
+    reaper.GetSetProjectInfo_String(PROJ, key, value, true)
+  end
+
+  reaper.SelectAllMediaItems(PROJ, false)
+
+  local master = reaper.GetMasterTrack(PROJ)
+
+  if master then
+    reaper.SetTrackSelected(master, false)
+  end
+
+  for index = 0, reaper.CountTracks(PROJ) - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(PROJ, index), false)
+  end
+
+  for _, item in ipairs(context.selected_items or {}) do
+    if reaper.ValidatePtr2(PROJ, item, "MediaItem*") then
+      reaper.SetMediaItemSelected(item, true)
+    end
+  end
+
+  for _, track in ipairs(context.selected_tracks or {}) do
+    if reaper.ValidatePtr2(PROJ, track, "MediaTrack*") then
+      reaper.SetTrackSelected(track, true)
+    end
+  end
+
+  reaper.SetEditCurPos2(
+    PROJ,
+    context.cursor or 0,
+    false,
+    false
+  )
+
+  reaper.GetSet_LoopTimeRange2(
+    PROJ,
+    true,
+    false,
+    context.time_start or 0,
+    context.time_end or 0,
+    false
+  )
+
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "DIRTY",
+    context.dirty or 0,
+    true
+  )
+
+  reaper.UpdateArrange()
+end
+
+function create_transfer_item(asset, use_selection)
+  local track_index = reaper.CountTracks(PROJ)
+  reaper.InsertTrackInProject(PROJ, track_index, 0)
+  local track = reaper.GetTrack(PROJ, track_index)
+
+  if not track then
+    return nil, nil, "temporary track"
+  end
+
+  reaper.GetSetMediaTrackInfo_String(
+    track,
+    "P_NAME",
+    "PsyReaSFX Transfer (temporary)",
+    true
+  )
+
+  local source = reaper.PCM_Source_CreateFromFile(asset.path)
+
+  if not source then
+    return track, nil, "source"
+  end
+
+  local duration, is_qn = reaper.GetMediaSourceLength(source)
+  duration = is_qn and 0 or (duration or asset.duration or 0)
+
+  if duration <= 0 then
+    reaper.PCM_Source_Destroy(source)
+    return track, nil, "duration"
+  end
+
+  local start_percent = 0
+  local end_percent = 1
+
+  if use_selection and has_selection() then
+    start_percent = clamp(state.region_start, 0, 1)
+    end_percent = clamp(state.region_end, start_percent, 1)
+  end
+
+  local source_start = duration * start_percent
+  local source_length = duration * (end_percent - start_percent)
+  local take_source = source
+  local take_start_offset = source_start
+
+  if state.reverse then
+    if type(reaper.CF_PCM_Source_SetSectionInfo) ~= "function" then
+      reaper.PCM_Source_Destroy(source)
+      return track, nil, "reverse requires SWS"
+    end
+
+    local section = reaper.PCM_Source_CreateFromType("SECTION")
+    local ok = section and reaper.CF_PCM_Source_SetSectionInfo(
+      section,
+      source,
+      source_start,
+      source_length,
+      true
+    )
+
+    if not ok then
+      if section then
+        reaper.PCM_Source_Destroy(section)
+      end
+      reaper.PCM_Source_Destroy(source)
+      return track, nil, "reverse source"
+    end
+
+    take_source = section
+    take_start_offset = 0
+  end
+
+  local item = reaper.AddMediaItemToTrack(track)
+  local take = item and reaper.AddTakeToMediaItem(item)
+
+  if not take then
+    if take_source ~= source then
+      reaper.PCM_Source_Destroy(take_source)
+    end
+    reaper.PCM_Source_Destroy(source)
+    return track, nil, "media item"
+  end
+
+  reaper.SetMediaItemTake_Source(take, take_source)
+  reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", take_start_offset)
+  reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", state.rate)
+  reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", state.pitch)
+  reaper.SetMediaItemTakeInfo_Value(
+    take,
+    "B_PPITCH",
+    state.preserve_pitch and 1 or 0
+  )
+  reaper.SetMediaItemTakeInfo_Value(take, "D_VOL", db_to_amp(state.gain_db))
+
+  if state.transfer_channels == "mono" then
+    reaper.SetMediaItemTakeInfo_Value(take, "I_CHANMODE", 2)
+  end
+
+  local item_position = reaper.GetProjectLength(PROJ) + 10
+  local item_length = source_length / math.max(0.01, state.rate)
+  reaper.SetMediaItemPosition(item, item_position, false)
+  reaper.SetMediaItemLength(item, item_length, false)
+  -- Transfer fades are applied by REAPER's render post-processing flags.
+  -- Do not also apply item fades here, otherwise the requested fade would
+  -- be processed twice.
+
+  reaper.GetSetMediaItemTakeInfo_String(
+    take,
+    "P_NAME",
+    strip_extension(asset.name),
+    true
+  )
+
+  reaper.SelectAllMediaItems(PROJ, false)
+  reaper.SetMediaItemSelected(item, true)
+  reaper.SetOnlyTrackSelected(track)
+
+  return track, item, nil
+end
+
+function configure_transfer_render(asset, output_path)
+  local _, sink_config = transfer_format_info()
+  local output_directory = dirname(output_path)
+  local output_pattern = strip_extension(basename(output_path))
+
+  reaper.GetSetProjectInfo(PROJ, "RENDER_SETTINGS", 32, true)
+  reaper.GetSetProjectInfo(PROJ, "RENDER_BOUNDSFLAG", 4, true)
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_CHANNELS",
+    transfer_channel_count(asset),
+    true
+  )
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_SRATE",
+    transfer_sample_rate(asset),
+    true
+  )
+  reaper.GetSetProjectInfo(PROJ, "RENDER_TAILFLAG", 0, true)
+  reaper.GetSetProjectInfo(PROJ, "RENDER_TAILMS", 0, true)
+  reaper.GetSetProjectInfo(PROJ, "RENDER_ADDTOPROJ", 0, true)
+  reaper.GetSetProjectInfo(PROJ, "RENDER_DITHER", 0, true)
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_NORMALIZE",
+    transfer_normalize_flags(),
+    true
+  )
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_NORMALIZE_TARGET",
+    db_to_amp(state.transfer_normalize_target),
+    true
+  )
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_FADEIN",
+    math.max(0, state.transfer_fade_in_ms) / 1000,
+    true
+  )
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_FADEOUT",
+    math.max(0, state.transfer_fade_out_ms) / 1000,
+    true
+  )
+  reaper.GetSetProjectInfo(PROJ, "RENDER_FADEINSHAPE", 0, true)
+  reaper.GetSetProjectInfo(PROJ, "RENDER_FADEOUTSHAPE", 0, true)
+  reaper.GetSetProjectInfo_String(
+    PROJ,
+    "RENDER_FILE",
+    output_directory,
+    true
+  )
+  reaper.GetSetProjectInfo_String(
+    PROJ,
+    "RENDER_PATTERN",
+    output_pattern,
+    true
+  )
+  reaper.GetSetProjectInfo_String(
+    PROJ,
+    "RENDER_FORMAT",
+    sink_config,
+    true
+  )
+  reaper.GetSetProjectInfo_String(PROJ, "RENDER_FORMAT2", "", true)
+end
+
+function render_transfer_asset(asset, index, use_selection)
+  local output_path, collision, existing =
+    resolve_transfer_output(asset, index)
+
+  if collision == "skip" then
+    return false, nil, translate_ui_text("已跳过已有文件：") .. existing, true
+  elseif not output_path then
+    return false, nil, translate_ui_text("Transfer 渲染失败"), false
+  end
+
+  if collision == "overwrite" and reaper.file_exists(output_path) then
+    local answer = reaper.MB(
+      translate_ui_text("此操作会替换磁盘上的同名文件：")
+        .. "\n\n"
+        .. output_path,
+      translate_ui_text("覆盖现有文件？"),
+      4
+    )
+
+    if answer ~= 6 then
+      return false, nil, translate_ui_text("已跳过已有文件：") .. output_path, true
+    end
+
+    if not os.remove(output_path) then
+      return false, nil, translate_ui_text("Transfer 渲染失败"), false
+    end
+  end
+
+  local context = capture_transfer_context()
+  local temporary_track = nil
+  local render_ok = false
+  local render_error = nil
+
+  reaper.PreventUIRefresh(1)
+
+  local setup_ok, setup_error = xpcall(function()
+    temporary_track, _, render_error =
+      create_transfer_item(asset, use_selection)
+
+    if render_error then
+      error(render_error)
+    end
+
+    configure_transfer_render(asset, output_path)
+  end, debug.traceback)
+
+  reaper.PreventUIRefresh(-1)
+
+  if setup_ok then
+    local action_ok, action_error = pcall(function()
+      reaper.Main_OnCommand(42230, 0)
+    end)
+
+    render_ok = action_ok and reaper.file_exists(output_path)
+    render_error = action_error
+  else
+    render_error = setup_error
+  end
+
+  reaper.PreventUIRefresh(1)
+  local restore_ok, restore_error =
+    pcall(restore_transfer_context, context, temporary_track)
+  reaper.PreventUIRefresh(-1)
+
+  if not restore_ok then
+    render_ok = false
+    render_error = restore_error
+  end
+
+  if not render_ok then
+    return false, nil,
+      translate_ui_text("Transfer 渲染失败")
+        .. (render_error and (": " .. tostring(render_error)) or ""),
+      false
+  end
+
+  push_recent(asset)
+
+  if state.transfer_insert_after then
+    reaper.InsertMedia(output_path, 1)
+  end
+
+  return true, output_path, nil, false
+end
+
+function run_transfer(assets, batch_mode)
+  if state.transfer_running then
+    return
+  end
+
+  assets = assets or {}
+
+  if #assets == 0 then
+    set_status("请先选择素材", true)
+    return
+  end
+
+  if (reaper.GetPlayStateEx(PROJ) & 1) == 1 then
+    set_status("工程正在播放，停止后再执行 Transfer", true)
+    return
+  end
+
+  local directory = normalize_slashes(trim(state.transfer_dir or ""))
+
+  if directory == "" then
+    set_status("请选择有效的输出目录", true)
+    return
+  end
+
+  if reaper.RecursiveCreateDirectory(directory, 0) <= 0
+    and not directory_exists(directory) then
+    set_status("无法创建输出目录", true)
+    return
+  end
+
+  stop_preview()
+  state.transfer_running = true
+  state.transfer_last_error = ""
+  state.transfer_last_outputs = {}
+  set_status("正在导出…")
+
+  local success_count = 0
+  local skipped_count = 0
+  local failures = {}
+
+  for index, asset in ipairs(assets) do
+    local use_selection =
+      not batch_mode
+      and state.transfer_scope == "selection"
+      and has_selection()
+
+    local ok, output, message, skipped =
+      render_transfer_asset(asset, index, use_selection)
+
+    if ok then
+      success_count = success_count + 1
+      state.transfer_last_outputs[#state.transfer_last_outputs + 1] = output
+      state.transfer_last_output = output
+    elseif skipped then
+      skipped_count = skipped_count + 1
+    else
+      failures[#failures + 1] = message or asset.name
+    end
+  end
+
+  state.transfer_running = false
+  state.config_dirty = true
+
+  if #failures > 0 then
+    state.transfer_last_error = table.concat(failures, "\n")
+    set_status(
+      string.format(
+        "%s · %d / %d",
+        translate_ui_text("Transfer 部分完成"),
+        success_count,
+        #assets
+      ),
+      true
+    )
+  else
+    set_status(
+      translate_ui_text("Transfer 完成：")
+        .. string.format(
+          "%d%s",
+          success_count,
+          skipped_count > 0 and (" · skip " .. skipped_count) or ""
+        )
+    )
+  end
+end
+
+----------------------------------------------------------------
 -- Multi insert and drag-to-arrange
 ----------------------------------------------------------------
 
@@ -9007,6 +9905,22 @@ function reset_interface_settings()
   state.insert_suffix = ""
   state.insert_lowercase = true
   state.insert_fade_ms = 5
+  state.transfer_dir = DEFAULT_TRANSFER_DIR
+  state.transfer_template = "{name}"
+  state.transfer_format = "wav24"
+  state.transfer_sample_rate = "source"
+  state.transfer_channels = "source"
+  state.transfer_scope = "selection"
+  state.transfer_collision = "increment"
+  state.transfer_fade_in_ms = 5
+  state.transfer_fade_out_ms = 20
+  state.transfer_normalize = "off"
+  state.transfer_normalize_target = -1
+  state.transfer_insert_after = false
+  state.transfer_lowercase = false
+  state.transfer_last_output = ""
+  state.transfer_last_outputs = {}
+  state.transfer_last_error = ""
   state.theme_preset = "aether"
   state.custom_accent_hex = "#1F6FCC"
   state.language = "zh"
@@ -9815,6 +10729,37 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
     ImGui.DrawList_AddLine(draw_list, left, bottom, right, bottom, color_value, thickness)
     ImGui.DrawList_AddLine(draw_list, center_x, top, center_x, bottom - size * 0.12, color_value, thickness)
     ImGui.DrawList_AddTriangleFilled(draw_list, center_x - size * 0.12, center_y + size * 0.04, center_x + size * 0.12, center_y + size * 0.04, center_x, bottom - size * 0.04, color_value)
+  elseif icon == "transfer" then
+    ImGui.DrawList_AddRect(
+      draw_list,
+      left,
+      center_y + size * 0.08,
+      right,
+      bottom,
+      color_value,
+      2,
+      0,
+      thickness
+    )
+    ImGui.DrawList_AddLine(
+      draw_list,
+      center_x,
+      top,
+      center_x,
+      center_y + size * 0.10,
+      color_value,
+      thickness
+    )
+    ImGui.DrawList_AddTriangleFilled(
+      draw_list,
+      center_x - size * 0.14,
+      center_y - size * 0.03,
+      center_x + size * 0.14,
+      center_y - size * 0.03,
+      center_x,
+      center_y + size * 0.15,
+      color_value
+    )
   elseif icon == "new_track" then
     ImGui.DrawList_AddLine(draw_list, left, top + size * 0.10, right - size * 0.14, top + size * 0.10, color_value, thickness)
     ImGui.DrawList_AddLine(draw_list, left, center_y, right - size * 0.14, center_y, color_value, thickness)
@@ -13899,6 +14844,18 @@ function draw_action_strip(asset, minimal, button_size)
     insert_asset(asset, false, false)
   end
 
+  ImGui.SameLine(ctx, 0, button_gap)
+
+  if icon_button(
+    "transfer_export",
+    "transfer",
+    "打开 Transfer 面板",
+    state.transfer_running,
+    button_size
+  ) then
+    state.transfer_popup_requested = 2
+  end
+
   if not minimal then
     ImGui.SameLine(ctx, 0, button_gap)
 
@@ -15398,7 +16355,7 @@ function draw_help_popup()
 
   ImGui.TextWrapped(
     ctx,
-    "其他：F 收藏；M 标记；L 循环；Ctrl+F 搜索；Ctrl+R 扫描。"
+    "其他：F 收藏；M 标记；L 循环；Ctrl+F 搜索；Ctrl+R 扫描；Ctrl+T Transfer。"
   )
 
   ImGui.Separator(ctx)
@@ -15989,6 +16946,377 @@ function settings_section_title(title, description)
   end
 
   ImGui.Spacing(ctx)
+end
+
+function transfer_choice(label, key, options)
+  ImGui.TextDisabled(ctx, label)
+
+  for index, option in ipairs(options) do
+    local selected = state[key] == option.value
+
+    if selected then
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_Button,
+        rgba_with_alpha(COLOR.selected, 0x88)
+      )
+    end
+
+    local clicked = dark_button(
+      option.label .. "##" .. key .. "_" .. option.value,
+      option.width or 128
+    )
+
+    if selected then
+      ImGui.PopStyleColor(ctx)
+    end
+
+    if clicked then
+      state[key] = option.value
+      state.config_dirty = true
+
+      if key == "transfer_normalize" then
+        if option.value == "lufs_i" then
+          state.transfer_normalize_target = -16
+        elseif option.value ~= "off" then
+          state.transfer_normalize_target = -1
+        end
+      end
+    end
+
+    if index < #options then
+      ImGui.SameLine(ctx, 0, 6)
+    end
+  end
+end
+
+function prompt_transfer_directory()
+  local initial = state.transfer_dir or DEFAULT_TRANSFER_DIR
+  local chosen = nil
+
+  if type(reaper.JS_Dialog_BrowseForFolder) == "function" then
+    local ok, accepted, path = pcall(
+      reaper.JS_Dialog_BrowseForFolder,
+      translate_ui_text("选择 Transfer 输出目录"),
+      initial
+    )
+
+    if ok and accepted and accepted ~= 0 then
+      chosen = path
+    end
+  end
+
+  if not chosen then
+    local ok, input = reaper.GetUserInputs(
+      "选择 Transfer 输出目录",
+      1,
+      "输出目录:,extrawidth=420",
+      initial
+    )
+
+    if not ok then
+      return
+    end
+
+    chosen = input
+  end
+
+  chosen = normalize_slashes(trim(chosen or ""))
+
+  if chosen == "" then
+    set_status("请选择有效的输出目录", true)
+    return
+  end
+
+  if path_key(chosen) == path_key(initial) then
+    set_status("输出目录没有变化")
+    return
+  end
+
+  if reaper.RecursiveCreateDirectory(chosen, 0) <= 0
+    and not directory_exists(chosen) then
+    set_status("无法创建输出目录", true)
+    return
+  end
+
+  state.transfer_dir = chosen
+  state.config_dirty = true
+  set_status("已更新 Transfer 输出目录")
+end
+
+function draw_transfer_settings_content()
+  settings_section_title(
+    "输出目录",
+    "Transfer 使用独立目录，不修改源素材。"
+  )
+
+  ImGui.SetNextItemWidth(ctx, -1)
+  local changed
+  changed, state.transfer_dir = ImGui.InputText(
+    ctx,
+    "输出目录##transfer_dir",
+    state.transfer_dir or DEFAULT_TRANSFER_DIR
+  )
+
+  if changed then
+    state.transfer_dir = normalize_slashes(state.transfer_dir)
+    state.config_dirty = true
+  end
+
+  if dark_button("更改输出目录…", 150) then
+    prompt_transfer_directory()
+  end
+
+  ImGui.SameLine(ctx, 0, 6)
+
+  if dark_button("打开输出目录", 140) then
+    local directory = state.transfer_dir or DEFAULT_TRANSFER_DIR
+    reaper.RecursiveCreateDirectory(directory, 0)
+    open_folder(directory)
+  end
+
+  ImGui.SameLine(ctx, 0, 6)
+
+  if dark_button("恢复默认输出目录", 170) then
+    state.transfer_dir = DEFAULT_TRANSFER_DIR
+    state.config_dirty = true
+  end
+
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "命名模板",
+    "可用字段：{name} {category} {subcategory} {library} {index} {date} {region}"
+  )
+
+  ImGui.SetNextItemWidth(ctx, -1)
+  changed, state.transfer_template = ImGui.InputText(
+    ctx,
+    "命名模板##transfer_template",
+    state.transfer_template or "{name}"
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  changed, state.transfer_lowercase = ImGui.Checkbox(
+    ctx,
+    "文件名转为小写",
+    state.transfer_lowercase
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "格式与范围",
+    "当前素材可导出波形选区；批量导出始终使用每个完整文件。"
+  )
+
+  transfer_choice("导出范围", "transfer_scope", {
+    { value = "selection", label = "当前选区" },
+    { value = "full", label = "完整文件" },
+  })
+
+  ImGui.TextDisabled(ctx, "没有有效选区时自动使用完整文件")
+
+  transfer_choice("输出格式", "transfer_format", {
+    { value = "wav24", label = "WAV · 24-bit PCM", width = 170 },
+    { value = "flac", label = "FLAC · REAPER 默认", width = 190 },
+  })
+
+  transfer_choice("采样率", "transfer_sample_rate", {
+    { value = "source", label = "跟随源文件", width = 120 },
+    { value = "44100", label = "44.1 kHz", width = 92 },
+    { value = "48000", label = "48 kHz", width = 86 },
+    { value = "96000", label = "96 kHz", width = 86 },
+    { value = "192000", label = "192 kHz", width = 92 },
+  })
+
+  transfer_choice("声道", "transfer_channels", {
+    { value = "source", label = "跟随源声道", width = 120 },
+    { value = "mono", label = "单声道", width = 92 },
+    { value = "stereo", label = "立体声", width = 92 },
+  })
+
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "处理",
+    "当前 Pitch、Rate、Gain、Reverse 与 Preserve Pitch 会写入导出文件。"
+  )
+
+  ImGui.SetNextItemWidth(ctx, 230)
+  changed, state.transfer_fade_in_ms = ImGui.SliderDouble(
+    ctx,
+    "淡入",
+    state.transfer_fade_in_ms,
+    0,
+    500,
+    "%.0f ms"
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  ImGui.SetNextItemWidth(ctx, 230)
+  changed, state.transfer_fade_out_ms = ImGui.SliderDouble(
+    ctx,
+    "淡出",
+    state.transfer_fade_out_ms,
+    0,
+    2000,
+    "%.0f ms"
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  transfer_choice("标准化", "transfer_normalize", {
+    { value = "off", label = "关闭标准化", width = 112 },
+    { value = "peak", label = "Peak", width = 82 },
+    { value = "true_peak", label = "True Peak", width = 102 },
+    { value = "lufs_i", label = "LUFS-I", width = 90 },
+  })
+
+  if state.transfer_normalize ~= "off" then
+    ImGui.SetNextItemWidth(ctx, 230)
+    changed, state.transfer_normalize_target = ImGui.SliderDouble(
+      ctx,
+      "目标值",
+      state.transfer_normalize_target,
+      state.transfer_normalize == "lufs_i" and -36 or -12,
+      0,
+      state.transfer_normalize == "lufs_i" and "%.1f LUFS" or "%.1f dBFS"
+    )
+
+    if changed then
+      state.config_dirty = true
+    end
+  end
+
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "完成行为",
+    "自动递增是默认且最安全的重名策略。"
+  )
+
+  transfer_choice("重名策略", "transfer_collision", {
+    { value = "increment", label = "自动递增", width = 110 },
+    { value = "skip", label = "跳过已有文件", width = 132 },
+    { value = "overwrite", label = "允许覆盖", width = 108 },
+  })
+
+  changed, state.transfer_insert_after = ImGui.Checkbox(
+    ctx,
+    "导出后插入 REAPER",
+    state.transfer_insert_after
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  ImGui.TextDisabled(
+    ctx,
+    "Transfer 只处理源素材与当前 Pitch / Rate / Gain / Reverse / Preserve Pitch，不经过工程轨道或 Master FX。"
+  )
+end
+
+function draw_transfer_popup()
+  if state.transfer_popup_requested > 0 then
+    state.transfer_popup_requested = state.transfer_popup_requested - 1
+
+    if state.transfer_popup_requested == 0 then
+      ImGui.OpenPopup(ctx, "Transfer 导出##transfer")
+    end
+  end
+
+  ImGui.SetNextWindowSize(
+    ctx,
+    820,
+    760,
+    ImGui.Cond_Appearing
+  )
+
+  if not ImGui.BeginPopupModal(
+    ctx,
+    "Transfer 导出##transfer",
+    true,
+    ImGui.WindowFlags_NoScrollbar
+  ) then
+    return
+  end
+
+  local width, height = ImGui.GetContentRegionAvail(ctx)
+  local footer_height = 72
+
+  if ImGui.BeginChild(
+    ctx,
+    "transfer_settings_scroll",
+    width,
+    height - footer_height,
+    0,
+    ImGui.WindowFlags_AlwaysVerticalScrollbar
+  ) then
+    draw_transfer_settings_content()
+
+    ImGui.Separator(ctx)
+    settings_section_title("最近输出", "")
+
+    if state.transfer_last_output ~= "" then
+      ImGui.TextWrapped(ctx, state.transfer_last_output)
+
+      if dark_button("打开输出目录", 140) then
+        open_folder(dirname(state.transfer_last_output))
+      end
+    else
+      ImGui.TextDisabled(ctx, "尚未执行 Transfer")
+    end
+
+    if state.transfer_last_error ~= "" then
+      ImGui.TextColored(ctx, COLOR.error, state.transfer_last_error)
+    end
+  end
+
+  ImGui.EndChild(ctx)
+  ImGui.Separator(ctx)
+
+  local asset = selected_asset()
+  local selected = selected_assets()
+
+  if dark_button("导出当前素材", 160) then
+    run_transfer(asset and { asset } or {}, false)
+  end
+
+  ImGui.SameLine(ctx, 0, 8)
+
+  if dark_button(
+    string.format(
+      "%s (%d)",
+      translate_ui_text("导出所选素材"),
+      #selected
+    ),
+    190
+  ) then
+    run_transfer(selected, true)
+  end
+
+  ImGui.SameLine(ctx, 0, 8)
+
+  if dark_button("关闭", 100) then
+    save_config()
+    ImGui.CloseCurrentPopup(ctx)
+  end
+
+  ImGui.EndPopup(ctx)
+end
+
+function draw_settings_transfer()
+  draw_transfer_settings_content()
 end
 
 function draw_settings_appearance()
@@ -16954,6 +18282,7 @@ function draw_settings_popup()
     settings_nav_item("general", "常规", "语言、面板与插入")
     settings_nav_item("appearance", "外观", "预设、颜色与 Artwork")
     settings_nav_item("waveforms", "波形", "精度、瞬态与响度")
+    settings_nav_item("transfer", "传输", "处理、命名与导出")
     settings_nav_item("maintenance", "维护", "环境、缓存与重建")
     settings_nav_item("about", "关于", "版本、版权与项目主页")
   end
@@ -16973,6 +18302,7 @@ function draw_settings_popup()
       general = "常规",
       appearance = "外观",
       waveforms = "波形",
+      transfer = "Transfer 设置",
       maintenance = "维护",
       about = "关于",
     }
@@ -16990,6 +18320,8 @@ function draw_settings_popup()
       draw_settings_appearance()
     elseif state.settings_tab == "waveforms" then
       draw_settings_waveforms()
+    elseif state.settings_tab == "transfer" then
+      draw_settings_transfer()
     elseif state.settings_tab == "maintenance" then
       draw_settings_maintenance()
     elseif state.settings_tab == "about" then
@@ -17061,6 +18393,16 @@ function keyboard()
       false
     ) then
     start_scan("增量扫描")
+    return
+  end
+
+  if ctrl
+    and ImGui.IsKeyPressed(
+      ctx,
+      ImGui.Key_T,
+      false
+    ) then
+    state.transfer_popup_requested = 2
     return
   end
 
@@ -17603,6 +18945,7 @@ function draw_main()
 
     draw_help_popup()
     draw_transient_detection_popup()
+    draw_transfer_popup()
     draw_settings_popup()
     keyboard()
     process_external_drag()

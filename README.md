@@ -3,22 +3,44 @@
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.6 Stable
+# PsyReaSFX 0.7 Beta 1
 
-PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
+PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
+collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.6.21  
-**Release stage:** Stable
+**Package version:** 0.7.0-beta.1  
+**Release stage:** Beta
 
 <p align="center">
-  <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
+  <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
+
+## 0.7 Transfer
+
+The first 0.7 build adds a non-destructive Transfer panel for turning the
+current file, its waveform selection, or multiple selected assets into new
+audio files.
+
+- Name files with `{name}`, `{category}`, `{subcategory}`, `{library}`,
+  `{index}`, `{date}`, and `{region}` tokens.
+- Export WAV 24-bit PCM or FLAC at the source, 44.1, 48, 96, or 192 kHz.
+- Keep source channels, or convert to mono or stereo.
+- Apply the current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings.
+- Add render fades and Peak, True Peak, or LUFS-I normalization.
+- Increment, skip, or explicitly overwrite name collisions.
+- Optionally insert each completed file back into REAPER.
+
+Open Transfer from the lower toolbar or press `Ctrl+T`.
+
+> Beta 1 renders the source media dry. Track FX, sends, and Master FX are not
+> included. Batch Transfer uses each complete source file; waveform selection
+> is available for the current asset.
 
 ## Workspace preview
 
-The compact workspace keeps library navigation, inline waveforms, Artwork,
-metadata, and the large audition waveform visible in one window.
+The unified workspace keeps library navigation, inline waveforms, Artwork,
+metadata, and the multichannel audition waveform in one responsive window.
 
 ### Focus mode
 
@@ -29,68 +51,43 @@ metadata, and the large audition waveform visible in one window.
 Focus mode collapses both side panels so the result table and detailed waveform
 can use the full REAPER workspace.
 
-## Documentation
-
-### 简体中文
-
-- [用户使用说明书](docs/USER_GUIDE_zh-CN.md)
-- [更新日志](docs/CHANGELOG_zh-CN.md)
-
-### English
-
-- [User Guide](docs/USER_GUIDE_en-US.md)
-- [Changelog](docs/CHANGELOG_en-US.md)
-
 ## Installation with ReaPack
 
-Import this repository URL in `Extensions > ReaPack > Import repositories...`:
+Import this repository URL once in
+`Extensions > ReaPack > Import repositories...`:
 
 ```text
 https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
-Synchronize ReaPack, search for `PsyReaSFX`, then install it. Future versions
-can be installed from ReaPack's package browser without downloading a new ZIP.
+Synchronize ReaPack, search for `PsyReaSFX`, then install it. Future updates
+are available directly from ReaPack.
 
-ReaImGui is required; SWS Extension is strongly recommended.
+ReaImGui is required. SWS Extension is strongly recommended and is required
+for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_6_21_Stable.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_0_Beta_1.lua` from REAPER's Action List.
 
-## Release package structure
+## Documentation
+
+- [English User Guide](docs/USER_GUIDE_en-US.md)
+- [English Changelog](docs/CHANGELOG_en-US.md)
+- [简体中文用户使用说明书](docs/USER_GUIDE_zh-CN.md)
+- [简体中文更新日志](docs/CHANGELOG_zh-CN.md)
+
+## Package structure
 
 ```text
-PsyReaSFX_v0_6_21_Stable.lua
+PsyReaSFX_v0_7_0_Beta_1.lua
+README.md
 README_zh-CN.md
 index.xml
-README.md
-assets/
-  screenshots/
-    compact-workspace.png
-    focus-workspace.png
+assets/screenshots/
 docs/
-  USER_GUIDE_zh-CN.md
-  USER_GUIDE_en-US.md
-  CHANGELOG_zh-CN.md
-  CHANGELOG_en-US.md
 ```
 
-The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
-
-
-## 0.6 Stable highlights
-
-- Consolidates the product around one compact, flat, responsive interface while
-  keeping columns, navigation, metadata, focus mode, and panel height adjustable.
-- Removes outer frames from time metrics and Pitch, Rate, and Gain controls;
-  interactive icon buttons retain their consistent bordered treatment.
-- Increases the lower-panel safety reserve so the icon row remains visible in
-  short windows.
-- Adds the official `index.xml` ReaPack channel for one-time installation and
-  future in-app updates.
-- Aligns time metrics, selection context, and operation status to one shared
-  text baseline in the lower preview workspace.
-- Keeps the scrollbar-free result table and complete `Shift + mouse wheel`
-  navigation through every overflowing field.
-- Retains the RC6 `RWF3` mono, stereo, and multichannel waveform lanes.
+PsyReaSFX 0.6 Stable remains the recommended fallback while 0.7 Transfer is
+being tested against different REAPER, ReaImGui, SWS, file-format, and project
+configurations.
