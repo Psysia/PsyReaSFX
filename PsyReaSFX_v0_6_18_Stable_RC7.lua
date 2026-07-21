@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.17-rc6
+-- @version 0.6.18-rc7
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -50,9 +50,10 @@
 --   - 瞬态检测详细参数、批次撤销和一键清除自动建议
 --   - 选中素材按需计算 LUFS-I、LUFS-M/S max 与 True Peak
 --   - 大波形选区内置拖拽胶囊，可直接拖到 REAPER 编排区
---   - 结果表使用悬停浮动横向导航，不再常驻整行系统滚动条
+--   - 结果表不绘制横向滚动条，使用 Shift + 滚轮查看溢出字段
 --   - RWF3 高精度缓存保留单声道、立体声及最多八声道独立波形
 --   - 底部试听区统一为轻量 Studio Strip 小图标工具条
+--   - 预览摘要与状态移入指标行，下方面板按实际内容收口
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -61,7 +62,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.17 Stable RC6"
+local VERSION = "0.6.18 Stable RC7"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -199,7 +200,7 @@ local AUDIO_EXT = {
 
 local ROW_H = 42
 local HEADER_H = 28
-local BOTTOM_MIN_H = 278
+local BOTTOM_MIN_H = 220
 local BOTTOM_MAX_H = 520
 local BOTTOM_SPLITTER_H = 14
 
@@ -524,12 +525,10 @@ local state = {
   -- 高精度大波形可保留每个源声道的独立峰值。
   multichannel_waveform = true,
 
-  -- 结果横向导航使用悬停浮层；原生滚动条被压缩为不可见的 1 px。
+  -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
   results_scroll_max_x = 0,
   results_scroll_request = nil,
-  results_scroll_overlay_until = 0,
-  results_scroll_drag = nil,
 
   wave_cache_dir = DEFAULT_WAVE_CACHE_DIR,
 
@@ -804,8 +803,8 @@ I18N_EN = {
   ["← 全部素材"] = "← All sounds",
   ["加入所选"] = "Add selected",
   ["移除所选"] = "Remove selected",
-  ["右键表头选择字段；拖动分隔线调整列宽"] =
-    "Right-click the header to choose fields; drag dividers to resize columns",
+  ["右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看"] =
+    "Right-click the header to choose fields; drag dividers to resize; Shift+wheel to pan horizontally",
   ["扫描中"] = "Scanning",
   ["准备下一项"] = "Preparing next item",
   ["检查现有缓存"] = "Checking existing cache",
@@ -1160,8 +1159,8 @@ I18N_EN = {
   ["已应用 Forge 紧凑列表预设"] = "Forge compact list preset applied",
   ["下方大波形单击定位，拖动建立并试听选区。"] =
     "Click the large waveform to seek; drag to create and preview a selection.",
-  ["表头固定置顶；右键表头选择字段；拖动分隔线调整列宽。"] =
-    "The header remains pinned. Right-click it to choose fields and drag dividers to resize columns.",
+  ["表头固定置顶；右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看。"] =
+    "The header remains pinned. Right-click it to choose fields, drag dividers to resize, and use Shift+wheel to pan horizontally.",
   ["列表：单击单选；Ctrl+单击追加或取消；"] =
     "List: click to select; Ctrl-click to add or remove;",
   ["Shift+单击连续选择；Ctrl+A 全选当前结果。"] =
@@ -10326,7 +10325,7 @@ function toolbar_separator(height)
 end
 
 function bottom_controls_reserve_height(width)
-  return width >= 760 and 104 or 146
+  return width >= 760 and 64 or 102
 end
 
 function draw_bottom_splitter(width, total_height)
@@ -11426,7 +11425,7 @@ function draw_sub_toolbar()
   ImGui.SameLine(ctx)
   ImGui.TextDisabled(
     ctx,
-    "右键表头选择字段；拖动分隔线调整列宽"
+    "右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看"
   )
 
   if state.scan then
@@ -12778,116 +12777,6 @@ function draw_result_row(
   row_popup(asset)
 end
 
-function draw_results_scroll_overlay(
-  x,
-  y,
-  width,
-  viewport_height,
-  scroll_x,
-  scroll_max
-)
-  if not scroll_max or scroll_max <= 0 then
-    state.results_scroll_drag = nil
-    return
-  end
-
-  local now = reaper.time_precise()
-  local mouse_x, mouse_y = ImGui.GetMousePos(ctx)
-  local list_hovered =
-    mouse_x >= x
-    and mouse_x <= x + width
-    and mouse_y >= y
-    and mouse_y <= y + viewport_height
-
-  if list_hovered then
-    state.results_scroll_overlay_until = now + 0.55
-  end
-
-  local visible =
-    list_hovered
-    or state.results_scroll_drag ~= nil
-    or now < (state.results_scroll_overlay_until or 0)
-
-  if not visible then
-    return
-  end
-
-  local track_margin = 10
-  local track_x0 = x + track_margin
-  local track_x1 = x + width - track_margin
-  local track_width = math.max(1, track_x1 - track_x0)
-  local content_width = width + scroll_max
-  local thumb_width = clamp(
-    track_width * width / math.max(width, content_width),
-    38,
-    track_width
-  )
-  local travel = math.max(1, track_width - thumb_width)
-  local thumb_x =
-    track_x0
-      + travel * clamp(scroll_x / scroll_max, 0, 1)
-  -- 导航贴在固定表头下沿，避免覆盖结果行或占用一整行高度。
-  local track_y = y - 5
-  local hit_y0 = track_y - 4
-  local hit_y1 = track_y + 6
-  local over_track =
-    mouse_x >= track_x0
-    and mouse_x <= track_x1
-    and mouse_y >= hit_y0
-    and mouse_y <= hit_y1
-
-  if over_track and ImGui.IsMouseClicked(ctx, 0) then
-    state.results_scroll_drag = {
-      offset =
-        mouse_x >= thumb_x
-          and mouse_x <= thumb_x + thumb_width
-          and (mouse_x - thumb_x)
-          or thumb_width * 0.5,
-    }
-  end
-
-  if state.results_scroll_drag then
-    if ImGui.IsMouseDown(ctx, 0) then
-      local desired_thumb = clamp(
-        mouse_x - state.results_scroll_drag.offset,
-        track_x0,
-        track_x0 + travel
-      )
-
-      state.results_scroll_request =
-        (desired_thumb - track_x0) / travel * scroll_max
-      state.results_scroll_overlay_until = now + 0.55
-    else
-      state.results_scroll_drag = nil
-    end
-  end
-
-  local draw_list = ImGui.GetWindowDrawList(ctx)
-  local alpha = list_hovered and 0x74 or 0x44
-
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    track_x0,
-    track_y,
-    track_x1,
-    track_y + 2,
-    rgba_with_alpha(COLOR.border, alpha),
-    1
-  )
-
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    thumb_x,
-    track_y - 1,
-    thumb_x + thumb_width,
-    track_y + 4,
-    state.results_scroll_drag
-      and COLOR.selected
-      or rgba_with_alpha(COLOR.dim, list_hovered and 0xD8 or 0xA0),
-    3
-  )
-end
-
 function draw_results()
   local width, height =
     ImGui.GetContentRegionAvail(ctx)
@@ -12943,7 +12832,7 @@ function draw_results()
     local child_hovered =
       mouse_x >= header_x
       and mouse_x <= header_x + viewport_width
-      and mouse_y >= header_y + HEADER_H
+      and mouse_y >= header_y
       and mouse_y <= header_y + height
     local wheel = ImGui.GetMouseWheel(ctx) or 0
     local mods = ImGui.GetKeyMods(ctx)
@@ -12952,12 +12841,10 @@ function draw_results()
       and wheel ~= 0
       and (mods & ImGui.Mod_Shift) ~= 0 then
       state.results_scroll_request = clamp(
-        state.results_scroll_x - wheel * 90,
+        state.results_scroll_x - wheel * 160,
         0,
         state.results_scroll_max_x
       )
-      state.results_scroll_overlay_until =
-        reaper.time_precise() + 0.75
     end
 
     if #state.results == 0 then
@@ -13057,15 +12944,6 @@ function draw_results()
     layout,
     header_x,
     header_x + viewport_width
-  )
-
-  draw_results_scroll_overlay(
-    header_x,
-    header_y + HEADER_H,
-    viewport_width,
-    math.max(1, height - HEADER_H),
-    state.results_scroll_x or 0,
-    state.results_scroll_max_x or 0
   )
 
   -- draw_column_splitters() temporarily repositions the cursor so the fixed
@@ -14337,6 +14215,47 @@ function draw_preview_controls(asset, available_width, hide_toggles, force_compa
   end
 end
 
+function preview_context_summary(asset)
+  local selection_text = translate_ui_text("完整文件")
+
+  if has_selection() and asset.duration > 0 then
+    local start_sec = asset.duration * state.region_start
+    local end_sec = asset.duration * state.region_end
+
+    selection_text = string.format(
+      "%.3f–%.3f s",
+      start_sec,
+      end_sec
+    )
+  end
+
+  local channel_text = translate_ui_text(
+    state.preview_channel_mode == "left"
+      and "左声道"
+      or state.preview_channel_mode == "right"
+        and "右声道"
+        or state.preview_channel_mode == "mono"
+          and "单声道"
+          or "原始"
+  )
+
+  local match_text =
+    state.loudness_match
+      and string.format(
+        "Match %+.1f dB",
+        state.preview_match_offset_db
+      )
+      or "Match Off"
+
+  return selection_text
+    .. string.format(
+      "  ·  R %d  ·  %s  ·  %s",
+      #asset_regions(asset),
+      channel_text,
+      match_text
+    )
+end
+
 function draw_time_metrics(asset)
   local current_seconds = 0
 
@@ -14378,6 +14297,28 @@ function draw_time_metrics(asset)
     string.format("×%.1f", 1 / wave_view_span()),
     false
   )
+
+  ImGui.SameLine(ctx, 0, 10)
+  ImGui.TextDisabled(ctx, preview_context_summary(asset))
+
+  ImGui.SameLine(ctx, 0, 12)
+
+  local status_text = tostring(state.status or "")
+
+  if state.layout_notice and state.layout_notice ~= "" then
+    status_text =
+      status_text ~= ""
+        and (status_text .. "  ·  " .. state.layout_notice)
+        or state.layout_notice
+  end
+
+  if status_text ~= "" then
+    ImGui.TextColored(
+      ctx,
+      state.status_error and COLOR.error or COLOR.success,
+      status_text
+    )
+  end
 end
 
 function draw_studio_parameters(asset, card_width, card_height)
@@ -14399,7 +14340,7 @@ function draw_studio_parameters(asset, card_width, card_height)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, 5)
+  ImGui.SameLine(ctx, 0, 8)
 
   local new_rate, rate_changed =
     draw_parameter_card(
@@ -14419,7 +14360,7 @@ function draw_studio_parameters(asset, card_width, card_height)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, 5)
+  ImGui.SameLine(ctx, 0, 8)
 
   local new_gain, gain_changed =
     draw_parameter_card(
@@ -14833,6 +14774,15 @@ function draw_bottom(asset)
       ctx,
       "选择一个音频查看波形和试听控制。"
     )
+
+    if state.status and state.status ~= "" then
+      ImGui.SameLine(ctx, 0, 12)
+      ImGui.TextColored(
+        ctx,
+        state.status_error and COLOR.error or COLOR.success,
+        state.status
+      )
+    end
     return
   end
 
@@ -14844,60 +14794,6 @@ function draw_bottom(asset)
   draw_time_metrics(asset)
   ImGui.Spacing(ctx)
   draw_control_deck(asset)
-
-  local selection_text =
-    translate_ui_text("完整文件")
-
-  if has_selection() and asset.duration > 0 then
-    local start_sec =
-      asset.duration * state.region_start
-
-    local end_sec =
-      asset.duration * state.region_end
-
-    selection_text = translate_ui_text(
-      string.format(
-        "选区 %.3f–%.3f 秒 / %.3f 秒",
-        start_sec,
-        end_sec,
-        end_sec - start_sec
-      )
-    )
-  end
-
-  local channel_text = translate_ui_text(
-    state.preview_channel_mode == "left"
-      and "左声道"
-      or state.preview_channel_mode == "right"
-        and "右声道"
-        or state.preview_channel_mode == "mono"
-          and "单声道"
-          or "原始"
-  )
-
-  local match_text =
-    state.loudness_match
-    and string.format(
-      "Match %+.1f dB",
-      state.preview_match_offset_db
-    )
-    or "Match Off"
-
-  local _, remaining_height =
-    ImGui.GetContentRegionAvail(ctx)
-
-  if remaining_height >= 16 then
-    ImGui.TextDisabled(
-      ctx,
-      selection_text
-        .. string.format(
-          "　|　Regions %d　|　%s　|　%s",
-          #asset_regions(asset),
-          channel_text,
-          match_text
-        )
-    )
-  end
 end
 
 ----------------------------------------------------------------
@@ -15509,7 +15405,7 @@ function draw_help_popup()
 
   ImGui.TextDisabled(
     ctx,
-    "表头固定置顶；右键表头选择字段；拖动分隔线调整列宽。"
+    "表头固定置顶；右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看。"
   )
 
   if dark_button("关闭", 90) then
@@ -17674,9 +17570,7 @@ function draw_main()
     local width, height =
       ImGui.GetContentRegionAvail(ctx)
 
-    local status_height = 26
-    local content_height =
-      math.max(170, height - status_height - 6)
+    local content_height = math.max(170, height)
 
     local render_sidebar = state.sidebar_visible
     local render_inspector = state.inspector_visible
@@ -17884,26 +17778,6 @@ function draw_main()
       end
 
       end_module()
-    end
-
-    local status_color =
-      state.status_error
-        and COLOR.error
-        or COLOR.success
-
-    ImGui.TextColored(
-      ctx,
-      status_color,
-      state.status
-    )
-
-    if state.layout_notice ~= "" then
-      ImGui.SameLine(ctx)
-      ImGui.TextColored(
-        ctx,
-        COLOR.warning,
-        "　" .. state.layout_notice
-      )
     end
 
     draw_help_popup()

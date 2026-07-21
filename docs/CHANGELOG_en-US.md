@@ -1,5 +1,24 @@
 # PsyReaSFX Changelog
 
+## 0.6.18 Stable RC7
+
+### Bottom workspace and layout
+
+- Moved file/selection context, Region count, channel mode, Match state, and the
+  current status into the metric row.
+- Removed the separate summary row, green status row, and their reserved space.
+- Recalculated the lower panel from actual content so the waveform fills the
+  released area in both Forge Compact and Aether Standard.
+- Increased parameter-card spacing while retaining equal button and control
+  heights.
+
+### Horizontal result navigation
+
+- Removed RC6's hover overlay navigator.
+- Kept `Shift + mouse wheel` over both the pinned header and result rows.
+- Clamped horizontal movement from the first position through the rightmost
+  field while keeping the pinned header synchronized.
+
 ## 0.6.17 Stable RC6
 
 ### Result navigation

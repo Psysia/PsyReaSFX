@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.17 Stable RC6 User Guide
+# PsyReaSFX 0.6.18 Stable RC7 User Guide
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain pre
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_17_Stable_RC6.lua`.
+4. Load `PsyReaSFX_v0_6_18_Stable_RC7.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -168,7 +168,11 @@ Filters can be combined in one query.
 
 The header remains pinned while the result list scrolls. Drag column dividers to resize them; double-click a divider to restore default widths. Right-click the header to show or hide waveform, filename, status, description, category, duration, format, library, path, and other fields.
 
-When the combined field width exceeds the center workspace, a slim overlay navigator appears while the result table is hovered or dragged. It does not reserve a permanent row. Drag the thumb or use `Shift + mouse wheel`; the pinned header follows the same horizontal position. Configured widths are preserved instead of compressing every column to fit the current window.
+When the combined field width exceeds the center workspace, no horizontal scrollbar is drawn. Hover the pinned header or any result row and use `Shift + mouse wheel`. Scrolling is clamped from the first position through the rightmost field, and the pinned header follows the same horizontal position.
+
+### Compact preview information
+
+The file or selection range, Region count, channel-monitoring mode, loudness-match state, and current operation status share the metric row. The separate summary and green status rows have been removed, allowing the waveform to use the released height.
 
 ### Separate channel lanes
 

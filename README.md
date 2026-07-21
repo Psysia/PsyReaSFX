@@ -1,9 +1,9 @@
-# PsyReaSFX 0.6.17 Stable RC6
+# PsyReaSFX 0.6.18 Stable RC7
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC6)
+**Release stage:** 0.6 stable candidate (RC7)
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
@@ -37,12 +37,12 @@ can use the full REAPER workspace.
 
 ## Installation
 
-Load `PsyReaSFX_v0_6_17_Stable_RC6.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
+Load `PsyReaSFX_v0_6_18_Stable_RC7.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_17_Stable_RC6.lua
+PsyReaSFX_v0_6_18_Stable_RC7.lua
 README.md
 assets/
   screenshots/
@@ -58,15 +58,15 @@ docs/
 The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
 
 
-## 0.6.17 Stable RC6 highlights
+## 0.6.18 Stable RC7 highlights
 
-- Replaces the permanent full-width result scrollbar with a slim overlay that
-  appears while the result table is hovered, dragged, or Shift-scrolled.
-- Keeps the fixed header synchronized and preserves every configured column
-  width without dedicating a full row to navigation.
-- Adds the `RWF3` high-resolution cache format with separate waveform lanes for
-  mono, stereo (`L` / `R`), and up to eight-channel source files (`CH 1–8`).
-- Keeps existing `RWF2` list thumbnails compatible; only high-resolution channel
-  previews are generated again on demand.
-- Consolidates preview actions, Pitch, Rate, Gain, and optional monitoring
-  switches into a lightweight studio strip with smaller vector icons.
+- Removes the result-table scrollbar entirely. `Shift + mouse wheel` pans every
+  overflowing column from the first position through the rightmost field.
+- Moves file/selection context, Region count, channel mode, loudness-match state,
+  and operation status into the compact metric row.
+- Removes the separate bottom status row and its reserved window area.
+- Sizes the lower preview panel from its actual header, waveform, metric row, and
+  Studio Strip content so Forge and Aether layouts no longer leave a blank block.
+- Keeps action buttons and Pitch, Rate, and Gain controls at the same height while
+  increasing spacing between parameter cards.
+- Retains the RC6 `RWF3` mono, stereo, and multichannel waveform lanes.
