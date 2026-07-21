@@ -3,13 +3,13 @@
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7 Beta 1
+# PsyReaSFX 0.7.1 Beta 2
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.0-beta.1  
+**Package version:** 0.7.1-beta.2  
 **Release stage:** Beta
 
 <p align="center">
@@ -32,6 +32,14 @@ audio files.
 - Optionally insert each completed file back into REAPER.
 
 Open Transfer from the lower toolbar or press `Ctrl+T`.
+
+## System metadata filtering
+
+Beta 2 no longer indexes macOS AppleDouble `._*` sidecars or common metadata
+folders such as `__MACOSX`, `.AppleDouble`, and `@eaDir`. These files can keep
+an audio extension while containing no playable audio. Existing false entries
+are ignored automatically when the new version opens; source files are never
+deleted.
 
 > Beta 1 renders the source media dry. Track FX, sends, and Master FX are not
 > included. Batch Transfer uses each complete source file; waveform selection
@@ -68,7 +76,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_0_Beta_1.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_1_Beta_2.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -80,7 +88,7 @@ Load `PsyReaSFX_v0_7_0_Beta_1.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_0_Beta_1.lua
+PsyReaSFX_v0_7_1_Beta_2.lua
 README.md
 README_zh-CN.md
 index.xml

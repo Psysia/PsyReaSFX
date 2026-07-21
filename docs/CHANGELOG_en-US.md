@@ -1,5 +1,18 @@
 # PsyReaSFX Changelog
 
+## 0.7.1 Beta 2
+
+### Cross-platform metadata filtering
+
+- Excludes macOS AppleDouble files whose names begin with `._`, even when the
+  sidecar keeps a supported audio extension such as `.wav`.
+- Skips common metadata directories including `__MACOSX`, `.AppleDouble`,
+  `.Spotlight-V100`, `.Trashes`, and `@eaDir`.
+- Automatically ignores false entries already stored in `index_v3.tsv` and
+  rewrites the clean index during normal autosave.
+- Reports the number of ignored system files without deleting any source or
+  sidecar files from disk.
+
 ## 0.7.0 Beta 1
 
 ### Transfer workflow

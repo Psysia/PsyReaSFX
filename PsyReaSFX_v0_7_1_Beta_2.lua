@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.0-beta.1
+-- @version 0.7.1-beta.2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -64,6 +64,8 @@
 --   - 导出任务使用隔离临时对象，并在完成后恢复工程与渲染设置
 --   - 支持递增、跳过与明确确认后的覆盖策略
 --   - 可在导出后自动插入 REAPER，并记录最近传输结果
+--   - 扫描时排除 macOS AppleDouble 与常见系统元数据目录
+--   - 启动时自动清理旧索引中误收录的 `._*` 旁车文件
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -72,7 +74,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.0 Beta 1"
+local VERSION = "0.7.1 Beta 2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1423,6 +1425,14 @@ I18N_PATTERNS_EN = {
     "Scan complete: %1 files, %2 removed, %3 s",
   },
   {
+    "^扫描完成：(%d+) 个音频，移除 (%d+) 个，忽略 (%d+) 个系统文件，([%d%.]+) 秒$",
+    "Scan complete: %1 files, %2 removed, %3 system files ignored, %4 s",
+  },
+  {
+    "^已从索引自动忽略 (%d+) 个系统元数据文件$",
+    "Ignored %1 system metadata files from the index",
+  },
+  {
     "^导入完成：(%d+) 个可用，(%d+) 个失败，([%d%.]+) 秒$",
     "Import complete: %1 available, %2 failed, %3 s",
   },
@@ -2244,8 +2254,40 @@ function extension(path)
   return ((path or ""):match("%.([^%.]+)$") or ""):lower()
 end
 
+function is_ignored_directory_name(name)
+  local normalized = safe_lower(trim(name or ""))
+
+  return normalized == "__macosx"
+    or normalized == ".appledouble"
+    or normalized == ".spotlight-v100"
+    or normalized == ".trashes"
+    or normalized == "@eadir"
+end
+
+function is_ignored_media_path(path)
+  local name = basename(path or "")
+
+  -- macOS writes AppleDouble resource-fork metadata as `._filename` on
+  -- filesystems that cannot store the resource fork natively. The sidecar
+  -- often keeps the original `.wav` extension but is not playable audio.
+  if name:sub(1, 2) == "._" then
+    return true
+  end
+
+  local normalized = safe_lower(normalize_slashes(path or ""))
+
+  for segment in normalized:gmatch("[^/\\]+") do
+    if is_ignored_directory_name(segment) then
+      return true
+    end
+  end
+
+  return false
+end
+
 function is_audio_file(path)
-  return AUDIO_EXT[extension(path)] == true
+  return not is_ignored_media_path(path)
+    and AUDIO_EXT[extension(path)] == true
 end
 
 function safe_lower(value)
@@ -4964,6 +5006,8 @@ function load_database()
 
   local headers = split_tsv(header_line)
 
+  local ignored = 0
+
   for line in file:lines() do
     local values = split_tsv(line)
     local asset = {}
@@ -4972,7 +5016,8 @@ function load_database()
       asset[field] = values[index] or ""
     end
 
-    if asset.path and asset.path ~= "" then
+    if asset.path and asset.path ~= ""
+      and not is_ignored_media_path(asset.path) then
       asset.duration = tonumber(asset.duration) or 0
       asset.channels = tonumber(asset.channels) or 0
       asset.sample_rate = tonumber(asset.sample_rate) or 0
@@ -5000,10 +5045,22 @@ function load_database()
       asset.last_used = tonumber(asset.last_used) or 0
 
       add_or_update_asset(asset)
+    elseif asset.path and asset.path ~= "" then
+      ignored = ignored + 1
     end
   end
 
   file:close()
+
+  if ignored > 0 then
+    state.db_dirty = true
+    set_status(
+      string.format(
+        "已从索引自动忽略 %d 个系统元数据文件",
+        ignored
+      )
+    )
+  end
 end
 
 function save_database()
@@ -6478,6 +6535,7 @@ function start_scan(reason, roots_override)
     current = nil,
     seen = {},
     files = 0,
+    ignored = 0,
     directories = 0,
     new_assets = {},
     started = reaper.time_precise(),
@@ -6582,14 +6640,26 @@ function finish_scan()
       )
     )
   else
-    set_status(
-      string.format(
-        "扫描完成：%d 个音频，移除 %d 个，%.1f 秒",
-        scan.files,
-        removed,
-        reaper.time_precise() - scan.started
+    if scan.ignored > 0 then
+      set_status(
+        string.format(
+          "扫描完成：%d 个音频，移除 %d 个，忽略 %d 个系统文件，%.1f 秒",
+          scan.files,
+          removed,
+          scan.ignored,
+          reaper.time_precise() - scan.started
+        )
       )
-    )
+    else
+      set_status(
+        string.format(
+          "扫描完成：%d 个音频，移除 %d 个，%.1f 秒",
+          scan.files,
+          removed,
+          reaper.time_precise() - scan.started
+        )
+      )
+    end
   end
 
   state.results_dirty = true
@@ -6634,7 +6704,9 @@ function process_scan()
         local path =
           join_path(dir.path, filename)
 
-        if is_audio_file(path) then
+        if is_ignored_media_path(path) then
+          scan.ignored = scan.ignored + 1
+        elseif is_audio_file(path) then
           local key = path_key(path)
 
           if not scan.seen[key] then
@@ -6671,12 +6743,14 @@ function process_scan()
       if subdir then
         dir.sub_index = dir.sub_index + 1
 
-        scan.dirs[#scan.dirs + 1] = {
-          path = join_path(dir.path, subdir),
-          file_index = 0,
-          sub_index = 0,
-          stage = "files",
-        }
+        if not is_ignored_directory_name(subdir) then
+          scan.dirs[#scan.dirs + 1] = {
+            path = join_path(dir.path, subdir),
+            file_index = 0,
+            sub_index = 0,
+            stage = "files",
+          }
+        end
       else
         scan.current = nil
       end

@@ -1,4 +1,4 @@
-# PsyReaSFX 0.7 Beta 1 User Guide (package 0.7.0-beta.1)
+# PsyReaSFX 0.7.1 Beta 2 User Guide (package 0.7.1-beta.2)
 
 ## 1. Purpose
 
@@ -442,6 +442,9 @@ The Maintenance tab can clear waveform caches, reset interface settings, rebuild
 
 Common issues:
 
+- Rows named `._filename.wav` show no waveform: these are macOS AppleDouble
+  metadata sidecars, not audio files. Beta 2 filters them during scanning and
+  removes them from the loaded index automatically without deleting disk files.
 - Waveforms are slow on first display: allow the visible-row cache to finish or run high-resolution precache.
 - Precise waveform seeking does not work: install or update SWS.
 - Drag transfer fails: release the pointer over the REAPER arrange view.
@@ -450,4 +453,4 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.0 Beta 1 starts the Transfer stage. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.1 Beta 2 continues the Transfer stage and fixes false audio entries from cross-platform metadata sidecars. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
