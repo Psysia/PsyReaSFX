@@ -1,9 +1,15 @@
-# PsyReaSFX 0.6.20 Stable RC9
+<p align="right">
+  <a href="README.md"><img src="https://img.shields.io/badge/Language-English-2f81f7" alt="English"></a>
+  <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
+</p>
+
+# PsyReaSFX 0.6 Stable
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC9)
+**Package version:** 0.6.21  
+**Release stage:** Stable
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
@@ -50,12 +56,13 @@ ReaImGui is required; SWS Extension is strongly recommended.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_6_20_Stable_RC9.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_6_21_Stable.lua` from REAPER's Action List.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_20_Stable_RC9.lua
+PsyReaSFX_v0_6_21_Stable.lua
+README_zh-CN.md
 index.xml
 README.md
 assets/
@@ -72,7 +79,7 @@ docs/
 The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
 
 
-## 0.6.20 Stable RC9 highlights
+## 0.6 Stable highlights
 
 - Consolidates the product around one compact, flat, responsive interface while
   keeping columns, navigation, metadata, focus mode, and panel height adjustable.
@@ -82,6 +89,8 @@ The user guide and changelog are maintained as separate bilingual documents, whi
   short windows.
 - Adds the official `index.xml` ReaPack channel for one-time installation and
   future in-app updates.
+- Aligns time metrics, selection context, and operation status to one shared
+  text baseline in the lower preview workspace.
 - Keeps the scrollbar-free result table and complete `Shift + mouse wheel`
   navigation through every overflowing field.
 - Retains the RC6 `RWF3` mono, stereo, and multichannel waveform lanes.

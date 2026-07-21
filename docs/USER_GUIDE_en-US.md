@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.20 Stable RC9 User Guide
+# PsyReaSFX 0.6 Stable User Guide (package 0.6.21)
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_20_Stable_RC9.lua`.
+4. Load `PsyReaSFX_v0_6_21_Stable.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -403,4 +403,4 @@ Common issues:
 
 ## 21. Development stage
 
-The primary 0.6 feature set is complete. Version 0.6.20 RC9 continues stabilization, unified-interface validation, and ReaPack update-channel testing. After blocking issues are cleared, the project can publish 0.6 Stable and then enter the 0.7 Transfer stage.
+Package 0.6.21 is the formal 0.6 Stable release. Further 0.6.x builds are reserved for necessary stability fixes; new features move to the 0.7 Transfer stage.

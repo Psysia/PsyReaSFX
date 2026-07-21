@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.20-rc9
+-- @version 0.6.21
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -57,6 +57,7 @@
 --   - 放宽 Studio Strip 参数卡间距，并压缩重复的长状态文件名
 --   - 统一为单一 PsyReaSFX 布局，移除旧多预设维护分支
 --   - 时间指标与参数控制去除外框，仅图标按钮保留边框
+--   - 0.6 Stable：底部指标、摘要与状态统一文字基线
 --   - 预览摘要与状态移入指标行，下方面板按实际内容收口
 --
 --   必需：ReaImGui 0.10+
@@ -66,7 +67,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.20 Stable RC9"
+local VERSION = "0.6.21 Stable"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -10044,6 +10045,29 @@ function metric_chip(label, value, accent)
   )
 end
 
+function inline_metric_text(text, color, maximum_width)
+  text = translate_ui_text(tostring(text or ""))
+  maximum_width = math.max(1, tonumber(maximum_width) or 1)
+
+  local fitted = fit_text_to_width(text, maximum_width - 4)
+  local text_width =
+    select(1, ImGui.CalcTextSize(ctx, fitted)) or 0
+  local width = math.min(maximum_width, text_width + 4)
+  local height = 22
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local draw_list = ImGui.GetWindowDrawList(ctx)
+
+  ImGui.Dummy(ctx, width, height)
+
+  ImGui.DrawList_AddText(
+    draw_list,
+    x + 2,
+    y + 4,
+    color,
+    fitted
+  )
+end
+
 function draw_parameter_card(
   id,
   label,
@@ -14239,12 +14263,10 @@ function draw_time_metrics(asset)
         280
       )
 
-    ImGui.TextDisabled(
-      ctx,
-      fit_text_to_width(
-        preview_context_summary(asset),
-        summary_width
-      )
+    inline_metric_text(
+      preview_context_summary(asset),
+      COLOR.dim,
+      summary_width
     )
 
     summary_drawn = true
@@ -14288,13 +14310,10 @@ function draw_time_metrics(asset)
       select(1, ImGui.GetContentRegionAvail(ctx))
 
     if remaining_width > 90 then
-      ImGui.TextColored(
-        ctx,
+      inline_metric_text(
+        status_text,
         state.status_error and COLOR.error or COLOR.success,
-        fit_text_to_width(
-          status_text,
-          math.max(70, remaining_width - 8)
-        )
+        math.max(70, remaining_width - 8)
       )
     end
   end

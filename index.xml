@@ -9,15 +9,16 @@ metadata, region, collection, and REAPER insertion workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.6.20" author="Psysia" time="2026-07-21T04:00:00Z">
+      <version name="0.6.21" author="Psysia" time="2026-07-21T04:15:00Z">
         <changelog><![CDATA[
 - Unified the product around one compact, responsive interface.
 - Removed frames from time metrics and Pitch/Rate/Gain controls.
 - Kept borders only on interactive icon buttons.
 - Increased lower-panel safety space to prevent control clipping.
 - Added the official PsyReaSFX ReaPack repository channel.
+- Aligned all lower metric-row text to one baseline.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.6.20-rc9/PsyReaSFX_v0_6_20_Stable_RC9.lua</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.6.21/PsyReaSFX_v0_6_21_Stable.lua</source>
       </version>
     </reapack>
   </category>

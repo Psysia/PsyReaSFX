@@ -1,5 +1,17 @@
 # PsyReaSFX Changelog
 
+## 0.6.21 Stable
+
+### Formal stable release
+
+- Marks package 0.6.21 as PsyReaSFX 0.6 Stable; the GitHub Release is no longer
+  published as a prerelease.
+- Gives time metrics, file/selection context, and operation status the same
+  22-pixel layout item with a shared `y + 4` text baseline.
+- Keeps the repository-root README in English by default and adds one-click
+  English / Simplified Chinese language buttons.
+- Updates the ReaPack index to 0.6.21 and an immutable `v0.6.21` tagged source.
+
 ## 0.6.20 Stable RC9
 
 ### One maintained interface

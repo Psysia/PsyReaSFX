@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.20 Stable RC9 用户使用说明书
+# PsyReaSFX 0.6 Stable 用户使用说明书（包版本 0.6.21）
 
 ## 1. 产品定位
 
@@ -36,7 +36,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 1. 解压发布包。
 2. 打开 REAPER 的 Action List。
 3. 点击 `ReaScript: Load...`。
-4. 加载 `PsyReaSFX_v0_6_20_Stable_RC9.lua`。
+4. 加载 `PsyReaSFX_v0_6_21_Stable.lua`。
 5. 将原快捷键改绑到新脚本。
 6. 停止旧版 PsyReaSFX，避免多个版本同时运行。
 
@@ -453,4 +453,4 @@ Artwork 查找顺序：
 
 ## 21. 当前阶段
 
-0.6 主体功能已经完成，0.6.20 RC9 继续进行稳定化、统一界面和 ReaPack 更新渠道验证。确认无阻断问题后发布最终 0.6 Stable，再进入 0.7 Transfer 阶段。
+0.6.21 是正式的 0.6 Stable。后续 0.6.x 只接受必要的稳定性修复；新功能进入 0.7 Transfer 阶段。
