@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.15 Stable RC4 User Guide
+# PsyReaSFX 0.6.16 Stable RC5 User Guide
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain pre
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_15_Stable_RC4.lua`.
+4. Load `PsyReaSFX_v0_6_16_Stable_RC5.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 

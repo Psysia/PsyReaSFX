@@ -1,9 +1,9 @@
-# PsyReaSFX 0.6.15 Stable RC4
+# PsyReaSFX 0.6.16 Stable RC5
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC4)
+**Release stage:** 0.6 stable candidate (RC5)
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
@@ -37,12 +37,12 @@ can use the full REAPER workspace.
 
 ## Installation
 
-Load `PsyReaSFX_v0_6_15_Stable_RC4.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
+Load `PsyReaSFX_v0_6_16_Stable_RC5.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_15_Stable_RC4.lua
+PsyReaSFX_v0_6_16_Stable_RC5.lua
 README.md
 assets/
   screenshots/
@@ -58,8 +58,12 @@ docs/
 The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
 
 
-## 0.6.15 Stable RC4 highlights
+## 0.6.16 Stable RC5 highlights
 
+- Fixes the ReaImGui `EndChild` assertion introduced by the horizontally
+  synchronized fixed header in RC4.
+- Submits a zero-size layout item after temporary header cursor positioning,
+  satisfying ReaImGui's parent-boundary contract without changing the layout.
 - Completes the English localization audit for Settings, help, maintenance,
   waveform controls, status messages, and the bottom preview summary.
 - Keeps user-authored filenames, library names, metadata, and collection names

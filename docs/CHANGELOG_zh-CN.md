@@ -1,5 +1,13 @@
 # PsyReaSFX 更新日志（简体中文）
 
+## 0.6.16 Stable RC5
+
+### 阻断问题修复
+
+- 修复 RC4 横向滚动固定表头引入的 ReaImGui `EndChild` 断言。
+- 固定表头在结果 Child 之后调整交互坐标时，现在会提交一个零尺寸布局项目，满足 ReaImGui 对 `SetCursorScreenPos` 的边界要求。
+- 修复不改变表头固定、横向滚动和分栏拖动功能。
+
 ## 0.6.15 Stable RC4
 
 ### 英文本地化

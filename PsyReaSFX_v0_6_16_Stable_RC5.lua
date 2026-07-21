@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.15-rc4
+-- @version 0.6.16-rc5
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -58,7 +58,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.15 Stable RC4"
+local VERSION = "0.6.16 Stable RC5"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -12727,6 +12727,12 @@ function draw_results()
     header_x,
     header_x + viewport_width
   )
+
+  -- draw_column_splitters() temporarily repositions the cursor so the fixed
+  -- header can remain interactive after the scrolling child is rendered.
+  -- ReaImGui requires a submitted layout item after SetCursorScreenPos;
+  -- without it, the parent module asserts when EndChild() is called.
+  ImGui.Dummy(ctx, 0, 0)
 end
 
 ----------------------------------------------------------------

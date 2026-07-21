@@ -1,5 +1,17 @@
 # PsyReaSFX Changelog
 
+## 0.6.16 Stable RC5
+
+### Blocking fix
+
+- Fixed the ReaImGui `EndChild` assertion introduced by RC4's horizontally
+  synchronized fixed header.
+- The header interaction layer now submits a zero-size layout item after its
+  temporary `SetCursorScreenPos` calls, satisfying ReaImGui's parent-boundary
+  contract.
+- The fix preserves the pinned header, horizontal scrolling, and draggable
+  column dividers.
+
 ## 0.6.15 Stable RC4
 
 ### English localization
