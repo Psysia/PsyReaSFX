@@ -1,9 +1,9 @@
-# PsyReaSFX 0.6.16 Stable RC5
+# PsyReaSFX 0.6.17 Stable RC6
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC5)
+**Release stage:** 0.6 stable candidate (RC6)
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
@@ -37,12 +37,12 @@ can use the full REAPER workspace.
 
 ## Installation
 
-Load `PsyReaSFX_v0_6_16_Stable_RC5.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
+Load `PsyReaSFX_v0_6_17_Stable_RC6.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_16_Stable_RC5.lua
+PsyReaSFX_v0_6_17_Stable_RC6.lua
 README.md
 assets/
   screenshots/
@@ -58,19 +58,15 @@ docs/
 The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
 
 
-## 0.6.16 Stable RC5 highlights
+## 0.6.17 Stable RC6 highlights
 
-- Fixes the ReaImGui `EndChild` assertion introduced by the horizontally
-  synchronized fixed header in RC4.
-- Submits a zero-size layout item after temporary header cursor positioning,
-  satisfying ReaImGui's parent-boundary contract without changing the layout.
-- Completes the English localization audit for Settings, help, maintenance,
-  waveform controls, status messages, and the bottom preview summary.
-- Keeps user-authored filenames, library names, metadata, and collection names
-  unchanged while translating application-owned interface text.
-- Adds a horizontal scrollbar when visible result columns exceed the workspace.
-- Keeps the pinned header aligned with horizontally scrolled result columns.
-- Preserves configured column widths instead of crushing dense layouts into the
-  current window width.
-- Adds compact and Focus-mode screenshots to the GitHub project landing page.
-- Preserves the official project link in both script metadata and About.
+- Replaces the permanent full-width result scrollbar with a slim overlay that
+  appears while the result table is hovered, dragged, or Shift-scrolled.
+- Keeps the fixed header synchronized and preserves every configured column
+  width without dedicating a full row to navigation.
+- Adds the `RWF3` high-resolution cache format with separate waveform lanes for
+  mono, stereo (`L` / `R`), and up to eight-channel source files (`CH 1–8`).
+- Keeps existing `RWF2` list thumbnails compatible; only high-resolution channel
+  previews are generated again on demand.
+- Consolidates preview actions, Pitch, Rate, Gain, and optional monitoring
+  switches into a lightweight studio strip with smaller vector icons.

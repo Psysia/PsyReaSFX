@@ -1,5 +1,28 @@
 # PsyReaSFX Changelog
 
+## 0.6.17 Stable RC6
+
+### Result navigation
+
+- Replaced the permanent full-row system scrollbar with a hover overlay.
+- The slim navigator appears while the result table is hovered, dragged, or
+  Shift-scrolled; the pinned header remains synchronized.
+
+### Multichannel waveform preview
+
+- Added the `RWF3` cache format with separate peak lanes for up to eight source
+  channels.
+- Mono uses `M`, stereo uses `L / R`, and multichannel files use `CH 1–8`.
+- Existing `RWF2` list thumbnails stay valid; only channel-aware high-resolution
+  previews are generated on demand.
+- High-resolution precaching now produces channel-aware waveform data.
+
+### Preview toolbar
+
+- Consolidated preview actions and parameters into a lightweight Studio Strip.
+- Reduced vector-icon, border, spacing, and parameter-card dimensions.
+- Narrow windows use a two-row layout instead of overlapping controls.
+
 ## 0.6.16 Stable RC5
 
 ### Blocking fix

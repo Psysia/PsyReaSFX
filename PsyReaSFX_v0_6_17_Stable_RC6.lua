@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.16-rc5
+-- @version 0.6.17-rc6
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -50,6 +50,9 @@
 --   - 瞬态检测详细参数、批次撤销和一键清除自动建议
 --   - 选中素材按需计算 LUFS-I、LUFS-M/S max 与 True Peak
 --   - 大波形选区内置拖拽胶囊，可直接拖到 REAPER 编排区
+--   - 结果表使用悬停浮动横向导航，不再常驻整行系统滚动条
+--   - RWF3 高精度缓存保留单声道、立体声及最多八声道独立波形
+--   - 底部试听区统一为轻量 Studio Strip 小图标工具条
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -58,7 +61,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.16 Stable RC5"
+local VERSION = "0.6.17 Stable RC6"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -518,6 +521,16 @@ local state = {
   precache_cancel_requested = false,
   precache_points = 4096,
 
+  -- 高精度大波形可保留每个源声道的独立峰值。
+  multichannel_waveform = true,
+
+  -- 结果横向导航使用悬停浮层；原生滚动条被压缩为不可见的 1 px。
+  results_scroll_x = 0,
+  results_scroll_max_x = 0,
+  results_scroll_request = nil,
+  results_scroll_overlay_until = 0,
+  results_scroll_drag = nil,
+
   wave_cache_dir = DEFAULT_WAVE_CACHE_DIR,
 
   preview = nil,
@@ -586,7 +599,7 @@ local state = {
   loudness_active = nil,
   next_loudness_job = 0,
 
-  preview_control_layout = "full_rack",
+  preview_control_layout = "studio_strip",
   bottom_panel_height = 350,
   bottom_split_drag = nil,
   parameter_drag = nil,
@@ -873,6 +886,10 @@ I18N_EN = {
   ["分层"] = "Layered",
   ["高对比"] = "High contrast",
   ["预览控制台"] = "Preview console",
+  ["轻量工具条"] = "Studio strip",
+  ["独立显示各声道"] = "Show separate channel lanes",
+  ["立体声显示 L / R；多声道显示 CH 1–8。仅高精度大波形使用独立声道缓存。"] =
+    "Stereo uses L / R lanes; multichannel files use CH 1–8. Separate-channel caching is used only by the high-resolution preview.",
   ["完整"] = "Full",
   ["专注"] = "Focused",
   ["极简"] = "Minimal",
@@ -1068,8 +1085,8 @@ I18N_EN = {
     "Presets adjust density, surface hierarchy, visible columns, and the preview console together.",
   ["单行高密度列表、Artwork、时长与扁平表面。"] =
     "Dense single-line rows with Artwork, duration, and flat surfaces.",
-  ["平衡密度、分层模块与完整预览控制台。"] =
-    "Balanced density, layered modules, and the full preview console.",
+  ["平衡密度、分层模块与轻量预览工具条。"] =
+    "Balanced density, layered modules, and a lightweight preview strip.",
   ["审阅模式"] = "Review mode",
   ["更大行高、高对比与完整元数据字段。"] =
     "Larger rows, stronger contrast, and the complete metadata field set.",
@@ -3155,6 +3172,8 @@ function load_config()
       elseif name == "precache_points" then
         state.precache_points =
           tonumber(value) == 2048 and 2048 or 4096
+      elseif name == "multichannel_waveform" then
+        state.multichannel_waveform = value ~= "0"
       elseif name == "wave_cache_dir" then
         local configured =
           normalize_slashes(
@@ -3186,18 +3205,21 @@ function load_config()
       elseif name == "loop_selection" then
         state.loop_selection = value ~= "0"
       elseif name == "preview_control_layout" then
-        if value == "full_rack"
+        if value == "studio_strip" then
+          state.preview_control_layout = value
+        elseif value == "full_rack"
           or value == "focus_rack"
           or value == "minimal_rack" then
-          state.preview_control_layout = value
+          -- 0.6.17 将旧控制台统一迁移为较轻量的单行工具条。
+          state.preview_control_layout = "studio_strip"
         elseif value == "pro_rack"
           or value == "right_knobs"
           or value == "classic_rack"
           or value == "inline_sliders" then
-          state.preview_control_layout = "full_rack"
+          state.preview_control_layout = "studio_strip"
         elseif value == "compact_rack"
           or value == "compact_knobs" then
-          state.preview_control_layout = "focus_rack"
+          state.preview_control_layout = "studio_strip"
         end
       elseif name == "bottom_panel_height" then
         state.bottom_panel_height =
@@ -3400,6 +3422,12 @@ function save_config()
   file:write(
     "setting\tprecache_points\t",
     tostring(state.precache_points),
+    "\n"
+  )
+
+  file:write(
+    "setting\tmultichannel_waveform\t",
+    state.multichannel_waveform and "1" or "0",
     "\n"
   )
 
@@ -6631,7 +6659,7 @@ end
 -- Persistent waveform cache
 ----------------------------------------------------------------
 
-function wave_cache_key(asset, points)
+function wave_cache_key(asset, points, preserve_channels)
   if not asset.size or asset.size <= 0 then
     asset.size = file_size(asset.path)
   end
@@ -6642,18 +6670,19 @@ function wave_cache_key(asset, points)
       .. tostring(asset.size)
       .. "|"
       .. tostring(points)
+      .. (preserve_channels and "|channels-rwf3" or "")
   )
 end
 
-function wave_cache_path(asset, points)
+function wave_cache_path(asset, points, preserve_channels)
   return join_path(
     WAVE_CACHE_DIR,
-    wave_cache_key(asset, points) .. ".rwf"
+    wave_cache_key(asset, points, preserve_channels) .. ".rwf"
   )
 end
 
-function load_wave_from_disk(asset, points)
-  local path = wave_cache_path(asset, points)
+function load_wave_from_disk(asset, points, preserve_channels)
+  local path = wave_cache_path(asset, points, preserve_channels)
   local file = io.open(path, "rb")
 
   if not file then
@@ -6661,8 +6690,13 @@ function load_wave_from_disk(asset, points)
   end
 
   local header = file:read("*l") or ""
-  local version, count_text =
-    header:match("^(RWF2)%s+(%d+)$")
+  local version, count_text, channels_text =
+    header:match("^(RWF3)%s+(%d+)%s+(%d+)$")
+
+  if not version then
+    version, count_text =
+      header:match("^(RWF2)%s+(%d+)$")
+  end
 
   local count =
     version and tonumber(count_text)
@@ -6677,7 +6711,45 @@ function load_wave_from_disk(asset, points)
 
   local peaks = {}
 
-  if version == "RWF2" then
+  if version == "RWF3" then
+    local channels = clamp(tonumber(channels_text) or 1, 1, 8)
+    local bytes = file:read(count * channels * 2)
+    file:close()
+
+    if not bytes or #bytes ~= count * channels * 2 then
+      return nil
+    end
+
+    local channel_peaks = {}
+
+    for channel = 1, channels do
+      channel_peaks[channel] = {}
+    end
+
+    for index = 1, count do
+      local aggregate = 0
+
+      for channel = 1, channels do
+        local value_index =
+          ((index - 1) * channels + channel - 1) * 2 + 1
+        local low = bytes:byte(value_index) or 0
+        local high = bytes:byte(value_index + 1) or 0
+        local value = (low | (high << 8)) / 65535
+
+        channel_peaks[channel][index] = value
+        aggregate = math.max(aggregate, value)
+      end
+
+      peaks[index] = aggregate
+    end
+
+    return {
+      count = count,
+      channels = channels,
+      peaks = peaks,
+      channel_peaks = channel_peaks,
+    }
+  elseif version == "RWF2" then
     local bytes = file:read(count * 2)
     file:close()
 
@@ -6711,12 +6783,17 @@ function load_wave_from_disk(asset, points)
   }
 end
 
-function save_wave_to_disk(asset, points, waveform)
+function save_wave_to_disk(
+  asset,
+  points,
+  waveform,
+  preserve_channels
+)
   ensure_dirs()
 
   local file =
     io.open(
-      wave_cache_path(asset, points),
+      wave_cache_path(asset, points, preserve_channels),
       "wb"
     )
 
@@ -6724,38 +6801,59 @@ function save_wave_to_disk(asset, points, waveform)
     return
   end
 
-  -- RWF2 使用 16-bit 峰值，改善下方大波形的幅度细节。
-  file:write(
-    "RWF2 ",
-    tostring(waveform.count),
-    "\n"
-  )
+  local channel_peaks =
+    preserve_channels and waveform.channel_peaks or nil
+  local channels =
+    channel_peaks and clamp(waveform.channels or #channel_peaks, 1, 8)
+      or 1
+
+  if channel_peaks then
+    file:write(
+      "RWF3 ",
+      tostring(waveform.count),
+      " ",
+      tostring(channels),
+      "\n"
+    )
+  else
+    -- RWF2 保持列表缩略图缓存兼容；RWF3 才保存独立声道。
+    file:write(
+      "RWF2 ",
+      tostring(waveform.count),
+      "\n"
+    )
+  end
 
   local chunks = {}
   local chunk = {}
 
   for index = 1, waveform.count do
-    local value =
-      clamp(
-        math.floor(
-          (waveform.peaks[index] or 0)
-            * 65535
-            + 0.5
-        ),
-        0,
-        65535
-      )
+    for channel = 1, channels do
+      local source_peaks =
+        channel_peaks and channel_peaks[channel]
+          or waveform.peaks
+      local value =
+        clamp(
+          math.floor(
+            ((source_peaks and source_peaks[index]) or 0)
+              * 65535
+              + 0.5
+          ),
+          0,
+          65535
+        )
 
-    chunk[#chunk + 1] =
-      string.char(
-        value & 0xFF,
-        (value >> 8) & 0xFF
-      )
+      chunk[#chunk + 1] =
+        string.char(
+          value & 0xFF,
+          (value >> 8) & 0xFF
+        )
 
-    if #chunk >= 256 then
-      chunks[#chunks + 1] =
-        table.concat(chunk)
-      chunk = {}
+      if #chunk >= 256 then
+        chunks[#chunks + 1] =
+          table.concat(chunk)
+        chunk = {}
+      end
     end
   end
 
@@ -6772,7 +6870,8 @@ function read_waveform_from_source(
   source,
   duration,
   channels,
-  points
+  points,
+  preserve_channels
 )
   if not source
     or not duration
@@ -6810,7 +6909,14 @@ function read_waveform_from_source(
     )
 
   local peaks = {}
+  local channel_peaks = preserve_channels and {} or nil
   local minimum_offset = returned * channels
+
+  if channel_peaks then
+    for channel = 1, channels do
+      channel_peaks[channel] = {}
+    end
+  end
 
   for sample = 0, returned - 1 do
     local amplitude = 0
@@ -6841,6 +6947,11 @@ function read_waveform_from_source(
           maximum,
           minimum
         )
+
+      if channel_peaks then
+        channel_peaks[channel + 1][sample + 1] =
+          clamp(math.max(maximum, minimum), 0, 1)
+      end
     end
 
     peaks[sample + 1] =
@@ -6849,7 +6960,9 @@ function read_waveform_from_source(
 
   return {
     count = returned,
+    channels = channels,
     peaks = peaks,
+    channel_peaks = channel_peaks,
   }
 end
 
@@ -6951,7 +7064,8 @@ function step_wave_job(job)
         job.source,
         job.duration,
         job.channels,
-        job.points
+        job.points,
+        job.preserve_channels
       )
 
     destroy_wave_job(job)
@@ -6966,8 +7080,8 @@ function step_wave_job(job)
   return "working"
 end
 
-function memory_wave_key(asset, points)
-  return wave_cache_key(asset, points)
+function memory_wave_key(asset, points, preserve_channels)
+  return wave_cache_key(asset, points, preserve_channels)
 end
 
 function store_wave_memory(key, waveform)
@@ -7006,12 +7120,14 @@ function store_wave_memory(key, waveform)
   end
 end
 
-function queue_wave(asset, points, priority)
+function queue_wave(asset, points, priority, preserve_channels)
   if asset.wave_error then
     return nil
   end
 
-  local key = memory_wave_key(asset, points)
+  preserve_channels = preserve_channels == true
+
+  local key = memory_wave_key(asset, points, preserve_channels)
   local cached = state.wave_cache[key]
 
   state.wave_clock = state.wave_clock + 1
@@ -7025,7 +7141,7 @@ function queue_wave(asset, points, priority)
     state.wave_checked[key] = true
 
     local disk_wave =
-      load_wave_from_disk(asset, points)
+      load_wave_from_disk(asset, points, preserve_channels)
 
     if disk_wave then
       store_wave_memory(key, disk_wave)
@@ -7045,6 +7161,7 @@ function queue_wave(asset, points, priority)
       key = key,
       asset = asset,
       points = points,
+      preserve_channels = preserve_channels,
     }
 
     if priority then
@@ -7093,7 +7210,8 @@ function process_wave_queue()
     save_wave_to_disk(
       job.asset,
       job.points,
-      waveform
+      waveform,
+      job.preserve_channels
     )
 
     state.wave_queued[job.key] = nil
@@ -7116,10 +7234,11 @@ function process_wave_queue()
   state.next_wave_job = now + WAVE_INTERVAL
 end
 
-function wave_cache_file_exists(asset, points)
+function wave_cache_file_exists(asset, points, preserve_channels)
   return load_wave_from_disk(
     asset,
-    points
+    points,
+    preserve_channels
   ) ~= nil
 end
 
@@ -7189,6 +7308,7 @@ function start_wave_precache(points, scope)
     cached = 0,
     failed = 0,
     points = points,
+    preserve_channels = state.multichannel_waveform,
     scope = scope or "all",
     current = nil,
     started = reaper.time_precise(),
@@ -7273,7 +7393,8 @@ function process_wave_precache()
 
       if wave_cache_file_exists(
         asset,
-        session.points
+        session.points,
+        session.preserve_channels
       ) then
         session.cached =
           session.cached + 1
@@ -7284,10 +7405,12 @@ function process_wave_precache()
           key =
             memory_wave_key(
               asset,
-              session.points
+              session.points,
+              session.preserve_channels
             ),
           asset = asset,
           points = session.points,
+          preserve_channels = session.preserve_channels,
           progress = 0,
         }
         break
@@ -7309,7 +7432,8 @@ function process_wave_precache()
     save_wave_to_disk(
       job.asset,
       job.points,
-      waveform
+      waveform,
+      session.preserve_channels
     )
 
     if state.selected_path
@@ -8851,7 +8975,8 @@ function reset_interface_settings()
   state.surface_style = "layered"
   state.wave_scrub_enabled = true
   state.loop_selection = true
-  state.preview_control_layout = "full_rack"
+  state.preview_control_layout = "studio_strip"
+  state.multichannel_waveform = true
   state.bottom_panel_height = 350
   state.preview_channel_mode = "original"
   state.loudness_match = false
@@ -9171,16 +9296,6 @@ function draw_waveform_window(
     COLOR.waveform_bg
   )
 
-  ImGui.DrawList_AddLine(
-    draw_list,
-    x,
-    y + height * 0.5,
-    x + width,
-    y + height * 0.5,
-    COLOR.grid,
-    1
-  )
-
   if not waveform or waveform.count <= 0 then
     return
   end
@@ -9199,45 +9314,111 @@ function draw_waveform_window(
 
   local visible_count =
     math.max(1, last_index - first_index + 1)
-  local pixels =
-    math.max(1, math.floor(width))
-  local center = y + height * 0.5
-  local half = height * 0.43
+  local pixels = math.max(1, math.floor(width))
+  local channel_peaks = waveform.channel_peaks
+  local channel_count =
+    channel_peaks
+      and clamp(waveform.channels or #channel_peaks, 1, 8)
+      or 1
+  local ruler_height = 20
+  local lanes_y = y + ruler_height
+  local lanes_height = math.max(18, height - ruler_height)
+  local lane_height = lanes_height / channel_count
 
-  for pixel = 0, pixels - 1 do
-    local range_start =
-      first_index
-      + math.floor(pixel / pixels * visible_count)
-    local range_end =
-      first_index
-      + math.floor((pixel + 1) / pixels * visible_count)
-
-    range_start = clamp(range_start, first_index, last_index)
-    range_end = clamp(
-      math.max(range_start, range_end),
-      range_start,
-      last_index
-    )
-
-    local amplitude = 0
-
-    for index = range_start, range_end do
-      amplitude = math.max(
-        amplitude,
-        waveform.peaks[index] or 0
-      )
-    end
-
-    local px = x + pixel
+  local function draw_lane(peaks, channel, lane_y)
+    local center = lane_y + lane_height * 0.5
+    local half = math.max(2, lane_height * 0.38)
 
     ImGui.DrawList_AddLine(
       draw_list,
-      px,
-      center - amplitude * half,
-      px,
-      center + amplitude * half,
-      wave_color,
+      x,
+      center,
+      x + width,
+      center,
+      rgba_with_alpha(COLOR.grid, 0x80),
       1
+    )
+
+    if channel > 1 then
+      ImGui.DrawList_AddLine(
+        draw_list,
+        x,
+        lane_y,
+        x + width,
+        lane_y,
+        rgba_with_alpha(COLOR.border, 0x90),
+        1
+      )
+    end
+
+    for pixel = 0, pixels - 1 do
+      local range_start =
+        first_index
+        + math.floor(pixel / pixels * visible_count)
+      local range_end =
+        first_index
+        + math.floor((pixel + 1) / pixels * visible_count)
+
+      range_start = clamp(range_start, first_index, last_index)
+      range_end = clamp(
+        math.max(range_start, range_end),
+        range_start,
+        last_index
+      )
+
+      local amplitude = 0
+
+      for index = range_start, range_end do
+        amplitude = math.max(amplitude, peaks[index] or 0)
+      end
+
+      local px = x + pixel
+
+      ImGui.DrawList_AddLine(
+        draw_list,
+        px,
+        center - amplitude * half,
+        px,
+        center + amplitude * half,
+        wave_color,
+        1
+      )
+    end
+
+    if lane_height >= 18 then
+      local label =
+        channel_count == 1 and "M"
+        or channel_count == 2 and (channel == 1 and "L" or "R")
+        or string.format("CH %d", channel)
+      local label_width = channel_count > 2 and 42 or 24
+      local label_x = x + width - label_width - 7
+      local label_y = lane_y + 2
+
+      ImGui.DrawList_AddRectFilled(
+        draw_list,
+        label_x,
+        label_y,
+        label_x + label_width,
+        label_y + 16,
+        rgba_with_alpha(COLOR.window, 0xD8),
+        4
+      )
+
+      ImGui.DrawList_AddText(
+        draw_list,
+        label_x + 6,
+        label_y + 1,
+        COLOR.dim,
+        label
+      )
+    end
+  end
+
+  for channel = 1, channel_count do
+    draw_lane(
+      channel_peaks and channel_peaks[channel] or waveform.peaks,
+      channel,
+      lanes_y + (channel - 1) * lane_height
     )
   end
 end
@@ -9987,13 +10168,15 @@ function draw_parameter_card(
 
   local translated_label = translate_ui_text(label)
   local value_text = string.format(format_string, value)
+  local compact_card = height <= 40
+  local text_y = compact_card and (y + 4) or (y + 8)
   local value_w =
     select(1, ImGui.CalcTextSize(ctx, value_text)) or 0
 
   ImGui.DrawList_AddText(
     draw_list,
     x + 10,
-    y + 8,
+    text_y,
     COLOR.dim,
     translated_label
   )
@@ -10001,14 +10184,15 @@ function draw_parameter_card(
   ImGui.DrawList_AddText(
     draw_list,
     x + width - value_w - 10,
-    y + 8,
+    text_y,
     active and COLOR.selected_text or COLOR.header_text,
     value_text
   )
 
   local track_left = x + 10
   local track_right = x + width - 10
-  local track_y = y + height - 13
+  local track_y =
+    compact_card and (y + height - 4) or (y + height - 13)
   local normalized =
     clamp(
       (value - minimum)
@@ -10067,7 +10251,9 @@ function draw_parameter_card(
     draw_list,
     value_x,
     track_y,
-    active and 5 or 4,
+    compact_card
+      and (active and 4 or 3)
+      or (active and 5 or 4),
     active and COLOR.selected_text or COLOR.text,
     16
   )
@@ -10140,13 +10326,7 @@ function toolbar_separator(height)
 end
 
 function bottom_controls_reserve_height(width)
-  if width >= 1030 then
-    return 132
-  elseif width >= 700 then
-    return 176
-  end
-
-  return 220
+  return width >= 760 and 104 or 146
 end
 
 function draw_bottom_splitter(width, total_height)
@@ -12598,6 +12778,116 @@ function draw_result_row(
   row_popup(asset)
 end
 
+function draw_results_scroll_overlay(
+  x,
+  y,
+  width,
+  viewport_height,
+  scroll_x,
+  scroll_max
+)
+  if not scroll_max or scroll_max <= 0 then
+    state.results_scroll_drag = nil
+    return
+  end
+
+  local now = reaper.time_precise()
+  local mouse_x, mouse_y = ImGui.GetMousePos(ctx)
+  local list_hovered =
+    mouse_x >= x
+    and mouse_x <= x + width
+    and mouse_y >= y
+    and mouse_y <= y + viewport_height
+
+  if list_hovered then
+    state.results_scroll_overlay_until = now + 0.55
+  end
+
+  local visible =
+    list_hovered
+    or state.results_scroll_drag ~= nil
+    or now < (state.results_scroll_overlay_until or 0)
+
+  if not visible then
+    return
+  end
+
+  local track_margin = 10
+  local track_x0 = x + track_margin
+  local track_x1 = x + width - track_margin
+  local track_width = math.max(1, track_x1 - track_x0)
+  local content_width = width + scroll_max
+  local thumb_width = clamp(
+    track_width * width / math.max(width, content_width),
+    38,
+    track_width
+  )
+  local travel = math.max(1, track_width - thumb_width)
+  local thumb_x =
+    track_x0
+      + travel * clamp(scroll_x / scroll_max, 0, 1)
+  -- 导航贴在固定表头下沿，避免覆盖结果行或占用一整行高度。
+  local track_y = y - 5
+  local hit_y0 = track_y - 4
+  local hit_y1 = track_y + 6
+  local over_track =
+    mouse_x >= track_x0
+    and mouse_x <= track_x1
+    and mouse_y >= hit_y0
+    and mouse_y <= hit_y1
+
+  if over_track and ImGui.IsMouseClicked(ctx, 0) then
+    state.results_scroll_drag = {
+      offset =
+        mouse_x >= thumb_x
+          and mouse_x <= thumb_x + thumb_width
+          and (mouse_x - thumb_x)
+          or thumb_width * 0.5,
+    }
+  end
+
+  if state.results_scroll_drag then
+    if ImGui.IsMouseDown(ctx, 0) then
+      local desired_thumb = clamp(
+        mouse_x - state.results_scroll_drag.offset,
+        track_x0,
+        track_x0 + travel
+      )
+
+      state.results_scroll_request =
+        (desired_thumb - track_x0) / travel * scroll_max
+      state.results_scroll_overlay_until = now + 0.55
+    else
+      state.results_scroll_drag = nil
+    end
+  end
+
+  local draw_list = ImGui.GetWindowDrawList(ctx)
+  local alpha = list_hovered and 0x74 or 0x44
+
+  ImGui.DrawList_AddRectFilled(
+    draw_list,
+    track_x0,
+    track_y,
+    track_x1,
+    track_y + 2,
+    rgba_with_alpha(COLOR.border, alpha),
+    1
+  )
+
+  ImGui.DrawList_AddRectFilled(
+    draw_list,
+    thumb_x,
+    track_y - 1,
+    thumb_x + thumb_width,
+    track_y + 4,
+    state.results_scroll_drag
+      and COLOR.selected
+      or rgba_with_alpha(COLOR.dim, list_hovered and 0xD8 or 0xA0),
+    3
+  )
+end
+
 function draw_results()
   local width, height =
     ImGui.GetContentRegionAvail(ctx)
@@ -12624,15 +12914,51 @@ function draw_results()
     cursor_y + HEADER_H
   )
 
-  if ImGui.BeginChild(
+  local child_visible = ImGui.BeginChild(
     ctx,
     "results_scroll_area",
     width,
     math.max(1, height - HEADER_H),
     0,
-    ImGui.WindowFlags_HorizontalScrollbar
-  ) then
+    0
+  )
+
+  if state.results_scroll_request then
+    ImGui.SetScrollX(
+      ctx,
+      clamp(
+        state.results_scroll_request,
+        0,
+        ImGui.GetScrollMaxX(ctx)
+      )
+    )
+    state.results_scroll_request = nil
+  end
+
+  if child_visible then
     state.results_scroll_x = ImGui.GetScrollX(ctx)
+    state.results_scroll_max_x = ImGui.GetScrollMaxX(ctx)
+
+    local mouse_x, mouse_y = ImGui.GetMousePos(ctx)
+    local child_hovered =
+      mouse_x >= header_x
+      and mouse_x <= header_x + viewport_width
+      and mouse_y >= header_y + HEADER_H
+      and mouse_y <= header_y + height
+    local wheel = ImGui.GetMouseWheel(ctx) or 0
+    local mods = ImGui.GetKeyMods(ctx)
+
+    if child_hovered
+      and wheel ~= 0
+      and (mods & ImGui.Mod_Shift) ~= 0 then
+      state.results_scroll_request = clamp(
+        state.results_scroll_x - wheel * 90,
+        0,
+        state.results_scroll_max_x
+      )
+      state.results_scroll_overlay_until =
+        reaper.time_precise() + 0.75
+    end
 
     if #state.results == 0 then
       ImGui.Spacing(ctx)
@@ -12714,7 +13040,12 @@ function draw_results()
         ctx,
         #state.results * ROW_H
       )
+
+      ImGui.Dummy(ctx, 0, 0)
     end
+
+    state.results_scroll_x = ImGui.GetScrollX(ctx)
+    state.results_scroll_max_x = ImGui.GetScrollMaxX(ctx)
   end
 
   ImGui.EndChild(ctx)
@@ -12726,6 +13057,15 @@ function draw_results()
     layout,
     header_x,
     header_x + viewport_width
+  )
+
+  draw_results_scroll_overlay(
+    header_x,
+    header_y + HEADER_H,
+    viewport_width,
+    math.max(1, height - HEADER_H),
+    state.results_scroll_x or 0,
+    state.results_scroll_max_x or 0
   )
 
   -- draw_column_splitters() temporarily repositions the cursor so the fixed
@@ -12748,7 +13088,10 @@ function draw_large_wave(asset)
       available_height
         - bottom_controls_reserve_height(width),
       72,
-      260
+      state.multichannel_waveform
+        and (asset.channels or 1) > 2
+        and 360
+        or 280
     )
 
   local view_span = wave_view_span()
@@ -12784,7 +13127,8 @@ function draw_large_wave(asset)
     queue_wave(
       asset,
       large_points,
-      true
+      true,
+      state.multichannel_waveform
     )
 
   draw_waveform_window(
@@ -13679,14 +14023,17 @@ function draw_more_actions_popup(asset)
   ImGui.EndPopup(ctx)
 end
 
-function draw_action_strip(asset, minimal)
+function draw_action_strip(asset, minimal, button_size)
+  button_size = button_size or UI_METRIC.icon_button
+  local button_gap = math.max(3, math.floor(button_size * 0.18))
+
   local _, _, drag_active =
     icon_button(
       "drag_to_reaper",
       "drag",
       "拖拽到 REAPER 编排区",
       state.external_drag ~= nil,
-      UI_METRIC.icon_button
+      button_size
     )
 
   if drag_active
@@ -13695,14 +14042,14 @@ function draw_action_strip(asset, minimal)
     begin_external_drag(asset, true)
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "play_stop",
     state.preview and "stop" or "play",
     "播放或停止",
     state.preview ~= nil,
-    UI_METRIC.icon_button
+    button_size
   ) then
     if state.preview then
       stop_preview()
@@ -13711,81 +14058,81 @@ function draw_action_strip(asset, minimal)
     end
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "insert_current",
     "insert",
     "插入当前轨道",
     false,
-    UI_METRIC.icon_button
+    button_size
   ) then
     insert_asset(asset, false, false)
   end
 
   if not minimal then
-    ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+    ImGui.SameLine(ctx, 0, button_gap)
 
     if icon_button(
       "insert_new_track",
       "new_track",
       "插入新轨道",
       false,
-      UI_METRIC.icon_button
+      button_size
     ) then
       insert_asset(asset, true, false)
     end
 
-    ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
-    toolbar_separator(UI_METRIC.icon_button)
-    ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+    ImGui.SameLine(ctx, 0, button_gap)
+    toolbar_separator(button_size)
+    ImGui.SameLine(ctx, 0, button_gap)
 
     if icon_button(
       "favorite",
       "star",
       "收藏或取消收藏",
       state.favorites[path_key(asset.path)] == true,
-      UI_METRIC.icon_button
+      button_size
     ) then
       toggle_favorite(asset)
     end
 
-    ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+    ImGui.SameLine(ctx, 0, button_gap)
 
     if icon_button(
       "clear_selection",
       "clear_selection",
       "清除选区",
       has_selection(),
-      UI_METRIC.icon_button
+      button_size
     ) then
       state.region_start = 0
       state.region_end = 1
       state.active_region_index = 0
     end
 
-    ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+    ImGui.SameLine(ctx, 0, button_gap)
 
     if icon_button(
       "regions",
       "regions",
       "Region 列表",
       #asset_regions(asset) > 0,
-      UI_METRIC.icon_button
+      button_size
     ) then
       ImGui.OpenPopup(ctx, "Region 列表##saved_regions")
     end
 
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "more_actions",
     "more",
     "更多操作",
     false,
-    UI_METRIC.icon_button
+    button_size
   ) then
     ImGui.OpenPopup(
       ctx,
@@ -13798,78 +14145,81 @@ function draw_action_strip(asset, minimal)
   draw_regions_popup(asset)
 end
 
-function draw_preview_toggle_icons(asset)
+function draw_preview_toggle_icons(asset, button_size)
+  button_size = button_size or UI_METRIC.icon_button
+  local button_gap = math.max(3, math.floor(button_size * 0.18))
+
   if icon_button(
     "preserve_pitch",
     "clock",
     "保留音高",
     state.preserve_pitch,
-    UI_METRIC.icon_button
+    button_size
   ) then
     state.preserve_pitch = not state.preserve_pitch
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "loop_selection",
     "loop",
     "自动循环选区",
     state.loop_selection,
-    UI_METRIC.icon_button
+    button_size
   ) then
     state.loop_selection = not state.loop_selection
     state.config_dirty = true
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "loudness_match",
     "loudness",
     "估算响度匹配",
     state.loudness_match,
-    UI_METRIC.icon_button
+    button_size
   ) then
     state.loudness_match = not state.loudness_match
     state.config_dirty = true
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "channel_mode",
     "channel",
     "声道监听",
     state.preview_channel_mode ~= "original",
-    UI_METRIC.icon_button
+    button_size
   ) then
     ImGui.OpenPopup(ctx, "声道监听##channel_mode")
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "loop_preview",
     "loop",
     "循环试听",
     state.loop,
-    UI_METRIC.icon_button
+    button_size
   ) then
     state.loop = not state.loop
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, UI_METRIC.icon_gap)
+  ImGui.SameLine(ctx, 0, button_gap)
 
   if icon_button(
     "reverse_preview",
     "reverse",
     "反向试听",
     state.reverse,
-    UI_METRIC.icon_button
+    button_size
   ) then
     state.reverse = not state.reverse
 
@@ -14030,80 +14380,135 @@ function draw_time_metrics(asset)
   )
 end
 
-function draw_control_deck(asset)
-  local width =
-    select(1, ImGui.GetContentRegionAvail(ctx))
+function draw_studio_parameters(asset, card_width, card_height)
+  local new_pitch, pitch_changed =
+    draw_parameter_card(
+      "pitch_strip",
+      "Pitch",
+      state.pitch,
+      -24,
+      24,
+      0,
+      "%+.1f st",
+      card_width,
+      card_height
+    )
 
+  if pitch_changed then
+    state.pitch = new_pitch
+    update_preview_parameters()
+  end
+
+  ImGui.SameLine(ctx, 0, 5)
+
+  local new_rate, rate_changed =
+    draw_parameter_card(
+      "rate_strip",
+      "Rate",
+      state.rate,
+      0.25,
+      4,
+      1,
+      "%.2fx",
+      card_width,
+      card_height
+    )
+
+  if rate_changed then
+    state.rate = new_rate
+    update_preview_parameters()
+  end
+
+  ImGui.SameLine(ctx, 0, 5)
+
+  local new_gain, gain_changed =
+    draw_parameter_card(
+      "gain_strip",
+      "Gain",
+      state.gain_db,
+      -36,
+      18,
+      0,
+      "%+.1f dB",
+      card_width,
+      card_height
+    )
+
+  if gain_changed then
+    state.gain_db = new_gain
+    update_preview_parameters()
+  end
+end
+
+function draw_control_deck(asset)
+  local width = select(1, ImGui.GetContentRegionAvail(ctx))
   local mode = state.preview_control_layout
   local minimal = mode == "minimal_rack"
   local focused = mode == "focus_rack"
-  local wide = width >= 1030
-  local action_icon_count = minimal and 4 or 8
-  local action_gap_count = minimal and 3 or 8
-  local action_width =
-    action_icon_count * UI_METRIC.icon_button
-      + action_gap_count * UI_METRIC.icon_gap
-      + UI_METRIC.panel_padding * 2
-      + (minimal and 0 or 8)
-  local panel_height = UI_METRIC.control_panel_h
+  local button_size =
+    state.ui_density == "compact" and 24
+      or state.ui_density == "comfortable" and 28
+      or 26
+  local two_rows = not minimal and width < 760
+  local panel_height = two_rows and 68 or (button_size + 4)
 
-  if wide then
-    if begin_control_panel(
-      "preview_actions_panel",
-      action_width,
-      panel_height
-    ) then
-      draw_action_strip(asset, minimal)
-    end
+  ImGui.PushStyleVar(
+    ctx,
+    ImGui.StyleVar_WindowPadding,
+    2,
+    2
+  )
+  ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, COLOR.window)
 
-    end_control_panel()
-    ImGui.SameLine(ctx, 0, PANEL_GAP)
+  local strip_visible = ImGui.BeginChild(
+    ctx,
+    "preview_studio_strip",
+    width,
+    panel_height,
+    0,
+    ImGui.WindowFlags_NoScrollbar
+      | ImGui.WindowFlags_NoScrollWithMouse
+  )
 
-    local remaining =
-      select(1, ImGui.GetContentRegionAvail(ctx))
+  if strip_visible then
+    draw_action_strip(asset, minimal, button_size)
 
-    if begin_control_panel(
-      "preview_parameters_panel",
-      remaining,
-      panel_height
-    ) then
-      draw_preview_controls(
+    if not minimal then
+      if two_rows then
+        ImGui.Spacing(ctx)
+      else
+        ImGui.SameLine(ctx, 0, 8)
+        toolbar_separator(button_size)
+        ImGui.SameLine(ctx, 0, 8)
+      end
+
+      local card_width =
+        clamp(
+          (width - (two_rows and 16 or 470)) / 3,
+          UI_METRIC.parameter_min_w,
+          132
+        )
+
+      draw_studio_parameters(
         asset,
-        select(1, ImGui.GetContentRegionAvail(ctx)),
-        focused or minimal,
-        focused or minimal
+        card_width,
+        button_size
       )
+
+      if not two_rows
+        and not focused
+        and width >= 1120 then
+        ImGui.SameLine(ctx, 0, 8)
+        toolbar_separator(button_size)
+        ImGui.SameLine(ctx, 0, 8)
+        draw_preview_toggle_icons(asset, button_size)
+      end
     end
-
-    end_control_panel()
-    return
   end
 
-  if begin_control_panel(
-    "preview_actions_panel",
-    width,
-    minimal and 44 or 50
-  ) then
-    draw_action_strip(asset, minimal)
-  end
-
-  end_control_panel()
-  ImGui.Spacing(ctx)
-
-  if begin_control_panel(
-    "preview_parameters_panel",
-    width,
-    width >= 700 and 70 or 112
-  ) then
-    draw_preview_controls(
-      asset,
-      select(1, ImGui.GetContentRegionAvail(ctx)),
-      focused or minimal,
-      focused or minimal
-    )
-  end
-
-  end_control_panel()
+  ImGui.EndChild(ctx)
+  ImGui.PopStyleColor(ctx)
+  ImGui.PopStyleVar(ctx)
 end
 
 function format_loudness_value(value, suffix)
@@ -15693,19 +16098,19 @@ function apply_interface_preset(name)
   if name == "forge" then
     state.ui_density = "compact"
     state.surface_style = "flat"
-    state.preview_control_layout = "focus_rack"
+    state.preview_control_layout = "studio_strip"
     state.bottom_panel_height = 310
     reset_columns_forge_compact()
   elseif name == "aether" then
     state.ui_density = "balanced"
     state.surface_style = "layered"
-    state.preview_control_layout = "full_rack"
+    state.preview_control_layout = "studio_strip"
     state.bottom_panel_height = 350
     reset_columns_aether()
   elseif name == "review" then
     state.ui_density = "comfortable"
     state.surface_style = "contrast"
-    state.preview_control_layout = "full_rack"
+    state.preview_control_layout = "studio_strip"
     state.bottom_panel_height = 400
     reset_columns_metadata()
   end
@@ -15839,7 +16244,7 @@ function draw_settings_appearance()
   if appearance_preset_card(
     "aether",
     "Aether 标准",
-    "平衡密度、分层模块与完整预览控制台。",
+    "平衡密度、分层模块与轻量预览工具条。",
     state.ui_density == "balanced"
       and state.surface_style == "layered"
   ) then
@@ -15880,7 +16285,7 @@ function draw_settings_appearance()
   appearance_choice_button("surface_style", "contrast", "高对比", 104)
 
   ImGui.TextDisabled(ctx, "预览控制台")
-  appearance_choice_button("preview_control_layout", "full_rack", "完整", 104)
+  appearance_choice_button("preview_control_layout", "studio_strip", "轻量工具条", 126)
   ImGui.SameLine(ctx)
   appearance_choice_button("preview_control_layout", "focus_rack", "专注", 104)
   ImGui.SameLine(ctx)
@@ -16181,6 +16586,26 @@ function draw_settings_waveforms()
   ImGui.TextDisabled(
     ctx,
     "256 点是默认值，较旧版本的 128 点至少提升一倍；512 点适合较宽的 Waveform 列。"
+  )
+
+  local channel_lanes_changed
+  channel_lanes_changed, state.multichannel_waveform =
+    ImGui.Checkbox(
+      ctx,
+      "独立显示各声道",
+      state.multichannel_waveform
+    )
+
+  if channel_lanes_changed then
+    state.wave_queue = {}
+    state.wave_queued = {}
+    state.wave_checked = {}
+    state.config_dirty = true
+  end
+
+  ImGui.TextDisabled(
+    ctx,
+    "立体声显示 L / R；多声道显示 CH 1–8。仅高精度大波形使用独立声道缓存。"
   )
 
   ImGui.Separator(ctx)

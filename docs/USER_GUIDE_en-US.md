@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.16 Stable RC5 User Guide
+# PsyReaSFX 0.6.17 Stable RC6 User Guide
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain pre
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_16_Stable_RC5.lua`.
+4. Load `PsyReaSFX_v0_6_17_Stable_RC6.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -75,7 +75,7 @@ Presets change multiple related settings at once. Columns, colors and the previe
 
 - **Comfortable / Balanced / Compact** alter row height, headers, icons, spacing and rounding;
 - **Flat / Layered / High Contrast** alter surface separation, grid strength and text contrast;
-- **Full / Focus / Minimal** control how much of the preview console stays visible.
+- **Studio Strip / Focus / Minimal** control how much of the preview toolbar stays visible.
 
 ### Forge-style compact list
 
@@ -168,7 +168,13 @@ Filters can be combined in one query.
 
 The header remains pinned while the result list scrolls. Drag column dividers to resize them; double-click a divider to restore default widths. Right-click the header to show or hide waveform, filename, status, description, category, duration, format, library, path, and other fields.
 
-When the combined field width exceeds the center workspace, a horizontal scrollbar appears at the bottom of the result list. The pinned header follows the same horizontal position, keeping rightmost fields and shortcut information accessible. Configured widths are preserved instead of compressing every column to fit the current window.
+When the combined field width exceeds the center workspace, a slim overlay navigator appears while the result table is hovered or dragged. It does not reserve a permanent row. Drag the thumb or use `Shift + mouse wheel`; the pinned header follows the same horizontal position. Configured widths are preserved instead of compressing every column to fit the current window.
+
+### Separate channel lanes
+
+Enable `Settings → Waveforms → Show separate channel lanes` to display the high-resolution preview as `M` for mono, `L` / `R` for stereo, or `CH 1–8` for multichannel files. Selections, Regions, the ruler, and the playhead span all lanes.
+
+Channel lanes use the new `RWF3` high-resolution cache. Existing `RWF2` list thumbnails remain compatible, so upgrading does not rebuild the entire thumbnail library. High-resolution precaching creates reusable channel-aware data.
 
 Hidden fields are not drawn, which reduces UI work for large result sets.
 
