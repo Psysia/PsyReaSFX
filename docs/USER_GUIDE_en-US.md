@@ -1,4 +1,4 @@
-# PsyReaSFX 0.6.18 Stable RC7 User Guide
+# PsyReaSFX 0.6.19 Stable RC8 User Guide
 
 ## 1. Purpose
 
@@ -24,7 +24,7 @@ SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain pre
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_18_Stable_RC7.lua`.
+4. Load `PsyReaSFX_v0_6_19_Stable_RC8.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -173,6 +173,8 @@ When the combined field width exceeds the center workspace, no horizontal scroll
 ### Compact preview information
 
 The file or selection range, Region count, channel-monitoring mode, loudness-match state, and current operation status share the metric row. The separate summary and green status rows have been removed, allowing the waveform to use the released height.
+
+In short windows, Aether Standard now allocates the result list, splitter, and preview from one exact runtime height budget. The detailed waveform progressively reduces its minimum height before controls can leave the PsyReaSFX window. Pitch, Rate, Gain, and action buttons remain equal in height, with wider cards and clearer spacing. Preview status omits the filename already shown in the header and clips safely to the remaining width.
 
 ### Separate channel lanes
 

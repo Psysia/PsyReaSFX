@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.18-rc7
+-- @version 0.6.19-rc8
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -53,6 +53,8 @@
 --   - 结果表不绘制横向滚动条，使用 Shift + 滚轮查看溢出字段
 --   - RWF3 高精度缓存保留单声道、立体声及最多八声道独立波形
 --   - 底部试听区统一为轻量 Studio Strip 小图标工具条
+--   - 修复矮窗口下 Aether 预览区越界，严格按可用高度分配列表与波形
+--   - 放宽 Studio Strip 参数卡间距，并压缩重复的长状态文件名
 --   - 预览摘要与状态移入指标行，下方面板按实际内容收口
 --
 --   必需：ReaImGui 0.10+
@@ -62,7 +64,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.18 Stable RC7"
+local VERSION = "0.6.19 Stable RC8"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2295,6 +2297,43 @@ function compact(text, max_chars)
     text,
     max_chars - 3
   ) .. "..."
+end
+
+function fit_text_to_width(text, maximum_width)
+  text = tostring(text or "")
+  maximum_width = math.max(1, tonumber(maximum_width) or 1)
+
+  local full_width =
+    select(1, ImGui.CalcTextSize(ctx, text)) or 0
+
+  if full_width <= maximum_width then
+    return text
+  end
+
+  local length = utf8_length(text)
+
+  if not length then
+    return compact(text, 24)
+  end
+
+  local low, high = 1, math.max(1, length)
+  local fitted = compact(text, 1)
+
+  while low <= high do
+    local middle = math.floor((low + high) / 2)
+    local candidate = compact(text, middle)
+    local candidate_width =
+      select(1, ImGui.CalcTextSize(ctx, candidate)) or 0
+
+    if candidate_width <= maximum_width then
+      fitted = candidate
+      low = middle + 1
+    else
+      high = middle - 1
+    end
+  end
+
+  return fitted
 end
 
 function escape_tsv(value)
@@ -10325,7 +10364,7 @@ function toolbar_separator(height)
 end
 
 function bottom_controls_reserve_height(width)
-  return width >= 760 and 64 or 102
+  return width >= 760 and 70 or 112
 end
 
 function draw_bottom_splitter(width, total_height)
@@ -10357,15 +10396,24 @@ function draw_bottom_splitter(width, total_height)
   end
 
   if active and state.bottom_split_drag then
+    local maximum_drag_height =
+      math.max(
+        1,
+        math.min(
+          BOTTOM_MAX_H,
+          total_height - BOTTOM_SPLITTER_H - 24
+        )
+      )
+
+    local minimum_drag_height =
+      math.min(BOTTOM_MIN_H, maximum_drag_height)
+
     state.bottom_panel_height =
       clamp(
         state.bottom_split_drag.start_height
           - (mouse_y - state.bottom_split_drag.start_y),
-        BOTTOM_MIN_H,
-        math.max(
-          BOTTOM_MIN_H,
-          math.min(BOTTOM_MAX_H, total_height - 130)
-        )
+        minimum_drag_height,
+        maximum_drag_height
       )
 
     state.config_dirty = true
@@ -12961,11 +13009,17 @@ function draw_large_wave(asset)
   local width, available_height =
     ImGui.GetContentRegionAvail(ctx)
 
+  local minimum_wave_height =
+    available_height < 126 and 28
+      or available_height < 168 and 40
+      or available_height < 205 and 54
+      or 72
+
   local height =
     clamp(
       available_height
         - bottom_controls_reserve_height(width),
-      72,
+      minimum_wave_height,
       state.multichannel_waveform
         and (asset.channels or 1) > 2
         and 360
@@ -14299,11 +14353,51 @@ function draw_time_metrics(asset)
   )
 
   ImGui.SameLine(ctx, 0, 10)
-  ImGui.TextDisabled(ctx, preview_context_summary(asset))
 
-  ImGui.SameLine(ctx, 0, 12)
+  local remaining_width =
+    select(1, ImGui.GetContentRegionAvail(ctx))
+
+  local summary_drawn = false
+
+  if remaining_width > 190 then
+    local summary_width =
+      math.min(
+        remaining_width * 0.38,
+        280
+      )
+
+    ImGui.TextDisabled(
+      ctx,
+      fit_text_to_width(
+        preview_context_summary(asset),
+        summary_width
+      )
+    )
+
+    summary_drawn = true
+  end
 
   local status_text = tostring(state.status or "")
+
+  local preview_start_percent =
+    status_text:match(
+      "^从 ([%d%.]+)%% 开始试听[:：].+$"
+    ) or status_text:match(
+      "^Previewing from ([%d%.]+)%%[:：].+$"
+    )
+
+  if preview_start_percent then
+    status_text =
+      state.language == "en"
+        and string.format(
+          "Previewing from %s%%",
+          preview_start_percent
+        )
+        or string.format(
+          "从 %s%% 开始试听",
+          preview_start_percent
+        )
+  end
 
   if state.layout_notice and state.layout_notice ~= "" then
     status_text =
@@ -14313,11 +14407,23 @@ function draw_time_metrics(asset)
   end
 
   if status_text ~= "" then
-    ImGui.TextColored(
-      ctx,
-      state.status_error and COLOR.error or COLOR.success,
-      status_text
-    )
+    if summary_drawn then
+      ImGui.SameLine(ctx, 0, 12)
+    end
+
+    remaining_width =
+      select(1, ImGui.GetContentRegionAvail(ctx))
+
+    if remaining_width > 90 then
+      ImGui.TextColored(
+        ctx,
+        state.status_error and COLOR.error or COLOR.success,
+        fit_text_to_width(
+          status_text,
+          math.max(70, remaining_width - 8)
+        )
+      )
+    end
   end
 end
 
@@ -14340,7 +14446,7 @@ function draw_studio_parameters(asset, card_width, card_height)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, 8)
+  ImGui.SameLine(ctx, 0, 10)
 
   local new_rate, rate_changed =
     draw_parameter_card(
@@ -14360,7 +14466,7 @@ function draw_studio_parameters(asset, card_width, card_height)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, 8)
+  ImGui.SameLine(ctx, 0, 10)
 
   local new_gain, gain_changed =
     draw_parameter_card(
@@ -14387,11 +14493,13 @@ function draw_control_deck(asset)
   local minimal = mode == "minimal_rack"
   local focused = mode == "focus_rack"
   local button_size =
-    state.ui_density == "compact" and 24
-      or state.ui_density == "comfortable" and 28
-      or 26
+    state.ui_density == "compact" and 28
+      or state.ui_density == "comfortable" and 32
+      or 30
   local two_rows = not minimal and width < 760
-  local panel_height = two_rows and 68 or (button_size + 4)
+  local panel_height =
+    two_rows and (button_size * 2 + 14)
+      or (button_size + 4)
 
   ImGui.PushStyleVar(
     ctx,
@@ -14418,16 +14526,16 @@ function draw_control_deck(asset)
       if two_rows then
         ImGui.Spacing(ctx)
       else
-        ImGui.SameLine(ctx, 0, 8)
+        ImGui.SameLine(ctx, 0, 10)
         toolbar_separator(button_size)
-        ImGui.SameLine(ctx, 0, 8)
+        ImGui.SameLine(ctx, 0, 10)
       end
 
       local card_width =
         clamp(
-          (width - (two_rows and 16 or 470)) / 3,
+          (width - (two_rows and 20 or 500)) / 3,
           UI_METRIC.parameter_min_w,
-          132
+          150
         )
 
       draw_studio_parameters(
@@ -14438,10 +14546,10 @@ function draw_control_deck(asset)
 
       if not two_rows
         and not focused
-        and width >= 1120 then
-        ImGui.SameLine(ctx, 0, 8)
+        and width >= 1180 then
+        ImGui.SameLine(ctx, 0, 10)
         toolbar_separator(button_size)
-        ImGui.SameLine(ctx, 0, 8)
+        ImGui.SameLine(ctx, 0, 10)
         draw_preview_toggle_icons(asset, button_size)
       end
     end
@@ -17697,39 +17805,45 @@ function draw_main()
         center_available_h =
           ImGui.GetContentRegionAvail(ctx)
 
+      -- 运行时尺寸必须严格相加等于可用高度。旧算法在矮窗口中
+      -- 同时强制列表 >= 120 和预览 >= 220，导致 Aether 底部越界裁切。
+      local panel_space =
+        math.max(
+          2,
+          center_available_h - BOTTOM_SPLITTER_H
+        )
+
+      local runtime_min_list =
+        math.min(
+          120,
+          math.max(24, panel_space * 0.34),
+          panel_space * 0.55
+        )
+
       local maximum_bottom =
         math.max(
-          BOTTOM_MIN_H,
+          1,
           math.min(
             BOTTOM_MAX_H,
-            center_available_h - 130
+            panel_space - runtime_min_list
           )
+        )
+
+      local runtime_min_bottom =
+        math.min(
+          BOTTOM_MIN_H,
+          maximum_bottom
         )
 
       local bottom_height =
         clamp(
           state.bottom_panel_height,
-          BOTTOM_MIN_H,
+          runtime_min_bottom,
           maximum_bottom
         )
 
-      state.bottom_panel_height = bottom_height
-
       local list_height =
-        math.max(
-          120,
-          center_available_h
-            - bottom_height
-            - BOTTOM_SPLITTER_H
-        )
-
-      bottom_height =
-        math.max(
-          BOTTOM_MIN_H,
-          center_available_h
-            - list_height
-            - BOTTOM_SPLITTER_H
-        )
+        math.max(1, panel_space - bottom_height)
 
       if begin_module(
         "results_module",

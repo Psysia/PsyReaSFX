@@ -1,5 +1,25 @@
 # PsyReaSFX Changelog
 
+## 0.6.19 Stable RC8
+
+### Aether short-window fix
+
+- Allocated the result list, splitter, and preview from one runtime height budget,
+  so their combined height always matches the central workspace.
+- Removed conflicting fixed minimums that allowed the preview controls to extend
+  beyond PsyReaSFX and appear over the REAPER window behind it.
+- Reduced the detailed waveform minimum progressively as space shrinks, keeping
+  the metric row and Studio Strip visible first.
+
+### Studio Strip and status context
+
+- Kept action buttons and Pitch, Rate, and Gain equal in height while increasing
+  their shared height, card width, and spacing.
+- Preserved the responsive two-row layout and only shows monitor toggles when
+  the available row width is sufficient.
+- Removed duplicate preview filenames from inline status and clips the remaining
+  message to the exact free width.
+
 ## 0.6.18 Stable RC7
 
 ### Bottom workspace and layout

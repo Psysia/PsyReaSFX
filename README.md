@@ -1,9 +1,9 @@
-# PsyReaSFX 0.6.18 Stable RC7
+# PsyReaSFX 0.6.19 Stable RC8
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC7)
+**Release stage:** 0.6 stable candidate (RC8)
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
@@ -37,12 +37,12 @@ can use the full REAPER workspace.
 
 ## Installation
 
-Load `PsyReaSFX_v0_6_18_Stable_RC7.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
+Load `PsyReaSFX_v0_6_19_Stable_RC8.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_18_Stable_RC7.lua
+PsyReaSFX_v0_6_19_Stable_RC8.lua
 README.md
 assets/
   screenshots/
@@ -58,15 +58,16 @@ docs/
 The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
 
 
-## 0.6.18 Stable RC7 highlights
+## 0.6.19 Stable RC8 highlights
 
-- Removes the result-table scrollbar entirely. `Shift + mouse wheel` pans every
-  overflowing column from the first position through the rightmost field.
-- Moves file/selection context, Region count, channel mode, loudness-match state,
-  and operation status into the compact metric row.
-- Removes the separate bottom status row and its reserved window area.
-- Sizes the lower preview panel from its actual header, waveform, metric row, and
-  Studio Strip content so Forge and Aether layouts no longer leave a blank block.
-- Keeps action buttons and Pitch, Rate, and Gain controls at the same height while
-  increasing spacing between parameter cards.
+- Fixes Aether Standard in short windows by allocating the result list, splitter,
+  and lower preview from one exact runtime height budget.
+- Lets the detailed waveform reduce its minimum height progressively before any
+  preview controls can be clipped outside the PsyReaSFX window.
+- Makes the Studio Strip more legible with taller, equally sized buttons and
+  parameter cards, wider cards, and clearer spacing.
+- Shortens duplicate preview filenames in the inline status and clips remaining
+  context to the actual free width.
+- Keeps the scrollbar-free result table and complete `Shift + mouse wheel`
+  navigation through every overflowing field.
 - Retains the RC6 `RWF3` mono, stereo, and multichannel waveform lanes.
