@@ -1,9 +1,9 @@
-# PsyReaSFX 0.6.19 Stable RC8
+# PsyReaSFX 0.6.20 Stable RC9
 
 PsyReaSFX is a REAPER sound-effects browser, audition, waveform, metadata, region and asset-management ReaScript.
 
 **Author:** Psysia  
-**Release stage:** 0.6 stable candidate (RC8)
+**Release stage:** 0.6 stable candidate (RC9)
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX compact workspace with navigation and metadata panels" width="100%">
@@ -35,14 +35,28 @@ can use the full REAPER workspace.
 - [User Guide](docs/USER_GUIDE_en-US.md)
 - [Changelog](docs/CHANGELOG_en-US.md)
 
-## Installation
+## Installation with ReaPack
 
-Load `PsyReaSFX_v0_6_19_Stable_RC8.lua` from REAPER's Action List. ReaImGui is required; SWS Extension is strongly recommended.
+Import this repository URL in `Extensions > ReaPack > Import repositories...`:
+
+```text
+https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+```
+
+Synchronize ReaPack, search for `PsyReaSFX`, then install it. Future versions
+can be installed from ReaPack's package browser without downloading a new ZIP.
+
+ReaImGui is required; SWS Extension is strongly recommended.
+
+## Manual installation
+
+Load `PsyReaSFX_v0_6_20_Stable_RC9.lua` from REAPER's Action List.
 
 ## Release package structure
 
 ```text
-PsyReaSFX_v0_6_19_Stable_RC8.lua
+PsyReaSFX_v0_6_20_Stable_RC9.lua
+index.xml
 README.md
 assets/
   screenshots/
@@ -58,16 +72,16 @@ docs/
 The user guide and changelog are maintained as separate bilingual documents, which keeps operational documentation distinct from version history.
 
 
-## 0.6.19 Stable RC8 highlights
+## 0.6.20 Stable RC9 highlights
 
-- Fixes Aether Standard in short windows by allocating the result list, splitter,
-  and lower preview from one exact runtime height budget.
-- Lets the detailed waveform reduce its minimum height progressively before any
-  preview controls can be clipped outside the PsyReaSFX window.
-- Makes the Studio Strip more legible with taller, equally sized buttons and
-  parameter cards, wider cards, and clearer spacing.
-- Shortens duplicate preview filenames in the inline status and clips remaining
-  context to the actual free width.
+- Consolidates the product around one compact, flat, responsive interface while
+  keeping columns, navigation, metadata, focus mode, and panel height adjustable.
+- Removes outer frames from time metrics and Pitch, Rate, and Gain controls;
+  interactive icon buttons retain their consistent bordered treatment.
+- Increases the lower-panel safety reserve so the icon row remains visible in
+  short windows.
+- Adds the official `index.xml` ReaPack channel for one-time installation and
+  future in-app updates.
 - Keeps the scrollbar-free result table and complete `Shift + mouse wheel`
   navigation through every overflowing field.
 - Retains the RC6 `RWF3` mono, stereo, and multichannel waveform lanes.

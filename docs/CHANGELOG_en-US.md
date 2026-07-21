@@ -1,5 +1,31 @@
 # PsyReaSFX Changelog
 
+## 0.6.20 Stable RC9
+
+### One maintained interface
+
+- Removed the Aether Standard and Review interface presets and consolidated the
+  product around one compact, flat, responsive layout.
+- Existing settings migrate to the unified layout at startup; custom columns,
+  side panels, focus mode, and lower-panel height remain available.
+- Reduced the header menu to one Reset to Default Fields action.
+
+### Lower workspace visuals and clipping
+
+- Removed card backgrounds and frames from time metrics.
+- Removed outer frames from Pitch, Rate, and Gain while retaining labels, values,
+  and parameter tracks; interactive icon buttons keep consistent frames.
+- Increased the lower control safety reserve to prevent icon clipping in short
+  windows.
+
+### ReaPack and release organization
+
+- Added the official `index.xml` for one-time repository import and in-app
+  PsyReaSFX updates.
+- Added the ReaPack repository URL and bilingual installation instructions.
+- Removed manually uploaded installer ZIPs from older GitHub Releases while
+  preserving their notes and version tags.
+
 ## 0.6.19 Stable RC8
 
 ### Aether short-window fix

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<index version="1" name="Psysia ReaPack Repository">
+  <category name="Psysia">
+    <reapack name="PsyReaSFX.lua" type="script" desc="PsyReaSFX">
+      <metadata>
+        <description><![CDATA[
+PsyReaSFX is a high-performance sound asset browser, audition, waveform,
+metadata, region, collection, and REAPER insertion workflow.
+        ]]></description>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
+      </metadata>
+      <version name="0.6.20" author="Psysia" time="2026-07-21T04:00:00Z">
+        <changelog><![CDATA[
+- Unified the product around one compact, responsive interface.
+- Removed frames from time metrics and Pitch/Rate/Gain controls.
+- Kept borders only on interactive icon buttons.
+- Increased lower-panel safety space to prevent control clipping.
+- Added the official PsyReaSFX ReaPack repository channel.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.6.20-rc9/PsyReaSFX_v0_6_20_Stable_RC9.lua</source>
+      </version>
+    </reapack>
+  </category>
+</index>

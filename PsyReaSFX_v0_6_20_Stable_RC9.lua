@@ -1,5 +1,5 @@
 ﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.6.19-rc8
+-- @version 0.6.20-rc9
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -24,7 +24,7 @@
 --   - 修复底部 Child 内图标说明被其他窗口覆盖的问题
 --   - 外观设置改为真正影响全局的密度、层级和控制台模式
 --   - 已播放文字按本次会话标黄，重启自动清除并支持手动刷新
---   - Forge 紧凑单行列表预设，修复紧凑行文字裁切
+--   - 单一紧凑列表布局，保持单行文字与高密度波形浏览
 --   - 新增 Artwork 列、文件夹封面自动发现与元数据固定封面
 --   - 设置窗口改为左侧导航 + 现代卡片式内容区
 --   - Artwork 与状态颜色均采用按需缓存和可见行处理
@@ -53,8 +53,10 @@
 --   - 结果表不绘制横向滚动条，使用 Shift + 滚轮查看溢出字段
 --   - RWF3 高精度缓存保留单声道、立体声及最多八声道独立波形
 --   - 底部试听区统一为轻量 Studio Strip 小图标工具条
---   - 修复矮窗口下 Aether 预览区越界，严格按可用高度分配列表与波形
+--   - 修复矮窗口下旧预设的预览区越界，严格按可用高度分配列表与波形
 --   - 放宽 Studio Strip 参数卡间距，并压缩重复的长状态文件名
+--   - 统一为单一 PsyReaSFX 布局，移除旧多预设维护分支
+--   - 时间指标与参数控制去除外框，仅图标按钮保留边框
 --   - 预览摘要与状态移入指标行，下方面板按实际内容收口
 --
 --   必需：ReaImGui 0.10+
@@ -64,7 +66,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.6.19 Stable RC8"
+local VERSION = "0.6.20 Stable RC9"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -409,7 +411,7 @@ local WORKFLOW_STATUS_ORDER = {
 
 local THEME_PRESETS = {
   aether = {
-    label = "Aether Graphite",
+    label = "Psy Graphite",
     accent = 0x1F6FCCFF,
     accent_soft = 0x33465FFF,
     playhead = 0x61D982FF,
@@ -601,7 +603,7 @@ local state = {
   next_loudness_job = 0,
 
   preview_control_layout = "studio_strip",
-  bottom_panel_height = 350,
+  bottom_panel_height = 330,
   bottom_split_drag = nil,
   parameter_drag = nil,
   selection_drag_handle_pressed = false,
@@ -639,8 +641,8 @@ local state = {
 
   language = "zh",
   mini_wave_points = MINI_WAVE_DEFAULT_POINTS,
-  ui_density = "balanced",
-  surface_style = "layered",
+  ui_density = "compact",
+  surface_style = "flat",
   settings_tab = "general",
 
   waveform_hex = "#D7D8DA",
@@ -812,8 +814,6 @@ I18N_EN = {
   ["检查现有缓存"] = "Checking existing cache",
   ["取消"] = "Cancel",
   ["显示字段"] = "Visible fields",
-  ["Aether 风格字段预设"] = "Aether field preset",
-  ["元数据字段预设"] = "Metadata field preset",
   ["重置全部列宽"] = "Reset all column widths",
   ["插入当前轨道"] = "Insert on current track",
   ["插入新轨道"] = "Insert on new track",
@@ -1009,8 +1009,15 @@ I18N_EN = {
   ["无法保存上次浏览高亮"] = "Unable to save previous browsing highlights",
   ["当前高亮与上次浏览快照分开管理；完整试听历史不会被删除。"] =
     "Current highlights and the previous-session snapshot are managed separately; full preview history is preserved.",
-  ["Forge 紧凑预设"] = "Forge compact preset",
   ["界面预设"] = "Interface presets",
+  ["统一界面"] = "Unified interface",
+  ["PsyReaSFX 现在只维护一套紧凑、扁平且自适应的正式布局。字段与左右面板仍可自由调整。"] =
+    "PsyReaSFX now maintains one compact, flat, responsive interface. Columns and side panels remain customizable.",
+  ["恢复统一界面"] = "Restore unified interface",
+  ["重置为默认字段"] = "Reset to default fields",
+  ["已恢复默认字段布局"] = "Default field layout restored",
+  ["调整下方大波形与试听区域的高度。"] =
+    "Adjust the height of the detailed waveform and audition area.",
   ["浏览与工作区"] = "Browsing & workspace",
   ["颜色与状态"] = "Colors & states",
   ["点击打开色盘"] = "Click to open the color picker",
@@ -1037,8 +1044,6 @@ I18N_EN = {
   ["版本、版权与项目主页"] = "Version, copyright and project page",
   ["GitHub 项目主页 ↗"] = "GitHub project page ↗",
   ["GitHub 项目主页 · 待配置"] = "GitHub project page · not configured",
-  ["Forge 紧凑"] = "Forge Compact",
-  ["Aether 标准"] = "Aether Standard",
   ["运行环境"] = "Runtime environment",
   ["REAPER 版本"] = "REAPER version",
   ["操作系统"] = "Operating system",
@@ -1088,7 +1093,6 @@ I18N_EN = {
     "Dense single-line rows with Artwork, duration, and flat surfaces.",
   ["平衡密度、分层模块与轻量预览工具条。"] =
     "Balanced density, layered modules, and a lightweight preview strip.",
-  ["审阅模式"] = "Review mode",
   ["更大行高、高对比与完整元数据字段。"] =
     "Larger rows, stronger contrast, and the complete metadata field set.",
   ["这些选项会直接改变列表信息密度和底部控制区。"] =
@@ -1099,7 +1103,6 @@ I18N_EN = {
   ["启用 Artwork"] = "Enable Artwork",
   ["元数据封面固定在顶部"] = "Pin metadata Artwork at the top",
   ["清空 Artwork 缓存"] = "Clear Artwork cache",
-  ["应用 Forge 紧凑列表"] = "Apply Forge compact list",
   ["界面主题"] = "Interface theme",
   ["主题决定强调色；波形和已播放文字可单独配置。"] =
     "The theme controls the accent; waveform and played-text colors remain independently configurable.",
@@ -1158,7 +1161,6 @@ I18N_EN = {
   ["已取消拖拽：请释放到 REAPER 编排区"] = "Drag canceled: release over the REAPER arrange view",
   ["目录不存在或无法访问："] = "Folder does not exist or cannot be accessed: ",
   ["已清除本次已播放高亮"] = "Current played highlights cleared",
-  ["已应用 Forge 紧凑列表预设"] = "Forge compact list preset applied",
   ["下方大波形单击定位，拖动建立并试听选区。"] =
     "Click the large waveform to seek; drag to create and preview a selection.",
   ["表头固定置顶；右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看。"] =
@@ -9009,13 +9011,13 @@ function reset_interface_settings()
   state.language = "zh"
   state.mini_wave_points = MINI_WAVE_DEFAULT_POINTS
   state.precache_points = 4096
-  state.ui_density = "balanced"
-  state.surface_style = "layered"
+  state.ui_density = "compact"
+  state.surface_style = "flat"
   state.wave_scrub_enabled = true
   state.loop_selection = true
   state.preview_control_layout = "studio_strip"
   state.multichannel_waveform = true
-  state.bottom_panel_height = 350
+  state.bottom_panel_height = 330
   state.preview_channel_mode = "original"
   state.loudness_match = false
   state.loudness_target_db = -18
@@ -10018,43 +10020,16 @@ function metric_chip(label, value, accent)
   local value_w =
     select(1, ImGui.CalcTextSize(ctx, value_text)) or 0
 
-  local width = label_w + value_w + 25
+  local width = label_w + value_w + 20
   local height = 22
   local x, y = ImGui.GetCursorScreenPos(ctx)
   local draw_list = ImGui.GetWindowDrawList(ctx)
 
-  ImGui.InvisibleButton(
-    ctx,
-    "##metric_" .. tostring(label),
-    width,
-    height
-  )
-
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    x,
-    y,
-    x + width,
-    y + height,
-    COLOR.panel_alt,
-    UI_METRIC.radius_small
-  )
-
-  ImGui.DrawList_AddRect(
-    draw_list,
-    x + 0.5,
-    y + 0.5,
-    x + width - 0.5,
-    y + height - 0.5,
-    rgba_with_alpha(COLOR.border, 0x88),
-    UI_METRIC.radius_small,
-    0,
-    1
-  )
+  ImGui.Dummy(ctx, width, height)
 
   ImGui.DrawList_AddText(
     draw_list,
-    x + 8,
+    x + 2,
     y + 4,
     COLOR.dim,
     translated_label
@@ -10062,7 +10037,7 @@ function metric_chip(label, value, accent)
 
   ImGui.DrawList_AddText(
     draw_list,
-    x + width - value_w - 8,
+    x + width - value_w - 2,
     y + 4,
     accent and COLOR.playhead or COLOR.text,
     value_text
@@ -10174,35 +10149,6 @@ function draw_parameter_card(
   end
 
   local draw_list = ImGui.GetWindowDrawList(ctx)
-  local radius = UI_METRIC.radius
-  local background =
-    active and rgba_with_alpha(COLOR.selected, 0x26)
-    or hovered and COLOR.button_hover
-    or COLOR.panel_alt
-
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    x,
-    y,
-    x + width,
-    y + height,
-    background,
-    radius
-  )
-
-  ImGui.DrawList_AddRect(
-    draw_list,
-    x + 0.5,
-    y + 0.5,
-    x + width - 0.5,
-    y + height - 0.5,
-    active and COLOR.selected
-      or hovered and rgba_with_alpha(COLOR.text, 0x44)
-      or rgba_with_alpha(COLOR.border, 0x88),
-    radius,
-    0,
-    active and 1.5 or 1
-  )
 
   local translated_label = translate_ui_text(label)
   local value_text = string.format(format_string, value)
@@ -10364,7 +10310,7 @@ function toolbar_separator(height)
 end
 
 function bottom_controls_reserve_height(width)
-  return width >= 760 and 70 or 112
+  return width >= 760 and 88 or 124
 end
 
 function draw_bottom_splitter(width, total_height)
@@ -11797,34 +11743,7 @@ function visible_column_count()
   return count
 end
 
-function reset_columns_aether()
-  for key in pairs(state.column_visible) do
-    state.column_visible[key] = false
-  end
-
-  for _, key in ipairs(
-    {
-      "waveform",
-      "filename",
-      "status",
-      "description",
-      "duration",
-      "format",
-      "library",
-    }
-  ) do
-    state.column_visible[key] = true
-  end
-
-  for _, definition in ipairs(COLUMN_DEFS) do
-    state.column_widths[definition.key] =
-      definition.default
-  end
-
-  state.config_dirty = true
-end
-
-function reset_columns_forge_compact()
+function reset_columns_default()
   for key in pairs(state.column_visible) do
     state.column_visible[key] = false
   end
@@ -11850,36 +11769,7 @@ function reset_columns_forge_compact()
   state.ui_density = "compact"
   state.surface_style = "flat"
   state.config_dirty = true
-  set_status("已应用 Forge 紧凑列表预设")
-end
-
-function reset_columns_metadata()
-  for key in pairs(state.column_visible) do
-    state.column_visible[key] = false
-  end
-
-  for _, key in ipairs(
-    {
-      "waveform",
-      "filename",
-      "status",
-      "description",
-      "category",
-      "subcategory",
-      "catid",
-      "duration",
-      "library",
-    }
-  ) do
-    state.column_visible[key] = true
-  end
-
-  for _, definition in ipairs(COLUMN_DEFS) do
-    state.column_widths[definition.key] =
-      definition.default
-  end
-
-  state.config_dirty = true
+  set_status("已恢复默认字段布局")
 end
 
 function column_layout(width)
@@ -11994,25 +11884,8 @@ function draw_column_visibility_popup()
 
   ImGui.Separator(ctx)
 
-  if ImGui.MenuItem(
-    ctx,
-    "Aether 风格字段预设"
-  ) then
-    reset_columns_aether()
-  end
-
-  if ImGui.MenuItem(
-    ctx,
-    "元数据字段预设"
-  ) then
-    reset_columns_metadata()
-  end
-
-  if ImGui.MenuItem(
-    ctx,
-    "Forge 紧凑预设"
-  ) then
-    reset_columns_forge_compact()
+  if ImGui.MenuItem(ctx, "重置为默认字段") then
+    reset_columns_default()
   end
 
   if ImGui.MenuItem(ctx, "重置全部列宽") then
@@ -16070,56 +15943,18 @@ function draw_settings_about()
   end
 end
 
-function appearance_choice_button(
-  state_key,
-  value,
-  label,
-  width
-)
-  local selected = state[state_key] == value
+function apply_unified_interface(reset_columns, persist)
+  state.ui_density = "compact"
+  state.surface_style = "flat"
+  state.preview_control_layout = "studio_strip"
 
-  if selected then
-    ImGui.PushStyleColor(
-      ctx,
-      ImGui.Col_Button,
-      COLOR.selected
-    )
+  if reset_columns then
+    reset_columns_default()
   end
 
-  local clicked = dark_button(label, width or 104)
-
-  if selected then
-    ImGui.PopStyleColor(ctx)
-  end
-
-  if clicked then
-    state[state_key] = value
+  if persist ~= false then
     state.config_dirty = true
   end
-end
-
-function apply_interface_preset(name)
-  if name == "forge" then
-    state.ui_density = "compact"
-    state.surface_style = "flat"
-    state.preview_control_layout = "studio_strip"
-    state.bottom_panel_height = 310
-    reset_columns_forge_compact()
-  elseif name == "aether" then
-    state.ui_density = "balanced"
-    state.surface_style = "layered"
-    state.preview_control_layout = "studio_strip"
-    state.bottom_panel_height = 350
-    reset_columns_aether()
-  elseif name == "review" then
-    state.ui_density = "comfortable"
-    state.surface_style = "contrast"
-    state.preview_control_layout = "studio_strip"
-    state.bottom_panel_height = 400
-    reset_columns_metadata()
-  end
-
-  state.config_dirty = true
 end
 
 function settings_section_title(title, description)
@@ -16137,163 +15972,22 @@ function settings_section_title(title, description)
   ImGui.Spacing(ctx)
 end
 
-function appearance_preset_card(
-  id,
-  title,
-  description,
-  selected
-)
-  local width =
-    math.max(
-      150,
-      (
-        select(
-          1,
-          ImGui.GetContentRegionAvail(ctx)
-        ) - 16
-      ) / 3
-    )
-
-  local height = 78
-  local x, y =
-    ImGui.GetCursorScreenPos(ctx)
-
-  ImGui.InvisibleButton(
-    ctx,
-    "appearance_preset_" .. id,
-    width,
-    height
-  )
-
-  local clicked =
-    ImGui.IsItemClicked(ctx, 0)
-
-  local hovered =
-    ImGui.IsItemHovered(ctx)
-
-  local draw_list =
-    ImGui.GetWindowDrawList(ctx)
-
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    x,
-    y,
-    x + width,
-    y + height,
-    selected
-      and rgba_with_alpha(COLOR.selected, 0x38)
-      or hovered
-        and COLOR.button_hover
-        or COLOR.panel_alt,
-    UI_METRIC.radius
-  )
-
-  ImGui.DrawList_AddRect(
-    draw_list,
-    x + 0.5,
-    y + 0.5,
-    x + width - 0.5,
-    y + height - 0.5,
-    selected
-      and COLOR.selected
-      or rgba_with_alpha(COLOR.border, 0x88),
-    UI_METRIC.radius,
-    0,
-    selected and 1.5 or 1
-  )
-
-  ImGui.DrawList_AddText(
-    draw_list,
-    x + 12,
-    y + 12,
-    selected
-      and COLOR.selected_text
-      or COLOR.header_text,
-    translate_ui_text(title)
-  )
-
-  draw_clipped_text(
-    draw_list,
-    x + 12,
-    y + 39,
-    COLOR.dim,
-    translate_ui_text(description),
-    x + 10,
-    y + 34,
-    x + width - 10,
-    y + height - 8
-  )
-
-  return clicked
-end
-
 function draw_settings_appearance()
   settings_section_title(
-    "界面预设",
-    "预设会同时调整密度、表面层级、列表字段与预览控制台。"
+    "统一界面",
+    "PsyReaSFX 现在只维护一套紧凑、扁平且自适应的正式布局。字段与左右面板仍可自由调整。"
   )
 
-  if appearance_preset_card(
-    "forge",
-    "Forge 紧凑",
-    "单行高密度列表、Artwork、时长与扁平表面。",
-    state.ui_density == "compact"
-      and state.surface_style == "flat"
-  ) then
-    apply_interface_preset("forge")
-  end
-
-  ImGui.SameLine(ctx)
-
-  if appearance_preset_card(
-    "aether",
-    "Aether 标准",
-    "平衡密度、分层模块与轻量预览工具条。",
-    state.ui_density == "balanced"
-      and state.surface_style == "layered"
-  ) then
-    apply_interface_preset("aether")
-  end
-
-  ImGui.SameLine(ctx)
-
-  if appearance_preset_card(
-    "review",
-    "审阅模式",
-    "更大行高、高对比与完整元数据字段。",
-    state.ui_density == "comfortable"
-      and state.surface_style == "contrast"
-  ) then
-    apply_interface_preset("review")
+  if dark_button("恢复统一界面", 170) then
+    apply_unified_interface(true, true)
   end
 
   ImGui.Separator(ctx)
 
   settings_section_title(
     "浏览与工作区",
-    "这些选项会直接改变列表信息密度和底部控制区。"
+    "调整下方大波形与试听区域的高度。"
   )
-
-  ImGui.TextDisabled(ctx, "界面密度")
-  appearance_choice_button("ui_density", "comfortable", "舒适", 104)
-  ImGui.SameLine(ctx)
-  appearance_choice_button("ui_density", "balanced", "标准", 104)
-  ImGui.SameLine(ctx)
-  appearance_choice_button("ui_density", "compact", "紧凑", 104)
-
-  ImGui.TextDisabled(ctx, "表面层级")
-  appearance_choice_button("surface_style", "flat", "扁平", 104)
-  ImGui.SameLine(ctx)
-  appearance_choice_button("surface_style", "layered", "分层", 104)
-  ImGui.SameLine(ctx)
-  appearance_choice_button("surface_style", "contrast", "高对比", 104)
-
-  ImGui.TextDisabled(ctx, "预览控制台")
-  appearance_choice_button("preview_control_layout", "studio_strip", "轻量工具条", 126)
-  ImGui.SameLine(ctx)
-  appearance_choice_button("preview_control_layout", "focus_rack", "专注", 104)
-  ImGui.SameLine(ctx)
-  appearance_choice_button("preview_control_layout", "minimal_rack", "极简", 104)
 
   ImGui.SetNextItemWidth(ctx, 280)
 
@@ -16344,12 +16038,6 @@ function draw_settings_appearance()
 
   if dark_button("清空 Artwork 缓存", 160) then
     clear_artwork_cache()
-  end
-
-  ImGui.SameLine(ctx)
-
-  if dark_button("应用 Forge 紧凑列表", 190) then
-    reset_columns_forge_compact()
   end
 
   ImGui.Separator(ctx)
@@ -17806,7 +17494,7 @@ function draw_main()
           ImGui.GetContentRegionAvail(ctx)
 
       -- 运行时尺寸必须严格相加等于可用高度。旧算法在矮窗口中
-      -- 同时强制列表 >= 120 和预览 >= 220，导致 Aether 底部越界裁切。
+      -- 同时强制列表 >= 120 和预览 >= 220，曾导致底部越界裁切。
       local panel_space =
         math.max(
           2,
@@ -18037,6 +17725,7 @@ ensure_dirs()
 migrate_legacy_data()
 load_or_migrate_project_url()
 load_config()
+apply_unified_interface(false, false)
 apply_wave_cache_directory(
   state.wave_cache_dir
     or DEFAULT_WAVE_CACHE_DIR

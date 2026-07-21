@@ -1,8 +1,8 @@
-# PsyReaSFX 0.6.19 Stable RC8 User Guide
+# PsyReaSFX 0.6.20 Stable RC9 User Guide
 
 ## 1. Purpose
 
-PsyReaSFX is a REAPER-based sound-asset browser, search, audition, waveform-selection, region, metadata, collection, and insertion tool. It uses a high-density asset table and a modular workspace, with the original Forge Compact and Aether Standard workflow presets.
+PsyReaSFX is a REAPER-based sound-asset browser, search, audition, waveform-selection, region, metadata, collection, and insertion tool. It now uses one unified high-density, responsive workspace to reduce duplicated layout behavior and maintenance.
 
 This guide documents the current 0.6 feature set. Release-by-release changes are kept in the separate changelog.
 
@@ -21,10 +21,22 @@ SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain pre
 
 ## 3. Installation and upgrade
 
+### ReaPack installation (recommended)
+
+Import this URL from `Extensions → ReaPack → Import repositories...`:
+
+```text
+https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+```
+
+Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates can be synchronized and installed from ReaPack without downloading another ZIP or rebinding the action.
+
+### Manual installation
+
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_19_Stable_RC8.lua`.
+4. Load `PsyReaSFX_v0_6_20_Stable_RC9.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -54,32 +66,22 @@ Use `F9`, `F10`, and `F11` to toggle navigation, metadata, and focus mode.
 Pages:
 
 - **General**: language, panels, insertion naming and fades;
-- **Appearance**: full interface presets, density, surface hierarchy, console, Artwork and state colors;
+- **Appearance**: unified layout, lower-panel height, Artwork, themes and state colors;
 - **Waveforms**: resolution, precache, navigation, transients and loudness;
 - **Maintenance**: cache, database rebuild and factory reset;
 - **About**: product version, runtime details, data paths, diagnostics, and support identity.
 
-### Interface presets
+### Unified interface
 
 ```text
-Settings → Appearance → Interface preset
+Settings → Appearance → Unified interface
 ```
 
-- **Forge Compact**: single-line high-density rows with Waveform, Filename, Keywords/Description, Artwork and Duration;
-- **Aether Standard**: layered panels and more comfortable spacing;
-- **Review**: emphasizes status, metadata and comparison.
+PsyReaSFX now maintains one compact, flat, responsive interface. Columns and widths remain customizable from the pinned header, while navigation, metadata, and focus mode remain independently collapsible. Restore Unified Interface resets the default fields without deleting libraries or database content.
 
-Presets change multiple related settings at once. Columns, colors and the preview console remain individually editable afterwards.
+### Unified compact list
 
-### Density and hierarchy
-
-- **Comfortable / Balanced / Compact** alter row height, headers, icons, spacing and rounding;
-- **Flat / Layered / High Contrast** alter surface separation, grid strength and text contrast;
-- **Studio Strip / Focus / Minimal** control how much of the preview toolbar stays visible.
-
-### Forge-style compact list
-
-Compact rows now draw one vertically centered line instead of forcing a secondary line into a short row. This removes the clipped lower text shown by older builds.
+Rows use one vertically centered line instead of forcing secondary text into a short row. Right-click the pinned header and choose Reset to Default Fields when needed.
 
 ### Settings navigation
 
@@ -174,7 +176,7 @@ When the combined field width exceeds the center workspace, no horizontal scroll
 
 The file or selection range, Region count, channel-monitoring mode, loudness-match state, and current operation status share the metric row. The separate summary and green status rows have been removed, allowing the waveform to use the released height.
 
-In short windows, Aether Standard now allocates the result list, splitter, and preview from one exact runtime height budget. The detailed waveform progressively reduces its minimum height before controls can leave the PsyReaSFX window. Pitch, Rate, Gain, and action buttons remain equal in height, with wider cards and clearer spacing. Preview status omits the filename already shown in the header and clips safely to the remaining width.
+In short windows, the unified interface allocates the result list, splitter, and preview from one exact runtime height budget. The detailed waveform progressively reduces its minimum height before controls can leave the PsyReaSFX window. Time metrics and Pitch, Rate, and Gain use clean borderless text and parameter tracks; interactive icon buttons retain consistent frames. Preview status omits the filename already shown in the header and clips safely to the remaining width.
 
 ### Separate channel lanes
 
@@ -186,7 +188,7 @@ Hidden fields are not drawn, which reduces UI work for large result sets.
 
 ### Artwork column
 
-Right-click the fixed header and enable `Artwork` to display square thumbnails. The Forge Compact preset enables it by default.
+Right-click the fixed header and enable `Artwork` to display square thumbnails. The unified default field layout enables it by default.
 
 Artwork lookup checks the source folder and then parent folders up to the library root, with a seven-level limit. Preferred names include `artwork`, `cover`, `folder`, `front`, `album` and `thumbnail`, using PNG or JPEG files. A cover can also be selected manually from the metadata inspector.
 
@@ -217,9 +219,9 @@ Settings → Appearance → Colors and states
 
 The palette includes normal, selected, played and marked waveforms; played text; selection; playhead; and Region colors.
 
-### Forge-style played text
+### Played text
 
-After an asset actually starts previewing during the current launch, text columns such as Filename, Keywords/Description, Duration and Library use the configurable played color. The default is a warm yellow close to Forge.
+After an asset actually starts previewing during the current launch, text columns such as Filename, Keywords/Description, Duration and Library use the configurable warm-yellow played color.
 
 This is a **session-only visual state**:
 
@@ -333,7 +335,7 @@ Artwork currently uses external PNG/JPEG files. Embedded artwork inside audio co
 
 The application provides three complete presets, three density levels, three surface styles, adjustable columns, a fixed header, collapsible panels and a responsive preview console.
 
-### 0.6.10 optimization work
+### Current performance strategy
 
 - session-played state uses a path hash table for constant-time lookup;
 - Artwork discovery caches negative folder results and does not rescan empty folders every frame;
@@ -401,4 +403,4 @@ Common issues:
 
 ## 21. Development stage
 
-The primary 0.6 feature set is complete. Version 0.6.10 remains a 0.6 stabilization, interface-refinement and gap-closing release. Artwork, compact layout, session-state reset and Settings Center behavior should be validated before the project enters the 0.7 Transfer stage.
+The primary 0.6 feature set is complete. Version 0.6.20 RC9 continues stabilization, unified-interface validation, and ReaPack update-channel testing. After blocking issues are cleared, the project can publish 0.6 Stable and then enter the 0.7 Transfer stage.
