@@ -1,5 +1,28 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.5 Beta 7
+
+### Official visual identity
+
+- Adds the official PsyReaSFX README hero and packaged application icon.
+- Applies the Deep Navy, Dark Slate, Electric Cyan, Soft White, and Cool Gray
+  brand palette to the default interface.
+- Rebuilds About as a minimal product card with the icon, product line,
+  version, copyright, and GitHub link.
+- Includes the icon as a ReaPack-managed asset instead of relying on an
+  external path.
+
+### Source-owned Artwork
+
+- Moves shared Artwork ownership from the logical library to each physical
+  source folder.
+- Prevents a cover found in one source from appearing on sibling sources in
+  the same logical library.
+- Adds source-folder context commands to choose, rediscover, or clear Artwork.
+- Preserves asset-specific Artwork as the highest-priority override.
+- Migrates an old shared cover only when the logical library has exactly one
+  source; ambiguous multi-source associations are intentionally discarded.
+
 ## 0.7.4 Beta 6
 
 ### Left-panel crash hotfix

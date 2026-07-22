@@ -3,35 +3,51 @@
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7.4 Beta 6
+<p align="center">
+  <img src="assets/brand/psyreasfx-hero.png" alt="PsyReaSFX — Sound Assets Organized" width="100%">
+</p>
+
+<p align="center">
+  <strong>Sound Assets Organized</strong><br>
+  Browse · Organize · Preview
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Version-0.7.5--beta.7-19D8FF" alt="Version 0.7.5 beta 7">
+  <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
+  <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
+</p>
+
+# PsyReaSFX 0.7.5 Beta 7
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.4-beta.6  
+**Package version:** 0.7.5-beta.7  
 **Release stage:** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
 
-## Library navigation and shared Artwork
+## Brand refresh and source-owned Artwork
 
-Beta 6 is a focused UI-state hotfix. It defines the theme accent and muted
-colors used by the new disclosure control, Library Manager, and folder-drop
-overlay. Opening the left panel no longer interrupts the active ImGui child,
-so closing PsyReaSFX does not produce the secondary `Missing EndChild()` error.
+Beta 7 applies the official PsyReaSFX visual system across the project and
+makes Artwork ownership match the physical source structure.
 
 - The disclosure arrow beside a logical library is now a real control: click
   it once to expand or collapse source folders. The state is saved.
-- Artwork discovery always checks the physical source root even when an asset
-  is nested more than seven folders deep.
+- The default interface uses Deep Navy, Dark Slate, Electric Cyan, Soft White,
+  and Cool Gray from the PsyReaSFX brand palette.
+- About now displays the packaged PsyReaSFX icon, product line, version,
+  copyright, and project link in one minimal product card.
+- Every physical source folder owns its own Artwork. A cover found under one
+  source never propagates to sibling sources in the same logical library.
+- Right-click a source folder to choose, rediscover, or clear its cover.
+- An asset-specific cover still takes priority over its source-folder cover.
 - Common `Artwork`, `Images`, `Docs`, and `Documentation` subfolders are also
   checked, with additional library/product/preview cover filenames.
-- A logical library can store one shared cover used by both the Artwork column
-  and the pinned metadata inspector. Choose it from the library context menu
-  or Library Manager when automatic discovery cannot locate the image.
 - Failed image decodes use a short retry delay instead of retrying every frame.
 
 ## Multi-root logical libraries
@@ -133,7 +149,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_4_Beta_6.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_5_Beta_7.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -145,10 +161,11 @@ Load `PsyReaSFX_v0_7_4_Beta_6.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_4_Beta_6.lua
+PsyReaSFX_v0_7_5_Beta_7.lua
 README.md
 README_zh-CN.md
 index.xml
+assets/brand/
 assets/screenshots/
 docs/
 ```

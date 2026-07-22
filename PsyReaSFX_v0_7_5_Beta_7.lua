@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.4-beta.6
+-- @version 0.7.5-beta.7
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -76,6 +76,9 @@
 --   - 0.7.4：逻辑库箭头可直接折叠或展开来源路径
 --   - Artwork 增加逻辑库封面、来源根目录与常见封面子目录回退
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
+--   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
+--   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
+--   - 实体来源右键菜单可指定、重新检测或清除自己的封面
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -84,7 +87,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.4 Beta 6"
+local VERSION = "0.7.5 Beta 7"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -150,6 +153,14 @@ local SCRIPT_FILE =
 
 local SCRIPT_DIR =
   SCRIPT_FILE:match("^(.*[\\/])") or ""
+
+local BRAND_ICON_PATH =
+  SCRIPT_DIR
+  .. "assets"
+  .. SEP
+  .. "brand"
+  .. SEP
+  .. "psyreasfx-icon.png"
 
 local DOCS_DIR =
   SCRIPT_DIR .. "docs"
@@ -298,20 +309,20 @@ local UI_DENSITY_PROFILES = {
 
 local SURFACE_STYLES = {
   flat = {
-    window = 0x101114FF,
-    panel = 0x101114FF,
-    panel_alt = 0x15171AFF,
-    title = 0x15171AFF,
-    title_active = 0x181B1FFF,
-    header = 0x1B1E22FF,
-    row = 0x101114FF,
-    row_alt = 0x101114FF,
-    row_hover = 0x1A1E23FF,
-    grid = 0x24282EFF,
-    button = 0x1A1D22FF,
-    button_hover = 0x252A31FF,
-    text = 0xE1E4E8FF,
-    dim = 0x8D949DFF,
+    window = 0x0A1020FF,
+    panel = 0x0A1020FF,
+    panel_alt = 0x0E192AFF,
+    title = 0x0E192AFF,
+    title_active = 0x13253DFF,
+    header = 0x13253DFF,
+    row = 0x0A1020FF,
+    row_alt = 0x0A1020FF,
+    row_hover = 0x13253DFF,
+    grid = 0x20344EFF,
+    button = 0x13253DFF,
+    button_hover = 0x1B3657FF,
+    text = 0xF5FAFFFF,
+    dim = 0x7A8797FF,
   },
   layered = {
     window = 0x0B0C0EFF,
@@ -368,32 +379,32 @@ local MAX_WAVE_MEMORY = 180
 local MAX_WORK_QUEUE = 160
 
 local COLOR = {
-  accent = 0x1F6FCCFF,
-  window = 0x0B0C0EFF,
-  panel = 0x111316FF,
-  panel_alt = 0x17191DFF,
-  title = 0x1A1C20FF,
-  title_active = 0x202328FF,
-  header = 0x24272CFF,
+  accent = 0x19D8FFFF,
+  window = 0x0A1020FF,
+  panel = 0x0A1020FF,
+  panel_alt = 0x0E192AFF,
+  title = 0x0E192AFF,
+  title_active = 0x13253DFF,
+  header = 0x13253DFF,
   header_text = 0xE7E9EDFF,
   row = 0x0E0F12FF,
   row_alt = 0x121318FF,
   row_hover = 0x1B2027FF,
-  selected = 0x1F6FCCFF,
-  selected_text = 0xFFFFFFFF,
-  text = 0xD6D6D8FF,
-  dim = 0x8A8D94FF,
-  muted = 0x8A8D94FF,
-  grid = 0x2B2E34FF,
-  border = 0x555B64FF,
-  waveform_bg = 0x050607FF,
-  waveform = 0xD7D8DAFF,
-  waveform_selected = 0xEAF3FFFF,
-  waveform_played = 0x8FB8D8FF,
+  selected = 0x19D8FFFF,
+  selected_text = 0x0A1020FF,
+  text = 0xF5FAFFFF,
+  dim = 0x7A8797FF,
+  muted = 0x7A8797FF,
+  grid = 0x20344EFF,
+  border = 0x2A496AFF,
+  waveform_bg = 0x050A14FF,
+  waveform = 0xDCE8F3FF,
+  waveform_selected = 0xF5FAFFFF,
+  waveform_played = 0x63CDE8FF,
   waveform_marked = 0xF0C85AFF,
   played_text = 0xF0C85AFF,
-  playhead = 0x50E36DFF,
-  selection = 0x2789E955,
+  playhead = 0x19D8FFFF,
+  selection = 0x19D8FF55,
   region = 0xE2B76499,
   favorite = 0xFFD533FF,
   success = 0x6ED486FF,
@@ -437,10 +448,10 @@ local WORKFLOW_STATUS_ORDER = {
 
 local THEME_PRESETS = {
   aether = {
-    label = "Psy Graphite",
-    accent = 0x1F6FCCFF,
-    accent_soft = 0x33465FFF,
-    playhead = 0x61D982FF,
+    label = "Psy Electric",
+    accent = 0x19D8FFFF,
+    accent_soft = 0x294E6BFF,
+    playhead = 0x19D8FFFF,
     favorite = 0xF0C85AFF,
   },
   amber = {
@@ -696,7 +707,7 @@ local state = {
   help_popup_requested = 0,
 
   theme_preset = "aether",
-  custom_accent_hex = "#1F6FCC",
+  custom_accent_hex = "#19D8FF",
 
   language = "zh",
   mini_wave_points = MINI_WAVE_DEFAULT_POINTS,
@@ -704,15 +715,15 @@ local state = {
   surface_style = "flat",
   settings_tab = "general",
 
-  waveform_hex = "#D7D8DA",
-  waveform_selected_hex = "#EAF3FF",
-  waveform_played_hex = "#8FB8D8",
+  waveform_hex = "#DCE8F3",
+  waveform_selected_hex = "#F5FAFF",
+  waveform_played_hex = "#63CDE8",
   waveform_marked_hex = "#F0C85A",
   played_text_hex = "#F0C85A",
   played_text_enabled = true,
   played_waveform_enabled = false,
-  selection_hex = "#2789E9",
-  playhead_hex = "#50E36D",
+  selection_hex = "#19D8FF",
+  playhead_hex = "#19D8FF",
   region_hex = "#E2B764",
 
   sidebar_visible = true,
@@ -1121,6 +1132,13 @@ I18N_EN = {
   ["选择音效库封面"] = "Choose library artwork",
   ["选择音效库封面…"] = "Choose library artwork…",
   ["重新自动查找封面"] = "Auto-detect library artwork again",
+  ["选择来源路径封面"] = "Choose source-folder artwork",
+  ["指定此来源封面…"] = "Choose artwork for this source…",
+  ["重新自动查找此来源封面"] = "Auto-detect artwork for this source again",
+  ["清除此来源封面"] = "Clear artwork for this source",
+  ["已设置来源路径封面："] = "Source-folder artwork set: ",
+  ["将重新查找来源路径封面："] = "Source-folder artwork will be rediscovered: ",
+  ["已清除来源路径封面："] = "Source-folder artwork cleared: ",
   ["已播放文字"] = "Played text",
   ["已播放文字高亮"] = "Highlight played text",
   ["已播放波形高亮"] = "Highlight played waveform",
@@ -1154,6 +1172,8 @@ I18N_EN = {
   ["产品、版本与运行环境"] = "Product, version and runtime",
   ["关于 PsyReaSFX"] = "About PsyReaSFX",
   ["REAPER 音效资产浏览、试听与整理工具"] = "Sound-effects browsing, audition and asset-management tool for REAPER",
+  ["音效资产井然有序"] = "Sound assets organized",
+  ["浏览 · 整理 · 试听"] = "Browse · Organize · Preview",
   ["版本"] = "Version",
   ["作者"] = "Author",
   ["发布阶段"] = "Release stage",
@@ -1343,6 +1363,11 @@ I18N_PREFIX_EN = {
   ["已设置音效库封面："] = "Library artwork set: ",
   ["将重新查找音效库封面："] =
     "Library artwork will be rediscovered: ",
+  ["已设置来源路径封面："] = "Source-folder artwork set: ",
+  ["将重新查找来源路径封面："] =
+    "Source-folder artwork will be rediscovered: ",
+  ["已清除来源路径封面："] =
+    "Source-folder artwork cleared: ",
   ["文档目录不存在："] = "Documentation directory not found: ",
   ["已迁移旧版音效库路径与偏好设置"] =
     "Migrated legacy library paths and preferences",
@@ -1970,8 +1995,12 @@ function apply_theme_palette()
   COLOR.border = preset.accent_soft or 0x555B64FF
   COLOR.playhead = preset.playhead or 0x61D982FF
   COLOR.favorite = preset.favorite or 0xF0C85AFF
-  COLOR.selected_text = 0xFFFFFFFF
-  COLOR.button_hover = 0x343A43FF
+  COLOR.selected_text = state.theme_preset == "aether"
+    and 0x0A1020FF
+    or 0xFFFFFFFF
+  COLOR.button_hover = state.theme_preset == "aether"
+    and 0x1B3657FF
+    or 0x343A43FF
 
   if state and state.waveform_hex
     and type(apply_waveform_palette) == "function" then
@@ -1980,13 +2009,13 @@ function apply_theme_palette()
 end
 
 local DEFAULT_WAVEFORM_PALETTE = {
-  waveform_hex = "#D7D8DA",
-  waveform_selected_hex = "#EAF3FF",
-  waveform_played_hex = "#8FB8D8",
+  waveform_hex = "#DCE8F3",
+  waveform_selected_hex = "#F5FAFF",
+  waveform_played_hex = "#63CDE8",
   waveform_marked_hex = "#F0C85A",
   played_text_hex = "#F0C85A",
-  selection_hex = "#2789E9",
-  playhead_hex = "#50E36D",
+  selection_hex = "#19D8FF",
+  playhead_hex = "#19D8FF",
   region_hex = "#E2B764",
 }
 
@@ -1994,17 +2023,17 @@ local WAVEFORM_PALETTE_FIELDS = {
   {
     key = "waveform_hex",
     label = "普通波形",
-    fallback = 0xD7D8DAFF,
+    fallback = 0xDCE8F3FF,
   },
   {
     key = "waveform_selected_hex",
     label = "选中波形",
-    fallback = 0xEAF3FFFF,
+    fallback = 0xF5FAFFFF,
   },
   {
     key = "waveform_played_hex",
     label = "已播放波形",
-    fallback = 0x8FB8D8FF,
+    fallback = 0x63CDE8FF,
   },
   {
     key = "waveform_marked_hex",
@@ -2019,12 +2048,12 @@ local WAVEFORM_PALETTE_FIELDS = {
   {
     key = "selection_hex",
     label = "选区颜色",
-    fallback = 0x2789E9FF,
+    fallback = 0x19D8FFFF,
   },
   {
     key = "playhead_hex",
     label = "播放指针颜色",
-    fallback = 0x50E36DFF,
+    fallback = 0x19D8FFFF,
   },
   {
     key = "region_hex",
@@ -2036,15 +2065,15 @@ local WAVEFORM_PALETTE_FIELDS = {
 function apply_waveform_palette()
   COLOR.waveform =
     rgba_from_hex(state.waveform_hex)
-      or 0xD7D8DAFF
+      or 0xDCE8F3FF
 
   COLOR.waveform_selected =
     rgba_from_hex(state.waveform_selected_hex)
-      or 0xEAF3FFFF
+      or 0xF5FAFFFF
 
   COLOR.waveform_played =
     rgba_from_hex(state.waveform_played_hex)
-      or 0x8FB8D8FF
+      or 0x63CDE8FF
 
   COLOR.waveform_marked =
     rgba_from_hex(state.waveform_marked_hex)
@@ -2056,14 +2085,14 @@ function apply_waveform_palette()
 
   local selection =
     rgba_from_hex(state.selection_hex)
-      or 0x2789E9FF
+      or 0x19D8FFFF
 
   COLOR.selection =
     rgba_with_alpha(selection, 0x55)
 
   COLOR.playhead =
     rgba_from_hex(state.playhead_hex)
-      or 0x50E36DFF
+      or 0x19D8FFFF
 
   COLOR.region =
     rgba_with_alpha(
@@ -2485,6 +2514,10 @@ function rebuild_library_indexes()
   for _, record in ipairs(state.root_records) do
     record.path = canonical_source_path(record.path)
     record.enabled = record.enabled ~= false
+    record.artwork_path =
+      tostring(record.artwork_path or "")
+    record.artwork_checked =
+      record.artwork_checked == true
     state.root_by_id[record.id] = record
     state.root_by_path[path_key(record.path)] = record
 
@@ -3603,6 +3636,10 @@ function save_libraries()
       escape_tsv(record.alias or ""),
       "\t",
       record.enabled == false and "0" or "1",
+      "\t",
+      escape_tsv(record.artwork_path or ""),
+      "\t",
+      record.artwork_checked == true and "1" or "0",
       "\n"
     )
   end
@@ -3645,12 +3682,35 @@ function load_or_migrate_libraries()
           path = canonical_source_path(fields[4]),
           alias = fields[5] or "",
           enabled = fields[6] ~= "0",
+          artwork_path = fields[7] or "",
+          artwork_checked = fields[8] == "1",
         }
       end
     end
 
     file:close()
     rebuild_library_indexes()
+
+    -- Beta 5/6 stored an automatically discovered source cover on the
+    -- logical library. Migrate it only when ownership is unambiguous.
+    -- Multi-source libraries intentionally drop the shared association so
+    -- each source can discover or select its own artwork independently.
+    for _, library in ipairs(state.libraries) do
+      local legacy_artwork = tostring(library.artwork_path or "")
+
+      if legacy_artwork ~= "" then
+        if #library.roots == 1
+          and tostring(library.roots[1].artwork_path or "") == "" then
+          library.roots[1].artwork_path = legacy_artwork
+          library.roots[1].artwork_checked = true
+        end
+
+        library.artwork_path = ""
+        library.artwork_checked = false
+        state.libraries_dirty = true
+      end
+    end
+
     return
   end
 
@@ -3667,6 +3727,8 @@ function load_or_migrate_libraries()
       path = canonical_source_path(root),
       alias = "",
       enabled = true,
+      artwork_path = "",
+      artwork_checked = false,
     }
   end
 
@@ -3777,7 +3839,7 @@ function load_config()
 
         state.theme_preset = value or "aether"
       elseif name == "custom_accent_hex" then
-        state.custom_accent_hex = value or "#1F6FCC"
+        state.custom_accent_hex = value or "#19D8FF"
       elseif name == "language" then
         state.language =
           value == "en" and "en" or "zh"
@@ -3887,11 +3949,11 @@ function load_config()
       elseif name == "loudness_show_tp" then
         state.loudness_show_tp = value ~= "0"
       elseif name == "waveform_hex" then
-        state.waveform_hex = value or "#D7D8DA"
+        state.waveform_hex = value or "#DCE8F3"
       elseif name == "waveform_selected_hex" then
-        state.waveform_selected_hex = value or "#EAF3FF"
+        state.waveform_selected_hex = value or "#F5FAFF"
       elseif name == "waveform_played_hex" then
-        state.waveform_played_hex = value or "#8FB8D8"
+        state.waveform_played_hex = value or "#63CDE8"
       elseif name == "waveform_marked_hex" then
         state.waveform_marked_hex = value or "#F0C85A"
       elseif name == "played_text_hex" then
@@ -3907,9 +3969,9 @@ function load_config()
       elseif name == "inspector_artwork_pinned" then
         state.inspector_artwork_pinned = value ~= "0"
       elseif name == "selection_hex" then
-        state.selection_hex = value or "#2789E9"
+        state.selection_hex = value or "#19D8FF"
       elseif name == "playhead_hex" then
-        state.playhead_hex = value or "#50E36D"
+        state.playhead_hex = value or "#19D8FF"
       elseif name == "region_hex" then
         state.region_hex = value or "#E2B764"
       elseif name == "sidebar_visible" then
@@ -6359,88 +6421,133 @@ function valid_artwork_path(path)
     and reaper.file_exists(path)
 end
 
-function library_artwork_for_asset(asset)
-  local library = asset
-    and state.library_by_id[asset.library_id or ""]
-    or nil
+function root_record_for_asset(asset)
+  if not asset then
+    return nil
+  end
 
-  if not library then
+  local record = state.root_by_id[
+    tostring(asset.root_id or "")
+  ]
+
+  if not record and tostring(asset.root or "") ~= "" then
+    record = root_record_for_path(asset.root)
+  end
+
+  if not record and asset.path then
+    record = select(2, root_for_path(asset.path))
+  end
+
+  return record
+end
+
+function root_artwork_for_asset(asset)
+  local record = root_record_for_asset(asset)
+
+  if not record then
     return "", nil
   end
 
-  local path =
-    tostring(library.artwork_path or "")
+  local path = tostring(record.artwork_path or "")
 
   if valid_artwork_path(path) then
-    return path, library
+    return path, record
   end
 
-  if path ~= "" then
-    library.artwork_path = ""
-    library.artwork_checked = false
+  if path ~= "" and path ~= "-" then
+    record.artwork_path = ""
+    record.artwork_checked = false
     state.libraries_dirty = true
   end
 
-  return "", library
+  return "", record
 end
 
-function remember_library_artwork(library, path)
-  if not library or not valid_artwork_path(path) then
+function remember_root_artwork(record, path)
+  if not record or not valid_artwork_path(path) then
     return
   end
 
   path = normalize_slashes(path)
 
-  if library.artwork_path ~= path then
-    library.artwork_path = path
+  if record.artwork_path ~= path then
+    record.artwork_path = path
     state.libraries_dirty = true
   end
 
-  library.artwork_checked = true
+  record.artwork_checked = true
 end
 
-function choose_artwork_for_library(library)
-  if not library then
+function invalidate_root_artwork_assets(record)
+  if not record then
     return
   end
-
-  local current = valid_artwork_path(library.artwork_path)
-    and library.artwork_path
-    or ""
-  local ok, filename =
-    reaper.GetUserFileNameForRead(
-      current,
-      translate_ui_text("选择音效库封面"),
-      "png,jpg,jpeg,bmp,tga"
-    )
-
-  if ok and filename and filename ~= "" then
-    library.artwork_path =
-      normalize_slashes(filename)
-    library.artwork_checked = true
-    state.libraries_dirty = true
-    set_status("已设置音效库封面：" .. library.name)
-  end
-end
-
-function redetect_library_artwork(library)
-  if not library then
-    return
-  end
-
-  library.artwork_path = ""
-  library.artwork_checked = false
-  state.artwork_folder_cache = {}
-  state.libraries_dirty = true
 
   for _, asset in ipairs(state.assets) do
-    if asset.library_id == library.id
+    if asset.root_id == record.id
       and tostring(asset.artwork_path or "") == "" then
       asset.artwork_checked = false
     end
   end
 
-  set_status("将重新查找音效库封面：" .. library.name)
+  state.results_dirty = true
+end
+
+function choose_artwork_for_root(record)
+  if not record then
+    return
+  end
+
+  local current = valid_artwork_path(record.artwork_path)
+    and record.artwork_path
+    or ""
+  local ok, filename = reaper.GetUserFileNameForRead(
+    current,
+    translate_ui_text("选择来源路径封面"),
+    "png,jpg,jpeg,bmp,tga"
+  )
+
+  if ok and filename and filename ~= "" then
+    record.artwork_path = normalize_slashes(filename)
+    record.artwork_checked = true
+    state.libraries_dirty = true
+    invalidate_root_artwork_assets(record)
+    set_status(
+      "已设置来源路径封面："
+        .. (record.alias ~= "" and record.alias or basename(record.path))
+    )
+  end
+end
+
+function redetect_root_artwork(record)
+  if not record then
+    return
+  end
+
+  record.artwork_path = ""
+  record.artwork_checked = false
+  state.artwork_folder_cache = {}
+  state.libraries_dirty = true
+  invalidate_root_artwork_assets(record)
+  set_status(
+    "将重新查找来源路径封面："
+      .. (record.alias ~= "" and record.alias or basename(record.path))
+  )
+end
+
+function clear_root_artwork(record)
+  if not record then
+    return
+  end
+
+  record.artwork_path = "-"
+  record.artwork_checked = true
+  state.libraries_dirty = true
+  invalidate_root_artwork_assets(record)
+  set_status(
+    "已清除来源路径封面："
+      .. (record.alias ~= "" and record.alias or basename(record.path))
+  )
 end
 
 function discover_artwork_path(asset)
@@ -6448,8 +6555,8 @@ function discover_artwork_path(asset)
     return "", false
   end
 
-  local shared_path, library =
-    library_artwork_for_asset(asset)
+  local shared_path, record =
+    root_artwork_for_asset(asset)
 
   if shared_path ~= "" then
     return shared_path, true
@@ -6460,19 +6567,24 @@ function discover_artwork_path(asset)
       and asset.folder
       or dirname(asset.path)
 
-  local root = normalize_slashes(asset.root or "")
+  local root = record and record.path
+    or normalize_slashes(asset.root or "")
+  local root_disabled = record
+    and tostring(record.artwork_path or "") == "-"
   local depth = 0
 
   while folder and folder ~= "" and depth < 7 do
-    local found =
-      find_artwork_in_folder(folder)
+    local at_root = root ~= ""
+      and path_key(folder) == path_key(root)
+    local found = ""
+
+    if not (at_root and root_disabled) then
+      found = find_artwork_in_folder(folder)
+    end
 
     if found ~= "" then
-      local at_root = root ~= ""
-        and path_key(folder) == path_key(root)
-
       if at_root then
-        remember_library_artwork(library, found)
+        remember_root_artwork(record, found)
       end
 
       return found, at_root
@@ -6493,33 +6605,23 @@ function discover_artwork_path(asset)
     depth = depth + 1
   end
 
-  -- Deeply nested libraries may not reach their source root within the
-  -- per-file search limit. Check every source root explicitly once so a
-  -- product-level cover can be shared by the whole logical library.
+  -- Deeply nested files may not reach their own source root within the
+  -- per-file search limit. Check only that source root explicitly. Covers
+  -- never cross from one source folder to another logical-library member.
   if root ~= ""
-    and (not library or not library.artwork_checked) then
+    and not root_disabled
+    and (not record or not record.artwork_checked) then
     local found = find_library_artwork_in_root(root)
 
     if found ~= "" then
-      remember_library_artwork(library, found)
+      remember_root_artwork(record, found)
       return found, true
     end
   end
 
-  if library and not library.artwork_checked then
-    for _, record in ipairs(library.roots or {}) do
-      if path_key(record.path) ~= path_key(root) then
-        local found =
-          find_library_artwork_in_root(record.path)
-
-        if found ~= "" then
-          remember_library_artwork(library, found)
-          return found, true
-        end
-      end
-    end
-
-    library.artwork_checked = true
+  if record then
+    record.artwork_checked = true
+    state.libraries_dirty = true
   end
 
   return "", false
@@ -6534,7 +6636,7 @@ function queue_artwork(asset, priority)
   local current =
     tostring(asset.artwork_path or "")
   local shared =
-    select(1, library_artwork_for_asset(asset))
+    select(1, root_artwork_for_asset(asset))
 
   if current == "-"
     or valid_artwork_path(current)
@@ -6715,7 +6817,7 @@ function artwork_image_for_asset(asset, priority)
   end
 
   if path == "" then
-    path = select(1, library_artwork_for_asset(asset))
+    path = select(1, root_artwork_for_asset(asset))
   end
 
   if path == "" then
@@ -6895,8 +6997,10 @@ function clear_artwork_cache()
   state.artwork_queue = {}
   state.artwork_queued = {}
 
-  for _, library in ipairs(state.libraries) do
-    library.artwork_checked = false
+  for _, record in ipairs(state.root_records) do
+    if tostring(record.artwork_path or "") == "" then
+      record.artwork_checked = false
+    end
   end
 
   for _, asset in ipairs(state.assets) do
@@ -10555,6 +10659,8 @@ function add_root_to_library(
     path = root,
     alias = "",
     enabled = true,
+    artwork_path = "",
+    artwork_checked = false,
   }
 
   state.root_records[#state.root_records + 1] = record
@@ -10814,7 +10920,7 @@ function reset_interface_settings()
   state.transfer_last_outputs = {}
   state.transfer_last_error = ""
   state.theme_preset = "aether"
-  state.custom_accent_hex = "#1F6FCC"
+  state.custom_accent_hex = "#19D8FF"
   state.language = "zh"
   state.mini_wave_points = MINI_WAVE_DEFAULT_POINTS
   state.precache_points = 4096
@@ -10840,9 +10946,9 @@ function reset_interface_settings()
   state.loudness_show_m = true
   state.loudness_show_s = false
   state.loudness_show_tp = false
-  state.waveform_hex = "#D7D8DA"
-  state.waveform_selected_hex = "#EAF3FF"
-  state.waveform_played_hex = "#8FB8D8"
+  state.waveform_hex = "#DCE8F3"
+  state.waveform_selected_hex = "#F5FAFF"
+  state.waveform_played_hex = "#63CDE8"
   state.waveform_marked_hex = "#F0C85A"
   state.played_text_hex = "#F0C85A"
   state.played_text_enabled = true
@@ -10850,8 +10956,8 @@ function reset_interface_settings()
   state.restore_played_on_start = false
   state.artwork_enabled = true
   state.inspector_artwork_pinned = true
-  state.selection_hex = "#2789E9"
-  state.playhead_hex = "#50E36D"
+  state.selection_hex = "#19D8FF"
+  state.playhead_hex = "#19D8FF"
   state.region_hex = "#E2B764"
   apply_waveform_palette()
   state.wave_view_start = 0
@@ -12705,12 +12811,6 @@ function draw_library_manager_popup()
 
     ImGui.SameLine(ctx)
 
-    if dark_button("封面", 54) then
-      choose_artwork_for_library(library)
-    end
-
-    ImGui.SameLine(ctx)
-
     if dark_button("扫描", 54) then
       start_scan("扫描 " .. library.name, roots_for_library(library.id))
     end
@@ -12736,6 +12836,12 @@ function draw_library_manager_popup()
 
       if dark_button("打开", 54) then
         open_folder(record.path)
+      end
+
+      ImGui.SameLine(ctx)
+
+      if dark_button("封面", 54) then
+        choose_artwork_for_root(record)
       end
 
       ImGui.SameLine(ctx)
@@ -13173,14 +13279,6 @@ function draw_sidebar()
         rename_library(library)
       end
 
-      if ImGui.MenuItem(ctx, "选择音效库封面…") then
-        choose_artwork_for_library(library)
-      end
-
-      if ImGui.MenuItem(ctx, "重新自动查找封面") then
-        redetect_library_artwork(library)
-      end
-
       if ImGui.MenuItem(ctx, "展开或折叠来源") then
         state.expanded_libraries[library.id] = not expanded
         state.libraries_dirty = true
@@ -13243,6 +13341,22 @@ function draw_sidebar()
           if ImGui.MenuItem(ctx, "打开目录") then
             open_folder(record.path)
           end
+
+          ImGui.Separator(ctx)
+
+          if ImGui.MenuItem(ctx, "指定此来源封面…") then
+            choose_artwork_for_root(record)
+          end
+
+          if ImGui.MenuItem(ctx, "重新自动查找此来源封面") then
+            redetect_root_artwork(record)
+          end
+
+          if ImGui.MenuItem(ctx, "清除此来源封面") then
+            clear_root_artwork(record)
+          end
+
+          ImGui.Separator(ctx)
 
           if ImGui.MenuItem(ctx, "移除来源路径") then
             remove_root(record)
@@ -18300,14 +18414,14 @@ function draw_settings_about()
 
   local card_width =
     math.min(
-      660,
+      720,
       math.max(
         420,
         available_width
       )
     )
 
-  local card_height = 178
+  local card_height = 220
   local x, y =
     ImGui.GetCursorScreenPos(ctx)
 
@@ -18327,66 +18441,101 @@ function draw_settings_about()
     y,
     x + card_width,
     y + card_height,
-    COLOR.panel_alt,
-    UI_METRIC.radius
+    0x0A1020FF,
+    math.max(10, UI_METRIC.radius)
   )
 
   ImGui.DrawList_AddRectFilled(
     draw_list,
     x,
     y,
-    x + 5,
-    y + card_height,
-    COLOR.selected,
-    UI_METRIC.radius
+    x + card_width,
+    y + 3,
+    0x19D8FFFF,
+    2
   )
+
+  local icon_size = math.min(152, card_height - 44)
+  local icon_x = x + 24
+  local icon_y = y + (card_height - icon_size) * 0.5
+  local icon = artwork_image_from_path(BRAND_ICON_PATH)
+
+  if icon then
+    ImGui.DrawList_AddImageRounded(
+      draw_list,
+      icon,
+      icon_x,
+      icon_y,
+      icon_x + icon_size,
+      icon_y + icon_size,
+      0,
+      0,
+      1,
+      1,
+      0xFFFFFFFF,
+      22,
+      0
+    )
+  else
+    ImGui.DrawList_AddRectFilled(
+      draw_list,
+      icon_x,
+      icon_y,
+      icon_x + icon_size,
+      icon_y + icon_size,
+      0x13253DFF,
+      22
+    )
+  end
+
+  local text_x = icon_x + icon_size + 28
 
   ImGui.DrawList_AddText(
     draw_list,
-    x + 26,
-    y + 22,
-    COLOR.header_text,
+    text_x,
+    y + 28,
+    0xF5FAFFFF,
     SCRIPT_NAME
   )
 
   ImGui.DrawList_AddText(
     draw_list,
-    x + 26,
-    y + 53,
-    COLOR.dim,
-    translate_ui_text(
-      "REAPER 音效资产浏览、试听与整理工具"
-    )
+    text_x,
+    y + 62,
+    0xF5FAFFFF,
+    translate_ui_text("音效资产井然有序")
   )
 
   ImGui.DrawList_AddText(
     draw_list,
-    x + 26,
-    y + 88,
-    COLOR.text,
-    "v" .. VERSION
-      .. "  ·  "
-      .. AUTHOR_NAME
+    text_x,
+    y + 91,
+    0x7A8797FF,
+    translate_ui_text("浏览 · 整理 · 试听")
   )
 
   ImGui.DrawList_AddText(
     draw_list,
-    x + 26,
-    y + 119,
-    COLOR.dim,
+    text_x,
+    y + 130,
+    0x19D8FFFF,
+    "v" .. VERSION .. "  ·  " .. AUTHOR_NAME
+  )
+
+  ImGui.DrawList_AddText(
+    draw_list,
+    text_x,
+    y + 161,
+    0x7A8797FF,
     COPYRIGHT_TEXT
   )
 
-  ImGui.SetCursorScreenPos(
-    ctx,
-    x + 24,
-    y + 143
-  )
+  ImGui.Spacing(ctx)
 
   if PROJECT_URL ~= "" then
     if dark_button(
       "GitHub 项目主页 ↗",
-      156
+      math.min(190, card_width)
     ) then
       open_url(PROJECT_URL)
     end

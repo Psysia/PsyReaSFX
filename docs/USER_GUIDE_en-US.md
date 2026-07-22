@@ -1,4 +1,4 @@
-﻿# PsyReaSFX 0.7.4 Beta 6 User Guide (package 0.7.4-beta.6)
+﻿# PsyReaSFX 0.7.5 Beta 7 User Guide (package 0.7.5-beta.7)
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_7_4_Beta_6.lua`.
+4. Load `PsyReaSFX_v0_7_5_Beta_7.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -223,11 +223,13 @@ Artwork lookup checks the source folder and then parent folders up to the librar
 
 Artwork discovery uses a low-priority queue and folder-level negative caching. Hidden Artwork columns do not request thumbnails for invisible rows.
 
-PsyReaSFX also checks each physical source root and common `Artwork`, `Images`,
-`Docs`, and `Documentation` subfolders. A cover found there becomes shared
-logical-library Artwork, so the result column and metadata inspector use the
-same image. If the cover lives elsewhere, right-click the library and choose
-`Choose library artwork…`, or use the Artwork button in Library Manager.
+PsyReaSFX also checks the current physical source root and common `Artwork`,
+`Images`, `Docs`, and `Documentation` subfolders. Each physical source owns
+its cover independently: a cover found in one source never propagates to a
+sibling source in the same logical library. Right-click the expanded source
+folder to choose, rediscover, or clear its Artwork. The Artwork button beside
+each source in Library Manager opens the same file chooser. An asset-specific
+cover selected in the metadata inspector remains the highest-priority override.
 
 ## 8. Selection, favorites, and marks
 
@@ -488,5 +490,5 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.4 Beta 6 hotfixes the left-panel theme-color crash and its cascading ImGui child-stack shutdown error. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.5 Beta 7 applies the official PsyReaSFX visual identity and isolates Artwork ownership per physical source folder. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
 
