@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.3-beta.4
+-- @version 0.7.4-beta.5
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -73,6 +73,8 @@
 --   - 0.7.3：允许先创建空逻辑音效库，再逐步添加来源路径
 --   - 时长列统一使用 MM:SS.mmm 时间码格式
 --   - 大型库扫描使用目录游标、已知根路径绑定和批量刷新，减少主线程重复遍历
+--   - 0.7.4：逻辑库箭头可直接折叠或展开来源路径
+--   - Artwork 增加逻辑库封面、来源根目录与常见封面子目录回退
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -81,7 +83,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.3 Beta 4"
+local VERSION = "0.7.4 Beta 5"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1113,6 +1115,9 @@ I18N_EN = {
   ["选择封面"] = "Choose artwork",
   ["清除封面"] = "Clear artwork",
   ["自动查找封面"] = "Auto-detect artwork",
+  ["选择音效库封面"] = "Choose library artwork",
+  ["选择音效库封面…"] = "Choose library artwork…",
+  ["重新自动查找封面"] = "Auto-detect library artwork again",
   ["已播放文字"] = "Played text",
   ["已播放文字高亮"] = "Highlight played text",
   ["已播放波形高亮"] = "Highlight played waveform",
@@ -1332,6 +1337,9 @@ I18N_EN = {
 }
 
 I18N_PREFIX_EN = {
+  ["已设置音效库封面："] = "Library artwork set: ",
+  ["将重新查找音效库封面："] =
+    "Library artwork will be rediscovered: ",
   ["文档目录不存在："] = "Documentation directory not found: ",
   ["已迁移旧版音效库路径与偏好设置"] =
     "Migrated legacy library paths and preferences",
@@ -2462,6 +2470,10 @@ function rebuild_library_indexes()
   state.roots = {}
 
   for _, library in ipairs(state.libraries) do
+    library.artwork_path =
+      tostring(library.artwork_path or "")
+    library.artwork_checked =
+      library.artwork_checked == true
     library.roots = {}
     state.library_by_id[library.id] = library
   end
@@ -2491,6 +2503,8 @@ function create_library(name, seed)
       seed or (name .. tostring(reaper.time_precise()))
     ),
     name = unique_library_name(name),
+    artwork_path = "",
+    artwork_checked = false,
     roots = {},
   }
 
@@ -3564,6 +3578,11 @@ function save_libraries()
       escape_tsv(library.id),
       "\t",
       escape_tsv(library.name),
+      "\t",
+      escape_tsv(library.artwork_path or ""),
+      "\t",
+      state.expanded_libraries[library.id] == false
+        and "0" or "1",
       "\n"
     )
   end
@@ -3592,6 +3611,7 @@ end
 function load_or_migrate_libraries()
   state.libraries = {}
   state.root_records = {}
+  state.expanded_libraries = {}
 
   local file = io.open(LIBRARIES_FILE, "rb")
 
@@ -3605,8 +3625,12 @@ function load_or_migrate_libraries()
         state.libraries[#state.libraries + 1] = {
           id = fields[2],
           name = fields[3],
+          artwork_path = fields[4] or "",
+          artwork_checked = false,
           roots = {},
         }
+        state.expanded_libraries[fields[2]] =
+          fields[5] ~= "0"
       elseif fields[1] == "root"
         and fields[2]
         and fields[3]
@@ -6207,6 +6231,26 @@ local ARTWORK_NAME_PRIORITY = {
   ["thumbnail.jpg"] = 6,
   ["thumbnail.jpeg"] = 6,
   ["thumbnail.png"] = 6,
+  ["library.jpg"] = 7,
+  ["library.jpeg"] = 7,
+  ["library.png"] = 7,
+  ["product.jpg"] = 8,
+  ["product.jpeg"] = 8,
+  ["product.png"] = 8,
+  ["preview.jpg"] = 9,
+  ["preview.jpeg"] = 9,
+  ["preview.png"] = 9,
+}
+
+local ARTWORK_SUBFOLDER_NAMES = {
+  artwork = true,
+  artworks = true,
+  cover = true,
+  covers = true,
+  image = true,
+  images = true,
+  docs = true,
+  documentation = true,
 }
 
 function is_artwork_file(filename)
@@ -6215,6 +6259,8 @@ function is_artwork_file(filename)
   return ext == "jpg"
     or ext == "jpeg"
     or ext == "png"
+    or ext == "bmp"
+    or ext == "tga"
 end
 
 function find_artwork_in_folder(folder)
@@ -6264,9 +6310,145 @@ function find_artwork_in_folder(folder)
   return result
 end
 
+function find_library_artwork_in_root(root)
+  if not root or root == "" then
+    return ""
+  end
+
+  local found = find_artwork_in_folder(root)
+
+  if found ~= "" then
+    return found
+  end
+
+  local index = 0
+
+  while true do
+    local subdir =
+      reaper.EnumerateSubdirectories(root, index)
+
+    if not subdir then
+      break
+    end
+
+    index = index + 1
+
+    if ARTWORK_SUBFOLDER_NAMES[safe_lower(subdir)] then
+      found = find_artwork_in_folder(
+        join_path(root, subdir)
+      )
+
+      if found ~= "" then
+        return found
+      end
+    end
+  end
+
+  return ""
+end
+
+function valid_artwork_path(path)
+  path = tostring(path or "")
+
+  return path ~= ""
+    and path ~= "-"
+    and reaper.file_exists(path)
+end
+
+function library_artwork_for_asset(asset)
+  local library = asset
+    and state.library_by_id[asset.library_id or ""]
+    or nil
+
+  if not library then
+    return "", nil
+  end
+
+  local path =
+    tostring(library.artwork_path or "")
+
+  if valid_artwork_path(path) then
+    return path, library
+  end
+
+  if path ~= "" then
+    library.artwork_path = ""
+    library.artwork_checked = false
+    state.libraries_dirty = true
+  end
+
+  return "", library
+end
+
+function remember_library_artwork(library, path)
+  if not library or not valid_artwork_path(path) then
+    return
+  end
+
+  path = normalize_slashes(path)
+
+  if library.artwork_path ~= path then
+    library.artwork_path = path
+    state.libraries_dirty = true
+  end
+
+  library.artwork_checked = true
+end
+
+function choose_artwork_for_library(library)
+  if not library then
+    return
+  end
+
+  local current = valid_artwork_path(library.artwork_path)
+    and library.artwork_path
+    or ""
+  local ok, filename =
+    reaper.GetUserFileNameForRead(
+      current,
+      translate_ui_text("选择音效库封面"),
+      "png,jpg,jpeg,bmp,tga"
+    )
+
+  if ok and filename and filename ~= "" then
+    library.artwork_path =
+      normalize_slashes(filename)
+    library.artwork_checked = true
+    state.libraries_dirty = true
+    set_status("已设置音效库封面：" .. library.name)
+  end
+end
+
+function redetect_library_artwork(library)
+  if not library then
+    return
+  end
+
+  library.artwork_path = ""
+  library.artwork_checked = false
+  state.artwork_folder_cache = {}
+  state.libraries_dirty = true
+
+  for _, asset in ipairs(state.assets) do
+    if asset.library_id == library.id
+      and tostring(asset.artwork_path or "") == "" then
+      asset.artwork_checked = false
+    end
+  end
+
+  set_status("将重新查找音效库封面：" .. library.name)
+end
+
 function discover_artwork_path(asset)
   if not asset then
-    return ""
+    return "", false
+  end
+
+  local shared_path, library =
+    library_artwork_for_asset(asset)
+
+  if shared_path ~= "" then
+    return shared_path, true
   end
 
   local folder =
@@ -6282,7 +6464,14 @@ function discover_artwork_path(asset)
       find_artwork_in_folder(folder)
 
     if found ~= "" then
-      return found
+      local at_root = root ~= ""
+        and path_key(folder) == path_key(root)
+
+      if at_root then
+        remember_library_artwork(library, found)
+      end
+
+      return found, at_root
     end
 
     if root ~= ""
@@ -6300,7 +6489,36 @@ function discover_artwork_path(asset)
     depth = depth + 1
   end
 
-  return ""
+  -- Deeply nested libraries may not reach their source root within the
+  -- per-file search limit. Check every source root explicitly once so a
+  -- product-level cover can be shared by the whole logical library.
+  if root ~= ""
+    and (not library or not library.artwork_checked) then
+    local found = find_library_artwork_in_root(root)
+
+    if found ~= "" then
+      remember_library_artwork(library, found)
+      return found, true
+    end
+  end
+
+  if library and not library.artwork_checked then
+    for _, record in ipairs(library.roots or {}) do
+      if path_key(record.path) ~= path_key(root) then
+        local found =
+          find_library_artwork_in_root(record.path)
+
+        if found ~= "" then
+          remember_library_artwork(library, found)
+          return found, true
+        end
+      end
+    end
+
+    library.artwork_checked = true
+  end
+
+  return "", false
 end
 
 function queue_artwork(asset, priority)
@@ -6311,9 +6529,12 @@ function queue_artwork(asset, priority)
 
   local current =
     tostring(asset.artwork_path or "")
+  local shared =
+    select(1, library_artwork_for_asset(asset))
 
   if current == "-"
-    or (current ~= "" and reaper.file_exists(current))
+    or valid_artwork_path(current)
+    or shared ~= ""
     or (current == "" and asset.artwork_checked == true) then
     return
   end
@@ -6368,11 +6589,11 @@ function process_artwork_queue()
 
     if current == ""
       or not reaper.file_exists(current) then
-      local found =
+      local found, shared =
         discover_artwork_path(asset)
 
       if found ~= "" then
-        asset.artwork_path = found
+        asset.artwork_path = shared and "" or found
         state.db_dirty = true
       elseif current ~= "-" then
         asset.artwork_path = ""
@@ -6426,6 +6647,7 @@ function artwork_image_from_path(path)
 
   local key = path_key(path)
   local entry = state.artwork_images[key]
+  local now = reaper.time_precise()
 
   if entry
     and entry.image
@@ -6433,8 +6655,14 @@ function artwork_image_from_path(path)
       entry.image,
       "ImGui_Image*"
     ) then
-    entry.last_used = reaper.time_precise()
+    entry.last_used = now
     return entry.image
+  end
+
+  if entry
+    and entry.failed
+    and now - (entry.last_used or 0) < 8 then
+    return nil
   end
 
   local ok, image =
@@ -6443,7 +6671,7 @@ function artwork_image_from_path(path)
   if not ok or not image then
     state.artwork_images[key] = {
       failed = true,
-      last_used = reaper.time_precise(),
+      last_used = now,
     }
     return nil
   end
@@ -6452,7 +6680,7 @@ function artwork_image_from_path(path)
 
   state.artwork_images[key] = {
     image = image,
-    last_used = reaper.time_precise(),
+    last_used = now,
   }
 
   state.artwork_image_order[
@@ -6472,21 +6700,24 @@ function artwork_image_for_asset(asset, priority)
   local path =
     tostring(asset.artwork_path or "")
 
-  if path == "" then
-    if asset.artwork_checked ~= true then
-      queue_artwork(asset, priority)
-    end
-    return nil
-  end
-
   if path == "-" then
     return nil
   end
 
-  if not reaper.file_exists(path) then
+  if path ~= "" and not valid_artwork_path(path) then
     asset.artwork_path = ""
     asset.artwork_checked = false
-    queue_artwork(asset, priority)
+    path = ""
+  end
+
+  if path == "" then
+    path = select(1, library_artwork_for_asset(asset))
+  end
+
+  if path == "" then
+    if asset.artwork_checked ~= true then
+      queue_artwork(asset, priority)
+    end
     return nil
   end
 
@@ -6659,6 +6890,10 @@ function clear_artwork_cache()
   state.artwork_folder_cache = {}
   state.artwork_queue = {}
   state.artwork_queued = {}
+
+  for _, library in ipairs(state.libraries) do
+    library.artwork_checked = false
+  end
 
   for _, asset in ipairs(state.assets) do
     if asset.artwork_path ~= "-" then
@@ -12466,6 +12701,12 @@ function draw_library_manager_popup()
 
     ImGui.SameLine(ctx)
 
+    if dark_button("封面", 54) then
+      choose_artwork_for_library(library)
+    end
+
+    ImGui.SameLine(ctx)
+
     if dark_button("扫描", 54) then
       start_scan("扫描 " .. library.name, roots_for_library(library.id))
     end
@@ -12842,12 +13083,48 @@ function draw_sidebar()
       and state.root_filter == nil
     local expanded =
       state.expanded_libraries[library.id] == true
-    local arrow = #library.roots > 0
-      and (expanded and "▾ " or "▸ ")
-      or "  "
+    local has_roots = #library.roots > 0
+
+    if has_roots then
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_Button,
+        selected and COLOR.selected or 0x00000000
+      )
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_ButtonHovered,
+        selected
+          and rgba_with_alpha(COLOR.selected, 0xE8)
+          or rgba_with_alpha(COLOR.button_hover, 0xD0)
+      )
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_ButtonActive,
+        COLOR.accent
+      )
+
+      if ImGui.Button(
+        ctx,
+        (expanded and "▾" or "▸")
+          .. "##library_arrow_"
+          .. library.id,
+        22,
+        0
+      ) then
+        expanded = not expanded
+        state.expanded_libraries[library.id] = expanded
+        state.libraries_dirty = true
+        state.config_dirty = true
+      end
+
+      ImGui.PopStyleColor(ctx, 3)
+      tooltip("展开或折叠来源")
+      ImGui.SameLine(ctx, 0, 0)
+    end
 
     sidebar_item(
-      arrow
+      (has_roots and "" or "  ")
         .. compact(library.name, 20)
         .. "  "
         .. tostring(library_asset_count(library.id))
@@ -12856,7 +13133,9 @@ function draw_sidebar()
       selected,
       function()
         if ImGui.IsMouseDoubleClicked(ctx, 0) then
-          state.expanded_libraries[library.id] = not expanded
+          expanded = not expanded
+          state.expanded_libraries[library.id] = expanded
+          state.libraries_dirty = true
         end
 
         state.view = "all"
@@ -12890,8 +13169,17 @@ function draw_sidebar()
         rename_library(library)
       end
 
+      if ImGui.MenuItem(ctx, "选择音效库封面…") then
+        choose_artwork_for_library(library)
+      end
+
+      if ImGui.MenuItem(ctx, "重新自动查找封面") then
+        redetect_library_artwork(library)
+      end
+
       if ImGui.MenuItem(ctx, "展开或折叠来源") then
         state.expanded_libraries[library.id] = not expanded
+        state.libraries_dirty = true
       end
 
       if ImGui.MenuItem(ctx, "从 PsyReaSFX 删除") then

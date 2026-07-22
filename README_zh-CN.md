@@ -3,17 +3,25 @@
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-2f81f7" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7.3 Beta 4
+# PsyReaSFX 0.7.4 Beta 5
 
 PsyReaSFX 是运行在 REAPER 内部的音效资产浏览、波形试听、元数据、Region、集合、插入与 Transfer 工作流。
 
 **作者：** Psysia  
-**包版本：** 0.7.3-beta.4  
+**包版本：** 0.7.4-beta.5  
 **发布阶段：** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX 主工作区，展开导航与元数据面板" width="100%">
 </p>
+
+## 音效库导航与共享封面
+
+- 逻辑音效库旁的箭头现在是可点击控件，单击即可展开或折叠来源路径，并保存当前状态。
+- 即使素材嵌套超过七层，Artwork 查找也会直接检查实际来源根目录。
+- 同时检查常见的 `Artwork`、`Images`、`Docs`、`Documentation` 子目录，以及 library/product/preview 等封面文件名。
+- 一个逻辑音效库可以保存一张共享封面，列表 Artwork 列和右侧固定封面会共同使用。自动查找失败时，可从库右键菜单或音效库管理器手动指定。
+- 图片解码失败后使用短暂重试间隔，不再逐帧重复加载。
 
 ## 多来源逻辑音效库
 
@@ -84,7 +92,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 ## 手动安装
 
-在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_3_Beta_4.lua`。
+在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_4_Beta_5.lua`。
 
 ## 文档
 
@@ -96,7 +104,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ## 发布包结构
 
 ```text
-PsyReaSFX_v0_7_3_Beta_4.lua
+PsyReaSFX_v0_7_4_Beta_5.lua
 README.md
 README_zh-CN.md
 index.xml

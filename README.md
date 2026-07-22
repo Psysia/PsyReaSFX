@@ -3,18 +3,31 @@
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7.3 Beta 4
+# PsyReaSFX 0.7.4 Beta 5
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.3-beta.4  
+**Package version:** 0.7.4-beta.5  
 **Release stage:** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
+
+## Library navigation and shared Artwork
+
+- The disclosure arrow beside a logical library is now a real control: click
+  it once to expand or collapse source folders. The state is saved.
+- Artwork discovery always checks the physical source root even when an asset
+  is nested more than seven folders deep.
+- Common `Artwork`, `Images`, `Docs`, and `Documentation` subfolders are also
+  checked, with additional library/product/preview cover filenames.
+- A logical library can store one shared cover used by both the Artwork column
+  and the pinned metadata inspector. Choose it from the library context menu
+  or Library Manager when automatic discovery cannot locate the image.
+- Failed image decodes use a short retry delay instead of retrying every frame.
 
 ## Multi-root logical libraries
 
@@ -115,7 +128,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_3_Beta_4.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_4_Beta_5.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -127,7 +140,7 @@ Load `PsyReaSFX_v0_7_3_Beta_4.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_3_Beta_4.lua
+PsyReaSFX_v0_7_4_Beta_5.lua
 README.md
 README_zh-CN.md
 index.xml

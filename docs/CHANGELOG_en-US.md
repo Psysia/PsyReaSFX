@@ -1,5 +1,24 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.4 Beta 5
+
+### Logical-library disclosure control
+
+- Replaces the decorative library arrow with a dedicated clickable control.
+- A single click expands or collapses physical source folders without changing
+  the active library filter.
+- Persists the expanded state in `libraries_v2.tsv`; older files remain
+  compatible and default to expanded.
+
+### Shared library Artwork
+
+- Adds one persisted shared Artwork path per logical library.
+- Uses shared Artwork in both result-list thumbnails and the metadata inspector.
+- Always checks source roots after the per-file parent search, including deeply
+  nested assets, and searches common Artwork/Images/Documentation subfolders.
+- Adds manual library-cover selection and automatic rediscovery commands.
+- Adds BMP/TGA discovery and a retry backoff for failed image decoding.
+
 ## 0.7.3 Beta 4
 
 ### Empty-first logical libraries

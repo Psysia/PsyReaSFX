@@ -1,4 +1,4 @@
-﻿# PsyReaSFX 0.7.3 Beta 4 User Guide (package 0.7.3-beta.4)
+﻿# PsyReaSFX 0.7.4 Beta 5 User Guide (package 0.7.4-beta.5)
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_7_3_Beta_4.lua`.
+4. Load `PsyReaSFX_v0_7_4_Beta_5.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -133,6 +133,10 @@ physical source folders. Clicking the library aggregates all of its sources;
 expanding it lets you filter one source folder. Hover the library to see its
 paths, online status, and indexed count.
 
+Click the arrow immediately before a logical-library name to expand or
+collapse its physical source folders. This does not change the current filter,
+and the state is restored on the next launch.
+
 ### Add folders
 
 - Click `+ New library`, enter a name, and create the logical library without
@@ -218,6 +222,12 @@ Right-click the fixed header and enable `Artwork` to display square thumbnails. 
 Artwork lookup checks the source folder and then parent folders up to the library root, with a seven-level limit. Preferred names include `artwork`, `cover`, `folder`, `front`, `album` and `thumbnail`, using PNG or JPEG files. A cover can also be selected manually from the metadata inspector.
 
 Artwork discovery uses a low-priority queue and folder-level negative caching. Hidden Artwork columns do not request thumbnails for invisible rows.
+
+PsyReaSFX also checks each physical source root and common `Artwork`, `Images`,
+`Docs`, and `Documentation` subfolders. A cover found there becomes shared
+logical-library Artwork, so the result column and metadata inspector use the
+same image. If the cover lives elsewhere, right-click the library and choose
+`Choose library artwork…`, or use the Artwork button in Library Manager.
 
 ## 8. Selection, favorites, and marks
 
@@ -478,5 +488,5 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.3 Beta 4 adds empty-first logical libraries, fixed duration timecode, and lower-overhead large-library scanning. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.4 Beta 5 fixes direct library expansion and adds shared logical-library Artwork with deeper, root-aware discovery. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
 
