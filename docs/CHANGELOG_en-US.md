@@ -1,5 +1,24 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.7 Beta 9
+
+### Heritage selection contrast
+
+- Keeps Electric Cyan as the Heritage accent while darkening the selected-row
+  fill to a deeper teal.
+- Uses high-contrast white selected text throughout the interface.
+- Gives selection visual priority over played-state yellow text.
+- Prevents selected-text styling from becoming unreadable in dark information
+  panels.
+
+### Localized Help and README previews
+
+- Rebuilds Help as a fixed-size, scrollable quick-reference center.
+- Groups shortcuts under Workspace, Results, Preview, Organize, and Transfer.
+- Maintains Chinese and English Help descriptions independently to prevent
+  mixed-language content.
+- Replaces the README workspace and Focus-mode images with current captures.
+
 ## 0.7.6 Beta 8
 
 ### Appearance modes

@@ -13,22 +13,31 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.6--beta.8-19D8FF" alt="版本 0.7.6 beta 8">
+  <img src="https://img.shields.io/badge/Version-0.7.7--beta.9-19D8FF" alt="版本 0.7.7 beta 9">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.6 Beta 8
+# PsyReaSFX 0.7.7 Beta 9
 
 PsyReaSFX 是运行在 REAPER 内部的音效资产浏览、波形试听、元数据、Region、集合、插入与 Transfer 工作流。
 
 **作者：** Psysia  
-**包版本：** 0.7.6-beta.8  
+**包版本：** 0.7.7-beta.9  
 **发布阶段：** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX 主工作区，展开导航与元数据面板" width="100%">
 </p>
+
+## 选中对比度、全新预览图与帮助中心
+
+- 传统模式继续使用 Electric Cyan 品牌强调色，但选中行改为更深的青色背景与高对比白色文字。
+- 选中状态现在优先于“已播放”的黄色文字，不再出现青底黄字。
+- 暗色信息区域不再复用深色的选中文字。
+- 内置帮助窗口改为固定尺寸、可滚动的快捷参考中心，按工作区、结果列表、试听、整理和 Transfer 分组。
+- 中文与英文帮助内容独立维护，不再出现同一窗口中英混排。
+- README 主工作区与专注模式预览已替换为最新截图。
 
 ## 外观模式与自定义框架颜色
 
@@ -125,7 +134,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 ## 手动安装
 
-在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_6_Beta_8.lua`。
+在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_7_Beta_9.lua`。
 
 ## 文档
 
@@ -137,7 +146,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ## 发布包结构
 
 ```text
-PsyReaSFX_v0_7_6_Beta_8.lua
+PsyReaSFX_v0_7_7_Beta_9.lua
 README.md
 README_zh-CN.md
 index.xml

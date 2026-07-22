@@ -13,23 +13,36 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.6--beta.8-19D8FF" alt="Version 0.7.6 beta 8">
+  <img src="https://img.shields.io/badge/Version-0.7.7--beta.9-19D8FF" alt="Version 0.7.7 beta 9">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.6 Beta 8
+# PsyReaSFX 0.7.7 Beta 9
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.6-beta.8  
+**Package version:** 0.7.7-beta.9  
 **Release stage:** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
+
+## Selection contrast, refreshed previews, and Help
+
+- Heritage mode keeps Electric Cyan as its brand accent but uses a deeper teal
+  selection fill with high-contrast white text.
+- Selected rows now take visual priority over played-state yellow text.
+- Dark information areas no longer reuse a dark selected-text color.
+- The built-in Help window is now a fixed, scrollable quick-reference center
+  organized into Workspace, Results, Preview, Organize, and Transfer sections.
+- Chinese and English Help content are maintained as separate localized
+  strings, preventing mixed-language paragraphs.
+- The README workspace and Focus-mode previews have been replaced with the
+  latest interface captures.
 
 ## Appearance modes and custom shell color
 
@@ -167,7 +180,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_6_Beta_8.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_7_Beta_9.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -179,7 +192,7 @@ Load `PsyReaSFX_v0_7_6_Beta_8.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_6_Beta_8.lua
+PsyReaSFX_v0_7_7_Beta_9.lua
 README.md
 README_zh-CN.md
 index.xml

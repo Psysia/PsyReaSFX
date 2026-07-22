@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.6-beta.8
+-- @version 0.7.7-beta.9
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -81,6 +81,8 @@
 --   - 实体来源右键菜单可指定、重新检测或清除自己的封面
 --   - 0.7.6：黑暗模式恢复为默认，传统模式使用更深的品牌藏蓝
 --   - 框架底色支持色盘自定义，并自动派生面板与交互层级
+--   - 0.7.7：传统模式选中行使用深青背景与高对比白色文字
+--   - 帮助窗口重构为分组快捷键手册，中英文内容完全独立
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -89,7 +91,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.6 Beta 8"
+local VERSION = "0.7.7 Beta 9"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -449,9 +451,10 @@ local THEME_PRESETS = {
     label = "传统模式",
     accent = 0x19D8FFFF,
     accent_soft = 0x234866FF,
+    selected = 0x0A6C86FF,
     playhead = 0x19D8FFFF,
     favorite = 0xF0C85AFF,
-    selected_text = 0x0A1020FF,
+    selected_text = 0xFFFFFFFF,
   },
   amber = {
     label = "Warm Amber",
@@ -2090,7 +2093,18 @@ function apply_theme_palette()
       or THEME_PRESETS.dark.accent
   end
 
-  COLOR.selected = accent
+  local selected = preset.selected or accent
+
+  if state.theme_preset == "custom"
+    and rgba_luminance(selected) > 0.58 then
+    selected = rgba_mix(
+      selected,
+      0x000000FF,
+      0.38
+    )
+  end
+
+  COLOR.selected = selected
   COLOR.accent = accent
   COLOR.selection = rgba_with_alpha(accent, 0x55)
   if state.surface_style ~= "custom"
@@ -2100,14 +2114,7 @@ function apply_theme_palette()
   COLOR.playhead = preset.playhead or 0x61D982FF
   COLOR.favorite = preset.favorite or 0xF0C85AFF
   COLOR.selected_text =
-    state.theme_preset == "custom"
-      and (
-        rgba_luminance(accent) > 0.58
-          and 0x0A1020FF
-          or 0xFFFFFFFF
-      )
-      or preset.selected_text
-      or 0xFFFFFFFF
+    preset.selected_text or 0xFFFFFFFF
 
   if state and state.waveform_hex
     and type(apply_waveform_palette) == "function" then
@@ -2422,13 +2429,13 @@ function waveform_visual_state(asset, selected)
 end
 
 function row_text_visual_color(asset, selected)
+  if selected then
+    return COLOR.selected_text
+  end
+
   if state.played_text_enabled
     and asset_is_session_played(asset) then
     return COLOR.played_text
-  end
-
-  if selected then
-    return COLOR.selected_text
   end
 
   return COLOR.text
@@ -18016,6 +18023,60 @@ end
 local HELP_POPUP_ID =
   "PsyReaSFX 使用说明##psyreasfx_help"
 
+function help_locale(zh_text, en_text)
+  return state.language == "en"
+    and en_text
+    or zh_text
+end
+
+function draw_help_shortcut_row(shortcut, zh_text, en_text)
+  ImGui.TextColored(
+    ctx,
+    COLOR.header_text,
+    shortcut
+  )
+
+  ImGui.SameLine(ctx, 156)
+
+  ImGui.TextWrapped(
+    ctx,
+    help_locale(zh_text, en_text)
+  )
+end
+
+function draw_help_section(id, zh_title, en_title, items)
+  local height = 48 + #items * 31
+
+  if ImGui.BeginChild(
+    ctx,
+    "help_section_" .. id,
+    -1,
+    height,
+    ImGui.ChildFlags_Borders,
+    ImGui.WindowFlags_NoScrollbar
+      | ImGui.WindowFlags_NoScrollWithMouse
+  ) then
+    ImGui.TextColored(
+      ctx,
+      COLOR.accent,
+      help_locale(zh_title, en_title)
+    )
+
+    ImGui.Separator(ctx)
+
+    for _, item in ipairs(items) do
+      draw_help_shortcut_row(
+        item[1],
+        item[2],
+        item[3]
+      )
+    end
+  end
+
+  ImGui.EndChild(ctx)
+  ImGui.Spacing(ctx)
+end
+
 function draw_help_popup()
   if state.help_popup_requested > 0 then
     state.help_popup_requested =
@@ -18031,8 +18092,8 @@ function draw_help_popup()
 
   ImGui.SetNextWindowSize(
     ctx,
-    620,
-    0,
+    820,
+    650,
     ImGui.Cond_Appearing
   )
 
@@ -18040,78 +18101,187 @@ function draw_help_popup()
     ctx,
     HELP_POPUP_ID,
     true,
-    ImGui.WindowFlags_AlwaysAutoResize
+    ImGui.WindowFlags_NoScrollbar
   ) then
     return
   end
 
   ImGui.TextColored(
     ctx,
-    COLOR.selected_text,
-    SCRIPT_NAME .. " " .. VERSION
+    COLOR.header_text,
+    SCRIPT_NAME
   )
 
-  ImGui.Separator(ctx)
+  ImGui.SameLine(ctx)
 
-  ImGui.TextWrapped(
+  ImGui.TextColored(
     ctx,
-    "工作区：顶部“导航”“元数据”“专注模式”可折叠左右面板。"
-      .. "F9 切换左栏，F10 切换右栏，F11 切换专注模式。"
+    COLOR.accent,
+    "v" .. VERSION
   )
-
-  ImGui.Spacing(ctx)
-
-  ImGui.TextWrapped(
-    ctx,
-    "列表：单击单选；Ctrl+单击追加或取消；"
-      .. "Shift+单击连续选择；Ctrl+A 全选当前结果。"
-  )
-
-  ImGui.Spacing(ctx)
-
-  ImGui.TextWrapped(
-    ctx,
-    "试听：Space 播放或停止；点击列表小波形可从对应位置试听；"
-      .. "下方大波形单击定位，拖动建立并试听选区。"
-  )
-
-  ImGui.Spacing(ctx)
-
-  ImGui.TextWrapped(
-    ctx,
-    "集合：可创建播放列表或项目素材箱。"
-      .. "右键素材可加入集合、设置候选/已采用/已排除状态。"
-  )
-
-  ImGui.Spacing(ctx)
-
-  ImGui.TextWrapped(
-    ctx,
-    "保存搜索：保存当前关键词、库筛选、状态筛选、集合和排序条件，"
-      .. "之后可从左栏一键恢复。"
-  )
-
-  ImGui.Spacing(ctx)
-
-  ImGui.TextWrapped(
-    ctx,
-    "插入：Enter 插入；Ctrl+Enter 插入新轨；"
-      .. "列表素材和下方波形选区可拖到 REAPER 编排区。"
-  )
-
-  ImGui.Spacing(ctx)
-
-  ImGui.TextWrapped(
-    ctx,
-    "其他：F 收藏；M 标记；L 循环；Ctrl+F 搜索；Ctrl+R 扫描；Ctrl+T Transfer。"
-  )
-
-  ImGui.Separator(ctx)
 
   ImGui.TextDisabled(
     ctx,
-    "表头固定置顶；右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看。"
+    help_locale(
+      "浏览、整理、试听与传输快捷参考",
+      "Quick reference for browsing, organizing, auditioning, and Transfer"
+    )
   )
+
+  ImGui.Separator(ctx)
+
+  local width, height = ImGui.GetContentRegionAvail(ctx)
+
+  if ImGui.BeginChild(
+    ctx,
+    "help_content_scroll",
+    width,
+    height - 50,
+    0,
+    ImGui.WindowFlags_AlwaysVerticalScrollbar
+  ) then
+    draw_help_section(
+      "workspace",
+      "工作区",
+      "Workspace",
+      {
+        {
+          "F9 / F10 / F11",
+          "切换导航栏、元数据栏与专注模式",
+          "Toggle navigation, metadata, and Focus mode",
+        },
+        {
+          "Ctrl+F",
+          "聚焦搜索框",
+          "Focus the search field",
+        },
+        {
+          "Ctrl+R",
+          "扫描当前音效库范围",
+          "Scan the current library scope",
+        },
+      }
+    )
+
+    draw_help_section(
+      "results",
+      "结果列表",
+      "Results",
+      {
+        {
+          "Click",
+          "单选素材",
+          "Select one asset",
+        },
+        {
+          "Ctrl+Click",
+          "追加或取消单个素材",
+          "Add or remove one asset from the selection",
+        },
+        {
+          "Shift+Click",
+          "连续范围选择",
+          "Select a continuous range",
+        },
+        {
+          "Ctrl+A",
+          "全选当前结果",
+          "Select all current results",
+        },
+        {
+          "Shift+Wheel",
+          "横向查看溢出的字段",
+          "Pan horizontally across overflow columns",
+        },
+      }
+    )
+
+    draw_help_section(
+      "preview",
+      "试听与波形",
+      "Preview and waveform",
+      {
+        {
+          "Space",
+          "播放或停止",
+          "Play or stop",
+        },
+        {
+          "Wave click",
+          "从点击位置开始试听",
+          "Start preview from the clicked position",
+        },
+        {
+          "Wave drag",
+          "建立并试听波形选区",
+          "Create and audition a waveform selection",
+        },
+        {
+          "L",
+          "切换循环试听",
+          "Toggle loop preview",
+        },
+      }
+    )
+
+    draw_help_section(
+      "organize",
+      "整理",
+      "Organize",
+      {
+        {
+          "F",
+          "收藏或取消收藏",
+          "Favorite or unfavorite",
+        },
+        {
+          "M",
+          "标记或取消标记",
+          "Mark or unmark",
+        },
+        {
+          "Right-click",
+          "打开素材、集合和状态操作",
+          "Open asset, collection, and status actions",
+        },
+        {
+          "Saved search",
+          "保存并恢复搜索、筛选和排序条件",
+          "Save and restore search, filter, and sort settings",
+        },
+      }
+    )
+
+    draw_help_section(
+      "output",
+      "插入与 Transfer",
+      "Insert and Transfer",
+      {
+        {
+          "Enter",
+          "插入当前轨道",
+          "Insert on the current track",
+        },
+        {
+          "Ctrl+Enter",
+          "插入新轨道",
+          "Insert on a new track",
+        },
+        {
+          "Drag",
+          "将素材或波形选区拖到 REAPER 编排区",
+          "Drag an asset or waveform selection into REAPER",
+        },
+        {
+          "Ctrl+T",
+          "打开 Transfer 导出",
+          "Open Transfer export",
+        },
+      }
+    )
+  end
+
+  ImGui.EndChild(ctx)
 
   if dark_button("关闭", 90) then
     ImGui.CloseCurrentPopup(ctx)

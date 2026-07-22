@@ -9,16 +9,16 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.6-beta.8" author="Psysia" time="2026-07-22T11:42:50Z">
+      <version name="0.7.7-beta.9" author="Psysia" time="2026-07-22T12:25:35Z">
         <changelog><![CDATA[
-- Restores the neutral-black Dark mode as the default appearance.
-- Adds a deeper navy Heritage mode with Electric Cyan interactions.
-- Adds color pickers for the application frame base and accent colors.
-- Automatically derives readable surface hierarchy from a custom frame color.
-- Makes the About product card follow the active appearance.
+- Improves Heritage-mode selection with a deeper teal fill and white text.
+- Gives selected rows priority over played-state yellow text.
+- Rebuilds Help as a clean, scrollable, fully localized quick reference.
+- Groups shortcuts by workspace, results, preview, organization, and Transfer.
+- Replaces the README workspace and Focus-mode preview images.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.6-beta.8/PsyReaSFX_v0_7_6_Beta_8.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.6-beta.8/assets/brand/psyreasfx-icon.png</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.7-beta.9/PsyReaSFX_v0_7_7_Beta_9.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.7-beta.9/assets/brand/psyreasfx-icon.png</source>
       </version>
     </reapack>
   </category>
