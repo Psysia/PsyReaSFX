@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.7-beta.9
+-- @version 0.7.7-beta.10
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -83,6 +83,7 @@
 --   - 框架底色支持色盘自定义，并自动派生面板与交互层级
 --   - 0.7.7：传统模式选中行使用深青背景与高对比白色文字
 --   - 帮助窗口重构为分组快捷键手册，中英文内容完全独立
+--   - Beta 10 热修复：帮助分组不再嵌套 Child，避免离屏分组破坏 ImGui Child 栈
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -91,7 +92,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.7 Beta 9"
+local VERSION = "0.7.7 Beta 10"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -18045,35 +18046,27 @@ function draw_help_shortcut_row(shortcut, zh_text, en_text)
 end
 
 function draw_help_section(id, zh_title, en_title, items)
-  local height = 48 + #items * 31
+  ImGui.PushID(ctx, "help_section_" .. id)
 
-  if ImGui.BeginChild(
+  ImGui.TextColored(
     ctx,
-    "help_section_" .. id,
-    -1,
-    height,
-    ImGui.ChildFlags_Borders,
-    ImGui.WindowFlags_NoScrollbar
-      | ImGui.WindowFlags_NoScrollWithMouse
-  ) then
-    ImGui.TextColored(
-      ctx,
-      COLOR.accent,
-      help_locale(zh_title, en_title)
+    COLOR.accent,
+    help_locale(zh_title, en_title)
+  )
+
+  ImGui.Separator(ctx)
+
+  for _, item in ipairs(items) do
+    draw_help_shortcut_row(
+      item[1],
+      item[2],
+      item[3]
     )
-
-    ImGui.Separator(ctx)
-
-    for _, item in ipairs(items) do
-      draw_help_shortcut_row(
-        item[1],
-        item[2],
-        item[3]
-      )
-    end
   end
 
-  ImGui.EndChild(ctx)
+  ImGui.PopID(ctx)
+  ImGui.Spacing(ctx)
+  ImGui.Separator(ctx)
   ImGui.Spacing(ctx)
 end
 

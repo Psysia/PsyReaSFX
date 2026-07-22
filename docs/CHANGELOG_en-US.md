@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.7 Beta 10
+
+### Help Child-stack hotfix
+
+- Removes nested Child windows from the Help section renderer.
+- Keeps one visible scrollable Child for the complete Help body.
+- Prevents off-screen Help groups from prematurely popping the outer Child.
+- Fixes the ReaImGui `EndChild` assertion reported when opening Help.
+
 ## 0.7.7 Beta 9
 
 ### Heritage selection contrast

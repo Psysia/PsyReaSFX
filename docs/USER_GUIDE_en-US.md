@@ -1,4 +1,4 @@
-﻿# PsyReaSFX 0.7.7 Beta 9 User Guide (package 0.7.7-beta.9)
+﻿# PsyReaSFX 0.7.7 Beta 10 User Guide (package 0.7.7-beta.10)
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_7_7_Beta_9.lua`.
+4. Load `PsyReaSFX_v0_7_7_Beta_10.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -505,5 +505,5 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.7 Beta 9 improves Heritage-mode selection contrast, rebuilds the fully localized Help center, and refreshes the README workspace previews. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.7 Beta 10 fixes the Help-window Child-stack assertion while retaining the Heritage contrast, localized Help content, and refreshed README previews from Beta 9. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
 

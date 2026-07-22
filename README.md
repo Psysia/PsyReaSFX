@@ -13,18 +13,18 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.7--beta.9-19D8FF" alt="Version 0.7.7 beta 9">
+  <img src="https://img.shields.io/badge/Version-0.7.7--beta.10-19D8FF" alt="Version 0.7.7 beta 10">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.7 Beta 9
+# PsyReaSFX 0.7.7 Beta 10
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.7-beta.9  
+**Package version:** 0.7.7-beta.10  
 **Release stage:** Beta
 
 <p align="center">
@@ -33,6 +33,10 @@ collection, insertion, and Transfer workflow built inside REAPER.
 
 ## Selection contrast, refreshed previews, and Help
 
+- Beta 10 removes nested Help-section Child windows, fixing the ReaImGui
+  `EndChild` assertion that occurred when opening Help in affected versions.
+- Help now uses one scrollable Child with ordinary section layout, preventing
+  off-screen groups from corrupting the ImGui Child stack.
 - Heritage mode keeps Electric Cyan as its brand accent but uses a deeper teal
   selection fill with high-contrast white text.
 - Selected rows now take visual priority over played-state yellow text.
@@ -180,7 +184,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_7_Beta_9.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_7_Beta_10.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -192,7 +196,7 @@ Load `PsyReaSFX_v0_7_7_Beta_9.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_7_Beta_9.lua
+PsyReaSFX_v0_7_7_Beta_10.lua
 README.md
 README_zh-CN.md
 index.xml
