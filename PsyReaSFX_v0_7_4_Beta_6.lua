@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.4-beta.5
+-- @version 0.7.4-beta.6
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -75,6 +75,7 @@
 --   - 大型库扫描使用目录游标、已知根路径绑定和批量刷新，减少主线程重复遍历
 --   - 0.7.4：逻辑库箭头可直接折叠或展开来源路径
 --   - Artwork 增加逻辑库封面、来源根目录与常见封面子目录回退
+--   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -83,7 +84,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.4 Beta 5"
+local VERSION = "0.7.4 Beta 6"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -367,6 +368,7 @@ local MAX_WAVE_MEMORY = 180
 local MAX_WORK_QUEUE = 160
 
 local COLOR = {
+  accent = 0x1F6FCCFF,
   window = 0x0B0C0EFF,
   panel = 0x111316FF,
   panel_alt = 0x17191DFF,
@@ -381,6 +383,7 @@ local COLOR = {
   selected_text = 0xFFFFFFFF,
   text = 0xD6D6D8FF,
   dim = 0x8A8D94FF,
+  muted = 0x8A8D94FF,
   grid = 0x2B2E34FF,
   border = 0x555B64FF,
   waveform_bg = 0x050607FF,
@@ -1962,6 +1965,7 @@ function apply_theme_palette()
   end
 
   COLOR.selected = accent
+  COLOR.accent = accent
   COLOR.selection = rgba_with_alpha(accent, 0x55)
   COLOR.border = preset.accent_soft or 0x555B64FF
   COLOR.playhead = preset.playhead or 0x61D982FF

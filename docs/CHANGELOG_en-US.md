@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.4 Beta 6
+
+### Left-panel crash hotfix
+
+- Defines the theme accent color consumed by the new library disclosure button.
+- Defines the muted color already used by Library Manager and folder-drop UI.
+- Prevents `PushStyleColor` from receiving `nil` when the left panel opens.
+- Removes the cascading `Missing EndChild()` shutdown error caused by that
+  interrupted sidebar render.
+- Adds a static audit covering every `COLOR.*` reference used by the script.
+
 ## 0.7.4 Beta 5
 
 ### Logical-library disclosure control

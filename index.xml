@@ -9,14 +9,14 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.4-beta.5" author="Psysia" time="2026-07-22T16:00:00Z">
+      <version name="0.7.4-beta.6" author="Psysia" time="2026-07-22T17:00:00Z">
         <changelog><![CDATA[
-- Makes the logical-library disclosure arrow directly clickable and persistent.
-- Adds shared logical-library Artwork for the list and metadata inspector.
-- Checks deep source roots and common Artwork/Images/Documentation folders.
-- Adds manual library-cover selection and image failure retry backoff.
+- Fixes the nil theme color passed by the new library disclosure button.
+- Prevents the cascading Missing EndChild() error when closing the script.
+- Defines the muted color used by Library Manager and folder-drop UI.
+- Audits all script COLOR references before release.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.4-beta.5/PsyReaSFX_v0_7_4_Beta_5.lua</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.4-beta.6/PsyReaSFX_v0_7_4_Beta_6.lua</source>
       </version>
     </reapack>
   </category>
