@@ -13,29 +13,42 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.5--beta.7-19D8FF" alt="版本 0.7.5 beta 7">
+  <img src="https://img.shields.io/badge/Version-0.7.6--beta.8-19D8FF" alt="版本 0.7.6 beta 8">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.5 Beta 7
+# PsyReaSFX 0.7.6 Beta 8
 
 PsyReaSFX 是运行在 REAPER 内部的音效资产浏览、波形试听、元数据、Region、集合、插入与 Transfer 工作流。
 
 **作者：** Psysia  
-**包版本：** 0.7.5-beta.7  
+**包版本：** 0.7.6-beta.8  
 **发布阶段：** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX 主工作区，展开导航与元数据面板" width="100%">
 </p>
 
-## 品牌焕新与来源独立封面
+## 外观模式与自定义框架颜色
+
+Beta 8 将原来的中性黑色界面恢复为默认外观，同时保留经过加深的品牌藏蓝方案。
+
+- **黑暗模式**为默认，恢复原有黑色工作区、蓝色选中状态、中性波形与绿色播放指针。
+- **传统模式**使用更深的藏蓝框架、Electric Cyan 强调色和青色波形交互状态。
+- **框架底色**可直接打开色盘；只需选择一个底色，PsyReaSFX 会自动派生面板、表头、悬停、边框、弱化文字和波形背景的明暗层级。
+- 强调色仍可通过独立色盘修改。
+- About 页面会跟随当前框架和强调色，不再强制使用一种配色。
+- 旧版 Aether / flat 设置会自动迁移到黑暗模式。
+
+入口：**设置 > 外观**。
+
+## 品牌资产与来源独立封面
 
 Beta 7 将正式 PsyReaSFX 视觉规范应用到项目，并让 Artwork 的归属与实体来源路径保持一致。
 
 - 逻辑音效库旁的箭头现在是可点击控件，单击即可展开或折叠来源路径，并保存当前状态。
-- 默认界面采用品牌规范中的 Deep Navy、Dark Slate、Electric Cyan、Soft White 与 Cool Gray。
+- 传统模式采用品牌规范中的 Deep Navy、Dark Slate、Electric Cyan、Soft White 与 Cool Gray。
 - About 页面使用随包安装的 PsyReaSFX 图标，并以极简产品卡展示版本、版权和项目主页。
 - 每个实体来源路径拥有独立封面；一个来源找到的封面不会扩散到同一逻辑库的其他来源。
 - 右键实体来源路径可以指定、重新自动查找或清除该来源自己的封面。
@@ -112,7 +125,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 ## 手动安装
 
-在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_5_Beta_7.lua`。
+在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_6_Beta_8.lua`。
 
 ## 文档
 
@@ -124,7 +137,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ## 发布包结构
 
 ```text
-PsyReaSFX_v0_7_5_Beta_7.lua
+PsyReaSFX_v0_7_6_Beta_8.lua
 README.md
 README_zh-CN.md
 index.xml

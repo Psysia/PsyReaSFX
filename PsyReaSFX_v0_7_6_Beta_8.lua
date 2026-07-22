@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.5-beta.7
+-- @version 0.7.6-beta.8
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -79,6 +79,8 @@
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
 --   - 实体来源右键菜单可指定、重新检测或清除自己的封面
+--   - 0.7.6：黑暗模式恢复为默认，传统模式使用更深的品牌藏蓝
+--   - 框架底色支持色盘自定义，并自动派生面板与交互层级
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -87,7 +89,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.5 Beta 7"
+local VERSION = "0.7.6 Beta 8"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -308,53 +310,41 @@ local UI_DENSITY_PROFILES = {
 }
 
 local SURFACE_STYLES = {
-  flat = {
-    window = 0x0A1020FF,
-    panel = 0x0A1020FF,
-    panel_alt = 0x0E192AFF,
-    title = 0x0E192AFF,
-    title_active = 0x13253DFF,
-    header = 0x13253DFF,
-    row = 0x0A1020FF,
-    row_alt = 0x0A1020FF,
-    row_hover = 0x13253DFF,
-    grid = 0x20344EFF,
-    button = 0x13253DFF,
-    button_hover = 0x1B3657FF,
+  dark = {
+    window = 0x101114FF,
+    panel = 0x101114FF,
+    panel_alt = 0x15171AFF,
+    title = 0x15171AFF,
+    title_active = 0x181B1FFF,
+    header = 0x1B1E22FF,
+    row = 0x101114FF,
+    row_alt = 0x101114FF,
+    row_hover = 0x1A1E23FF,
+    grid = 0x24282EFF,
+    border = 0x33465FFF,
+    button = 0x1A1D22FF,
+    button_hover = 0x252A31FF,
+    waveform_bg = 0x050607FF,
+    text = 0xE1E4E8FF,
+    dim = 0x8D949DFF,
+  },
+  heritage = {
+    window = 0x060A12FF,
+    panel = 0x080E19FF,
+    panel_alt = 0x0D1828FF,
+    title = 0x0B1523FF,
+    title_active = 0x102138FF,
+    header = 0x11243BFF,
+    row = 0x070C15FF,
+    row_alt = 0x09101CFF,
+    row_hover = 0x10243BFF,
+    grid = 0x1B3049FF,
+    border = 0x234866FF,
+    button = 0x102038FF,
+    button_hover = 0x183450FF,
+    waveform_bg = 0x03070DFF,
     text = 0xF5FAFFFF,
     dim = 0x7A8797FF,
-  },
-  layered = {
-    window = 0x0B0C0EFF,
-    panel = 0x111316FF,
-    panel_alt = 0x17191DFF,
-    title = 0x1A1C20FF,
-    title_active = 0x202328FF,
-    header = 0x24272CFF,
-    row = 0x0E0F12FF,
-    row_alt = 0x121318FF,
-    row_hover = 0x1B2027FF,
-    grid = 0x2B2F35FF,
-    button = 0x20242AFF,
-    button_hover = 0x343A43FF,
-    text = 0xD6D9DEFF,
-    dim = 0x8D929AFF,
-  },
-  contrast = {
-    window = 0x050607FF,
-    panel = 0x0C0E11FF,
-    panel_alt = 0x171A1FFF,
-    title = 0x15181DFF,
-    title_active = 0x20252CFF,
-    header = 0x30363EFF,
-    row = 0x08090BFF,
-    row_alt = 0x111318FF,
-    row_hover = 0x222936FF,
-    grid = 0x3D454FFF,
-    button = 0x20252CFF,
-    button_hover = 0x37414DFF,
-    text = 0xF0F2F5FF,
-    dim = 0xA0A7B0FF,
   },
 }
 local SIDEBAR_W = 188
@@ -379,32 +369,32 @@ local MAX_WAVE_MEMORY = 180
 local MAX_WORK_QUEUE = 160
 
 local COLOR = {
-  accent = 0x19D8FFFF,
-  window = 0x0A1020FF,
-  panel = 0x0A1020FF,
-  panel_alt = 0x0E192AFF,
-  title = 0x0E192AFF,
-  title_active = 0x13253DFF,
-  header = 0x13253DFF,
+  accent = 0x1F6FCCFF,
+  window = 0x101114FF,
+  panel = 0x101114FF,
+  panel_alt = 0x15171AFF,
+  title = 0x15171AFF,
+  title_active = 0x181B1FFF,
+  header = 0x1B1E22FF,
   header_text = 0xE7E9EDFF,
   row = 0x0E0F12FF,
   row_alt = 0x121318FF,
   row_hover = 0x1B2027FF,
-  selected = 0x19D8FFFF,
-  selected_text = 0x0A1020FF,
-  text = 0xF5FAFFFF,
-  dim = 0x7A8797FF,
-  muted = 0x7A8797FF,
-  grid = 0x20344EFF,
-  border = 0x2A496AFF,
-  waveform_bg = 0x050A14FF,
-  waveform = 0xDCE8F3FF,
-  waveform_selected = 0xF5FAFFFF,
-  waveform_played = 0x63CDE8FF,
+  selected = 0x1F6FCCFF,
+  selected_text = 0xFFFFFFFF,
+  text = 0xE1E4E8FF,
+  dim = 0x8D949DFF,
+  muted = 0x8D949DFF,
+  grid = 0x24282EFF,
+  border = 0x33465FFF,
+  waveform_bg = 0x050607FF,
+  waveform = 0xD7D8DAFF,
+  waveform_selected = 0xEAF3FFFF,
+  waveform_played = 0x8FB8D8FF,
   waveform_marked = 0xF0C85AFF,
   played_text = 0xF0C85AFF,
-  playhead = 0x19D8FFFF,
-  selection = 0x19D8FF55,
+  playhead = 0x50E36DFF,
+  selection = 0x2789E955,
   region = 0xE2B76499,
   favorite = 0xFFD533FF,
   success = 0x6ED486FF,
@@ -447,12 +437,21 @@ local WORKFLOW_STATUS_ORDER = {
 }
 
 local THEME_PRESETS = {
-  aether = {
-    label = "Psy Electric",
+  dark = {
+    label = "黑暗模式",
+    accent = 0x1F6FCCFF,
+    accent_soft = 0x33465FFF,
+    playhead = 0x61D982FF,
+    favorite = 0xF0C85AFF,
+    selected_text = 0xFFFFFFFF,
+  },
+  heritage = {
+    label = "传统模式",
     accent = 0x19D8FFFF,
-    accent_soft = 0x294E6BFF,
+    accent_soft = 0x234866FF,
     playhead = 0x19D8FFFF,
     favorite = 0xF0C85AFF,
+    selected_text = 0x0A1020FF,
   },
   amber = {
     label = "Warm Amber",
@@ -481,6 +480,31 @@ local THEME_PRESETS = {
     accent_soft = 0x3A3E45FF,
     playhead = 0x8FD09EFF,
     favorite = 0xD8BD62FF,
+  },
+}
+
+local APPEARANCE_PRESETS = {
+  dark = {
+    label = "黑暗模式",
+    description = "原有的中性黑色工作区，作为默认外观。",
+    shell_hex = "#101114",
+    accent_hex = "#1F6FCC",
+    waveform_hex = "#D7D8DA",
+    waveform_selected_hex = "#EAF3FF",
+    waveform_played_hex = "#8FB8D8",
+    selection_hex = "#2789E9",
+    playhead_hex = "#50E36D",
+  },
+  heritage = {
+    label = "传统模式",
+    description = "更深的藏蓝框架与 Electric Cyan 品牌强调色。",
+    shell_hex = "#060A12",
+    accent_hex = "#19D8FF",
+    waveform_hex = "#DCE8F3",
+    waveform_selected_hex = "#F5FAFF",
+    waveform_played_hex = "#63CDE8",
+    selection_hex = "#19D8FF",
+    playhead_hex = "#19D8FF",
   },
 }
 
@@ -706,24 +730,25 @@ local state = {
   -- 菜单关闭后的下一帧再打开帮助窗口，避免与菜单 Popup 栈冲突。
   help_popup_requested = 0,
 
-  theme_preset = "aether",
-  custom_accent_hex = "#19D8FF",
+  theme_preset = "dark",
+  custom_accent_hex = "#1F6FCC",
+  custom_shell_hex = "#101114",
 
   language = "zh",
   mini_wave_points = MINI_WAVE_DEFAULT_POINTS,
   ui_density = "compact",
-  surface_style = "flat",
+  surface_style = "dark",
   settings_tab = "general",
 
-  waveform_hex = "#DCE8F3",
-  waveform_selected_hex = "#F5FAFF",
-  waveform_played_hex = "#63CDE8",
+  waveform_hex = "#D7D8DA",
+  waveform_selected_hex = "#EAF3FF",
+  waveform_played_hex = "#8FB8D8",
   waveform_marked_hex = "#F0C85A",
   played_text_hex = "#F0C85A",
   played_text_enabled = true,
   played_waveform_enabled = false,
-  selection_hex = "#19D8FF",
-  playhead_hex = "#19D8FF",
+  selection_hex = "#2789E9",
+  playhead_hex = "#50E36D",
   region_hex = "#E2B764",
 
   sidebar_visible = true,
@@ -1253,6 +1278,21 @@ I18N_EN = {
   ["界面主题"] = "Interface theme",
   ["主题决定强调色；波形和已播放文字可单独配置。"] =
     "The theme controls the accent; waveform and played-text colors remain independently configurable.",
+  ["外观模式"] = "Appearance mode",
+  ["黑暗模式"] = "Dark mode",
+  ["传统模式"] = "Heritage mode",
+  ["黑暗模式为默认；传统模式使用更深的品牌藏蓝。"] =
+    "Dark mode is the default; Heritage mode uses a deeper brand navy.",
+  ["原有的中性黑色工作区，作为默认外观。"] =
+    "The original neutral-black workspace, used as the default appearance.",
+  ["更深的藏蓝框架与 Electric Cyan 品牌强调色。"] =
+    "A deeper navy shell with the Electric Cyan brand accent.",
+  ["当前模式："] = "Current mode: ",
+  ["自定义"] = "Custom",
+  ["自定义颜色"] = "Custom colors",
+  ["框架底色"] = "Frame base color",
+  ["选择一个底色后，面板、表头、悬停、边框与波形背景会自动生成层级。"] =
+    "Choose one base color and PsyReaSFX will derive panels, headers, hover states, borders, and the waveform background.",
   ["波形配色"] = "Waveform palette",
   ["普通、选中、已播放、标记、选区、播放指针与 Region。"] =
     "Normal, selected, played, marked, selection, playhead, and Region colors.",
@@ -1949,6 +1989,63 @@ function rgba_with_alpha(color_value, alpha)
     | clamp(math.floor(alpha or 255), 0, 255)
 end
 
+function rgba_mix(color_a, color_b, amount)
+  amount = clamp(tonumber(amount) or 0, 0, 1)
+
+  local function channel(color_value, shift)
+    return (color_value >> shift) & 0xFF
+  end
+
+  local function mixed(shift)
+    return math.floor(
+      channel(color_a, shift) * (1 - amount)
+        + channel(color_b, shift) * amount
+        + 0.5
+    )
+  end
+
+  return (mixed(24) << 24)
+    | (mixed(16) << 16)
+    | (mixed(8) << 8)
+    | 0xFF
+end
+
+function rgba_luminance(color_value)
+  local r = (color_value >> 24) & 0xFF
+  local g = (color_value >> 16) & 0xFF
+  local b = (color_value >> 8) & 0xFF
+  return (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255
+end
+
+function custom_surface_from_base()
+  local base = rgba_from_hex(state.custom_shell_hex)
+    or SURFACE_STYLES.dark.window
+  local light = 0xFFFFFFFF
+  local black = 0x000000FF
+  local bright = rgba_luminance(base) > 0.52
+  local layer_target = bright and black or light
+  local text = bright and 0x0A1020FF or 0xF5FAFFFF
+
+  return {
+    window = base,
+    panel = rgba_mix(base, layer_target, 0.025),
+    panel_alt = rgba_mix(base, layer_target, 0.065),
+    title = rgba_mix(base, layer_target, 0.055),
+    title_active = rgba_mix(base, layer_target, 0.105),
+    header = rgba_mix(base, layer_target, 0.12),
+    row = rgba_mix(base, black, bright and 0.035 or 0.08),
+    row_alt = rgba_mix(base, layer_target, 0.02),
+    row_hover = rgba_mix(base, layer_target, 0.12),
+    grid = rgba_mix(base, layer_target, 0.18),
+    border = rgba_mix(base, layer_target, 0.24),
+    button = rgba_mix(base, layer_target, 0.10),
+    button_hover = rgba_mix(base, layer_target, 0.18),
+    waveform_bg = rgba_mix(base, black, bright and 0.18 or 0.60),
+    text = text,
+    dim = rgba_mix(text, base, 0.48),
+  }
+end
+
 function apply_ui_density_metrics()
   local profile =
     UI_DENSITY_PROFILES[state.ui_density]
@@ -1969,38 +2066,48 @@ function apply_ui_density_metrics()
 end
 
 function apply_surface_style()
-  local surface =
-    SURFACE_STYLES[state.surface_style]
-    or SURFACE_STYLES.layered
+  local surface = state.surface_style == "custom"
+    and custom_surface_from_base()
+    or SURFACE_STYLES[state.surface_style]
+    or SURFACE_STYLES.dark
 
   for key, value in pairs(surface) do
     COLOR[key] = value
   end
+
+  COLOR.header_text = COLOR.text
+  COLOR.muted = COLOR.dim
 end
 
 function apply_theme_palette()
   local preset = THEME_PRESETS[state.theme_preset]
-    or THEME_PRESETS.aether
+    or THEME_PRESETS.dark
 
   local accent = preset.accent
 
   if state.theme_preset == "custom" then
     accent = rgba_from_hex(state.custom_accent_hex)
-      or THEME_PRESETS.aether.accent
+      or THEME_PRESETS.dark.accent
   end
 
   COLOR.selected = accent
   COLOR.accent = accent
   COLOR.selection = rgba_with_alpha(accent, 0x55)
-  COLOR.border = preset.accent_soft or 0x555B64FF
+  if state.surface_style ~= "custom"
+    and state.theme_preset ~= "custom" then
+    COLOR.border = preset.accent_soft or COLOR.border
+  end
   COLOR.playhead = preset.playhead or 0x61D982FF
   COLOR.favorite = preset.favorite or 0xF0C85AFF
-  COLOR.selected_text = state.theme_preset == "aether"
-    and 0x0A1020FF
-    or 0xFFFFFFFF
-  COLOR.button_hover = state.theme_preset == "aether"
-    and 0x1B3657FF
-    or 0x343A43FF
+  COLOR.selected_text =
+    state.theme_preset == "custom"
+      and (
+        rgba_luminance(accent) > 0.58
+          and 0x0A1020FF
+          or 0xFFFFFFFF
+      )
+      or preset.selected_text
+      or 0xFFFFFFFF
 
   if state and state.waveform_hex
     and type(apply_waveform_palette) == "function" then
@@ -2008,14 +2115,42 @@ function apply_theme_palette()
   end
 end
 
+function apply_appearance_preset(key)
+  local definition = APPEARANCE_PRESETS[key]
+
+  if not definition then
+    return
+  end
+
+  state.surface_style = key
+  state.theme_preset = key
+  state.custom_shell_hex = definition.shell_hex
+  state.custom_accent_hex = definition.accent_hex
+  state.waveform_hex = definition.waveform_hex
+  state.waveform_selected_hex =
+    definition.waveform_selected_hex
+  state.waveform_played_hex =
+    definition.waveform_played_hex
+  state.selection_hex = definition.selection_hex
+  state.playhead_hex = definition.playhead_hex
+  state.config_dirty = true
+
+  apply_surface_style()
+  apply_theme_palette()
+
+  if type(apply_waveform_palette) == "function" then
+    apply_waveform_palette()
+  end
+end
+
 local DEFAULT_WAVEFORM_PALETTE = {
-  waveform_hex = "#DCE8F3",
-  waveform_selected_hex = "#F5FAFF",
-  waveform_played_hex = "#63CDE8",
+  waveform_hex = "#D7D8DA",
+  waveform_selected_hex = "#EAF3FF",
+  waveform_played_hex = "#8FB8D8",
   waveform_marked_hex = "#F0C85A",
   played_text_hex = "#F0C85A",
-  selection_hex = "#19D8FF",
-  playhead_hex = "#19D8FF",
+  selection_hex = "#2789E9",
+  playhead_hex = "#50E36D",
   region_hex = "#E2B764",
 }
 
@@ -2023,17 +2158,17 @@ local WAVEFORM_PALETTE_FIELDS = {
   {
     key = "waveform_hex",
     label = "普通波形",
-    fallback = 0xDCE8F3FF,
+    fallback = 0xD7D8DAFF,
   },
   {
     key = "waveform_selected_hex",
     label = "选中波形",
-    fallback = 0xF5FAFFFF,
+    fallback = 0xEAF3FFFF,
   },
   {
     key = "waveform_played_hex",
     label = "已播放波形",
-    fallback = 0x63CDE8FF,
+    fallback = 0x8FB8D8FF,
   },
   {
     key = "waveform_marked_hex",
@@ -2048,12 +2183,12 @@ local WAVEFORM_PALETTE_FIELDS = {
   {
     key = "selection_hex",
     label = "选区颜色",
-    fallback = 0x19D8FFFF,
+    fallback = 0x2789E9FF,
   },
   {
     key = "playhead_hex",
     label = "播放指针颜色",
-    fallback = 0x19D8FFFF,
+    fallback = 0x50E36DFF,
   },
   {
     key = "region_hex",
@@ -3833,13 +3968,22 @@ function load_config()
         local legacy_key =
           "sound" .. "ly"
 
-        if value == legacy_key then
-          value = "aether"
+        if value == legacy_key
+          or value == "aether" then
+          value = "dark"
         end
 
-        state.theme_preset = value or "aether"
+        if value == "dark"
+          or value == "heritage"
+          or value == "custom" then
+          state.theme_preset = value
+        else
+          state.theme_preset = "dark"
+        end
       elseif name == "custom_accent_hex" then
-        state.custom_accent_hex = value or "#19D8FF"
+        state.custom_accent_hex = value or "#1F6FCC"
+      elseif name == "custom_shell_hex" then
+        state.custom_shell_hex = value or "#101114"
       elseif name == "language" then
         state.language =
           value == "en" and "en" or "zh"
@@ -3875,10 +4019,14 @@ function load_config()
           state.ui_density = value
         end
       elseif name == "surface_style" then
-        if value == "flat"
+        if value == "dark"
+          or value == "heritage"
+          or value == "custom" then
+          state.surface_style = value
+        elseif value == "flat"
           or value == "layered"
           or value == "contrast" then
-          state.surface_style = value
+          state.surface_style = "dark"
         end
       elseif name == "wave_scrub_enabled" then
         state.wave_scrub_enabled = value ~= "0"
@@ -3949,11 +4097,11 @@ function load_config()
       elseif name == "loudness_show_tp" then
         state.loudness_show_tp = value ~= "0"
       elseif name == "waveform_hex" then
-        state.waveform_hex = value or "#DCE8F3"
+        state.waveform_hex = value or "#D7D8DA"
       elseif name == "waveform_selected_hex" then
-        state.waveform_selected_hex = value or "#F5FAFF"
+        state.waveform_selected_hex = value or "#EAF3FF"
       elseif name == "waveform_played_hex" then
-        state.waveform_played_hex = value or "#63CDE8"
+        state.waveform_played_hex = value or "#8FB8D8"
       elseif name == "waveform_marked_hex" then
         state.waveform_marked_hex = value or "#F0C85A"
       elseif name == "played_text_hex" then
@@ -3969,9 +4117,9 @@ function load_config()
       elseif name == "inspector_artwork_pinned" then
         state.inspector_artwork_pinned = value ~= "0"
       elseif name == "selection_hex" then
-        state.selection_hex = value or "#19D8FF"
+        state.selection_hex = value or "#2789E9"
       elseif name == "playhead_hex" then
-        state.playhead_hex = value or "#19D8FF"
+        state.playhead_hex = value or "#50E36D"
       elseif name == "region_hex" then
         state.region_hex = value or "#E2B764"
       elseif name == "sidebar_visible" then
@@ -4158,6 +4306,12 @@ function save_config()
   file:write(
     "setting\tcustom_accent_hex\t",
     escape_tsv(state.custom_accent_hex),
+    "\n"
+  )
+
+  file:write(
+    "setting\tcustom_shell_hex\t",
+    escape_tsv(state.custom_shell_hex),
     "\n"
   )
 
@@ -10919,13 +11073,14 @@ function reset_interface_settings()
   state.transfer_last_output = ""
   state.transfer_last_outputs = {}
   state.transfer_last_error = ""
-  state.theme_preset = "aether"
-  state.custom_accent_hex = "#19D8FF"
+  state.theme_preset = "dark"
+  state.custom_accent_hex = "#1F6FCC"
+  state.custom_shell_hex = "#101114"
   state.language = "zh"
   state.mini_wave_points = MINI_WAVE_DEFAULT_POINTS
   state.precache_points = 4096
   state.ui_density = "compact"
-  state.surface_style = "flat"
+  state.surface_style = "dark"
   state.wave_scrub_enabled = true
   state.loop_selection = true
   state.preview_control_layout = "studio_strip"
@@ -10946,9 +11101,9 @@ function reset_interface_settings()
   state.loudness_show_m = true
   state.loudness_show_s = false
   state.loudness_show_tp = false
-  state.waveform_hex = "#DCE8F3"
-  state.waveform_selected_hex = "#F5FAFF"
-  state.waveform_played_hex = "#63CDE8"
+  state.waveform_hex = "#D7D8DA"
+  state.waveform_selected_hex = "#EAF3FF"
+  state.waveform_played_hex = "#8FB8D8"
   state.waveform_marked_hex = "#F0C85A"
   state.played_text_hex = "#F0C85A"
   state.played_text_enabled = true
@@ -10956,9 +11111,11 @@ function reset_interface_settings()
   state.restore_played_on_start = false
   state.artwork_enabled = true
   state.inspector_artwork_pinned = true
-  state.selection_hex = "#19D8FF"
-  state.playhead_hex = "#19D8FF"
+  state.selection_hex = "#2789E9"
+  state.playhead_hex = "#50E36D"
   state.region_hex = "#E2B764"
+  apply_surface_style()
+  apply_theme_palette()
   apply_waveform_palette()
   state.wave_view_start = 0
   state.wave_view_end = 1
@@ -14261,7 +14418,6 @@ function reset_columns_default()
   state.column_widths.duration = 104
 
   state.ui_density = "compact"
-  state.surface_style = "flat"
   state.config_dirty = true
   set_status("已恢复默认字段布局")
 end
@@ -18265,6 +18421,10 @@ function draw_color_picker_row(
     if mode == "theme" then
       state.theme_preset = "custom"
       apply_theme_palette()
+    elseif mode == "surface" then
+      state.surface_style = "custom"
+      apply_surface_style()
+      apply_theme_palette()
     else
       apply_waveform_palette()
     end
@@ -18296,6 +18456,10 @@ function draw_color_picker_row(
 
     if mode == "theme" then
       state.theme_preset = "custom"
+      apply_theme_palette()
+    elseif mode == "surface" then
+      state.surface_style = "custom"
+      apply_surface_style()
       apply_theme_palette()
     else
       apply_waveform_palette()
@@ -18441,7 +18605,7 @@ function draw_settings_about()
     y,
     x + card_width,
     y + card_height,
-    0x0A1020FF,
+    COLOR.panel_alt,
     math.max(10, UI_METRIC.radius)
   )
 
@@ -18451,7 +18615,7 @@ function draw_settings_about()
     y,
     x + card_width,
     y + 3,
-    0x19D8FFFF,
+    COLOR.accent,
     2
   )
 
@@ -18483,7 +18647,7 @@ function draw_settings_about()
       icon_y,
       icon_x + icon_size,
       icon_y + icon_size,
-      0x13253DFF,
+      COLOR.button,
       22
     )
   end
@@ -18494,7 +18658,7 @@ function draw_settings_about()
     draw_list,
     text_x,
     y + 28,
-    0xF5FAFFFF,
+    COLOR.header_text,
     SCRIPT_NAME
   )
 
@@ -18502,7 +18666,7 @@ function draw_settings_about()
     draw_list,
     text_x,
     y + 62,
-    0xF5FAFFFF,
+    COLOR.header_text,
     translate_ui_text("音效资产井然有序")
   )
 
@@ -18510,7 +18674,7 @@ function draw_settings_about()
     draw_list,
     text_x,
     y + 91,
-    0x7A8797FF,
+    COLOR.dim,
     translate_ui_text("浏览 · 整理 · 试听")
   )
 
@@ -18518,7 +18682,7 @@ function draw_settings_about()
     draw_list,
     text_x,
     y + 130,
-    0x19D8FFFF,
+    COLOR.accent,
     "v" .. VERSION .. "  ·  " .. AUTHOR_NAME
   )
 
@@ -18526,7 +18690,7 @@ function draw_settings_about()
     draw_list,
     text_x,
     y + 161,
-    0x7A8797FF,
+    COLOR.dim,
     COPYRIGHT_TEXT
   )
 
@@ -18549,7 +18713,6 @@ end
 
 function apply_unified_interface(reset_columns, persist)
   state.ui_density = "compact"
-  state.surface_style = "flat"
   state.preview_control_layout = "studio_strip"
 
   if reset_columns then
@@ -19094,50 +19257,96 @@ function draw_settings_appearance()
   ImGui.Separator(ctx)
 
   settings_section_title(
-    "界面主题",
-    "主题决定强调色；波形和已播放文字可单独配置。"
+    "外观模式",
+    "黑暗模式为默认；传统模式使用更深的品牌藏蓝。"
   )
 
   for _, key in ipairs(
     {
-      "aether",
-      "amber",
-      "teal",
-      "violet",
-      "neutral",
+      "dark",
+      "heritage",
     }
   ) do
-    local preset = THEME_PRESETS[key]
-    local was_selected = state.theme_preset == key
+    local preset = APPEARANCE_PRESETS[key]
+    local was_selected =
+      state.theme_preset == key
+      and state.surface_style == key
 
     if was_selected then
       ImGui.PushStyleColor(
         ctx,
         ImGui.Col_Button,
-        preset.accent
+        THEME_PRESETS[key].accent
       )
     end
 
-    local clicked = dark_button(preset.label, 132)
+    local clicked = dark_button(preset.label, 176)
 
     if was_selected then
       ImGui.PopStyleColor(ctx)
     end
 
     if clicked then
-      state.theme_preset = key
-      state.config_dirty = true
-      apply_theme_palette()
+      apply_appearance_preset(key)
     end
 
-    if key ~= "neutral" then
+    if key ~= "heritage" then
       ImGui.SameLine(ctx)
     end
   end
 
   ImGui.TextDisabled(
     ctx,
+    (
+      state.surface_style == "custom"
+        or state.theme_preset == "custom"
+    )
+      and (
+        translate_ui_text("当前模式：")
+          .. translate_ui_text("自定义")
+      )
+      or (
+        translate_ui_text("当前模式：")
+          .. (
+            APPEARANCE_PRESETS[state.surface_style]
+              and translate_ui_text(
+                APPEARANCE_PRESETS[state.surface_style].label
+              )
+              or translate_ui_text(
+                APPEARANCE_PRESETS.dark.label
+              )
+          )
+      )
+  )
+
+  ImGui.TextDisabled(
+    ctx,
+    translate_ui_text(
+      APPEARANCE_PRESETS.dark.description
+    )
+      .. "　"
+      .. translate_ui_text(
+        APPEARANCE_PRESETS.heritage.description
+      )
+  )
+
+  ImGui.Separator(ctx)
+
+  settings_section_title(
+    "自定义颜色",
+    "选择一个底色后，面板、表头、悬停、边框与波形背景会自动生成层级。"
+  )
+
+  ImGui.TextDisabled(
+    ctx,
     "点击色块打开色盘；选择后即时生效。"
+  )
+
+  draw_color_picker_row(
+    "custom_shell_hex",
+    "框架底色",
+    "#101114",
+    "surface"
   )
 
   draw_color_picker_row(
@@ -20744,6 +20953,7 @@ end
 
 load_regions()
 load_loudness_cache()
+apply_surface_style()
 apply_theme_palette()
 apply_waveform_palette()
 state.results_dirty = true

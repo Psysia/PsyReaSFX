@@ -1,5 +1,24 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.6 Beta 8
+
+### Appearance modes
+
+- Restores the former neutral-black interface as the default **Dark mode**.
+- Adds **Heritage mode**, using a deeper navy shell and Electric Cyan accent.
+- Treats each mode as a complete preset covering surfaces, accents,
+  waveforms, selection, and playhead colors.
+- Migrates previous Aether/flat settings to Dark mode.
+
+### Custom frame color
+
+- Adds a color picker for the application frame base color.
+- Automatically derives panel, header, hover, border, dim-text, row, button,
+  and waveform-background hierarchy from the selected base color.
+- Keeps the accent color independently editable.
+- Makes the About card follow the active appearance instead of forcing the
+  branded navy palette.
+
 ## 0.7.5 Beta 7
 
 ### Official visual identity

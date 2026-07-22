@@ -1,4 +1,4 @@
-﻿# PsyReaSFX 0.7.5 Beta 7 User Guide (package 0.7.5-beta.7)
+﻿# PsyReaSFX 0.7.6 Beta 8 User Guide (package 0.7.6-beta.8)
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_7_5_Beta_7.lua`.
+4. Load `PsyReaSFX_v0_7_6_Beta_8.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -61,7 +61,18 @@ Use `F9`, `F10`, and `F11` to toggle navigation, metadata, and focus mode.
 
 ## 4.1 Appearance and Settings Center
 
-0.6.11 uses a dark two-column Settings Center matching the main application. The left side is page navigation; the right side is scrollable content.
+The two-column Settings Center matches the main application. The left side is page navigation; the right side is scrollable content.
+
+Under **Appearance > Appearance mode**:
+
+- **Dark mode** is the default neutral-black workspace with blue selection,
+  neutral waveforms, and a green playhead.
+- **Heritage mode** uses a deeper navy shell and Electric Cyan interactions.
+- **Frame base color** opens a picker and automatically derives panels,
+  headers, hover states, borders, dim text, and waveform background hierarchy.
+- **Accent color** can be customized independently.
+
+Choosing either preset reapplies its complete surface and waveform palette.
 
 Pages:
 
@@ -490,5 +501,5 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.5 Beta 7 applies the official PsyReaSFX visual identity and isolates Artwork ownership per physical source folder. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.6 Beta 8 restores Dark mode as the default, adds the deeper Heritage mode, and introduces a derived custom frame-color system. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
 

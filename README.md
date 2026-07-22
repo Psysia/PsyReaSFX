@@ -13,33 +13,51 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.5--beta.7-19D8FF" alt="Version 0.7.5 beta 7">
+  <img src="https://img.shields.io/badge/Version-0.7.6--beta.8-19D8FF" alt="Version 0.7.6 beta 8">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.5 Beta 7
+# PsyReaSFX 0.7.6 Beta 8
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.5-beta.7  
+**Package version:** 0.7.6-beta.8  
 **Release stage:** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
 
-## Brand refresh and source-owned Artwork
+## Appearance modes and custom shell color
 
-Beta 7 applies the official PsyReaSFX visual system across the project and
+Beta 8 restores the former neutral-black interface as the default while
+retaining the branded navy treatment as an optional, deeper preset.
+
+- **Dark mode** is the default and restores the original black workspace,
+  blue selection color, neutral waveforms, and green playhead.
+- **Heritage mode** uses a deeper navy shell with the Electric Cyan brand
+  accent and cyan waveform interactions.
+- **Frame base color** opens a color picker. PsyReaSFX derives panels,
+  headers, hover states, borders, dim text, and the waveform background from
+  that one color, so custom themes retain clear visual hierarchy.
+- The accent color remains independently editable with a color picker.
+- About follows the active shell and accent instead of forcing one palette.
+- Settings saved by the previous Aether/flat interface migrate to Dark mode.
+
+Open these controls from **Settings > Appearance**.
+
+## Brand assets and source-owned Artwork
+
+Beta 7 applied the official PsyReaSFX visual system across the project and
 makes Artwork ownership match the physical source structure.
 
 - The disclosure arrow beside a logical library is now a real control: click
   it once to expand or collapse source folders. The state is saved.
-- The default interface uses Deep Navy, Dark Slate, Electric Cyan, Soft White,
-  and Cool Gray from the PsyReaSFX brand palette.
+- Heritage mode uses Deep Navy, Dark Slate, Electric Cyan, Soft White, and
+  Cool Gray from the PsyReaSFX brand palette.
 - About now displays the packaged PsyReaSFX icon, product line, version,
   copyright, and project link in one minimal product card.
 - Every physical source folder owns its own Artwork. A cover found under one
@@ -149,7 +167,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_5_Beta_7.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_6_Beta_8.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -161,7 +179,7 @@ Load `PsyReaSFX_v0_7_5_Beta_7.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_5_Beta_7.lua
+PsyReaSFX_v0_7_6_Beta_8.lua
 README.md
 README_zh-CN.md
 index.xml

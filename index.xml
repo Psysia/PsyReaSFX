@@ -9,16 +9,16 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.5-beta.7" author="Psysia" time="2026-07-22T19:30:00Z">
+      <version name="0.7.6-beta.8" author="Psysia" time="2026-07-22T11:42:50Z">
         <changelog><![CDATA[
-- Applies the official PsyReaSFX brand palette and packaged app icon.
-- Rebuilds About as a minimal branded product card.
-- Isolates Artwork ownership per physical source folder.
-- Adds source-folder commands to choose, rediscover, or clear Artwork.
-- Prevents one source cover from propagating across a multi-source library.
+- Restores the neutral-black Dark mode as the default appearance.
+- Adds a deeper navy Heritage mode with Electric Cyan interactions.
+- Adds color pickers for the application frame base and accent colors.
+- Automatically derives readable surface hierarchy from a custom frame color.
+- Makes the About product card follow the active appearance.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.5-beta.7/PsyReaSFX_v0_7_5_Beta_7.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.5-beta.7/assets/brand/psyreasfx-icon.png</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.6-beta.8/PsyReaSFX_v0_7_6_Beta_8.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.6-beta.8/assets/brand/psyreasfx-icon.png</source>
       </version>
     </reapack>
   </category>
