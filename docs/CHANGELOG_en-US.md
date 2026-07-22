@@ -1,5 +1,31 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.3 Beta 4
+
+### Empty-first logical libraries
+
+- `New library` now creates a named logical library without requiring a
+  source folder.
+- Empty libraries remain visible and can receive source folders later through
+  the library context menu, library manager, or folder drag-and-drop.
+- Creating a library no longer starts a scan until at least one source folder
+  is attached.
+
+### Duration display
+
+- Duration cells now use the fixed `MM:SS.mmm` timecode format, for example
+  `00:04.947`.
+- The default Duration column width was adjusted for the fixed-width value.
+
+### Large-library performance
+
+- Replaces front-removal from the directory queue with an indexed scan cursor.
+- Carries the known source root through recursive scanning, avoiding a full
+  configured-root lookup for every new asset.
+- Defers result-list and library-count rebuilds until scan/import boundaries.
+- Rebuilds logical-library indexes once per multi-folder drop instead of once
+  per source folder.
+
 ## 0.7.2 Beta 3
 
 ### Multi-root logical libraries

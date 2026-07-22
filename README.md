@@ -3,13 +3,13 @@
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7.2 Beta 3
+# PsyReaSFX 0.7.3 Beta 4
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.2-beta.3  
+**Package version:** 0.7.3-beta.4  
 **Release stage:** Beta
 
 <p align="center">
@@ -18,7 +18,11 @@ collection, insertion, and Transfer workflow built inside REAPER.
 
 ## Multi-root logical libraries
 
-Beta 3 separates the library users browse from the physical folders that are
+Beta 4 lets a logical library exist before any source folder is attached.
+Choose **New library**, name it, and add or drop source folders whenever they
+become available. This keeps library organization independent of disk layout.
+
+The multi-root model separates the library users browse from physical folders that are
 scanned. A single logical library can now aggregate any number of source
 folders across drives while remaining one searchable library in the sidebar.
 
@@ -38,6 +42,18 @@ folders across drives while remaining one searchable library in the sidebar.
 The source hierarchy is stored in `libraries_v2.tsv`. Playlists and project
 bins remain virtual collections and are intentionally separate from library
 ownership.
+
+## Duration and large-library responsiveness
+
+- Duration cells now use a fixed `MM:SS.mmm` timecode such as `00:04.947`.
+- Directory scanning uses an indexed queue instead of repeatedly shifting the
+  remaining directory list.
+- New files inherit their known source folder directly instead of searching
+  every configured root again.
+- Results and library counts rebuild once at scan/import boundaries rather
+  than once per discovered file.
+- Adding several dropped source folders rebuilds the library map once for the
+  batch.
 
 ## 0.7 Transfer
 
@@ -99,7 +115,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_2_Beta_3.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_3_Beta_4.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -111,7 +127,7 @@ Load `PsyReaSFX_v0_7_2_Beta_3.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_2_Beta_3.lua
+PsyReaSFX_v0_7_3_Beta_4.lua
 README.md
 README_zh-CN.md
 index.xml

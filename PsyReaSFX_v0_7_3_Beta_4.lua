@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.2-beta.3
+-- @version 0.7.3-beta.4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -70,6 +70,9 @@
 --   - 旧单路径音效库自动迁移为“一库一路径”，保留现有索引与波形缓存
 --   - Windows 资源管理器文件夹可拖到逻辑库、全部音效库或中央结果区
 --   - 路径重叠、重复归属和离线来源均提供明确保护与状态提示
+--   - 0.7.3：允许先创建空逻辑音效库，再逐步添加来源路径
+--   - 时长列统一使用 MM:SS.mmm 时间码格式
+--   - 大型库扫描使用目录游标、已知根路径绑定和批量刷新，减少主线程重复遍历
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -78,7 +81,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.2 Beta 3"
+local VERSION = "0.7.3 Beta 4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -745,7 +748,7 @@ local state = {
     status = 88,
     description = 320,
     artwork = 58,
-    duration = 92,
+    duration = 104,
     format = 118,
     library = 180,
     category = 140,
@@ -1435,6 +1438,7 @@ I18N_PREFIX_EN = {
   ["已移除来源路径："] = "Removed source folder: ",
   ["已移除逻辑音效库："] = "Removed logical library: ",
   ["已重命名音效库："] = "Renamed library: ",
+  ["已新建空音效库："] = "Empty logical library created: ",
   ["已移动来源路径到音效库："] = "Moved source folder to library: ",
   ["该来源路径已经在当前音效库中"] =
     "This source folder is already in the current library",
@@ -2595,6 +2599,23 @@ function format_time(seconds)
   return string.format("%02.3f", seconds)
 end
 
+function format_duration_clock(seconds)
+  local total_ms = math.max(
+    0,
+    math.floor((tonumber(seconds) or 0) * 1000 + 0.5)
+  )
+  local minutes = math.floor(total_ms / 60000)
+  local whole_seconds = math.floor((total_ms % 60000) / 1000)
+  local milliseconds = total_ms % 1000
+
+  return string.format(
+    "%02d:%02d.%03d",
+    minutes,
+    whole_seconds,
+    milliseconds
+  )
+end
+
 function format_rate(sample_rate)
   sample_rate = tonumber(sample_rate) or 0
 
@@ -3346,10 +3367,18 @@ function parse_ucs_filename(filename)
   return result
 end
 
-function make_placeholder(path)
+function make_placeholder(path, known_root)
   local name = basename(path)
   local ucs = parse_ucs_filename(name)
-  local root, root_record = root_for_path(path)
+  local root, root_record
+
+  if known_root then
+    root = known_root
+    root_record = root_record_for_path(root)
+  else
+    root, root_record = root_for_path(path)
+  end
+
   local library = library_for_root_record(root_record)
 
   return {
@@ -3878,8 +3907,12 @@ function load_config()
         local key = name:gsub("^column_width_", "")
 
         if state.column_widths[key] ~= nil then
-          state.column_widths[key] =
+          local loaded_width =
             tonumber(value) or state.column_widths[key]
+
+          state.column_widths[key] = key == "duration"
+            and math.max(104, loaded_width)
+            or loaded_width
         end
       end
     end
@@ -6865,7 +6898,9 @@ function start_scan(reason, roots_override)
   local scan = {
     reason = reason or "扫描",
     roots = {},
+    root_keys = {},
     dirs = {},
+    dir_head = 1,
     current = nil,
     seen = {},
     files = 0,
@@ -6878,8 +6913,10 @@ function start_scan(reason, roots_override)
   for _, root in ipairs(requested) do
     if directory_exists(root) then
       scan.roots[#scan.roots + 1] = root
+      scan.root_keys[path_key(root)] = true
       scan.dirs[#scan.dirs + 1] = {
         path = root,
+        root = root,
         file_index = 0,
         sub_index = 0,
         stage = "files",
@@ -6913,14 +6950,8 @@ function finish_scan()
   local removed = 0
 
   for key, asset in pairs(state.by_path) do
-    local belongs = false
-
-    for _, root in ipairs(scan.roots) do
-      if path_is_inside(asset.path, root) then
-        belongs = true
-        break
-      end
-    end
+    local belongs =
+      scan.root_keys[path_key(asset.root or "")] == true
 
     if belongs and not scan.seen[key] then
       state.by_path[key] = nil
@@ -7013,7 +7044,8 @@ function process_scan()
     local dir = scan.current
 
     if not dir then
-      dir = table.remove(scan.dirs, 1)
+      dir = scan.dirs[scan.dir_head]
+      scan.dir_head = scan.dir_head + 1
       scan.current = dir
 
       if not dir then
@@ -7050,14 +7082,13 @@ function process_scan()
             if not state.by_path[key] then
               local asset =
                 add_or_update_asset(
-                  make_placeholder(path)
+                  make_placeholder(path, dir.root)
                 )
 
               scan.new_assets[#scan.new_assets + 1] =
                 asset
 
               state.db_dirty = true
-              state.results_dirty = true
             elseif not state.by_path[key].ready then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
@@ -7080,6 +7111,7 @@ function process_scan()
         if not is_ignored_directory_name(subdir) then
           scan.dirs[#scan.dirs + 1] = {
             path = join_path(dir.path, subdir),
+            root = dir.root,
             file_index = 0,
             sub_index = 0,
             stage = "files",
@@ -8310,7 +8342,6 @@ function process_import_session()
       session.done = session.done + 1
       session.current = nil
       state.db_dirty = true
-      state.results_dirty = true
       return
     end
 
@@ -8350,7 +8381,6 @@ function process_import_session()
       session.done = session.done + 1
       session.current = nil
       state.db_dirty = true
-      state.results_dirty = true
     elseif result == "failed" then
       destroy_wave_job(current.wave_job)
       asset.ready = true
@@ -8359,7 +8389,6 @@ function process_import_session()
       session.done = session.done + 1
       session.current = nil
       state.db_dirty = true
-      state.results_dirty = true
     end
   end
 end
@@ -10230,7 +10259,12 @@ function validate_new_root(root)
   return true
 end
 
-function add_root_to_library(library_id, root, scan_now)
+function add_root_to_library(
+  library_id,
+  root,
+  scan_now,
+  defer_rebuild
+)
   local library = state.library_by_id[library_id]
 
   if not library then
@@ -10285,9 +10319,12 @@ function add_root_to_library(library_id, root, scan_now)
   }
 
   state.root_records[#state.root_records + 1] = record
-  rebuild_library_indexes()
   state.libraries_dirty = true
-  state.results_dirty = true
+
+  if not defer_rebuild then
+    rebuild_library_indexes()
+    state.results_dirty = true
+  end
 
   if scan_now ~= false then
     start_scan("添加来源路径", { root })
@@ -10296,7 +10333,36 @@ function add_root_to_library(library_id, root, scan_now)
   return true
 end
 
+function prompt_new_library()
+  local ok, name = reaper.GetUserInputs(
+    translate_ui_text("新建逻辑音效库"),
+    1,
+    translate_ui_text("名称:"),
+    ""
+  )
+
+  name = trim(name or "")
+
+  if not ok or name == "" then
+    return false
+  end
+
+  local library = create_library(name)
+  state.view = "all"
+  state.active_collection_id = nil
+  state.root_filter = nil
+  state.library_filter_id = library.id
+  state.results_dirty = true
+  save_libraries()
+  set_status("已新建空音效库：" .. library.name)
+  return true
+end
+
 function add_root(library_id, supplied_path)
+  if not library_id and not supplied_path then
+    return prompt_new_library()
+  end
+
   local root = supplied_path
     or choose_folder("添加来源路径", "")
 
@@ -10575,7 +10641,7 @@ function reset_interface_settings()
     filename = 265,
     status = 88,
     description = 320,
-    duration = 92,
+    duration = 104,
     format = 118,
     library = 180,
     category = 140,
@@ -12063,7 +12129,7 @@ function end_module()
 end
 
 function library_asset_count(library_id)
-  if state.library_counts_dirty then
+  if state.library_counts_dirty and not state.scan then
     state.library_asset_counts = {}
 
     for _, asset in ipairs(state.assets) do
@@ -12146,6 +12212,7 @@ end
 
 function add_folders_to_library(library_id, folders)
   local added = {}
+  local bindings_changed = false
 
   for _, folder in ipairs(folders or {}) do
     local existing = root_record_for_path(folder)
@@ -12165,16 +12232,30 @@ function add_folders_to_library(library_id, folders)
 
       if answer == 6 then
         existing.library_id = library_id
-        rebuild_library_indexes()
-        refresh_all_asset_library_bindings()
         state.libraries_dirty = true
+        bindings_changed = true
         set_status("已移动来源路径到音效库：" .. new_library.name)
       end
     elseif existing then
       set_status("该来源路径已经在当前音效库中")
-    elseif add_root_to_library(library_id, folder, false) then
+    elseif add_root_to_library(
+      library_id,
+      folder,
+      false,
+      true
+    ) then
       added[#added + 1] = folder
     end
+  end
+
+  if #added > 0 or bindings_changed then
+    rebuild_library_indexes()
+
+    if bindings_changed then
+      refresh_all_asset_library_bindings()
+    end
+
+    state.results_dirty = true
   end
 
   scan_added_roots(added, "添加来源路径")
@@ -12190,7 +12271,12 @@ function create_libraries_from_folders(folders)
       "library:" .. path_key(folder)
     )
 
-    if add_root_to_library(library.id, folder, false) then
+    if add_root_to_library(
+      library.id,
+      folder,
+      false,
+      true
+    ) then
       added[#added + 1] = folder
     else
       for index = #state.libraries, 1, -1 do
@@ -12199,9 +12285,12 @@ function create_libraries_from_folders(folders)
           break
         end
       end
-
-      rebuild_library_indexes()
     end
+  end
+
+  if #(folders or {}) > 0 then
+    rebuild_library_indexes()
+    state.results_dirty = true
   end
 
   scan_added_roots(added, "拖入音效库")
@@ -13763,7 +13852,7 @@ function reset_columns_default()
   state.column_widths.filename = 220
   state.column_widths.description = 320
   state.column_widths.artwork = 52
-  state.column_widths.duration = 116
+  state.column_widths.duration = 104
 
   state.ui_density = "compact"
   state.surface_style = "flat"
@@ -14275,7 +14364,7 @@ function column_text(asset, key)
     return asset.catid or ""
   elseif key == "duration" then
     return asset.duration > 0
-      and format_time(asset.duration)
+      and format_duration_clock(asset.duration)
       or "…"
   elseif key == "format" then
     local bit_depth =
