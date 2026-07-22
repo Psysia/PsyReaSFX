@@ -1,6 +1,21 @@
-# PsyReaSFX Changelog
+﻿# PsyReaSFX Changelog
 
-## 0.7.1 Beta 2
+## 0.7.2 Beta 3
+
+### Multi-root logical libraries
+
+- Separates logical library identity from physical source-folder paths.
+- Lets one logical library aggregate multiple folders across drives.
+- Migrates legacy roots automatically without rebuilding waveform caches.
+- Adds expandable source folders, aggregate library filtering, hover summaries,
+  per-source scanning, renaming, and safe removal.
+- Adds Explorer/Finder folder drops on libraries, All libraries, and the central
+  results area, including a multi-folder organization choice.
+- Blocks duplicate and overlapping roots, preserves offline sources, and
+  confirms cross-library ownership moves without moving disk files.
+- Stores stable library and root IDs in `libraries_v2.tsv` and saved searches.
+- Caches per-library counts so the sidebar does not scan the full asset list for
+  every visible library on every frame.
 
 ### Cross-platform metadata filtering
 
@@ -430,3 +445,4 @@
 ## 0.1.0
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
+

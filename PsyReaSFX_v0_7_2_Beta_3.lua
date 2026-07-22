@@ -1,5 +1,5 @@
-﻿-- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.1-beta.2
+-- @description PsyReaSFX - 高性能内联波形音效浏览器
+-- @version 0.7.2-beta.3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -66,6 +66,10 @@
 --   - 可在导出后自动插入 REAPER，并记录最近传输结果
 --   - 扫描时排除 macOS AppleDouble 与常见系统元数据目录
 --   - 启动时自动清理旧索引中误收录的 `._*` 旁车文件
+--   - 0.7.2：一个逻辑音效库可聚合多个来源文件夹
+--   - 旧单路径音效库自动迁移为“一库一路径”，保留现有索引与波形缓存
+--   - Windows 资源管理器文件夹可拖到逻辑库、全部音效库或中央结果区
+--   - 路径重叠、重复归属和离线来源均提供明确保护与状态提示
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -74,7 +78,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.1 Beta 2"
+local VERSION = "0.7.2 Beta 3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -160,6 +164,9 @@ local DATA_DIR =
 
 local CONFIG_FILE =
   DATA_DIR .. SEP .. "config.tsv"
+
+local LIBRARIES_FILE =
+  DATA_DIR .. SEP .. "libraries_v2.tsv"
 
 local PROJECT_URL_FILE =
   DATA_DIR .. SEP .. "project_url.txt"
@@ -466,6 +473,18 @@ local state = {
   open = true,
 
   roots = {},
+  legacy_roots = {},
+  libraries = {},
+  library_by_id = {},
+  root_records = {},
+  root_by_id = {},
+  root_by_path = {},
+  libraries_dirty = false,
+  library_asset_counts = {},
+  library_counts_dirty = true,
+  library_filter_id = nil,
+  expanded_libraries = {},
+  pending_folder_drop = nil,
   assets = {},
   by_path = {},
   favorites = {},
@@ -1380,9 +1399,54 @@ I18N_PREFIX_EN = {
   ["预缓存完成"] = "Precache complete",
   ["已取消高精度波形预缓存"] =
     "High-resolution waveform precache canceled",
+  ["新建音效库…"] = "New library…",
+  ["逻辑音效库与来源路径"] = "Logical libraries and source folders",
+  ["+ 新建音效库"] = "+ New library",
+  ["添加来源路径…"] = "Add source folder…",
+  ["添加路径"] = "Add folder",
+  ["来源路径"] = "Source folder",
+  ["扫描全部来源"] = "Scan all sources",
+  ["扫描此来源"] = "Scan this source",
+  ["移除来源路径"] = "Remove source folder",
+  ["删除库"] = "Delete library",
+  ["展开或折叠来源"] = "Expand or collapse sources",
+  ["重命名音效库"] = "Rename library",
+  ["新建逻辑音效库"] = "New logical library",
+  ["导入多个文件夹##folder_drop"] = "Import multiple folders##folder_drop",
+  ["导入多个文件夹"] = "Import multiple folders",
+  ["请选择它们在音效库中的组织方式。"] =
+    "Choose how these folders should be organized.",
+  ["每个文件夹建立一个音效库"] = "Create one library per folder",
+  ["合并为一个音效库…"] = "Combine into one library…",
+  ["只建立索引，不移动或修改源文件"] =
+    "Only indexes folders; source files are not moved or modified",
+  ["释放以新建逻辑音效库"] = "Drop to create a logical library",
+  ["目标音效库不存在"] = "Target library does not exist",
+  ["已经存在同名音效库"] = "A library with this name already exists",
+  ["无法保存音效库结构"] = "Unable to save library structure",
+  ["已将旧音效库迁移为逻辑库与来源路径"] =
+    "Migrated legacy libraries to logical libraries and source folders",
+  ["该来源路径已经属于音效库："] =
+    "This source folder already belongs to library: ",
+  ["该文件夹已包含在来源路径中："] =
+    "This folder is already covered by source: ",
+  ["该文件夹会覆盖已有来源路径，请先移除或重新定位："] =
+    "This folder would overlap an existing source; remove or relink it first: ",
+  ["已移除来源路径："] = "Removed source folder: ",
+  ["已移除逻辑音效库："] = "Removed logical library: ",
+  ["已重命名音效库："] = "Renamed library: ",
+  ["已移动来源路径到音效库："] = "Moved source folder to library: ",
+  ["该来源路径已经在当前音效库中"] =
+    "This source folder is already in the current library",
+  ["请拖入文件夹；音频文件不会作为来源路径导入"] =
+    "Drop folders; individual audio files are not imported as sources",
 }
 
 I18N_PATTERNS_EN = {
+  { "^(%d+) 个来源路径 · (%d+) 个素材$", "%1 source folders · %2 files" },
+  { "^(%d+) 个来源 · (%d+) 个素材$", "%1 sources · %2 files" },
+  { "^已拖入 (%d+) 个文件夹$", "%1 folders dropped" },
+  { "^释放以添加到“(.+)”$", "Drop to add to “%1”" },
   { "^全部素材%s+(%d+)$", "All sounds  %1" },
   { "^收藏%s+(%d+)$", "Favorites  %1" },
   { "^　(%d+) 个结果$", "  %1 results" },
@@ -2221,6 +2285,16 @@ function path_key(path)
   return path
 end
 
+function canonical_source_path(path)
+  path = normalize_slashes(trim(path or ""))
+
+  while #path > 3 and path:sub(-1) == SEP do
+    path = path:sub(1, -2)
+  end
+
+  return path
+end
+
 function join_path(a, b)
   a = normalize_slashes(a or "")
   b = normalize_slashes(b or "")
@@ -2313,6 +2387,12 @@ function directory_exists(path)
     return false
   end
 
+  -- os.rename(path, path) also succeeds for regular files on Windows.
+  -- Keep file drops out of the source-folder model explicitly.
+  if reaper.file_exists(path) then
+    return false
+  end
+
   local ok, _, code = os.rename(path, path)
   return ok or code == 13
 end
@@ -2332,31 +2412,168 @@ function path_is_inside(path, root)
   return p:sub(1, #r) == r
 end
 
+function stable_id(prefix, seed)
+  local hash = 5381
+  local value = path_key(tostring(seed or ""))
+
+  for index = 1, #value do
+    hash = (hash * 33 + value:byte(index)) % 4294967291
+  end
+
+  return tostring(prefix or "id")
+    .. "_"
+    .. string.format("%08x", math.floor(hash))
+end
+
+function unique_library_name(base)
+  base = trim(base or "")
+
+  if base == "" then
+    base = "New library"
+  end
+
+  local used = {}
+
+  for _, library in ipairs(state.libraries) do
+    used[safe_lower(library.name)] = true
+  end
+
+  if not used[safe_lower(base)] then
+    return base
+  end
+
+  local number = 2
+
+  while used[safe_lower(base .. " " .. tostring(number))] do
+    number = number + 1
+  end
+
+  return base .. " " .. tostring(number)
+end
+
+function rebuild_library_indexes()
+  state.library_by_id = {}
+  state.root_by_id = {}
+  state.root_by_path = {}
+  state.roots = {}
+
+  for _, library in ipairs(state.libraries) do
+    library.roots = {}
+    state.library_by_id[library.id] = library
+  end
+
+  for _, record in ipairs(state.root_records) do
+    record.path = canonical_source_path(record.path)
+    record.enabled = record.enabled ~= false
+    state.root_by_id[record.id] = record
+    state.root_by_path[path_key(record.path)] = record
+
+    local library = state.library_by_id[record.library_id]
+
+    if library then
+      library.roots[#library.roots + 1] = record
+    end
+
+    if record.enabled and record.path ~= "" then
+      state.roots[#state.roots + 1] = record.path
+    end
+  end
+end
+
+function create_library(name, seed)
+  local library = {
+    id = stable_id(
+      "lib",
+      seed or (name .. tostring(reaper.time_precise()))
+    ),
+    name = unique_library_name(name),
+    roots = {},
+  }
+
+  while state.library_by_id[library.id] do
+    library.id = stable_id(
+      "lib",
+      library.id .. tostring(reaper.time_precise())
+    )
+  end
+
+  state.libraries[#state.libraries + 1] = library
+  state.library_by_id[library.id] = library
+  state.expanded_libraries[library.id] = true
+  state.libraries_dirty = true
+  return library
+end
+
+function root_record_for_path(path)
+  return state.root_by_path[path_key(path)]
+end
+
+function library_for_root_record(record)
+  return record
+    and state.library_by_id[record.library_id]
+    or nil
+end
+
 function root_for_path(path)
   local best = nil
+  local best_path = nil
 
-  for _, root in ipairs(state.roots) do
-    if path_is_inside(path, root)
-      and (not best or #root > #best) then
-      best = root
+  for _, record in ipairs(state.root_records) do
+    local root = record.path
+
+    if record.enabled
+      and path_is_inside(path, root)
+      and (not best_path or #root > #best_path) then
+      best = record
+      best_path = root
     end
   end
 
-  return best
+  return best_path, best
 end
 
 function library_for_path(path, root)
-  root = root or root_for_path(path)
+  local record = nil
+
+  if type(root) == "table" then
+    record = root
+    root = record.path
+  elseif root then
+    record = root_record_for_path(root)
+  else
+    root, record = root_for_path(path)
+  end
 
   if not root then
     return basename(dirname(path))
   end
 
-  local relative = path:sub(#root + 1)
-  relative = relative:gsub("^[\\/]+", "")
-  local first = relative:match("^([^\\/]+)[\\/]")
+  local library = library_for_root_record(record)
 
-  return first or basename(root)
+  return library and library.name or basename(root)
+end
+
+
+function refresh_asset_library_binding(asset)
+  local root, record = root_for_path(asset.path)
+  local library = library_for_root_record(record)
+
+  asset.root = root or ""
+  asset.root_id = record and record.id or ""
+  asset.library_id = library and library.id or ""
+  asset.library = library and library.name
+    or library_for_path(asset.path, root)
+  asset._search_blob = nil
+  state.library_counts_dirty = true
+end
+
+function refresh_all_asset_library_bindings()
+  for _, asset in ipairs(state.assets) do
+    refresh_asset_library_binding(asset)
+  end
+
+  state.results_dirty = true
+  state.db_dirty = true
 end
 
 function db_to_amp(db)
@@ -3132,14 +3349,18 @@ end
 function make_placeholder(path)
   local name = basename(path)
   local ucs = parse_ucs_filename(name)
-  local root = root_for_path(path)
+  local root, root_record = root_for_path(path)
+  local library = library_for_root_record(root_record)
 
   return {
     path = normalize_slashes(path),
     name = name,
     folder = dirname(path),
     root = root or "",
-    library = library_for_path(path, root),
+    root_id = root_record and root_record.id or "",
+    library_id = library and library.id or "",
+    library = library and library.name
+      or library_for_path(path, root),
 
     duration = 0,
     channels = 0,
@@ -3216,6 +3437,7 @@ function add_or_update_asset(asset)
       tostring(existing.artwork_path or "") ~= ""
 
     existing._search_blob = nil
+    state.library_counts_dirty = true
     return existing
   end
 
@@ -3246,6 +3468,7 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
+  state.library_counts_dirty = true
   return asset
 end
 
@@ -3257,6 +3480,7 @@ function rebuild_assets()
   end
 
   state.results_dirty = true
+  state.library_counts_dirty = true
 end
 
 ----------------------------------------------------------------
@@ -3289,7 +3513,113 @@ local DB_FIELDS = {
   "ready",
   "used_count",
   "last_used",
+  "root_id",
+  "library_id",
 }
+
+function save_libraries()
+  ensure_dirs()
+
+  local file = io.open(LIBRARIES_FILE, "wb")
+
+  if not file then
+    set_status("无法保存音效库结构", true)
+    return false
+  end
+
+  file:write("version\t2\n")
+
+  for _, library in ipairs(state.libraries) do
+    file:write(
+      "library\t",
+      escape_tsv(library.id),
+      "\t",
+      escape_tsv(library.name),
+      "\n"
+    )
+  end
+
+  for _, record in ipairs(state.root_records) do
+    file:write(
+      "root\t",
+      escape_tsv(record.id),
+      "\t",
+      escape_tsv(record.library_id),
+      "\t",
+      escape_tsv(record.path),
+      "\t",
+      escape_tsv(record.alias or ""),
+      "\t",
+      record.enabled == false and "0" or "1",
+      "\n"
+    )
+  end
+
+  file:close()
+  state.libraries_dirty = false
+  return true
+end
+
+function load_or_migrate_libraries()
+  state.libraries = {}
+  state.root_records = {}
+
+  local file = io.open(LIBRARIES_FILE, "rb")
+
+  if file then
+    for line in file:lines() do
+      local fields = split_tsv(line)
+
+      if fields[1] == "library"
+        and fields[2]
+        and fields[3] then
+        state.libraries[#state.libraries + 1] = {
+          id = fields[2],
+          name = fields[3],
+          roots = {},
+        }
+      elseif fields[1] == "root"
+        and fields[2]
+        and fields[3]
+        and fields[4] then
+        state.root_records[#state.root_records + 1] = {
+          id = fields[2],
+          library_id = fields[3],
+          path = canonical_source_path(fields[4]),
+          alias = fields[5] or "",
+          enabled = fields[6] ~= "0",
+        }
+      end
+    end
+
+    file:close()
+    rebuild_library_indexes()
+    return
+  end
+
+  -- 0.7.1 及更早版本：每个 root 自动迁移为一个逻辑库。
+  for _, root in ipairs(state.legacy_roots) do
+    local library = create_library(
+      basename(root),
+      "legacy-library:" .. path_key(root)
+    )
+
+    state.root_records[#state.root_records + 1] = {
+      id = stable_id("root", path_key(root)),
+      library_id = library.id,
+      path = canonical_source_path(root),
+      alias = "",
+      enabled = true,
+    }
+  end
+
+  rebuild_library_indexes()
+
+  if #state.libraries > 0 then
+    save_libraries()
+    set_status("已将旧音效库迁移为逻辑库与来源路径")
+  end
+end
 
 function load_config()
   local file = io.open(CONFIG_FILE, "rb")
@@ -3304,7 +3634,7 @@ function load_config()
     if fields[1] == "root"
       and fields[2]
       and fields[2] ~= "" then
-      state.roots[#state.roots + 1] =
+      state.legacy_roots[#state.legacy_roots + 1] =
         normalize_slashes(fields[2])
     elseif fields[1] == "favorite"
       and fields[2] then
@@ -3569,14 +3899,6 @@ function save_config()
   end
 
   file:write("version\t", VERSION, "\n")
-
-  for _, root in ipairs(state.roots) do
-    file:write(
-      "root\t",
-      escape_tsv(root),
-      "\n"
-    )
-  end
 
   for path in pairs(state.favorites) do
     file:write(
@@ -5546,6 +5868,10 @@ function load_saved_searches()
           fields[10] ~= ""
           and fields[10]
           or nil,
+        library_id =
+          fields[11] ~= ""
+          and fields[11]
+          or nil,
       }
     end
   end
@@ -5583,6 +5909,8 @@ function save_saved_searches()
       escape_tsv(saved.status_filter or ""),
       "\t",
       escape_tsv(saved.collection_id or ""),
+      "\t",
+      escape_tsv(saved.library_id or ""),
       "\n"
     )
   end
@@ -5616,6 +5944,7 @@ function save_current_search()
     query = state.search,
     view = state.view,
     root = state.root_filter or "",
+    library_id = state.library_filter_id,
     sort_mode = state.sort_mode,
     sort_desc = state.sort_desc,
     status_filter = state.status_filter,
@@ -5637,6 +5966,11 @@ function activate_saved_search(saved)
     saved.root ~= ""
     and saved.root
     or nil
+  state.library_filter_id =
+    saved.library_id
+      and state.library_by_id[saved.library_id]
+      and saved.library_id
+      or nil
   state.sort_mode = saved.sort_mode or "name"
   state.sort_desc = saved.sort_desc == true
   state.status_filter = saved.status_filter
@@ -6800,6 +7134,11 @@ function field_value(asset, field)
   elseif field == "library"
     or field == "lib" then
     return asset.library
+  elseif field == "root"
+    or field == "source" then
+    local record = state.root_by_id[asset.root_id or ""]
+    return record and ((record.alias or "") .. " " .. record.path)
+      or asset.root
   elseif field == "category"
     or field == "cat" then
     return asset.category
@@ -6916,6 +7255,11 @@ function asset_in_view(asset)
       asset.path,
       state.root_filter
     ) then
+    return false
+  end
+
+  if state.library_filter_id
+    and asset.library_id ~= state.library_filter_id then
     return false
   end
 
@@ -7593,12 +7937,12 @@ function precache_asset_list(scope)
 
     if include
       and scope == "current"
-      and state.root_filter then
-      include =
-        path_is_inside(
-          asset.path,
-          state.root_filter
-        )
+      and (state.root_filter or state.library_filter_id) then
+      if state.root_filter then
+        include = path_is_inside(asset.path, state.root_filter)
+      else
+        include = asset.library_id == state.library_filter_id
+      end
     end
 
     if include then
@@ -9844,45 +10188,159 @@ function open_folder(path)
   end
 end
 
-function add_root()
-  local ok, input =
-    reaper.GetUserInputs(
-      "添加音效库",
-      1,
-      "根目录路径:",
-      ""
+function choose_folder(title, initial)
+  if type(reaper.JS_Dialog_BrowseForFolder) == "function" then
+    local ok, accepted, path = pcall(
+      reaper.JS_Dialog_BrowseForFolder,
+      translate_ui_text(title or "选择文件夹"),
+      initial or ""
     )
 
-  if not ok then
-    return
+    if ok and accepted and accepted ~= 0 then
+      return normalize_slashes(trim(path or ""))
+    end
   end
 
-  local root =
-    normalize_slashes(trim(input))
+  local ok, input = reaper.GetUserInputs(
+    title or "选择文件夹",
+    1,
+    "文件夹路径:,extrawidth=420",
+    initial or ""
+  )
+
+  return ok and normalize_slashes(trim(input or "")) or nil
+end
+
+function validate_new_root(root)
+  local key = path_key(root)
+  local exact = state.root_by_path[key]
+
+  if exact then
+    return false, "exact", exact
+  end
+
+  for _, record in ipairs(state.root_records) do
+    if path_is_inside(root, record.path) then
+      return false, "covered", record
+    elseif path_is_inside(record.path, root) then
+      return false, "parent", record
+    end
+  end
+
+  return true
+end
+
+function add_root_to_library(library_id, root, scan_now)
+  local library = state.library_by_id[library_id]
+
+  if not library then
+    set_status("目标音效库不存在", true)
+    return false
+  end
+
+  root = canonical_source_path(root)
 
   if not directory_exists(root) then
     set_status(
       "目录不存在或无法访问：" .. root,
       true
     )
-    return
+    return false
   end
 
-  local key = path_key(root)
+  local valid, reason, conflict = validate_new_root(root)
 
-  for _, existing in ipairs(state.roots) do
-    if path_key(existing) == key then
-      set_status("该音效库已经存在")
-      return
+  if not valid then
+    local owner = library_for_root_record(conflict)
+
+    if reason == "exact" then
+      set_status(
+        "该来源路径已经属于音效库："
+          .. (owner and owner.name or "—"),
+        true
+      )
+    elseif reason == "covered" then
+      set_status(
+        "该文件夹已包含在来源路径中："
+          .. conflict.path,
+        true
+      )
+    else
+      set_status(
+        "该文件夹会覆盖已有来源路径，请先移除或重新定位："
+          .. conflict.path,
+        true
+      )
     end
+
+    return false
   end
 
-  state.roots[#state.roots + 1] = root
-  state.config_dirty = true
-  start_scan("添加音效库", { root })
+  local record = {
+    id = stable_id("root", path_key(root)),
+    library_id = library.id,
+    path = root,
+    alias = "",
+    enabled = true,
+  }
+
+  state.root_records[#state.root_records + 1] = record
+  rebuild_library_indexes()
+  state.libraries_dirty = true
+  state.results_dirty = true
+
+  if scan_now ~= false then
+    start_scan("添加来源路径", { root })
+  end
+
+  return true
+end
+
+function add_root(library_id, supplied_path)
+  local root = supplied_path
+    or choose_folder("添加来源路径", "")
+
+  if not root or root == "" then
+    return false
+  end
+
+  local library = library_id
+    and state.library_by_id[library_id]
+    or nil
+
+  if not library then
+    library = create_library(
+      basename(root),
+      "library:" .. path_key(root)
+    )
+  end
+
+  local added = add_root_to_library(library.id, root, true)
+
+  if not added and #library.roots == 0 then
+    for index = #state.libraries, 1, -1 do
+      if state.libraries[index].id == library.id then
+        table.remove(state.libraries, index)
+        break
+      end
+    end
+
+    rebuild_library_indexes()
+  end
+
+  return added
 end
 
 function remove_root(root)
+  local record = type(root) == "table"
+    and root
+    or root_record_for_path(root)
+
+  if not record then
+    return
+  end
+
+  root = record.path
   if state.import_session then
     local touches_import = false
 
@@ -9916,15 +10374,14 @@ function remove_root(root)
     end
   end
 
-  local new_roots = {}
-
-  for _, current in ipairs(state.roots) do
-    if path_key(current) ~= path_key(root) then
-      new_roots[#new_roots + 1] = current
+  for index = #state.root_records, 1, -1 do
+    if state.root_records[index].id == record.id then
+      table.remove(state.root_records, index)
+      break
     end
   end
 
-  state.roots = new_roots
+  rebuild_library_indexes()
 
   for key, asset in pairs(state.by_path) do
     if path_is_inside(asset.path, root) then
@@ -9949,11 +10406,66 @@ function remove_root(root)
     state.root_filter = nil
   end
 
+  if state.library_filter_id == record.library_id then
+    local owner = state.library_by_id[record.library_id]
+
+    if not owner or #owner.roots == 0 then
+      state.library_filter_id = nil
+    end
+  end
+
   clear_row_selection()
   rebuild_assets()
-  state.config_dirty = true
+  state.libraries_dirty = true
   state.db_dirty = true
-  set_status("已移除音效库：" .. basename(root))
+  set_status("已移除来源路径：" .. basename(root))
+end
+
+function remove_library(library_id)
+  local library = state.library_by_id[library_id]
+
+  if not library then
+    return
+  end
+
+  local roots = {}
+
+  for _, record in ipairs(library.roots or {}) do
+    roots[#roots + 1] = record
+  end
+
+  for _, record in ipairs(roots) do
+    remove_root(record)
+  end
+
+  for index = #state.libraries, 1, -1 do
+    if state.libraries[index].id == library_id then
+      table.remove(state.libraries, index)
+      break
+    end
+  end
+
+  if state.library_filter_id == library_id then
+    state.library_filter_id = nil
+  end
+
+  rebuild_library_indexes()
+  refresh_all_asset_library_bindings()
+  state.libraries_dirty = true
+  set_status("已移除逻辑音效库：" .. library.name)
+end
+
+function roots_for_library(library_id)
+  local result = {}
+  local library = state.library_by_id[library_id]
+
+  for _, record in ipairs(library and library.roots or {}) do
+    if record.enabled then
+      result[#result + 1] = record.path
+    end
+  end
+
+  return result
 end
 
 function reset_interface_settings()
@@ -9962,6 +10474,7 @@ function reset_interface_settings()
   state.search = ""
   state.view = "all"
   state.root_filter = nil
+  state.library_filter_id = nil
   state.active_collection_id = nil
   state.status_filter = nil
   state.sort_mode = "name"
@@ -10147,6 +10660,12 @@ function factory_reset()
   state.import_session = nil
   state.import_cancel_requested = false
   state.roots = {}
+  state.libraries = {}
+  state.library_by_id = {}
+  state.root_records = {}
+  state.root_by_id = {}
+  state.root_by_path = {}
+  state.library_filter_id = nil
   state.assets = {}
   state.by_path = {}
   state.results = {}
@@ -10165,6 +10684,7 @@ function factory_reset()
   clear_wave_cache()
   reset_interface_settings()
   os.remove(CONFIG_FILE)
+  os.remove(LIBRARIES_FILE)
   os.remove(DATABASE_FILE)
   os.remove(COLLECTIONS_FILE)
   os.remove(SAVED_SEARCHES_FILE)
@@ -10173,6 +10693,7 @@ function factory_reset()
   os.remove(REGIONS_FILE)
   os.remove(LOUDNESS_FILE)
   state.config_dirty = false
+  state.libraries_dirty = false
   state.db_dirty = false
   state.collections_dirty = false
   state.searches_dirty = false
@@ -10508,7 +11029,7 @@ function text_width(text)
   return ImGui.CalcTextSize(ctx, tostring(text))
 end
 
-function tooltip(text)
+function tooltip(text, max_chars)
   if not ImGui.IsItemHovered(ctx) then
     return
   end
@@ -10539,8 +11060,9 @@ function tooltip(text)
 
   -- 这里只登记提示内容，不创建 Popup 或 Tooltip 窗口。
   -- 主窗口完成布局后统一绘制，避免 Popup 自动尺寸在切换图标时闪烁。
-  state.tooltip_pending_text =
-    compact(translated, 58)
+  state.tooltip_pending_text = max_chars == false
+    and translated
+    or compact(translated, max_chars or 58)
 
   state.tooltip_pending_mouse_x =
     mouse_x
@@ -10578,7 +11100,7 @@ function draw_tooltip_overlay()
       (text_width_value or 0)
         + padding_x * 2,
       120,
-      360
+      540
     )
 
   local box_height =
@@ -11540,6 +12062,276 @@ function end_module()
   ImGui.PopStyleColor(ctx, 2)
 end
 
+function library_asset_count(library_id)
+  if state.library_counts_dirty then
+    state.library_asset_counts = {}
+
+    for _, asset in ipairs(state.assets) do
+      local id = asset.library_id or ""
+
+      if id ~= "" then
+        state.library_asset_counts[id] =
+          (state.library_asset_counts[id] or 0) + 1
+      end
+    end
+
+    state.library_counts_dirty = false
+  end
+
+  return state.library_asset_counts[library_id] or 0
+end
+
+function rename_library(library)
+  local ok, name = reaper.GetUserInputs(
+    "重命名音效库",
+    1,
+    "名称:",
+    library.name
+  )
+
+  name = trim(name or "")
+
+  if not ok or name == "" then
+    return
+  end
+
+  for _, other in ipairs(state.libraries) do
+    if other.id ~= library.id
+      and safe_lower(other.name) == safe_lower(name) then
+      set_status("已经存在同名音效库", true)
+      return
+    end
+  end
+
+  library.name = name
+  refresh_all_asset_library_bindings()
+  state.libraries_dirty = true
+  set_status("已重命名音效库：" .. name)
+end
+
+function library_paths_summary(library)
+  local lines = {
+    library.name,
+    string.format(
+      "%d 个来源路径 · %d 个素材",
+      #(library.roots or {}),
+      library_asset_count(library.id)
+    ),
+  }
+
+  for index, record in ipairs(library.roots or {}) do
+    if index > 5 then
+      lines[#lines + 1] = string.format(
+        "… 还有 %d 个路径",
+        #library.roots - 5
+      )
+      break
+    end
+
+    lines[#lines + 1] =
+      (directory_exists(record.path) and "● " or "○ ")
+      .. record.path
+    lines[#lines] = compact(lines[#lines], 64)
+  end
+
+  return table.concat(lines, "\n")
+end
+
+function scan_added_roots(roots, label)
+  if #roots > 0 then
+    start_scan(label or "添加来源路径", roots)
+    save_libraries()
+  end
+end
+
+function add_folders_to_library(library_id, folders)
+  local added = {}
+
+  for _, folder in ipairs(folders or {}) do
+    local existing = root_record_for_path(folder)
+
+    if existing and existing.library_id ~= library_id then
+      local old_library = library_for_root_record(existing)
+      local new_library = state.library_by_id[library_id]
+      local answer = reaper.MB(
+        "该来源路径已经属于“"
+          .. (old_library and old_library.name or "—")
+          .. "”。\n\n是否移动到“"
+          .. (new_library and new_library.name or "—")
+          .. "”？\n\n不会移动磁盘文件。",
+        SCRIPT_NAME,
+        4
+      )
+
+      if answer == 6 then
+        existing.library_id = library_id
+        rebuild_library_indexes()
+        refresh_all_asset_library_bindings()
+        state.libraries_dirty = true
+        set_status("已移动来源路径到音效库：" .. new_library.name)
+      end
+    elseif existing then
+      set_status("该来源路径已经在当前音效库中")
+    elseif add_root_to_library(library_id, folder, false) then
+      added[#added + 1] = folder
+    end
+  end
+
+  scan_added_roots(added, "添加来源路径")
+  return #added
+end
+
+function create_libraries_from_folders(folders)
+  local added = {}
+
+  for _, folder in ipairs(folders or {}) do
+    local library = create_library(
+      basename(folder),
+      "library:" .. path_key(folder)
+    )
+
+    if add_root_to_library(library.id, folder, false) then
+      added[#added + 1] = folder
+    else
+      for index = #state.libraries, 1, -1 do
+        if state.libraries[index].id == library.id then
+          table.remove(state.libraries, index)
+          break
+        end
+      end
+
+      rebuild_library_indexes()
+    end
+  end
+
+  scan_added_roots(added, "拖入音效库")
+end
+
+function collect_folder_payload()
+  local accepted, count =
+    ImGui.AcceptDragDropPayloadFiles(ctx)
+
+  if not accepted then
+    return nil
+  end
+
+  local folders = {}
+  local seen = {}
+
+  for index = 0, (count or 0) - 1 do
+    local ok, path = ImGui.GetDragDropPayloadFile(ctx, index)
+    path = ok and normalize_slashes(trim(path or "")) or ""
+
+    if path ~= ""
+      and directory_exists(path)
+      and not seen[path_key(path)] then
+      seen[path_key(path)] = true
+      folders[#folders + 1] = path
+    end
+  end
+
+  return folders
+end
+
+function handle_folder_drop(folders, target_library_id)
+  if not folders or #folders == 0 then
+    set_status("请拖入文件夹；音频文件不会作为来源路径导入", true)
+    return
+  end
+
+  if target_library_id
+    and state.library_by_id[target_library_id] then
+    add_folders_to_library(target_library_id, folders)
+    return
+  end
+
+  if #folders == 1 then
+    create_libraries_from_folders(folders)
+  else
+    state.pending_folder_drop = {
+      folders = folders,
+      requested_open = true,
+    }
+  end
+end
+
+function accept_folder_drop_target(target_library_id)
+  if not ImGui.BeginDragDropTarget(ctx) then
+    return false
+  end
+
+  local folders = collect_folder_payload()
+  ImGui.EndDragDropTarget(ctx)
+
+  if folders then
+    handle_folder_drop(folders, target_library_id)
+    return true
+  end
+
+  return false
+end
+
+function draw_folder_drop_choice_popup()
+  local pending = state.pending_folder_drop
+
+  if not pending then
+    return
+  end
+
+  if pending.requested_open then
+    ImGui.OpenPopup(ctx, "导入多个文件夹##folder_drop")
+    pending.requested_open = false
+  end
+
+  if not ImGui.BeginPopupModal(
+    ctx,
+    "导入多个文件夹##folder_drop",
+    true,
+    ImGui.WindowFlags_AlwaysAutoResize
+  ) then
+    return
+  end
+
+  ImGui.Text(ctx, string.format(
+    "已拖入 %d 个文件夹",
+    #pending.folders
+  ))
+  ImGui.TextDisabled(ctx, "请选择它们在音效库中的组织方式。")
+  ImGui.Separator(ctx)
+
+  if dark_button("每个文件夹建立一个音效库", 220) then
+    create_libraries_from_folders(pending.folders)
+    state.pending_folder_drop = nil
+    ImGui.CloseCurrentPopup(ctx)
+  end
+
+  if dark_button("合并为一个音效库…", 220) then
+    local default_name = basename(pending.folders[1])
+    local ok, name = reaper.GetUserInputs(
+      "新建逻辑音效库",
+      1,
+      "名称:",
+      default_name
+    )
+
+    name = trim(name or "")
+
+    if ok and name ~= "" then
+      local library = create_library(name)
+      add_folders_to_library(library.id, pending.folders)
+      state.pending_folder_drop = nil
+      ImGui.CloseCurrentPopup(ctx)
+    end
+  end
+
+  if dark_button("取消", 220) then
+    state.pending_folder_drop = nil
+    ImGui.CloseCurrentPopup(ctx)
+  end
+
+  ImGui.EndPopup(ctx)
+end
+
 
 function draw_library_manager_popup()
   if not ImGui.BeginPopupModal(
@@ -11551,70 +12343,132 @@ function draw_library_manager_popup()
     return
   end
 
-  ImGui.Text(ctx, "音效库根目录")
+  ImGui.Text(ctx, "逻辑音效库与来源路径")
   ImGui.Separator(ctx)
 
-  if #state.roots == 0 then
+  if #state.libraries == 0 then
     ImGui.TextDisabled(ctx, "尚未添加音效库")
   end
 
-  local remove_index = nil
+  local remove_library_id = nil
+  local remove_root_record = nil
 
-  for index, root in ipairs(state.roots) do
-    ImGui.PushID(ctx, index)
-    ImGui.Text(ctx, compact(root, 72))
-    tooltip(root)
+  for library_index, library in ipairs(state.libraries) do
+    ImGui.PushID(ctx, "manager_library_" .. library.id)
+    ImGui.TextColored(ctx, COLOR.text, library.name)
+    ImGui.SameLine(ctx)
+    ImGui.TextDisabled(ctx, string.format(
+      "%d 个来源 · %d 个素材",
+      #library.roots,
+      library_asset_count(library.id)
+    ))
+
     ImGui.SameLine(ctx)
 
-    if dark_button("打开", 54) then
-      open_folder(root)
+    if dark_button("添加路径", 76) then
+      add_root(library.id)
     end
 
     ImGui.SameLine(ctx)
 
-    if dark_button("重建", 54) then
-      for _, asset in ipairs(state.assets) do
-        if path_is_inside(asset.path, root) then
-          asset.ready = false
-          asset.indexed = false
-        end
+    if dark_button("重命名", 64) then
+      rename_library(library)
+    end
+
+    ImGui.SameLine(ctx)
+
+    if dark_button("扫描", 54) then
+      start_scan("扫描 " .. library.name, roots_for_library(library.id))
+    end
+
+    ImGui.SameLine(ctx)
+
+    if dark_button("删除库", 64) then
+      remove_library_id = library.id
+    end
+
+    for root_index, record in ipairs(library.roots) do
+      ImGui.PushID(ctx, root_index)
+      local online = directory_exists(record.path)
+      ImGui.TextColored(
+        ctx,
+        online and COLOR.muted or 0xE36B68FF,
+        online and "  ●" or "  ○"
+      )
+      ImGui.SameLine(ctx)
+      ImGui.Text(ctx, compact(record.path, 72))
+      tooltip(record.path)
+      ImGui.SameLine(ctx)
+
+      if dark_button("打开", 54) then
+        open_folder(record.path)
       end
 
-      start_scan(
-        "重建 " .. basename(root),
-        { root }
-      )
+      ImGui.SameLine(ctx)
+
+      if dark_button("重建", 54) then
+        for _, asset in ipairs(state.assets) do
+          if path_is_inside(asset.path, record.path) then
+            asset.ready = false
+            asset.indexed = false
+          end
+        end
+
+        start_scan("重建 " .. basename(record.path), { record.path })
+      end
+
+      ImGui.SameLine(ctx)
+
+      if dark_button("移除", 54) then
+        remove_root_record = record
+      end
+
+      ImGui.PopID(ctx)
     end
 
-    ImGui.SameLine(ctx)
-
-    if dark_button("删除", 54) then
-      remove_index = index
+    if library_index < #state.libraries then
+      ImGui.Separator(ctx)
     end
 
     ImGui.PopID(ctx)
   end
 
-  if remove_index then
-    local root = state.roots[remove_index]
+  if remove_root_record then
     local answer = reaper.MB(
-      "从 PsyReaSFX 中删除该音效库？\n\n"
-        .. root
+      "从逻辑音效库中移除该来源路径？\n\n"
+        .. remove_root_record.path
         .. "\n\n不会删除磁盘中的音频文件。",
       SCRIPT_NAME,
       4
     )
 
     if answer == 6 then
-      remove_root(root)
-      save_config()
+      remove_root(remove_root_record)
+      save_libraries()
+      save_database()
+    end
+  end
+
+  if remove_library_id then
+    local library = state.library_by_id[remove_library_id]
+    local answer = reaper.MB(
+      "删除逻辑音效库及其所有来源路径？\n\n"
+        .. (library and library.name or "")
+        .. "\n\n只会清除 PsyReaSFX 索引，不会删除磁盘文件。",
+      SCRIPT_NAME,
+      4
+    )
+
+    if answer == 6 then
+      remove_library(remove_library_id)
+      save_libraries()
       save_database()
     end
   end
 
   ImGui.Separator(ctx)
 
-  if dark_button("+ 添加音效库", 120) then
+  if dark_button("+ 新建音效库", 120) then
     add_root()
   end
 
@@ -11638,7 +12492,7 @@ function draw_menu_bar()
   end
 
   if ImGui.BeginMenu(ctx, "音效库") then
-    if ImGui.MenuItem(ctx, "添加根目录…") then
+    if ImGui.MenuItem(ctx, "新建音效库…") then
       add_root()
     end
 
@@ -11817,6 +12671,7 @@ function draw_sidebar()
       state.view = "all"
       state.active_collection_id = nil
       state.root_filter = nil
+      state.library_filter_id = nil
       state.results_dirty = true
       state.config_dirty = true
     end
@@ -11835,6 +12690,8 @@ function draw_sidebar()
     function()
       state.view = "favorites"
       state.active_collection_id = nil
+      state.root_filter = nil
+      state.library_filter_id = nil
       state.results_dirty = true
       state.config_dirty = true
     end
@@ -11847,6 +12704,8 @@ function draw_sidebar()
     function()
       state.view = "recent"
       state.active_collection_id = nil
+      state.root_filter = nil
+      state.library_filter_id = nil
       state.sort_mode = "used"
       state.sort_desc = true
       state.results_dirty = true
@@ -11861,6 +12720,8 @@ function draw_sidebar()
     function()
       state.view = "previewed"
       state.active_collection_id = nil
+      state.root_filter = nil
+      state.library_filter_id = nil
       state.sort_mode = "previewed"
       state.sort_desc = true
       state.results_dirty = true
@@ -11873,60 +12734,148 @@ function draw_sidebar()
 
   sidebar_item(
     "全部音效库",
-    state.root_filter == nil,
+    state.root_filter == nil
+      and state.library_filter_id == nil,
     function()
+      state.view = "all"
       state.root_filter = nil
+      state.library_filter_id = nil
+      state.active_collection_id = nil
       state.results_dirty = true
     end
   )
 
-  for index, root in ipairs(state.roots) do
+  accept_folder_drop_target(nil)
+
+  for index, library in ipairs(state.libraries) do
     local selected =
-      state.root_filter
-      and path_key(state.root_filter)
-        == path_key(root)
+      state.library_filter_id == library.id
+      and state.root_filter == nil
+    local expanded =
+      state.expanded_libraries[library.id] == true
+    local arrow = #library.roots > 0
+      and (expanded and "▾ " or "▸ ")
+      or "  "
 
     sidebar_item(
-      compact(basename(root), 24)
+      arrow
+        .. compact(library.name, 20)
+        .. "  "
+        .. tostring(library_asset_count(library.id))
         .. "##library_"
         .. tostring(index),
       selected,
       function()
-        state.root_filter = root
+        if ImGui.IsMouseDoubleClicked(ctx, 0) then
+          state.expanded_libraries[library.id] = not expanded
+        end
+
+        state.view = "all"
+        state.library_filter_id = library.id
+        state.root_filter = nil
         state.active_collection_id = nil
         state.results_dirty = true
         state.config_dirty = true
       end
     )
 
-    tooltip(root)
+    tooltip(library_paths_summary(library), false)
+    accept_folder_drop_target(library.id)
 
     if ImGui.BeginPopupContextItem(
       ctx,
-      "sidebar_root_context_" .. tostring(index)
+      "sidebar_library_context_" .. tostring(index)
     ) then
-      if ImGui.MenuItem(ctx, "扫描此库") then
+      if ImGui.MenuItem(ctx, "添加来源路径…") then
+        add_root(library.id)
+      end
+
+      if ImGui.MenuItem(ctx, "扫描全部来源") then
         start_scan(
-          "扫描 " .. basename(root),
-          { root }
+          "扫描 " .. library.name,
+          roots_for_library(library.id)
         )
       end
 
-      if ImGui.MenuItem(ctx, "打开目录") then
-        open_folder(root)
+      if ImGui.MenuItem(ctx, "重命名") then
+        rename_library(library)
+      end
+
+      if ImGui.MenuItem(ctx, "展开或折叠来源") then
+        state.expanded_libraries[library.id] = not expanded
       end
 
       if ImGui.MenuItem(ctx, "从 PsyReaSFX 删除") then
-        remove_root(root)
+        local answer = reaper.MB(
+          "删除逻辑音效库及其所有来源路径？\n\n"
+            .. library.name
+            .. "\n\n不会删除磁盘中的音频文件。",
+          SCRIPT_NAME,
+          4
+        )
+
+        if answer == 6 then
+          remove_library(library.id)
+        end
       end
 
       ImGui.EndPopup(ctx)
+    end
+
+    if expanded then
+      for root_index, record in ipairs(library.roots) do
+        local root_selected = state.root_filter
+          and path_key(state.root_filter) == path_key(record.path)
+        local online = directory_exists(record.path)
+        local root_label = record.alias ~= ""
+          and record.alias
+          or basename(record.path)
+
+        sidebar_item(
+          "    "
+            .. (online and "● " or "○ ")
+            .. compact(root_label, 18)
+            .. "##root_"
+            .. record.id,
+          root_selected,
+          function()
+            state.view = "all"
+            state.root_filter = record.path
+            state.library_filter_id = library.id
+            state.active_collection_id = nil
+            state.results_dirty = true
+            state.config_dirty = true
+          end
+        )
+
+        tooltip(record.path)
+        accept_folder_drop_target(library.id)
+
+        if ImGui.BeginPopupContextItem(
+          ctx,
+          "sidebar_root_context_" .. record.id
+        ) then
+          if ImGui.MenuItem(ctx, "扫描此来源") then
+            start_scan("扫描 " .. root_label, { record.path })
+          end
+
+          if ImGui.MenuItem(ctx, "打开目录") then
+            open_folder(record.path)
+          end
+
+          if ImGui.MenuItem(ctx, "移除来源路径") then
+            remove_root(record)
+          end
+
+          ImGui.EndPopup(ctx)
+        end
+      end
     end
   end
 
   ImGui.Spacing(ctx)
 
-  if dark_button("+ 添加音效库", -1) then
+  if dark_button("+ 新建音效库", -1) then
     add_root()
   end
 
@@ -12066,6 +13015,7 @@ function draw_sidebar()
         saved.query = state.search
         saved.view = state.view
         saved.root = state.root_filter or ""
+        saved.library_id = state.library_filter_id
         saved.sort_mode = state.sort_mode
         saved.sort_desc = state.sort_desc
         saved.status_filter = state.status_filter
@@ -12359,6 +13309,12 @@ function draw_sub_toolbar()
       breadcrumb
       .. "  /  "
       .. basename(state.root_filter)
+  elseif state.library_filter_id then
+    local library = state.library_by_id[state.library_filter_id]
+
+    if library then
+      breadcrumb = breadcrumb .. "  /  " .. library.name
+    end
   end
 
   if state.status_filter then
@@ -13900,6 +14856,73 @@ function draw_results()
   end
 
   ImGui.EndChild(ctx)
+
+  -- Windows/macOS 文件管理器拖入文件夹。提示层只在拖动期间出现，
+  -- 不占用日常结果列表空间。
+  if ImGui.BeginDragDropTarget(ctx) then
+    local payload_ok, payload_type = ImGui.GetDragDropPayload(ctx)
+    local target_library_id = state.library_filter_id
+
+    if state.root_filter then
+      local record = root_record_for_path(state.root_filter)
+      target_library_id = record and record.library_id or target_library_id
+    end
+
+    if payload_ok and payload_type == "FILES" then
+      local target_library = target_library_id
+        and state.library_by_id[target_library_id]
+        or nil
+      local box_w = math.min(460, viewport_width - 40)
+      local box_h = 116
+      local box_x = header_x + (viewport_width - box_w) * 0.5
+      local box_y = header_y + (height - box_h) * 0.5
+      local label = target_library
+        and ("释放以添加到“" .. target_library.name .. "”")
+        or "释放以新建逻辑音效库"
+
+      ImGui.DrawList_AddRectFilled(
+        draw_list,
+        box_x,
+        box_y,
+        box_x + box_w,
+        box_y + box_h,
+        0x151A20F2,
+        10
+      )
+      ImGui.DrawList_AddRect(
+        draw_list,
+        box_x,
+        box_y,
+        box_x + box_w,
+        box_y + box_h,
+        COLOR.accent,
+        10,
+        0,
+        2
+      )
+      ImGui.DrawList_AddText(
+        draw_list,
+        box_x + 24,
+        box_y + 28,
+        COLOR.text,
+        "+  " .. translate_ui_text(label)
+      )
+      ImGui.DrawList_AddText(
+        draw_list,
+        box_x + 24,
+        box_y + 62,
+        COLOR.muted,
+        translate_ui_text("只建立索引，不移动或修改源文件")
+      )
+    end
+
+    local folders = collect_folder_payload()
+    ImGui.EndDragDropTarget(ctx)
+
+    if folders then
+      handle_folder_drop(folders, target_library_id)
+    end
+  end
 
   draw_list_header(
     draw_list,
@@ -16836,7 +17859,8 @@ function build_diagnostics_text()
           or "Not detected"
       ),
       "Preview backend: " .. tostring(state.preview_backend),
-      "Libraries: " .. tostring(#state.roots),
+      "Libraries: " .. tostring(#state.libraries),
+      "Source folders: " .. tostring(#state.root_records),
       "Assets: " .. tostring(#state.assets),
       "Current played highlights: "
         .. tostring(session_played_count()),
@@ -17773,7 +18797,7 @@ function draw_settings_waveforms()
     )
   end
 
-  if state.root_filter then
+  if state.root_filter or state.library_filter_id then
     ImGui.SameLine(ctx)
 
     if dark_button(
@@ -19021,6 +20045,7 @@ function draw_main()
     draw_transient_detection_popup()
     draw_transfer_popup()
     draw_settings_popup()
+    draw_folder_drop_choice_popup()
     keyboard()
     process_external_drag()
     draw_tooltip_overlay()
@@ -19045,6 +20070,10 @@ function autosave()
 
   if state.config_dirty then
     save_config()
+  end
+
+  if state.libraries_dirty then
+    save_libraries()
   end
 
   if state.db_dirty
@@ -19124,6 +20153,10 @@ function cleanup()
     save_config()
   end
 
+  if state.libraries_dirty then
+    save_libraries()
+  end
+
   if state.db_dirty then
     save_database()
   end
@@ -19161,6 +20194,7 @@ ensure_dirs()
 migrate_legacy_data()
 load_or_migrate_project_url()
 load_config()
+load_or_migrate_libraries()
 apply_unified_interface(false, false)
 apply_wave_cache_directory(
   state.wave_cache_dir
@@ -19168,6 +20202,7 @@ apply_wave_cache_directory(
 )
 install_i18n_wrappers()
 load_database()
+refresh_all_asset_library_bindings()
 load_collections()
 load_saved_searches()
 load_history()

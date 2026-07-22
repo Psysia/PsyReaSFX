@@ -1,20 +1,43 @@
-<p align="right">
+﻿<p align="right">
   <a href="README.md"><img src="https://img.shields.io/badge/Language-English-2f81f7" alt="English"></a>
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7.1 Beta 2
+# PsyReaSFX 0.7.2 Beta 3
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.1-beta.2  
+**Package version:** 0.7.2-beta.3  
 **Release stage:** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
+
+## Multi-root logical libraries
+
+Beta 3 separates the library users browse from the physical folders that are
+scanned. A single logical library can now aggregate any number of source
+folders across drives while remaining one searchable library in the sidebar.
+
+- Click a logical library to browse every source folder it owns.
+- Expand it to browse an individual source folder; hover it to inspect paths,
+  online status, and indexed-file counts.
+- Drop Explorer/Finder folders on a library to add sources, on **All
+  libraries** to create libraries, or in the results area to use the current
+  library context.
+- Multiple dropped folders can become separate libraries or one combined
+  logical library.
+- Exact duplicates, overlapping parent/child roots, and cross-library
+  ownership are checked before scanning. Moving a root never moves disk files.
+- Legacy one-folder libraries migrate automatically and keep their existing
+  database, metadata, collections, and waveform cache.
+
+The source hierarchy is stored in `libraries_v2.tsv`. Playlists and project
+bins remain virtual collections and are intentionally separate from library
+ownership.
 
 ## 0.7 Transfer
 
@@ -76,7 +99,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_1_Beta_2.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_2_Beta_3.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -88,7 +111,7 @@ Load `PsyReaSFX_v0_7_1_Beta_2.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_1_Beta_2.lua
+PsyReaSFX_v0_7_2_Beta_3.lua
 README.md
 README_zh-CN.md
 index.xml
@@ -99,3 +122,4 @@ docs/
 PsyReaSFX 0.6 Stable remains the recommended fallback while 0.7 Transfer is
 being tested against different REAPER, ReaImGui, SWS, file-format, and project
 configurations.
+

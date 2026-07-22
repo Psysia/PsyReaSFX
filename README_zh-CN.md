@@ -1,19 +1,32 @@
-<p align="right">
+﻿<p align="right">
   <a href="README.md"><img src="https://img.shields.io/badge/Language-English-555555" alt="English"></a>
   <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-2f81f7" alt="简体中文"></a>
 </p>
 
-# PsyReaSFX 0.7.1 Beta 2
+# PsyReaSFX 0.7.2 Beta 3
 
 PsyReaSFX 是运行在 REAPER 内部的音效资产浏览、波形试听、元数据、Region、集合、插入与 Transfer 工作流。
 
 **作者：** Psysia  
-**包版本：** 0.7.1-beta.2  
+**包版本：** 0.7.2-beta.3  
 **发布阶段：** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX 主工作区，展开导航与元数据面板" width="100%">
 </p>
+
+## 多来源逻辑音效库
+
+Beta 3 将用户浏览的逻辑音效库与实际扫描的文件夹分离。一个逻辑音效库现在可以聚合位于不同硬盘上的多个来源路径，并在左侧保持为一个可搜索的库。
+
+- 点击逻辑音效库可浏览其全部来源路径的聚合结果。
+- 展开后可单独浏览某条来源；悬停可查看路径、在线状态与索引数量。
+- 从资源管理器拖文件夹到某个库可直接加入；拖到“全部音效库”会新建库；拖到结果区会沿用当前逻辑库上下文。
+- 同时拖入多个文件夹时，可分别建立音效库，或合并为一个逻辑库。
+- 扫描前会检查完全重复、父子路径重叠和跨库归属；移动来源归属不会移动硬盘文件。
+- 旧版“一条路径一个库”会自动迁移，并保留数据库、元数据、集合与波形缓存。
+
+来源结构保存在 `libraries_v2.tsv`。播放列表和项目素材箱继续作为虚拟集合，与音效库的路径归属明确分离。
 
 ## 0.7 Transfer
 
@@ -61,7 +74,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 ## 手动安装
 
-在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_1_Beta_2.lua`。
+在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_2_Beta_3.lua`。
 
 ## 文档
 
@@ -73,7 +86,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ## 发布包结构
 
 ```text
-PsyReaSFX_v0_7_1_Beta_2.lua
+PsyReaSFX_v0_7_2_Beta_3.lua
 README.md
 README_zh-CN.md
 index.xml
@@ -82,3 +95,4 @@ docs/
 ```
 
 在 0.7 Transfer 完成不同 REAPER、ReaImGui、SWS、音频格式与工程配置的测试前，0.6 Stable 仍可作为稳定回退版本。
+

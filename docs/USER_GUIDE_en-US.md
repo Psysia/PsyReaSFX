@@ -1,10 +1,10 @@
-# PsyReaSFX 0.7.1 Beta 2 User Guide (package 0.7.1-beta.2)
+﻿# PsyReaSFX 0.7.2 Beta 3 User Guide (package 0.7.2-beta.3)
 
 ## 1. Purpose
 
 PsyReaSFX is a REAPER-based sound-asset browser, search, audition, waveform-selection, region, metadata, collection, and insertion tool. It now uses one unified high-density, responsive workspace to reduce duplicated layout behavior and maintenance.
 
-This guide documents the current 0.6 feature set. Release-by-release changes are kept in the separate changelog.
+This guide documents the current 0.7 beta feature set. Release-by-release changes are kept in the separate changelog.
 
 ## 2. Requirements
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_6_21_Stable.lua`.
+4. Load `PsyReaSFX_v0_7_2_Beta_3.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -126,11 +126,34 @@ The page shows:
 License, official website, and support-contact fields are currently placeholders.
 
 
-## 5. Libraries
+## 5. Logical libraries and source folders
 
-Use `+ Add library` to select a root folder. PsyReaSFX scans subfolders recursively, reads metadata, and prepares list waveforms in staged background tasks.
+A logical library is the name shown in the sidebar. It can own one or many
+physical source folders. Clicking the library aggregates all of its sources;
+expanding it lets you filter one source folder. Hover the library to see its
+paths, online status, and indexed count.
 
-The library manager can open a root folder, rebuild its index, or remove it from PsyReaSFX. Removing a library never deletes source audio files.
+### Add folders
+
+- Click `+ New library` to select a folder and create a logical library named
+  after it.
+- Right-click a logical library and choose `Add source folder…` to attach
+  another path.
+- Drop Explorer/Finder folders on a library, **All libraries**, or the central
+  result area. The central target adds to the current logical library; without
+  a library context it creates a new one.
+- When multiple folders are dropped without a target, choose one logical
+  library per folder or combine all folders into one library.
+
+Exact duplicate and overlapping parent/child roots are blocked to prevent
+duplicate indexing. Dropping a source already owned by another library offers
+to move its logical ownership. None of these operations moves or deletes disk
+files. Offline folders remain visible and can be restored when the drive is
+available again.
+
+Legacy root entries migrate automatically to `libraries_v2.tsv` as one logical
+library with one source folder. Playlists and project bins stay separate,
+virtual collections.
 
 ## 6. Search
 
@@ -453,4 +476,5 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.1 Beta 2 continues the Transfer stage and fixes false audio entries from cross-platform metadata sidecars. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.2 Beta 3 continues the Transfer stage and fixes false audio entries from cross-platform metadata sidecars. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+

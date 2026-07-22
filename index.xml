@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <index version="1" name="Psysia ReaPack Repository">
   <category name="Psysia">
     <reapack name="PsyReaSFX.lua" type="script" desc="PsyReaSFX">
@@ -9,15 +9,17 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.1-beta.2" author="Psysia" time="2026-07-21T09:30:00Z">
+      <version name="0.7.2-beta.3" author="Psysia" time="2026-07-22T08:00:00Z">
         <changelog><![CDATA[
-- Excludes macOS AppleDouble `._*` sidecars from audio scans.
-- Skips common cross-platform system metadata directories.
-- Cleans false entries from existing indexes without deleting disk files.
-- Retains the 0.7 Transfer workflow introduced in Beta 1.
+- Adds logical libraries that aggregate multiple physical source folders.
+- Migrates legacy one-root libraries without rebuilding waveform caches.
+- Adds Explorer/Finder folder drops on libraries, All libraries, and results.
+- Blocks duplicate and overlapping roots and confirms ownership moves.
+- Keeps playlists/project bins separate as virtual collections.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.1-beta.2/PsyReaSFX_v0_7_1_Beta_2.lua</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.2-beta.3/PsyReaSFX_v0_7_2_Beta_3.lua</source>
       </version>
     </reapack>
   </category>
 </index>
+
