@@ -13,23 +13,35 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.7--beta.10-19D8FF" alt="Version 0.7.7 beta 10">
+  <img src="https://img.shields.io/badge/Version-0.7.8--beta.11-19D8FF" alt="Version 0.7.8 beta 11">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.7 Beta 10
+# PsyReaSFX 0.7.8 Beta 11
 
 PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
 collection, insertion, and Transfer workflow built inside REAPER.
 
 **Author:** Psysia  
-**Package version:** 0.7.7-beta.10  
+**Package version:** 0.7.8-beta.11  
 **Release stage:** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
 </p>
+
+## Unified branded toolbar
+
+- Removes the extra in-app menu strip so the native window title flows
+  directly into one theme-aware application toolbar.
+- Replaces the plain top-left label with the packaged PsyReaSFX icon and a
+  two-tone `PsyRea` / `SFX` wordmark. Narrow windows collapse it to the icon.
+- Moves Help to a dedicated question-mark icon beside Settings.
+- Moves Watch Folder to **Settings > General > Background & browsing**.
+- Keeps library creation and management in the left navigation, scanning in
+  the refresh button and `Ctrl+R`, cache maintenance in Settings, and panel
+  controls in the main toolbar.
 
 ## Selection contrast, refreshed previews, and Help
 
@@ -184,7 +196,7 @@ for Reverse Transfer and several advanced audition operations.
 
 ## Manual installation
 
-Load `PsyReaSFX_v0_7_7_Beta_10.lua` from REAPER's Action List.
+Load `PsyReaSFX_v0_7_8_Beta_11.lua` from REAPER's Action List.
 
 ## Documentation
 
@@ -196,7 +208,7 @@ Load `PsyReaSFX_v0_7_7_Beta_10.lua` from REAPER's Action List.
 ## Package structure
 
 ```text
-PsyReaSFX_v0_7_7_Beta_10.lua
+PsyReaSFX_v0_7_8_Beta_11.lua
 README.md
 README_zh-CN.md
 index.xml

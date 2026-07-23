@@ -1,4 +1,4 @@
-﻿# PsyReaSFX 0.7.7 Beta 10 User Guide (package 0.7.7-beta.10)
+﻿# PsyReaSFX 0.7.8 Beta 11 User Guide (package 0.7.8-beta.11)
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates
 1. Extract the release package.
 2. Open REAPER's Action List.
 3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_7_7_Beta_10.lua`.
+4. Load `PsyReaSFX_v0_7_8_Beta_11.lua`.
 5. Reassign any shortcut previously bound to an older release.
 6. Stop older PsyReaSFX instances.
 
@@ -50,7 +50,8 @@ Existing libraries, indexes, collections, regions, loudness results, and wavefor
 
 ## 4. Interface layout
 
-- Top bar: search, auto-preview, scan, settings, and panel toggles.
+- Branded toolbar: app icon and wordmark, search, panel toggles,
+  auto-preview, scan, Help, and Settings.
 - Left panel: libraries, playlists, project bins, saved searches, and workflow filters.
 - Center: pinned column header and result list.
 - Right panel: non-destructive metadata inspector.
@@ -58,9 +59,13 @@ Existing libraries, indexes, collections, regions, loudness results, and wavefor
 
 Use `F9`, `F10`, and `F11` to toggle navigation, metadata, and focus mode.
 
-Open **Help > User guide and shortcuts…** for the localized in-application
+Click the question-mark icon beside Settings for the localized in-application
 quick reference. The window is divided into Workspace, Results, Preview,
 Organize, and Transfer sections and follows the selected interface language.
+
+The additional in-app menu strip was removed in Beta 11. Library actions stay
+in the left navigation, scan is available from the refresh icon or `Ctrl+R`,
+and Watch Folder is under **Settings > General > Background & browsing**.
 
 
 ## 4.1 Appearance and Settings Center
@@ -505,5 +510,5 @@ Common issues:
 
 ## 22. Development stage
 
-Package 0.7.7 Beta 10 fixes the Help-window Child-stack assertion while retaining the Heritage contrast, localized Help content, and refreshed README previews from Beta 9. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Package 0.7.8 Beta 11 unifies the top workspace into one branded toolbar, moves Help and Watch Folder to permanent non-menu locations, and retains the Beta 10 Help-stack fix. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
 

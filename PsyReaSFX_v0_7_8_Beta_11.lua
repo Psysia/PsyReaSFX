@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.7-beta.10
+-- @version 0.7.8-beta.11
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -84,6 +84,8 @@
 --   - 0.7.7：传统模式选中行使用深青背景与高对比白色文字
 --   - 帮助窗口重构为分组快捷键手册，中英文内容完全独立
 --   - Beta 10 热修复：帮助分组不再嵌套 Child，避免离屏分组破坏 ImGui Child 栈
+--   - 0.7.8：移除应用内菜单条，统一为带品牌图标和双色字标的主工具栏
+--   - 帮助改为永久图标入口，Watch Folder 迁移到常规设置
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -92,7 +94,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.7 Beta 10"
+local VERSION = "0.7.8 Beta 11"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1099,6 +1101,11 @@ I18N_EN = {
   ["开启自动试听"] = "Enable auto-preview",
   ["关闭自动试听"] = "Disable auto-preview",
   ["打开设置"] = "Open settings",
+  ["使用说明与快捷键"] = "User guide and shortcuts",
+  ["后台与浏览"] = "Background & browsing",
+  ["控制素材目录的定时增量检查。手动扫描仍可使用 Ctrl+R 或主界面刷新按钮。"] =
+    "Control periodic incremental checks of source folders. Manual scans remain available with Ctrl+R or the main refresh button.",
+  ["启用 Watch Folder"] = "Enable Watch Folder",
   ["拖拽到 REAPER 编排区"] = "Drag to the REAPER arrange view",
   ["播放或停止"] = "Play or stop",
   ["收藏或取消收藏"] = "Toggle favorite",
@@ -11889,6 +11896,23 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
       local y2 = center_y + math.sin(angle) * size * 0.34
       ImGui.DrawList_AddLine(draw_list, x1, y1, x2, y2, color_value, thickness)
     end
+  elseif icon == "help" then
+    ImGui.DrawList_AddCircle(
+      draw_list,
+      center_x,
+      center_y,
+      size * 0.27,
+      color_value,
+      20,
+      thickness
+    )
+    ImGui.DrawList_AddText(
+      draw_list,
+      center_x - size * 0.095,
+      center_y - size * 0.245,
+      color_value,
+      "?"
+    )
   elseif icon == "speaker" then
     ImGui.DrawList_AddRectFilled(draw_list, left, center_y - size * 0.09, left + size * 0.12, center_y + size * 0.09, color_value)
     ImGui.DrawList_AddTriangleFilled(draw_list, left + size * 0.10, center_y - size * 0.10, center_x, top + size * 0.04, center_x, bottom - size * 0.04, color_value)
@@ -12102,8 +12126,8 @@ function draw_brand_mark(compact)
   local x, y =
     ImGui.GetCursorScreenPos(ctx)
 
-  local width = compact and 34 or 94
-  local height = 26
+  local width = compact and 30 or 126
+  local height = 30
 
   ImGui.InvisibleButton(
     ctx,
@@ -12112,22 +12136,69 @@ function draw_brand_mark(compact)
     height
   )
 
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    x,
-    y + 3,
-    x + 4,
-    y + height - 3,
-    COLOR.selected
-  )
+  local icon = artwork_image_from_path(BRAND_ICON_PATH)
 
-  ImGui.DrawList_AddText(
-    draw_list,
-    x + 11,
-    y + 5,
-    COLOR.header_text,
-    compact and "PSY" or "PsyReaSFX"
-  )
+  if icon then
+    ImGui.DrawList_AddImageRounded(
+      draw_list,
+      icon,
+      x + 1,
+      y + 1,
+      x + 29,
+      y + 29,
+      0,
+      0,
+      1,
+      1,
+      0xFFFFFFFF,
+      6,
+      0
+    )
+  else
+    ImGui.DrawList_AddRectFilled(
+      draw_list,
+      x + 4,
+      y + 5,
+      x + 26,
+      y + 25,
+      COLOR.button,
+      5
+    )
+    ImGui.DrawList_AddLine(
+      draw_list,
+      x + 8,
+      y + 15,
+      x + 22,
+      y + 15,
+      COLOR.accent,
+      2
+    )
+  end
+
+  if not compact then
+    local word_x = x + 36
+    local word_y = y + 7
+    local prefix = "PsyRea"
+    local prefix_width =
+      select(1, ImGui.CalcTextSize(ctx, prefix)) or 48
+
+    ImGui.DrawList_AddText(
+      draw_list,
+      word_x,
+      word_y,
+      COLOR.header_text,
+      prefix
+    )
+    ImGui.DrawList_AddText(
+      draw_list,
+      word_x + prefix_width,
+      word_y,
+      COLOR.accent,
+      "SFX"
+    )
+  end
+
+  tooltip("PsyReaSFX · Sound Assets Organized")
 end
 
 function metric_chip(label, value, accent)
@@ -13088,133 +13159,8 @@ end
 
 
 ----------------------------------------------------------------
--- UI: menus and toolbar
+-- UI: toolbar
 ----------------------------------------------------------------
-
-function draw_menu_bar()
-  if not ImGui.BeginMenuBar(ctx) then
-    return
-  end
-
-  if ImGui.BeginMenu(ctx, "音效库") then
-    if ImGui.MenuItem(ctx, "新建音效库…") then
-      add_root()
-    end
-
-    if ImGui.MenuItem(ctx, "增量扫描", "Ctrl+R") then
-      start_scan("增量扫描")
-    end
-
-    if ImGui.MenuItem(
-      ctx,
-      "清空波形缓存"
-    ) then
-      clear_wave_cache()
-    end
-
-    ImGui.Separator(ctx)
-
-    if ImGui.MenuItem(
-      ctx,
-      "Watch Folder",
-      nil,
-      state.watch_enabled
-    ) then
-      state.watch_enabled =
-        not state.watch_enabled
-      state.config_dirty = true
-    end
-
-    ImGui.EndMenu(ctx)
-  end
-
-  if ImGui.BeginMenu(ctx, "视图") then
-    if ImGui.MenuItem(
-      ctx,
-      "左侧导航",
-      "F9",
-      state.sidebar_visible
-    ) then
-      state.sidebar_visible =
-        not state.sidebar_visible
-      state.config_dirty = true
-    end
-
-    if ImGui.MenuItem(
-      ctx,
-      "右侧元数据",
-      "F10",
-      state.inspector_visible
-    ) then
-      state.inspector_visible =
-        not state.inspector_visible
-      state.config_dirty = true
-    end
-
-    if ImGui.MenuItem(
-      ctx,
-      "恢复上次浏览高亮"
-    ) then
-      restore_last_session_played_highlights()
-    end
-
-    if ImGui.MenuItem(
-      ctx,
-      "清除本次已播放高亮"
-    ) then
-      clear_session_played_highlights()
-    end
-
-    ImGui.Separator(ctx)
-
-    if ImGui.MenuItem(
-      ctx,
-      "专注模式",
-      "F11",
-      not state.sidebar_visible
-        and not state.inspector_visible
-    ) then
-      local focus_mode =
-        not state.sidebar_visible
-        and not state.inspector_visible
-
-      if focus_mode then
-        state.sidebar_visible = true
-        state.inspector_visible = true
-      else
-        state.sidebar_visible = false
-        state.inspector_visible = false
-      end
-
-      state.config_dirty = true
-    end
-
-    ImGui.EndMenu(ctx)
-  end
-
-  if ImGui.BeginMenu(ctx, "帮助") then
-    if ImGui.MenuItem(
-      ctx,
-      "使用说明与快捷键…"
-    ) then
-      state.help_popup_requested = 2
-    end
-
-    ImGui.Separator(ctx)
-
-    ImGui.MenuItem(
-      ctx,
-      SCRIPT_NAME .. " " .. VERSION,
-      nil,
-      false,
-      false
-    )
-
-    ImGui.EndMenu(ctx)
-  end
-
-  ImGui.EndMenuBar(ctx)
-end
 
 function sidebar_item(
   label,
@@ -13836,7 +13782,7 @@ function draw_toolbar()
     COLOR.input_text
   )
 
-  ImGui.SetNextItemWidth(ctx, -198)
+  ImGui.SetNextItemWidth(ctx, -234)
 
   local changed
   changed, state.search =
@@ -13903,6 +13849,18 @@ function draw_toolbar()
     30
   ) then
     start_scan("增量扫描")
+  end
+
+  ImGui.SameLine(ctx)
+
+  if icon_button(
+    "help",
+    "help",
+    "使用说明与快捷键",
+    false,
+    30
+  ) then
+    state.help_popup_requested = 1
   end
 
   ImGui.SameLine(ctx)
@@ -18366,6 +18324,27 @@ function draw_settings_general()
   draw_language_setting()
   ImGui.Separator(ctx)
 
+  settings_section_title(
+    "后台与浏览",
+    "控制素材目录的定时增量检查。手动扫描仍可使用 Ctrl+R 或主界面刷新按钮。"
+  )
+
+  local watch_changed
+  watch_changed, state.watch_enabled =
+    ImGui.Checkbox(
+      ctx,
+      "启用 Watch Folder",
+      state.watch_enabled
+    )
+
+  if watch_changed then
+    state.next_watch =
+      reaper.time_precise() + WATCH_INTERVAL
+    state.config_dirty = true
+  end
+
+  ImGui.Separator(ctx)
+
   local sidebar_changed
   sidebar_changed, state.sidebar_visible =
     ImGui.Checkbox(
@@ -20711,14 +20690,12 @@ function draw_main()
         .. VERSION
         .. "###PsyReaSFX",
       state.open,
-      ImGui.WindowFlags_MenuBar
-        | ImGui.WindowFlags_NoCollapse
+      ImGui.WindowFlags_NoCollapse
         | ImGui.WindowFlags_NoScrollbar
         | ImGui.WindowFlags_NoScrollWithMouse
     )
 
   if visible then
-    draw_menu_bar()
     draw_toolbar()
     draw_sub_toolbar()
     draw_import_progress()

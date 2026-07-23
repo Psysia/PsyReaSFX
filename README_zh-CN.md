@@ -13,22 +13,30 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.7--beta.10-19D8FF" alt="版本 0.7.7 beta 10">
+  <img src="https://img.shields.io/badge/Version-0.7.8--beta.11-19D8FF" alt="版本 0.7.8 beta 11">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.7 Beta 10
+# PsyReaSFX 0.7.8 Beta 11
 
 PsyReaSFX 是运行在 REAPER 内部的音效资产浏览、波形试听、元数据、Region、集合、插入与 Transfer 工作流。
 
 **作者：** Psysia  
-**包版本：** 0.7.7-beta.10  
+**包版本：** 0.7.8-beta.11  
 **发布阶段：** Beta
 
 <p align="center">
   <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX 主工作区，展开导航与元数据面板" width="100%">
 </p>
+
+## 品牌统一工具栏
+
+- 移除额外的应用内菜单条，让原生窗口标题下方直接进入一条跟随主题的主工具栏。
+- 左上角普通文字替换为随包安装的 PsyReaSFX 图标与双色 `PsyRea` / `SFX` 字标；窄窗口自动收成图标。
+- 帮助入口迁移到设置按钮旁的问号图标。
+- Watch Folder 开关迁移到**设置 > 常规 > 后台与浏览**。
+- 新建与管理音效库继续位于左侧导航；扫描继续使用刷新图标或 `Ctrl+R`；缓存维护位于设置；面板开关保留在主工具栏。
 
 ## 选中对比度、全新预览图与帮助中心
 
@@ -136,7 +144,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 ## 手动安装
 
-在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_7_Beta_10.lua`。
+在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_8_Beta_11.lua`。
 
 ## 文档
 
@@ -148,7 +156,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ## 发布包结构
 
 ```text
-PsyReaSFX_v0_7_7_Beta_10.lua
+PsyReaSFX_v0_7_8_Beta_11.lua
 README.md
 README_zh-CN.md
 index.xml

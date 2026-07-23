@@ -1,5 +1,19 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.8 Beta 11
+
+### Unified branded toolbar
+
+- Removes the internal menu strip to eliminate the color seam beneath the
+  native window title bar.
+- Replaces the plain top-left name with the packaged application icon and a
+  theme-aware two-tone PsyReaSFX wordmark.
+- Collapses the brand to the icon in narrow windows to protect search width.
+- Adds a permanent Help icon beside Settings.
+- Moves Watch Folder to General settings while keeping library, scan, cache,
+  highlight, and panel controls in their existing permanent locations.
+- Removes the unused menu-rendering path and menu-bar window flag.
+
 ## 0.7.7 Beta 10
 
 ### Help Child-stack hotfix
