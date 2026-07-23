@@ -1,187 +1,149 @@
-﻿# PsyReaSFX 0.7.8 Beta 11 User Guide (package 0.7.8-beta.11)
+# PsyReaSFX User Guide
 
-## 1. Purpose
+**Applies to:** PsyReaSFX 0.7.9 Beta 12  
+**Author:** Psysia  
+**Host:** REAPER 7.x
 
-PsyReaSFX is a REAPER-based sound-asset browser, search, audition, waveform-selection, region, metadata, collection, and insertion tool. It now uses one unified high-density, responsive workspace to reduce duplicated layout behavior and maintenance.
+This manual explains the product by workflow. Version-by-version implementation details are kept in the separate [Changelog](CHANGELOG_en-US.md).
 
-This guide documents the current 0.7 beta feature set. Release-by-release changes are kept in the separate changelog.
+## 1. Welcome
 
-## 2. Requirements
+PsyReaSFX is a sound-asset workspace inside REAPER. It brings library management, inline waveforms, metadata search, audition, organization, timeline placement and processed export into one dockable interface.
+
+The application uses two related storage concepts:
+
+- A **logical library** is the name and group shown in navigation.
+- A **source folder** is a physical path on a drive.
+
+One logical library can contain several source folders. This lets a production library span disks or locations without flattening the structure that people use to understand it.
+
+PsyReaSFX is non-destructive by default. Favorites, marks, workflow states, collections, saved searches, regions and metadata edits live in its local database. Source audio is changed only when you explicitly create a new file with Transfer.
+
+## 2. Requirements and installation
 
 ### Required
 
 - REAPER 7.x
-- ReaImGui 0.10 or later
+- ReaImGui 0.10 or newer
 
-### Strongly recommended
+### Recommended
 
 - SWS Extension
 
-SWS is used for precise waveform seeking, selection preview, Pitch/Rate/Gain preview controls, channel audition, drag-and-drop into the REAPER arrange view, and several Preview API parameters. Without SWS, basic browsing, searching, and indexing still work, but advanced preview and transfer features are limited.
+SWS enables precise seek-from-waveform audition, selection preview, advanced Preview parameters, channel audition and drop placement in the REAPER arrange view. The database, search and basic browsing features still work without it.
 
-## 3. Installation and upgrade
+### Install with ReaPack
 
-### ReaPack installation (recommended)
+1. In REAPER, open `Extensions → ReaPack → Import repositories...`.
+2. Add:
 
-Import this URL from `Extensions → ReaPack → Import repositories...`:
+   ```text
+   https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+   ```
 
-```text
-https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
-```
+3. Synchronize packages.
+4. Search for `PsyReaSFX` and install it.
+5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
 
-Synchronize repositories, search for `PsyReaSFX`, and install it. Future updates can be synchronized and installed from ReaPack without downloading another ZIP or rebinding the action.
+ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
 ### Manual installation
 
-1. Extract the release package.
-2. Open REAPER's Action List.
-3. Choose `ReaScript: Load...`.
-4. Load `PsyReaSFX_v0_7_8_Beta_11.lua`.
-5. Reassign any shortcut previously bound to an older release.
-6. Stop older PsyReaSFX instances.
-
-Data is stored under:
+Keep the release structure intact:
 
 ```text
-<REAPER Resource Path>/Scripts/PsyReaSFX/
+PsyReaSFX_vX_X_X/
+├─ PsyReaSFX_vX_X_X.lua
+└─ assets/
+   ├─ brand/
+   └─ fonts/
 ```
 
-Existing libraries, indexes, collections, regions, loudness results, and waveform caches remain compatible. The new `marked` database field is written automatically on the next database save.
+Load the Lua file through the Action List. The interface safely falls back to REAPER's regular UI font if the bundled brand font is missing.
 
-## 4. Interface layout
+## 3. First launch
 
-- Branded toolbar: app icon and wordmark, search, panel toggles,
-  auto-preview, scan, Help, and Settings.
-- Left panel: libraries, playlists, project bins, saved searches, and workflow filters.
-- Center: pinned column header and result list.
-- Right panel: non-destructive metadata inspector.
-- Bottom panel: high-resolution waveform, timeline, loudness, regions, preview, and insertion controls.
+1. Press `F9` if the navigation panel is hidden.
+2. Select **New library**.
+3. Enter a name. This creates the logical library without requiring a path.
+4. Add one or more source folders, or drag folders from Windows Explorer onto the new library.
+5. Wait for the import task to complete.
+6. Click a result waveform to audition from that position.
 
-Use `F9`, `F10`, and `F11` to toggle navigation, metadata, and focus mode.
+The first visit to a folder may require waveform and metadata work. Later visits reuse the disk cache.
 
-Click the question-mark icon beside Settings for the localized in-application
-quick reference. The window is divided into Workspace, Results, Preview,
-Organize, and Transfer sections and follows the selected interface language.
+## 4. Workspace tour
 
-The additional in-app menu strip was removed in Beta 11. Library actions stay
-in the left navigation, scan is available from the refresh icon or `Ctrl+R`,
-and Watch Folder is under **Settings > General > Background & browsing**.
+### Top toolbar
 
+The toolbar keeps navigation control at the far left and the metadata-inspector control at the far right, matching the panels they affect. The center contains search; preview, scan, Help and Settings actions sit beside it.
 
-## 4.1 Appearance and Settings Center
+Toolbar icons are borderless at rest. Hovering reveals the hit area and accent color; enabled states remain visible. Hover a control briefly to see its localized description.
 
-The two-column Settings Center matches the main application. The left side is page navigation; the right side is scrollable content.
+The small PsyReaSFX mark is drawn as a vector symbol so it remains crisp at compact sizes and high DPI. The product wordmark uses the bundled Orbitron typeface when available.
 
-Under **Appearance > Appearance mode**:
+### Navigation panel
 
-- **Dark mode** is the default neutral-black workspace with blue selection,
-  neutral waveforms, and a green playhead.
-- **Heritage mode** uses a deeper navy shell and Electric Cyan interactions.
-- **Frame base color** opens a picker and automatically derives panels,
-  headers, hover states, borders, dim text, and waveform background hierarchy.
-- **Accent color** can be customized independently.
+The left panel contains:
 
-Choosing either preset reapplies its complete surface and waveform palette.
+- All sounds, Favorites, Recently inserted and Preview history
+- logical libraries and their source folders
+- playlists and project bins
+- saved searches
+- workflow-state filters
 
-Pages:
+Use the arrow before a library to expand or collapse its source folders. Clicking a logical library aggregates all of its sources; clicking a source filters to that path.
 
-- **General**: language, panels, insertion naming and fades;
-- **Appearance**: unified layout, lower-panel height, Artwork, themes and state colors;
-- **Waveforms**: resolution, precache, navigation, transients and loudness;
-- **Maintenance**: cache, database rebuild and factory reset;
-- **About**: product version, runtime details, data paths, diagnostics, and support identity.
+### Results
 
-### Unified interface
+The center list combines a pinned header with virtualized rows. The waveform, filename, description, status, categories, duration, format, Artwork, library and path fields can be shown independently.
 
-```text
-Settings → Appearance → Unified interface
-```
+### Metadata inspector
 
-PsyReaSFX now maintains one compact, flat, responsive interface. Columns and widths remain customizable from the pinned header, while navigation, metadata, and focus mode remain independently collapsible. Restore Unified Interface resets the default fields without deleting libraries or database content.
+The right panel displays Artwork, file facts and editable database metadata. Artwork can stay pinned while the metadata below it scrolls.
 
-### Unified compact list
+### Preview workspace
 
-Rows use one vertically centered line instead of forcing secondary text into a short row. Right-click the pinned header and choose Reset to Default Fields when needed.
+The lower area contains the detailed waveform, selection and playback position, regions, loudness readouts, audition parameters and REAPER delivery actions. Drag the horizontal splitter to balance result and preview space.
 
-### Settings navigation
+### Panel shortcuts
 
-The left navigation now uses custom two-line cards: page title on the first line and a short description on the second. Fixed layout and clipping bounds prevent truncated Chinese or English labels.
+| Shortcut | Action |
+|---|---|
+| `F9` | Toggle navigation |
+| `F10` | Toggle metadata inspector |
+| `F11` | Toggle focus mode |
 
-### Color pickers and live preview
+Focus mode hides both side panels without discarding their saved visibility settings.
 
-All editable colors now use ReaImGui color pickers:
+## 5. Libraries and source folders
 
-```text
-Settings → Appearance → Theme / Waveform colors
-```
+### Create an empty logical library
 
-- Click a swatch to open the picker.
-- Changes apply immediately.
-- The current `#RRGGBB` value is shown as reference only.
-- Every color row has an independent reset action.
-- Manual color-code entry is no longer required.
+Choose **New library**, enter a name and confirm. No folder is required. Add source folders later as drives or collections become available.
 
-Editable colors include the accent, normal/selected/played/marked waveforms, played text, selection, playhead, and Region colors.
+### Add sources
 
+- Right-click a logical library and choose **Add source folder...**.
+- Drag one or more Explorer folders onto a logical library.
+- Drop a folder on **All libraries** to create a new logical parent.
+- Drop on the central target to add to the currently viewed logical library; if there is no suitable context, PsyReaSFX offers to create one.
 
-### If a color swatch does not open
+Duplicate roots and overlapping parent/child roots are blocked to prevent double indexing. If a folder already belongs to another logical library, PsyReaSFX can move the logical ownership. These operations never move or delete disk files.
 
-0.6.12 RC1 removes the full-row `InvisibleButton` that previously consumed the click before it reached `ColorEdit3`. Click the small swatch, choose a color, and the result applies immediately. Use Reset to restore the default for that field.
+Offline sources remain listed. Their library relationship can therefore survive removable drives, network volumes and drive-letter changes.
 
-### About page
+### Artwork ownership
 
-```text
-Settings → About
-```
+Each physical source folder owns its own automatically detected or manually assigned cover. A cover from one source is never applied to sibling sources merely because they share a logical library.
 
-The page shows:
+Right-click an expanded source to choose, rediscover or clear its Artwork. Asset-specific Artwork chosen in the metadata inspector has higher priority than source Artwork.
 
-- PsyReaSFX version and author;
-- REAPER, operating system, ReaImGui, and SWS status;
-- current preview backend;
-- data directory;
-- open-data-folder and open-documentation-folder actions;
-- copyable diagnostics.
-
-License, official website, and support-contact fields are currently placeholders.
-
-
-## 5. Logical libraries and source folders
-
-A logical library is the name shown in the sidebar. It can own one or many
-physical source folders. Clicking the library aggregates all of its sources;
-expanding it lets you filter one source folder. Hover the library to see its
-paths, online status, and indexed count.
-
-Click the arrow immediately before a logical-library name to expand or
-collapse its physical source folders. This does not change the current filter,
-and the state is restored on the next launch.
-
-### Add folders
-
-- Click `+ New library`, enter a name, and create the logical library without
-  selecting a folder. Add source folders whenever they become available.
-- Right-click a logical library and choose `Add source folder…` to attach
-  another path.
-- Drop Explorer/Finder folders on a library, **All libraries**, or the central
-  result area. The central target adds to the current logical library; without
-  a library context it creates a new one.
-- When multiple folders are dropped without a target, choose one logical
-  library per folder or combine all folders into one library.
-
-Exact duplicate and overlapping parent/child roots are blocked to prevent
-duplicate indexing. Dropping a source already owned by another library offers
-to move its logical ownership. None of these operations moves or deletes disk
-files. Offline folders remain visible and can be restored when the drive is
-available again.
-
-Legacy root entries migrate automatically to `libraries_v2.tsv` as one logical
-library with one source folder. Playlists and project bins stay separate,
-virtual collections.
-
-## 6. Search
+## 6. Search and filter
 
 ### Plain text
+
+Plain words search filename, path, description, keywords, Category, SubCategory, CatID, library and UCS-derived fields.
 
 ```text
 cinematic whoosh
@@ -204,311 +166,292 @@ marked:true
 played:true
 ```
 
-### Exclusions
+Combine fields and text in the same query. Prefix a word with `-` to exclude it:
 
 ```text
-whoosh -long
-impact -debris
+whoosh category:movement -long
 ```
 
-Filters can be combined in one query.
+### Saved searches
 
-## 7. Columns
+A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
-The header remains pinned while the result list scrolls. Drag column dividers to resize them; double-click a divider to restore default widths. Right-click the header to show or hide waveform, filename, status, description, category, duration, format, library, path, and other fields.
+## 7. Result columns
 
-Duration uses a fixed `MM:SS.mmm` timecode such as `00:04.947`.
+Right-click the pinned header to choose visible fields. Drag a divider to resize a column; double-click it to restore the default width.
 
-When the combined field width exceeds the center workspace, no horizontal scrollbar is drawn. Hover the pinned header or any result row and use `Shift + mouse wheel`. Scrolling is clamped from the first position through the rightmost field, and the pinned header follows the same horizontal position.
+Duration uses `MM:SS.mmm`, for example `00:04.947`.
 
-### Compact preview information
+When fields are wider than the workspace, hover the header or a row and use `Shift + mouse wheel` to pan horizontally. The header and rows share the same position, and the rightmost field remains reachable without a permanent horizontal scrollbar.
 
-The file or selection range, Region count, channel-monitoring mode, loudness-match state, and current operation status share the metric row. The separate summary and green status rows have been removed, allowing the waveform to use the released height.
-
-In short windows, the unified interface allocates the result list, splitter, and preview from one exact runtime height budget. The detailed waveform progressively reduces its minimum height before controls can leave the PsyReaSFX window. Time metrics and Pitch, Rate, and Gain use clean borderless text and parameter tracks; interactive icon buttons retain consistent frames. Preview status omits the filename already shown in the header and clips safely to the remaining width.
-
-### Separate channel lanes
-
-Enable `Settings → Waveforms → Show separate channel lanes` to display the high-resolution preview as `M` for mono, `L` / `R` for stereo, or `CH 1–8` for multichannel files. Selections, Regions, the ruler, and the playhead span all lanes.
-
-Channel lanes use the new `RWF3` high-resolution cache. Existing `RWF2` list thumbnails remain compatible, so upgrading does not rebuild the entire thumbnail library. High-resolution precaching creates reusable channel-aware data.
-
-Hidden fields are not drawn, which reduces UI work for large result sets.
+Hidden fields are not drawn, reducing interface work for large result sets.
 
 ### Artwork column
 
-Right-click the fixed header and enable `Artwork` to display square thumbnails. The unified default field layout enables it by default.
+Artwork discovery checks the source root and common `Artwork`, `Images`, `Docs` and `Documentation` folders, then performs a bounded parent search. Preferred names include `artwork`, `cover`, `folder`, `front`, `album` and `thumbnail`; PNG, JPG and JPEG are supported.
 
-Artwork lookup checks the source folder and then parent folders up to the library root, with a seven-level limit. Preferred names include `artwork`, `cover`, `folder`, `front`, `album` and `thumbnail`, using PNG or JPEG files. A cover can also be selected manually from the metadata inspector.
+Discovery is low priority and uses positive and negative folder caching. Hiding the Artwork column stops list-thumbnail requests for it.
 
-Artwork discovery uses a low-priority queue and folder-level negative caching. Hidden Artwork columns do not request thumbnails for invisible rows.
-
-PsyReaSFX also checks the current physical source root and common `Artwork`,
-`Images`, `Docs`, and `Documentation` subfolders. Each physical source owns
-its cover independently: a cover found in one source never propagates to a
-sibling source in the same logical library. Right-click the expanded source
-folder to choose, rediscover, or clear its Artwork. The Artwork button beside
-each source in Library Manager opens the same file chooser. An asset-specific
-cover selected in the metadata inspector remains the highest-priority override.
-
-## 8. Selection, favorites, and marks
+## 8. Select and organize results
 
 | Action | Result |
 |---|---|
-| Click | Single selection |
-| Ctrl+click | Add or remove one item |
-| Shift+click | Range selection |
-| Ctrl+A | Select all visible results |
-| F | Toggle favorite |
-| M | Toggle mark |
+| Click | Select one asset |
+| `Ctrl`+click | Add or remove one asset |
+| `Shift`+click | Select a continuous range |
+| `Ctrl+A` | Select all current results |
+| `F` | Toggle favorite |
+| `M` | Toggle mark |
 
-Favorites are intended for long-term organization. Marks are a lightweight review state for temporary filtering and visual identification. Search marked assets with `marked:true`.
+Favorites are durable personal choices. Marks are lightweight review flags. Workflow states—Unmarked, Candidate, Approved and Rejected—form a separate editorial field.
 
-The row context menu supports bulk favorite, mark, workflow status, collection, and insertion actions.
+Create playlists for reusable groups and project bins for project-oriented candidates. These are virtual collections; no source files are duplicated.
 
-## 9. State colors and session-played highlighting
+### Played highlighting
 
-Open:
+After preview starts, the asset's text can turn to a configurable played color. Current-session highlighting can be cleared from the toolbar or Settings, and the previous session can be restored if it was closed accidentally. Persistent preview history is separate from this display state.
 
-```text
-Settings → Appearance → Colors and states
-```
-
-The palette includes normal, selected, played and marked waveforms; played text; selection; playhead; and Region colors.
-
-### Played text
-
-After an asset actually starts previewing during the current launch, text columns such as Filename, Keywords/Description, Duration and Library use the configurable warm-yellow played color.
-
-This is a **session-only visual state**:
-
-- reopening the script resets the text to its normal color;
-- persistent preview history in `history_v1.tsv` is not deleted;
-- `played:true` still searches historical preview records;
-- the main toolbar reset icon clears the current session immediately;
-- the same command is available from View and Settings.
-
-Played waveform coloring is optional and disabled by default to avoid competing with selection and mark colors.
-
-Waveform priority remains:
+Waveform state priority is:
 
 ```text
-selected > marked > played waveform (when enabled) > normal
+selected > marked > played (when enabled) > normal
 ```
 
+## 9. List waveform audition
 
-## 10. List waveforms
+- Click a position in a row waveform to select the asset and start from that point.
+- The active row shows a mini playhead.
+- `Space` plays or stops.
+- `Up` and `Down` move through results.
+- Enable automatic audition to start playback when selection changes.
 
-List waveforms use 256 points by default and can be increased to 512 points. Click any position in a list waveform to start preview from that time. The active preview row displays a mini playhead.
+List waveform resolution is 256 points by default and can be raised to 512. High-resolution precaching generates reusable 2048- or 4096-point caches without keeping the full library in memory.
 
-High-resolution library precaching supports 2048 or 4096 points and writes results to disk without keeping the entire library in memory.
+## 10. Detailed waveform
 
-## 11. Large waveform
+### Navigate
 
-### Navigation
+| Gesture | Action |
+|---|---|
+| Mouse wheel | Zoom around the pointer |
+| `Shift`+wheel | Pan horizontally |
+| Middle drag | Pan horizontally |
+| Double-click | Reset zoom |
+| Right drag | Scrub |
 
-- Mouse wheel: zoom around the pointer.
-- Shift+wheel: horizontal pan.
-- Middle drag: horizontal pan.
-- Double-click: reset zoom.
-- Right drag: scrub preview.
+### Make and use a selection
 
-### Selection
+Left-drag across the waveform. You can preview only the selection, automatically loop it, insert it, export it, or drag its handle into the REAPER arrange view.
 
-Left-drag to create a selection. Preview only the selection, auto-loop it, or drag the selection handle directly into the REAPER arrange view.
+### Channel lanes
 
-### Loudness
+Enable `Settings → Waveforms → Show separate channel lanes` to show:
 
-The information bar can display LUFS-I, maximum momentary LUFS, maximum short-term LUFS, and True Peak. Results are calculated on demand and cached in `loudness_v1.tsv`.
+- `M` for mono
+- `L` and `R` for stereo
+- `CH 1`–`CH 8` for multichannel sources
 
-## 12. Regions and transient detection
+The time ruler, selection, regions and playhead span all lanes. Channel-aware detailed waveforms use the RWF3 cache; existing list thumbnails remain compatible.
 
-A long recording can contain multiple non-destructive regions. Region data is saved to `regions_v1.tsv` and never modifies the source WAV.
+### Loudness display
 
-Transient detection supports:
+The preview header can show LUFS-I, maximum momentary LUFS, maximum short-term LUFS and True Peak. Analysis runs on demand and is cached. Estimated preview matching is intended for fast comparison, not standards-compliant delivery measurement.
+
+## 11. Regions and transient suggestions
+
+Regions save useful ranges within a long recording without editing the source file. Manual regions use `[M]`; automatic transient suggestions use `[T]`.
+
+Transient detection can be adjusted by:
 
 - dBFS threshold
 - envelope smoothing
-- minimum transient gap
+- minimum gap
 - pre-roll and post-roll
-- maximum region count
-- replacement of previous transient suggestions
+- maximum suggestion count
+- replace/append behavior
 
-Detected regions are tagged `[T]`; manual regions are tagged `[M]`. You can undo the latest detection, clear all transient suggestions, or delete individual regions.
+You can undo the latest detection, clear every transient suggestion, or delete one region from the region list.
 
-## 13. Preview
+## 12. Preview controls
 
-Supported controls include:
+| Control | Range or modes |
+|---|---|
+| Pitch | -24 to +24 semitones |
+| Rate | 0.25x to 4x |
+| Gain | -36 dB to +18 dB |
+| Pitch behavior | preserve or varispeed |
+| Direction | normal or reverse |
+| Loop | complete file or current selection |
+| Channels | original, left, right or mono |
 
-- Pitch: -24 to +24 semitones
-- Rate: 0.25x to 4x
-- Gain: -36 dB to +18 dB
-- Preserve Pitch
-- Loop
-- Reverse
-- Original, left, right, and mono audition
-- Estimated loudness matching
-- Pitch and rate presets
+Presets provide common pitch and rate values. These controls affect preview and, when selected, the Transfer render.
 
-Estimated matching is intended for quick comparison and is not a standards-compliant LUFS measurement. It affects preview only.
-
-## 14. Insertion and drag transfer
+## 13. Place audio in REAPER
 
 PsyReaSFX can:
 
-- Insert on the current track
-- Insert on a new track
-- Insert at the BWF timestamp
-- Insert only the current waveform selection
-- Stack multiple selected files on separate tracks
-- Drag list files or waveform selections into the REAPER arrange view
+- insert on the current track;
+- insert on a new track;
+- place at a BWF timestamp;
+- insert only the current waveform selection;
+- stack multiple selected files on separate tracks;
+- drag list assets or a waveform selection into the arrange view.
 
-This is an internal PsyReaSFX-to-REAPER workflow, not general Windows file drag-and-drop.
+Arrange-view drag is an internal PsyReaSFX-to-REAPER workflow, not generic Windows file drag-and-drop. SWS is recommended for accurate target position and track detection.
 
-## 15. Transfer export
+## 14. Transfer: create processed files
 
-Open Transfer from the lower toolbar or press `Ctrl+T`. Transfer creates new
-audio files without modifying the source media.
+Open Transfer from the lower toolbar or press `Ctrl+T`. Transfer creates new files; it does not overwrite source media unless you explicitly choose an overwrite collision policy and confirm it.
 
 ### Output and naming
 
-Choose an output directory and a naming template. Available tokens are:
+Choose the output folder and build a naming template from these tokens:
 
 | Token | Value |
 |---|---|
 | `{name}` | Source filename without extension |
 | `{category}` | Category metadata |
 | `{subcategory}` | SubCategory metadata |
-| `{library}` | Library name |
+| `{library}` | Logical library name |
 | `{index}` | Two-digit batch index |
-| `{date}` | Export date as `YYYYMMDD` |
-| `{region}` | Active saved Region, `selection`, or `full` |
+| `{date}` | `YYYYMMDD` export date |
+| `{region}` | Saved region name, `selection` or `full` |
 
-Names are sanitized for Windows filenames. Optional lowercase conversion is
-applied after token expansion.
+Names are sanitized for Windows. Optional lowercase conversion runs after token expansion.
 
-### Scope, format, and channels
+### Current capabilities
 
-- Current asset: export the current waveform selection or the complete file.
-- Multiple selected assets: each complete source file is exported.
-- Format: WAV 24-bit PCM or FLAC using REAPER's default FLAC sink.
-- Sample rate: source, 44.1, 48, 96, or 192 kHz.
-- Channels: source channel count, mono, or stereo.
+- Scope: full current asset, current selection, or all selected assets.
+- Format: WAV 24-bit PCM or REAPER's default FLAC sink.
+- Sample rate: source, 44.1, 48, 96 or 192 kHz.
+- Channels: source count, mono or stereo.
+- Processing: current Pitch, Rate, Gain, Reverse and Preserve Pitch.
+- Finishing: fades and Peak, True Peak or LUFS-I normalization.
+- Collision: increment, skip, or explicitly confirmed overwrite.
+- Completion: optionally insert rendered files into REAPER.
 
-### Processing and completion
+Transfer creates a temporary dry media item, uses REAPER's selected-media-item renderer, then restores render settings, selection, cursor, time selection and project dirty state. The temporary item is removed on success and failure paths.
 
-The exported audio includes the current Pitch, Rate, Gain, Reverse, and
-Preserve Pitch settings. Optional render fades and Peak, True Peak, or LUFS-I
-normalization are available. Name collisions can increment, skip, or overwrite
-after explicit confirmation. Completed files can optionally be inserted into
-REAPER.
+Current limitation: Transfer does not yet pass through track FX, sends, folder routing or Master FX. Stop project playback before a Transfer job. Reverse Transfer requires SWS.
 
-Transfer temporarily creates a dry media item, renders it with REAPER's native
-selected-media-item renderer, and restores the previous render settings,
-selection, cursor, time selection, and project dirty state. The temporary item
-is removed after every file, including failure paths.
+## 15. Metadata and Artwork
 
-Beta 1 does not pass audio through track FX, sends, folders, or Master FX. Stop
-project playback before starting Transfer. Reverse Transfer requires SWS.
+The inspector can edit Description, Keywords, Category, SubCategory, CatID, Library and Artwork path in the PsyReaSFX database. It does not write those changes into the source WAV/BWF/iXML file.
 
-## 16. Collections and workflow
+For one selected asset, Artwork and its controls can remain pinned while file information and metadata scroll beneath it. Choose an image manually, retry automatic detection, or clear the asset-specific override.
 
-Create multiple playlists and project bins, add or remove files in bulk, and save search states including query text, library filter, collection, workflow status, and sort order.
+Embedded artwork inside audio containers is not extracted in this version.
 
-Workflow status values are Unmarked, Candidate, Approved, and Rejected. Workflow status is separate from the independent `marked` flag added in 0.6.8.
+## 16. Appearance and accessibility
 
-## 17. Metadata and pinned Artwork
+PsyReaSFX includes a neutral Dark preset and a deep-navy Heritage preset. Frame base and accent colors can be adjusted with color pickers. Waveform, selected, played, marked, selection, playhead and region colors are independently configurable.
 
-The inspector edits Description, Keywords, Category, SubCategory, CatID, Library and Artwork path without modifying source audio metadata.
+The interface is responsive: side panels temporarily yield to the center workspace when the window becomes narrow. Toolbar hit areas remain stable while the visual icons stay borderless until hover or activation.
 
-For a single selected asset, the full cover can be pinned above the scrolling metadata area:
+Language can be changed between Chinese and English in Settings without restarting. Asset names and user metadata are never translated.
 
-- cover, asset name and cover controls remain fixed;
-- metadata and file information scroll independently below;
-- the cover does not move while reviewing long metadata;
-- users can choose a cover, rerun automatic detection or explicitly clear the cover;
-- disabling pinning makes the cover scroll with metadata.
+## 17. Performance and large libraries
 
-Artwork currently uses external PNG/JPEG files. Embedded artwork inside audio containers is not extracted in this version.
+PsyReaSFX prioritizes interaction over background work:
 
+- only visible result rows are drawn;
+- hidden columns do no drawing work;
+- scans, metadata, loudness, Artwork and waveform work are frame-budgeted;
+- heavy tasks yield during mouse interaction;
+- selected assets and visible rows receive priority;
+- high-resolution precache writes to disk rather than retaining the whole library in memory;
+- missing-Artwork results are cached to avoid repeated folder scans.
 
-## 18. Appearance and performance
+For a large library:
 
-### Interface
+1. Import one source at a time during initial setup.
+2. Let the import task complete before judging search counts.
+3. Hide unused columns.
+4. Run waveform precache when the workstation can perform background disk work.
+5. Keep the cache on a fast local drive if possible.
+6. Do not run two PsyReaSFX versions at once.
 
-The application maintains one compact, flat, responsive interface with adjustable columns, a fixed header, collapsible side panels, focus mode, and an adjustable preview workspace.
+## 18. Data, cache and backup
 
-### Current performance strategy
+The default data directory is:
 
-- session-played state uses a path hash table for constant-time lookup;
-- Artwork discovery caches negative folder results and does not rescan empty folders every frame;
-- Artwork processing is a low-priority single-job queue that yields during input, scanning and imports;
-- ReaImGui image objects are attached for persistence and capped by an image-cache limit;
-- thumbnails are requested only for visible Artwork rows and the selected asset;
-- compact rows render one primary text line, reducing clipping and duplicate drawing;
-- the Settings Center is drawn only while open and adds no database work to normal browsing.
+```text
+<REAPER Resource Path>/Scripts/PsyReaSFX/
+```
 
-### General performance rules
+Important data includes:
 
-- only visible rows are drawn;
-- hidden columns are skipped;
-- scan, metadata, loudness and waveform jobs are frame-budgeted;
-- heavy jobs yield during mouse interaction;
-- high-resolution precache writes to disk instead of holding the full library in memory;
-- Regions, collections, history and loudness use separate lightweight files.
-
-
-## 19. Data files
-
-| File | Purpose |
+| Item | Purpose |
 |---|---|
-| `config.tsv` | UI, theme, language, roots, and column settings |
-| `index_v3.tsv` | Asset index, metadata, workflow, preview history, and marks |
-| `wave_cache_v3/` | Multi-resolution waveform cache |
-| `collections_v1.tsv` | Playlists and project bins |
-| `saved_searches_v1.tsv` | Saved searches |
-| `history_v1.tsv` | Preview history |
-| `last_played_session_v1.tsv` | Previous-session yellow highlight snapshot |
-| `regions_v1.tsv` | Regions and transient suggestions |
-| `loudness_v1.tsv` | Loudness analysis cache |
+| `config.tsv` | interface, language, theme and column settings |
+| `libraries_v2.tsv` | logical libraries and source relationships |
+| `index_v3.tsv` | asset index and database metadata |
+| `wave_cache_v3/` | multi-resolution waveform data |
+| `collections_v1.tsv` | playlists and project bins |
+| `saved_searches_v1.tsv` | saved search state |
+| `history_v1.tsv` | persistent preview history |
+| `last_played_session_v1.tsv` | restorable session highlight snapshot |
+| `regions_v1.tsv` | manual regions and transient suggestions |
+| `loudness_v1.tsv` | loudness analysis cache |
 
-Back up the entire PsyReaSFX data directory regularly.
+Back up the entire data directory. The waveform cache can be moved in `Settings → Maintenance`; PsyReaSFX can move existing cache files or switch to an empty destination.
 
-## 20. Shortcuts
+## 19. Keyboard reference
 
 | Shortcut | Action |
 |---|---|
-| Space | Play or stop |
-| Up / Down | Move selection |
-| Enter | Insert |
-| Ctrl+Enter | Insert on a new track |
-| Ctrl+A | Select all current results |
-| Ctrl+F | Focus search |
-| Ctrl+R | Incremental scan |
-| Ctrl+T | Open Transfer |
-| F | Toggle favorite |
-| M | Toggle mark |
-| L | Toggle loop |
-| F9 | Toggle navigation |
-| F10 | Toggle metadata inspector |
-| F11 | Toggle focus mode |
+| `Space` | Play or stop |
+| `Up` / `Down` | Move selection |
+| `Enter` | Insert |
+| `Ctrl+Enter` | Insert on a new track |
+| `Ctrl+A` | Select all current results |
+| `Ctrl+F` | Focus search |
+| `Ctrl+R` | Incremental scan |
+| `Ctrl+T` | Open Transfer |
+| `F` | Toggle favorite |
+| `M` | Toggle mark |
+| `L` | Toggle loop |
+| `F9` | Toggle navigation |
+| `F10` | Toggle metadata inspector |
+| `F11` | Toggle focus mode |
 
-## 21. Maintenance and troubleshooting
+## 20. Maintenance and troubleshooting
 
-The Maintenance tab can clear waveform caches, reset interface settings, rebuild the database while keeping roots, or perform a factory reset.
+Open `Settings → Maintenance` to inspect the runtime, copy diagnostics, change the waveform cache path, clear caches, reset interface settings, rebuild the database while keeping library roots, or perform a factory reset.
 
-Common issues:
+### No waveform and no preview
 
-- Rows named `._filename.wav` show no waveform: these are macOS AppleDouble
-  metadata sidecars, not audio files. Beta 2 filters them during scanning and
-  removes them from the loaded index automatically without deleting disk files.
-- Waveforms are slow on first display: allow the visible-row cache to finish or run high-resolution precache.
-- Precise waveform seeking does not work: install or update SWS.
-- Drag transfer fails: release the pointer over the REAPER arrange view.
-- Some text is garbled: the source file metadata may use a legacy encoding.
-- Large libraries feel slow: hide unused columns, use focus mode, and do not run multiple PsyReaSFX versions.
+- Confirm the source drive is online.
+- Confirm REAPER can open the file itself.
+- Entries named `._filename.wav` are macOS AppleDouble sidecars, not audio; current scans filter and remove them from the loaded index without deleting disk files.
+- Rebuild the affected library if the source file changed after indexing.
 
-## 22. Development stage
+### First display is slow
 
-Package 0.7.8 Beta 11 unifies the top workspace into one branded toolbar, moves Help and Watch Folder to permanent non-menu locations, and retains the Beta 10 Help-stack fix. PsyReaSFX 0.6.21 remains the stable fallback while Transfer is tested across different REAPER, ReaImGui, SWS, file-format, and project configurations.
+Wait for visible-row waveform tasks, or run high-resolution precache. Later visits reuse the cache.
 
+### Seek or drag placement is inaccurate
+
+Install or update SWS. For drag placement, release over the REAPER arrange view.
+
+### Text is garbled
+
+PsyReaSFX uses UTF-8 internally. A particular source metadata field may use a legacy encoding; replace or override it in the non-destructive database editor.
+
+### Interface is clipped
+
+Increase the window size, use focus mode, reduce visible columns, or reset interface settings. Include copied Maintenance diagnostics with a screenshot when reporting a reproducible layout problem.
+
+## 21. Beta status and support
+
+The 0.7 line is actively validating Transfer across REAPER, ReaImGui, SWS, file formats and project configurations. PsyReaSFX 0.6.21 remains the stable fallback during this cycle.
+
+Project home: [github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
+
+When reporting an issue, include:
+
+1. PsyReaSFX version;
+2. diagnostics copied from Maintenance;
+3. exact steps;
+4. complete ReaScript error text;
+5. a screenshot or short recording when the issue is visual.

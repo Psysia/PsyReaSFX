@@ -1,223 +1,192 @@
-﻿<p align="right">
-  <a href="README.md"><img src="https://img.shields.io/badge/Language-English-2f81f7" alt="English"></a>
-  <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555" alt="简体中文"></a>
-</p>
-
 <p align="center">
   <img src="assets/brand/psyreasfx-hero.png" alt="PsyReaSFX — Sound Assets Organized" width="100%">
 </p>
 
 <p align="center">
-  <strong>Sound Assets Organized</strong><br>
-  Browse · Organize · Preview
+  <strong>Browse · Organize · Preview · Deliver</strong><br>
+  A high-performance sound-asset workspace built inside REAPER.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.8--beta.11-19D8FF" alt="Version 0.7.8 beta 11">
+  <img src="https://img.shields.io/badge/Version-0.7.9--beta.12-19D8FF" alt="Version 0.7.9 beta 12">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
-  <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
+  <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
+  <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.8 Beta 11
+<details>
+<summary><strong>简体中文概览（点击展开，不离开当前页面）</strong></summary>
 
-PsyReaSFX is a sound-asset browser, waveform audition, metadata, region,
-collection, insertion, and Transfer workflow built inside REAPER.
+### PsyReaSFX 是什么？
 
-**Author:** Psysia  
-**Package version:** 0.7.8-beta.11  
-**Release stage:** Beta
+PsyReaSFX 是运行在 REAPER 内部的音效资产工作区，将素材库、波形浏览、搜索、试听、元数据、集合整理、工程插入与处理后导出集中到一个可停靠界面中。
 
-<p align="center">
-  <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
-</p>
+它适合需要长期管理大型音效库的游戏音频设计师、声音设计师和 REAPER 用户：一个逻辑音效库可以聚合多个硬盘路径；列表内直接显示波形；点击波形任意位置即可试听；素材选区能够直接拖入工程或通过 Transfer 输出为新文件。
 
-## Unified branded toolbar
+### 核心能力
 
-- Removes the extra in-app menu strip so the native window title flows
-  directly into one theme-aware application toolbar.
-- Replaces the plain top-left label with the packaged PsyReaSFX icon and a
-  two-tone `PsyRea` / `SFX` wordmark. Narrow windows collapse it to the icon.
-- Moves Help to a dedicated question-mark icon beside Settings.
-- Moves Watch Folder to **Settings > General > Background & browsing**.
-- Keeps library creation and management in the left navigation, scanning in
-  the refresh button and `Ctrl+R`, cache maintenance in Settings, and panel
-  controls in the main toolbar.
+- 多来源逻辑音效库、文件夹拖放导入与 Watch Folder。
+- 高密度内联波形、立体声/多声道大波形和点击定位试听。
+- 文件名、描述、关键词、UCS 字段、状态和库的联合搜索。
+- Artwork、非破坏性元数据、收藏、播放列表、项目素材箱与工作流状态。
+- Region、瞬态建议、LUFS/True Peak 显示、Pitch/Rate/Gain 与声道监听。
+- 插入当前轨、新轨、BWF 位置，以及选区拖入 REAPER。
+- Transfer 路径、命名模板、格式、采样率、声道、淡化、标准化和冲突策略。
 
-## Selection contrast, refreshed previews, and Help
+### 安装
 
-- Beta 10 removes nested Help-section Child windows, fixing the ReaImGui
-  `EndChild` assertion that occurred when opening Help in affected versions.
-- Help now uses one scrollable Child with ordinary section layout, preventing
-  off-screen groups from corrupting the ImGui Child stack.
-- Heritage mode keeps Electric Cyan as its brand accent but uses a deeper teal
-  selection fill with high-contrast white text.
-- Selected rows now take visual priority over played-state yellow text.
-- Dark information areas no longer reuse a dark selected-text color.
-- The built-in Help window is now a fixed, scrollable quick-reference center
-  organized into Workspace, Results, Preview, Organize, and Transfer sections.
-- Chinese and English Help content are maintained as separate localized
-  strings, preventing mixed-language paragraphs.
-- The README workspace and Focus-mode previews have been replaced with the
-  latest interface captures.
-
-## Appearance modes and custom shell color
-
-Beta 8 restores the former neutral-black interface as the default while
-retaining the branded navy treatment as an optional, deeper preset.
-
-- **Dark mode** is the default and restores the original black workspace,
-  blue selection color, neutral waveforms, and green playhead.
-- **Heritage mode** uses a deeper navy shell with the Electric Cyan brand
-  accent and cyan waveform interactions.
-- **Frame base color** opens a color picker. PsyReaSFX derives panels,
-  headers, hover states, borders, dim text, and the waveform background from
-  that one color, so custom themes retain clear visual hierarchy.
-- The accent color remains independently editable with a color picker.
-- About follows the active shell and accent instead of forcing one palette.
-- Settings saved by the previous Aether/flat interface migrate to Dark mode.
-
-Open these controls from **Settings > Appearance**.
-
-## Brand assets and source-owned Artwork
-
-Beta 7 applied the official PsyReaSFX visual system across the project and
-makes Artwork ownership match the physical source structure.
-
-- The disclosure arrow beside a logical library is now a real control: click
-  it once to expand or collapse source folders. The state is saved.
-- Heritage mode uses Deep Navy, Dark Slate, Electric Cyan, Soft White, and
-  Cool Gray from the PsyReaSFX brand palette.
-- About now displays the packaged PsyReaSFX icon, product line, version,
-  copyright, and project link in one minimal product card.
-- Every physical source folder owns its own Artwork. A cover found under one
-  source never propagates to sibling sources in the same logical library.
-- Right-click a source folder to choose, rediscover, or clear its cover.
-- An asset-specific cover still takes priority over its source-folder cover.
-- Common `Artwork`, `Images`, `Docs`, and `Documentation` subfolders are also
-  checked, with additional library/product/preview cover filenames.
-- Failed image decodes use a short retry delay instead of retrying every frame.
-
-## Multi-root logical libraries
-
-Beta 4 lets a logical library exist before any source folder is attached.
-Choose **New library**, name it, and add or drop source folders whenever they
-become available. This keeps library organization independent of disk layout.
-
-The multi-root model separates the library users browse from physical folders that are
-scanned. A single logical library can now aggregate any number of source
-folders across drives while remaining one searchable library in the sidebar.
-
-- Click a logical library to browse every source folder it owns.
-- Expand it to browse an individual source folder; hover it to inspect paths,
-  online status, and indexed-file counts.
-- Drop Explorer/Finder folders on a library to add sources, on **All
-  libraries** to create libraries, or in the results area to use the current
-  library context.
-- Multiple dropped folders can become separate libraries or one combined
-  logical library.
-- Exact duplicates, overlapping parent/child roots, and cross-library
-  ownership are checked before scanning. Moving a root never moves disk files.
-- Legacy one-folder libraries migrate automatically and keep their existing
-  database, metadata, collections, and waveform cache.
-
-The source hierarchy is stored in `libraries_v2.tsv`. Playlists and project
-bins remain virtual collections and are intentionally separate from library
-ownership.
-
-## Duration and large-library responsiveness
-
-- Duration cells now use a fixed `MM:SS.mmm` timecode such as `00:04.947`.
-- Directory scanning uses an indexed queue instead of repeatedly shifting the
-  remaining directory list.
-- New files inherit their known source folder directly instead of searching
-  every configured root again.
-- Results and library counts rebuild once at scan/import boundaries rather
-  than once per discovered file.
-- Adding several dropped source folders rebuilds the library map once for the
-  batch.
-
-## 0.7 Transfer
-
-The first 0.7 build adds a non-destructive Transfer panel for turning the
-current file, its waveform selection, or multiple selected assets into new
-audio files.
-
-- Name files with `{name}`, `{category}`, `{subcategory}`, `{library}`,
-  `{index}`, `{date}`, and `{region}` tokens.
-- Export WAV 24-bit PCM or FLAC at the source, 44.1, 48, 96, or 192 kHz.
-- Keep source channels, or convert to mono or stereo.
-- Apply the current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings.
-- Add render fades and Peak, True Peak, or LUFS-I normalization.
-- Increment, skip, or explicitly overwrite name collisions.
-- Optionally insert each completed file back into REAPER.
-
-Open Transfer from the lower toolbar or press `Ctrl+T`.
-
-## System metadata filtering
-
-Beta 2 no longer indexes macOS AppleDouble `._*` sidecars or common metadata
-folders such as `__MACOSX`, `.AppleDouble`, and `@eaDir`. These files can keep
-an audio extension while containing no playable audio. Existing false entries
-are ignored automatically when the new version opens; source files are never
-deleted.
-
-> Beta 1 renders the source media dry. Track FX, sends, and Master FX are not
-> included. Batch Transfer uses each complete source file; waveform selection
-> is available for the current asset.
-
-## Workspace preview
-
-The unified workspace keeps library navigation, inline waveforms, Artwork,
-metadata, and the multichannel audition waveform in one responsive window.
-
-### Focus mode
-
-<p align="center">
-  <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX focus mode with an expanded results table and waveform preview" width="100%">
-</p>
-
-Focus mode collapses both side panels so the result table and detailed waveform
-can use the full REAPER workspace.
-
-## Installation with ReaPack
-
-Import this repository URL once in
-`Extensions > ReaPack > Import repositories...`:
+在 REAPER 中打开 `Extensions → ReaPack → Import repositories...`，导入：
 
 ```text
 https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
-Synchronize ReaPack, search for `PsyReaSFX`, then install it. Future updates
-are available directly from ReaPack.
+同步仓库后搜索并安装 `PsyReaSFX`。完整说明请阅读[中文用户手册](docs/USER_GUIDE_zh-CN.md)，版本变化请查看[中文更新日志](docs/CHANGELOG_zh-CN.md)。
 
-ReaImGui is required. SWS Extension is strongly recommended and is required
-for Reverse Transfer and several advanced audition operations.
+</details>
 
-## Manual installation
+## One workspace for the sound-library loop
 
-Load `PsyReaSFX_v0_7_8_Beta_11.lua` from REAPER's Action List.
+PsyReaSFX turns REAPER into a focused sound-asset environment without
+replacing the project workflow you already use. Search a library, audition at
+the waveform, organize candidates, place a selection on the timeline, or
+render a processed copy—all from one dockable interface.
+
+It is designed for large personal and production libraries where folder paths,
+metadata and project choices must remain understandable over time.
+
+## The workflow
+
+| Discover | Organize |
+|---|---|
+| Browse inline waveforms, search filenames and metadata, filter by library or workflow state, and audition from any point in a result waveform. | Group multiple source folders under one logical library, maintain Artwork and metadata, and collect sounds into playlists or project bins. |
+
+| Audition | Deliver |
+|---|---|
+| Inspect high-resolution channel lanes, make a selection, loop or scrub it, change Pitch/Rate/Gain, compare loudness and save useful regions. | Insert files or selections into REAPER, use BWF placement, drag from the browser, or create processed files through Transfer. |
+
+## Workspace
+
+<p align="center">
+  <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
+</p>
+
+The workspace is intentionally modular:
+
+- **Navigation** holds logical libraries, source folders, favorites,
+  collections, saved searches and workflow filters.
+- **Results** keeps a pinned, configurable column header with inline waveform,
+  metadata, Artwork and duration fields.
+- **Inspector** provides pinned Artwork and non-destructive metadata editing.
+- **Preview** shows accurate channel lanes, time selection, loudness, regions,
+  audition controls and REAPER delivery actions.
+
+The left and right panels can be hidden independently. Focus mode leaves only
+the result list and preview area.
+
+<p align="center">
+  <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX focus mode" width="100%">
+</p>
+
+## Core capabilities
+
+### Libraries that match real storage
+
+A logical library is not tied to one folder. Create the library first, then
+attach source folders from different drives or locations. Each source keeps
+its own path, online state and Artwork. Drag folders from Windows Explorer onto
+a library, All Libraries, or the central drop target to choose the intended
+relationship.
+
+### Search that stays close to the material
+
+Plain text searches filenames, paths, descriptions, keywords, categories,
+library names and UCS-derived fields. Structured filters such as
+`category:impact`, `library:boom`, `status:candidate`, `marked:true` and
+negative terms narrow results without changing the underlying library.
+
+### Waveform-first audition
+
+Every visible result can show a cached waveform. Click inside it to start from
+that position. The detailed preview supports separate mono, stereo and
+multichannel lanes, zoom, pan, scrub, selections, loops, regions and direct
+selection drag into the REAPER arrange view.
+
+### Organization without touching source files
+
+Favorites, marks, workflow states, playlists, project bins, saved searches and
+metadata edits live in the PsyReaSFX database. Source audio remains unchanged
+unless you explicitly use a Transfer operation that writes a new output file.
+
+### Transfer and REAPER delivery
+
+Transfer can export the full file or current waveform selection using an
+output directory, naming template, format, sample rate, channel mode, fades,
+normalization and collision policy. The result can be inserted back into the
+current REAPER project.
+
+## Quick start
+
+### Requirements
+
+- REAPER 7.x
+- ReaImGui 0.10 or newer
+- SWS Extension strongly recommended for precise seeking, channel audition and
+  arrange-view drag placement
+
+### Install with ReaPack
+
+1. Open `Extensions → ReaPack → Import repositories...`.
+2. Paste this repository URL:
+
+   ```text
+   https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+   ```
+
+3. Synchronize packages.
+4. Search for `PsyReaSFX` and install it.
+5. Run the script from REAPER's Action List and assign a shortcut if desired.
+
+ReaPack installs the script, application icon and Orbitron brand font. Future
+updates arrive through the same repository URL.
+
+### First library
+
+1. Open the left navigation with `F9` if it is hidden.
+2. Choose **New library** and name the logical library.
+3. Add one or more source folders, or drag folders from Windows Explorer onto
+   the library.
+4. Allow the import progress task to finish.
+5. Click a waveform in the result list to audition it.
+
+## Performance model
+
+PsyReaSFX avoids loading an entire library into the interface at once. Scans,
+metadata work, waveform construction and Artwork discovery are divided into
+small tasks. Only visible result rows and the selected file receive immediate
+high-priority work. Waveforms are cached on disk and can be precached from
+Settings for predictable browsing on very large libraries.
 
 ## Documentation
 
-- [English User Guide](docs/USER_GUIDE_en-US.md)
-- [English Changelog](docs/CHANGELOG_en-US.md)
-- [简体中文用户使用说明书](docs/USER_GUIDE_zh-CN.md)
-- [简体中文更新日志](docs/CHANGELOG_zh-CN.md)
+- [User Guide — English](docs/USER_GUIDE_en-US.md)
+- [用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
+- [Changelog — English](docs/CHANGELOG_en-US.md)
+- [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
+- [Standalone Chinese project page](README_zh-CN.md)
 
-## Package structure
+## Release status
 
-```text
-PsyReaSFX_v0_7_8_Beta_11.lua
-README.md
-README_zh-CN.md
-index.xml
-assets/brand/
-assets/screenshots/
-docs/
-```
+`0.7.9 Beta 12` is part of the active 0.7 development line. The 0.7 line is
+expanding and validating Transfer and delivery workflows; `0.6.21` remains the
+stable fallback while this testing continues.
 
-PsyReaSFX 0.6 Stable remains the recommended fallback while 0.7 Transfer is
-being tested against different REAPER, ReaImGui, SWS, file-format, and project
-configurations.
+## Author and license
 
+PsyReaSFX is created by **Psysia**.  
+Copyright © 2026 Psysia. All rights reserved.
+
+The bundled Orbitron font is distributed under the SIL Open Font License 1.1;
+its license is included in `assets/fonts/OFL.txt`.
+
+Project home: [github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)

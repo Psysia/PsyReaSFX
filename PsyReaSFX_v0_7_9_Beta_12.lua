@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.8-beta.11
+-- @version 0.7.9-beta.12
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -86,6 +86,9 @@
 --   - Beta 10 热修复：帮助分组不再嵌套 Child，避免离屏分组破坏 ImGui Child 栈
 --   - 0.7.8：移除应用内菜单条，统一为带品牌图标和双色字标的主工具栏
 --   - 帮助改为永久图标入口，Watch Folder 迁移到常规设置
+--   - 0.7.9：工具栏品牌标记改为矢量绘制，小尺寸与高 DPI 下保持清晰
+--   - 品牌字标使用随包 Orbitron 字体；图标统一为无边框悬停高亮
+--   - 左右面板开关分置工具栏两端，README 与用户手册按产品文档重写
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -94,7 +97,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.8 Beta 11"
+local VERSION = "0.7.9 Beta 12"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -168,6 +171,28 @@ local BRAND_ICON_PATH =
   .. "brand"
   .. SEP
   .. "psyreasfx-icon.png"
+
+local BRAND_FONT_PATH =
+  SCRIPT_DIR
+  .. "assets"
+  .. SEP
+  .. "fonts"
+  .. SEP
+  .. "Orbitron-VariableFont_wght.ttf"
+
+local brand_font = nil
+
+if reaper.file_exists(BRAND_FONT_PATH) then
+  local font_ok, font =
+    pcall(ImGui.CreateFontFromFile, BRAND_FONT_PATH)
+
+  if font_ok and font then
+    local attach_ok = pcall(ImGui.Attach, ctx, font)
+    if attach_ok then
+      brand_font = font
+    end
+  end
+end
 
 local DOCS_DIR =
   SCRIPT_DIR .. "docs"
@@ -12065,41 +12090,26 @@ function icon_button(id, icon, tooltip_text, active, size)
   local hovered = ImGui.IsItemHovered(ctx)
   local item_active = ImGui.IsItemActive(ctx)
   local draw_list = ImGui.GetWindowDrawList(ctx)
-  local radius = UI_METRIC.radius
+  local radius = math.max(4, UI_METRIC.radius_small)
 
-  local background = COLOR.button
+  -- Studio-style controls stay visually quiet at rest. Hover and enabled
+  -- states use a soft tint instead of permanent boxes and borders.
+  if active or item_active or hovered then
+    local background =
+      active and rgba_with_alpha(COLOR.accent, 0x32)
+      or item_active and rgba_with_alpha(COLOR.accent, 0x26)
+      or rgba_with_alpha(COLOR.text, 0x14)
 
-  if active then
-    background = rgba_with_alpha(COLOR.selected, 0x66)
-  elseif item_active then
-    background = rgba_with_alpha(COLOR.selected, 0x42)
-  elseif hovered then
-    background = COLOR.button_hover
+    ImGui.DrawList_AddRectFilled(
+      draw_list,
+      x,
+      y,
+      x + size,
+      y + size,
+      background,
+      radius
+    )
   end
-
-  ImGui.DrawList_AddRectFilled(
-    draw_list,
-    x,
-    y,
-    x + size,
-    y + size,
-    background,
-    radius
-  )
-
-  ImGui.DrawList_AddRect(
-    draw_list,
-    x + 0.5,
-    y + 0.5,
-    x + size - 0.5,
-    y + size - 0.5,
-    active and COLOR.selected
-      or hovered and rgba_with_alpha(COLOR.text, 0x44)
-      or rgba_with_alpha(COLOR.border, 0x88),
-    radius,
-    0,
-    active and 1.5 or 1
-  )
 
   local glyph_padding = math.max(4, math.floor(size * 0.16))
 
@@ -12109,7 +12119,9 @@ function icon_button(id, icon, tooltip_text, active, size)
     x + glyph_padding,
     y + glyph_padding,
     size - glyph_padding * 2,
-    active and COLOR.selected_text or COLOR.text
+    (active or hovered)
+      and COLOR.accent
+      or COLOR.text
   )
 
   if tooltip_text then
@@ -12119,6 +12131,74 @@ function icon_button(id, icon, tooltip_text, active, size)
   return clicked, hovered, item_active
 end
 
+function draw_brand_symbol(draw_list, x, y, size)
+  local center_x = x + size * 0.5
+  local left = x + size * 0.10
+  local right = x + size * 0.90
+  local half_h = size * 0.235
+  local layer_gap = size * 0.17
+
+  for layer = 2, 0, -1 do
+    local center_y = y + size * 0.34 + layer * layer_gap
+    local top_y = center_y - half_h
+    local bottom_y = center_y + half_h
+    local fill =
+      layer == 0
+        and COLOR.panel_alt
+        or rgba_with_alpha(COLOR.button, 0xC8)
+    local outline =
+      layer == 0
+        and COLOR.accent
+        or rgba_with_alpha(COLOR.header_text, 0x92)
+
+    ImGui.DrawList_AddQuadFilled(
+      draw_list,
+      center_x,
+      top_y,
+      right,
+      center_y,
+      center_x,
+      bottom_y,
+      left,
+      center_y,
+      fill
+    )
+    ImGui.DrawList_AddQuad(
+      draw_list,
+      center_x,
+      top_y,
+      right,
+      center_y,
+      center_x,
+      bottom_y,
+      left,
+      center_y,
+      outline,
+      1.35
+    )
+  end
+
+  local bar_center_y = y + size * 0.34
+  local heights = { 0.12, 0.24, 0.38, 0.56, 0.38, 0.24, 0.12 }
+  local spacing = size * 0.075
+
+  for index, height_ratio in ipairs(heights) do
+    local bar_x =
+      center_x + (index - 4) * spacing
+    local bar_h = size * height_ratio * 0.48
+
+    ImGui.DrawList_AddLine(
+      draw_list,
+      bar_x,
+      bar_center_y - bar_h,
+      bar_x,
+      bar_center_y + bar_h,
+      COLOR.accent,
+      math.max(1.4, size * 0.055)
+    )
+  end
+end
+
 function draw_brand_mark(compact)
   local draw_list =
     ImGui.GetWindowDrawList(ctx)
@@ -12126,8 +12206,8 @@ function draw_brand_mark(compact)
   local x, y =
     ImGui.GetCursorScreenPos(ctx)
 
-  local width = compact and 30 or 126
-  local height = 30
+  local width = compact and 38 or 166
+  local height = 34
 
   ImGui.InvisibleButton(
     ctx,
@@ -12136,49 +12216,19 @@ function draw_brand_mark(compact)
     height
   )
 
-  local icon = artwork_image_from_path(BRAND_ICON_PATH)
-
-  if icon then
-    ImGui.DrawList_AddImageRounded(
-      draw_list,
-      icon,
-      x + 1,
-      y + 1,
-      x + 29,
-      y + 29,
-      0,
-      0,
-      1,
-      1,
-      0xFFFFFFFF,
-      6,
-      0
-    )
-  else
-    ImGui.DrawList_AddRectFilled(
-      draw_list,
-      x + 4,
-      y + 5,
-      x + 26,
-      y + 25,
-      COLOR.button,
-      5
-    )
-    ImGui.DrawList_AddLine(
-      draw_list,
-      x + 8,
-      y + 15,
-      x + 22,
-      y + 15,
-      COLOR.accent,
-      2
-    )
-  end
+  draw_brand_symbol(draw_list, x + 1, y + 1, 32)
 
   if not compact then
-    local word_x = x + 36
-    local word_y = y + 7
+    local word_x = x + 42
+    local word_y = y + 8
     local prefix = "PsyRea"
+    local font_pushed = false
+
+    if brand_font then
+      ImGui.PushFont(ctx, brand_font, 16)
+      font_pushed = true
+    end
+
     local prefix_width =
       select(1, ImGui.CalcTextSize(ctx, prefix)) or 48
 
@@ -12196,6 +12246,10 @@ function draw_brand_mark(compact)
       COLOR.accent,
       "SFX"
     )
+
+    if font_pushed then
+      ImGui.PopFont(ctx)
+    end
   end
 
   tooltip("PsyReaSFX · Sound Assets Organized")
@@ -13728,22 +13782,6 @@ function draw_toolbar()
 
   ImGui.SameLine(ctx)
 
-  if icon_button(
-    "inspector",
-    "panel_right",
-    state.inspector_visible
-      and "隐藏元数据面板"
-      or "显示元数据面板",
-    state.inspector_visible,
-    30
-  ) then
-    state.inspector_visible =
-      not state.inspector_visible
-    state.config_dirty = true
-  end
-
-  ImGui.SameLine(ctx)
-
   local focus_mode =
     not state.sidebar_visible
     and not state.inspector_visible
@@ -13782,7 +13820,7 @@ function draw_toolbar()
     COLOR.input_text
   )
 
-  ImGui.SetNextItemWidth(ctx, -234)
+  ImGui.SetNextItemWidth(ctx, -272)
 
   local changed
   changed, state.search =
@@ -13876,6 +13914,22 @@ function draw_toolbar()
       ctx,
       "设置##reasfx"
     )
+  end
+
+  ImGui.SameLine(ctx)
+
+  if icon_button(
+    "inspector",
+    "panel_right",
+    state.inspector_visible
+      and "隐藏元数据面板"
+      or "显示元数据面板",
+    state.inspector_visible,
+    30
+  ) then
+    state.inspector_visible =
+      not state.inspector_visible
+    state.config_dirty = true
   end
 end
 

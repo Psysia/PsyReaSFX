@@ -1,5 +1,32 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.9 Beta 12
+
+### Compact brand system
+
+- Replaces the compressed square toolbar image with a theme-aware vector mark
+  built from the stacked-diamond and waveform brand elements.
+- Bundles the Orbitron variable font for the PsyReaSFX wordmark, with a safe
+  fallback when the font cannot be loaded.
+- Keeps the compact mark crisp at high DPI without loading another raster size.
+
+### Borderless toolbar and panel placement
+
+- Removes permanent frames from toolbar icon buttons.
+- Reveals a subtle hit area and accent-colored glyph on hover, press, or active
+  state while retaining the same click targets and delayed help labels.
+- Places the navigation toggle at the far left and the metadata-inspector
+  toggle at the far right, matching their controlled panels.
+
+### Product documentation
+
+- Rewrites the English and Chinese README files as product landing pages.
+- Adds a same-page collapsible Chinese overview to the default English README.
+- Rewrites both user guides around real tasks instead of release history.
+- Separates product explanation, operating procedures, troubleshooting, and
+  version changes into the appropriate documents.
+- Includes the Orbitron SIL Open Font License in the release and ReaPack files.
+
 ## 0.7.8 Beta 11
 
 ### Unified branded toolbar

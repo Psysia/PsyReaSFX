@@ -1,169 +1,130 @@
-﻿<p align="right">
-  <a href="README.md"><img src="https://img.shields.io/badge/Language-English-555555" alt="English"></a>
-  <a href="README_zh-CN.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-2f81f7" alt="简体中文"></a>
-</p>
-
 <p align="center">
   <img src="assets/brand/psyreasfx-hero.png" alt="PsyReaSFX — Sound Assets Organized" width="100%">
 </p>
 
 <p align="center">
-  <strong>音效资产井然有序</strong><br>
-  浏览 · 整理 · 试听
+  <strong>浏览 · 整理 · 试听 · 交付</strong><br>
+  运行在 REAPER 内部的高性能音效资产工作区。
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.8--beta.11-19D8FF" alt="版本 0.7.8 beta 11">
-  <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
-  <img src="https://img.shields.io/badge/Install-ReaPack-0A1020" alt="ReaPack">
+  <img src="https://img.shields.io/badge/版本-0.7.9--beta.12-19D8FF" alt="0.7.9 beta 12">
+  <img src="https://img.shields.io/badge/宿主-REAPER-13253D" alt="REAPER">
+  <img src="https://img.shields.io/badge/界面-ReaImGui-0A1020" alt="ReaImGui">
+  <img src="https://img.shields.io/badge/安装-ReaPack-1F6FCC" alt="ReaPack">
 </p>
 
-# PsyReaSFX 0.7.8 Beta 11
+> [English](README.md) · **简体中文**
 
-PsyReaSFX 是运行在 REAPER 内部的音效资产浏览、波形试听、元数据、Region、集合、插入与 Transfer 工作流。
+## 一个界面，完成音效库工作的完整循环
 
-**作者：** Psysia  
-**包版本：** 0.7.8-beta.11  
-**发布阶段：** Beta
+PsyReaSFX 把素材库管理、波形浏览、搜索、试听、整理、REAPER 放置与处理后导出集中在一个可停靠界面中。它不会取代你的 REAPER 工程，而是在工程旁边提供一个专注的音效资产工作区。
+
+它面向需要长期维护大型个人或制作素材库的游戏音频设计师、声音设计师和 REAPER 用户。磁盘路径、元数据、试听记录与工程候选能够保持清晰，同时尽量减少扫描、缓存和界面对工作的打断。
+
+## 工作流程
+
+| 发现 | 整理 |
+|---|---|
+| 直接浏览列表波形，联合搜索文件名和元数据，按库或工作流状态筛选，并从波形任意位置开始试听。 | 把多个硬盘路径聚合为一个逻辑库，维护独立 Artwork 与元数据，并把素材放进播放列表或项目素材箱。 |
+
+| 试听 | 交付 |
+|---|---|
+| 查看高精度声道波形，建立选区、循环或擦播，调整 Pitch、Rate、Gain，比较响度并保存有用 Region。 | 把文件或选区插入 REAPER、按 BWF 位置放置、从浏览器拖入工程，或通过 Transfer 生成处理后的新文件。 |
+
+## 工作区
 
 <p align="center">
-  <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX 主工作区，展开导航与元数据面板" width="100%">
+  <img src="assets/screenshots/compact-workspace.png" alt="展开导航和元数据面板的 PsyReaSFX 工作区" width="100%">
 </p>
 
-## 品牌统一工具栏
+工作区由四个可配合使用、也可独立隐藏的模块组成：
 
-- 移除额外的应用内菜单条，让原生窗口标题下方直接进入一条跟随主题的主工具栏。
-- 左上角普通文字替换为随包安装的 PsyReaSFX 图标与双色 `PsyRea` / `SFX` 字标；窄窗口自动收成图标。
-- 帮助入口迁移到设置按钮旁的问号图标。
-- Watch Folder 开关迁移到**设置 > 常规 > 后台与浏览**。
-- 新建与管理音效库继续位于左侧导航；扫描继续使用刷新图标或 `Ctrl+R`；缓存维护位于设置；面板开关保留在主工具栏。
+- **导航**：逻辑音效库、实体来源、收藏、集合、保存搜索和工作流筛选。
+- **结果列表**：固定表头、可配置字段、内联波形、元数据、Artwork 与时长。
+- **元数据检查器**：固定 Artwork，以及非破坏性的元数据查看与编辑。
+- **预览与交付**：分声道大波形、时间选区、响度、Region、试听控制和 REAPER 操作。
 
-## 选中对比度、全新预览图与帮助中心
-
-- Beta 10 移除帮助分组内部嵌套的 Child 窗口，修复部分 ReaImGui 版本打开帮助时触发的 `EndChild` 断言。
-- 帮助界面现在只保留一个滚动 Child，离屏分组不会再破坏 ImGui Child 栈。
-- 传统模式继续使用 Electric Cyan 品牌强调色，但选中行改为更深的青色背景与高对比白色文字。
-- 选中状态现在优先于“已播放”的黄色文字，不再出现青底黄字。
-- 暗色信息区域不再复用深色的选中文字。
-- 内置帮助窗口改为固定尺寸、可滚动的快捷参考中心，按工作区、结果列表、试听、整理和 Transfer 分组。
-- 中文与英文帮助内容独立维护，不再出现同一窗口中英混排。
-- README 主工作区与专注模式预览已替换为最新截图。
-
-## 外观模式与自定义框架颜色
-
-Beta 8 将原来的中性黑色界面恢复为默认外观，同时保留经过加深的品牌藏蓝方案。
-
-- **黑暗模式**为默认，恢复原有黑色工作区、蓝色选中状态、中性波形与绿色播放指针。
-- **传统模式**使用更深的藏蓝框架、Electric Cyan 强调色和青色波形交互状态。
-- **框架底色**可直接打开色盘；只需选择一个底色，PsyReaSFX 会自动派生面板、表头、悬停、边框、弱化文字和波形背景的明暗层级。
-- 强调色仍可通过独立色盘修改。
-- About 页面会跟随当前框架和强调色，不再强制使用一种配色。
-- 旧版 Aether / flat 设置会自动迁移到黑暗模式。
-
-入口：**设置 > 外观**。
-
-## 品牌资产与来源独立封面
-
-Beta 7 将正式 PsyReaSFX 视觉规范应用到项目，并让 Artwork 的归属与实体来源路径保持一致。
-
-- 逻辑音效库旁的箭头现在是可点击控件，单击即可展开或折叠来源路径，并保存当前状态。
-- 传统模式采用品牌规范中的 Deep Navy、Dark Slate、Electric Cyan、Soft White 与 Cool Gray。
-- About 页面使用随包安装的 PsyReaSFX 图标，并以极简产品卡展示版本、版权和项目主页。
-- 每个实体来源路径拥有独立封面；一个来源找到的封面不会扩散到同一逻辑库的其他来源。
-- 右键实体来源路径可以指定、重新自动查找或清除该来源自己的封面。
-- 素材单独指定的封面仍然优先于实体来源封面。
-- 同时检查常见的 `Artwork`、`Images`、`Docs`、`Documentation` 子目录，以及 library/product/preview 等封面文件名。
-- 图片解码失败后使用短暂重试间隔，不再逐帧重复加载。
-
-## 多来源逻辑音效库
-
-Beta 4 允许先建立没有任何路径的空逻辑音效库。点击“新建音效库”，先命名，再按需要逐步添加或拖入来源文件夹；库的组织方式不再由硬盘目录强制决定。
-
-多来源模型将用户浏览的逻辑音效库与实际扫描的文件夹分离。一个逻辑音效库可以聚合位于不同硬盘上的多个来源路径，并在左侧保持为一个可搜索的库。
-
-- 点击逻辑音效库可浏览其全部来源路径的聚合结果。
-- 展开后可单独浏览某条来源；悬停可查看路径、在线状态与索引数量。
-- 从资源管理器拖文件夹到某个库可直接加入；拖到“全部音效库”会新建库；拖到结果区会沿用当前逻辑库上下文。
-- 同时拖入多个文件夹时，可分别建立音效库，或合并为一个逻辑库。
-- 扫描前会检查完全重复、父子路径重叠和跨库归属；移动来源归属不会移动硬盘文件。
-- 旧版“一条路径一个库”会自动迁移，并保留数据库、元数据、集合与波形缓存。
-
-来源结构保存在 `libraries_v2.tsv`。播放列表和项目素材箱继续作为虚拟集合，与音效库的路径归属明确分离。
-
-## 时长显示与大型库性能
-
-- Duration 列统一使用 `MM:SS.mmm` 时间码，例如 `00:04.947`。
-- 目录扫描改为索引队列，不再反复搬动尚未扫描的目录列表。
-- 新素材直接继承当前来源路径，不再逐个遍历全部已配置根目录。
-- 结果列表和库数量只在扫描/导入边界集中刷新，不再每发现一个文件就重建。
-- 一次拖入多个来源文件夹时，只重建一次逻辑库映射。
-
-## 0.7 Transfer
-
-首个 0.7 版本加入非破坏性的 Transfer 面板，可把当前完整文件、当前波形选区或多个已选素材生成新的音频文件。
-
-- 使用 `{name}`、`{category}`、`{subcategory}`、`{library}`、`{index}`、`{date}`、`{region}` 组合命名。
-- 导出 WAV 24-bit PCM 或 FLAC；采样率可跟随源文件或选择 44.1、48、96、192 kHz。
-- 保留源声道，或转换为单声道、立体声。
-- 写入当前 Pitch、Rate、Gain、Reverse 和 Preserve Pitch 设置。
-- 添加渲染淡入淡出，并可使用 Peak、True Peak 或 LUFS-I 标准化。
-- 重名时可自动递增、跳过，或经过确认后覆盖。
-- 完成后可自动插回 REAPER。
-
-从下方工具条打开 Transfer，或按 `Ctrl+T`。
-
-## 系统元数据过滤
-
-Beta 2 不再索引 macOS AppleDouble `._*` 旁车文件，以及 `__MACOSX`、`.AppleDouble`、`@eaDir` 等常见系统元数据目录。这些文件可能保留 `.wav` 扩展名，但内部不是可播放音频。新版启动时会自动忽略旧索引中的错误条目，不会删除任何硬盘源文件。
-
-> Beta 1 使用干声源素材渲染，不经过工程轨道 FX、发送或 Master FX。批量 Transfer 始终使用每个完整源文件；当前素材可使用大波形选区。
-
-## 工作区预览
-
-统一工作区可在同一个自适应窗口中显示音效库导航、列表内联波形、Artwork、元数据和多声道大波形。
-
-### 专注模式
+左右面板可以分别收起；专注模式只保留结果列表和预览区域。
 
 <p align="center">
-  <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX 专注模式，展开结果表与波形预览" width="100%">
+  <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX 专注模式" width="100%">
 </p>
 
-专注模式会折叠左右面板，让结果列表与大波形使用完整 REAPER 工作区。
+## 核心能力
 
-## 使用 ReaPack 安装
+### 符合真实存储方式的素材库
 
-在 `Extensions → ReaPack → Import repositories...` 中一次性导入：
+逻辑音效库不绑定单个文件夹。先建立一个库，再挂载来自不同硬盘或位置的多个实体来源。每个来源保留自己的路径、在线状态和 Artwork。还可以把 Windows 资源管理器中的文件夹拖到某个逻辑库、全部音效库或中央投放区，按目标建立正确关系。
 
-```text
-https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
-```
+### 贴近素材的搜索方式
 
-同步仓库，搜索并安装 `PsyReaSFX`。后续可直接通过 ReaPack 更新。
+普通文字会联合搜索文件名、路径、描述、关键词、分类、库名和 UCS 派生字段。`category:impact`、`library:boom`、`status:candidate`、`marked:true` 等字段筛选及排除词可进一步缩小范围，而不会改变底层素材库。
 
-必须安装 ReaImGui。强烈建议安装 SWS Extension；Reverse Transfer 和部分高级试听操作需要 SWS。
+### 以波形为中心的试听
 
-## 手动安装
+每条可见结果都可以显示磁盘缓存波形。点击缩略波形任意位置即可从对应时间开始试听。详细预览支持单声道、立体声和多声道分轨显示，以及缩放、平移、擦播、选区、循环、Region 和把选区直接拖入 REAPER 编排区。
 
-在 REAPER 动作列表中加载 `PsyReaSFX_v0_7_8_Beta_11.lua`。
+### 不破坏源文件的整理
+
+收藏、标记、工作流状态、播放列表、项目素材箱、保存搜索与元数据修改默认保存在 PsyReaSFX 数据库，不直接改写源音频。只有主动执行 Transfer 时，才会在目标位置写出新的文件。
+
+### Transfer 与 REAPER 交付
+
+Transfer 可以导出完整文件或当前波形选区，并配置输出目录、命名模板、格式、采样率、声道模式、淡化、标准化和重名策略。处理结果还可以自动插回当前 REAPER 工程。
+
+## 快速开始
+
+### 环境要求
+
+- REAPER 7.x
+- ReaImGui 0.10 或更高版本
+- 强烈建议安装 SWS Extension，以获得精确定位试听、声道监听和拖入编排区等完整能力
+
+### 使用 ReaPack 安装
+
+1. 打开 `扩展 → ReaPack → 导入仓库…`。
+2. 粘贴仓库地址：
+
+   ```text
+   https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+   ```
+
+3. 同步软件包。
+4. 搜索并安装 `PsyReaSFX`。
+5. 在 REAPER 动作列表中运行脚本；需要时给它绑定快捷键。
+
+ReaPack 会同时安装主脚本、应用图标和 Orbitron 品牌字体，以后也从同一仓库地址更新。
+
+### 建立第一个音效库
+
+1. 如果左侧导航已隐藏，按 `F9` 打开。
+2. 点击**新建音效库**，先为逻辑库命名。
+3. 添加一个或多个实体文件夹，或从 Windows 资源管理器把文件夹拖到该库上。
+4. 等待导入进度完成。
+5. 在结果列表的波形上点击，即可开始试听。
+
+## 性能模型
+
+PsyReaSFX 不会一次把整个素材库塞进界面。扫描、元数据、波形建立和 Artwork 发现都被拆分为小任务；可见行和当前选中素材优先处理。波形写入磁盘缓存，也可以在设置中预缓存整个库，以便大型素材库获得可预期的滚动与预览速度。
 
 ## 文档
 
-- [用户使用说明书](docs/USER_GUIDE_zh-CN.md)
-- [更新日志](docs/CHANGELOG_zh-CN.md)
+- [中文用户使用说明书](docs/USER_GUIDE_zh-CN.md)
 - [English User Guide](docs/USER_GUIDE_en-US.md)
+- [中文更新日志](docs/CHANGELOG_zh-CN.md)
 - [English Changelog](docs/CHANGELOG_en-US.md)
+- [English project page](README.md)
 
-## 发布包结构
+## 发布状态
 
-```text
-PsyReaSFX_v0_7_8_Beta_11.lua
-README.md
-README_zh-CN.md
-index.xml
-assets/brand/
-assets/screenshots/
-docs/
-```
+`0.7.9 Beta 12` 属于当前 0.7 开发线，重点扩展和验证 Transfer 与交付工作流。测试期间，`0.6.21` 仍可作为稳定回退版本。
 
-在 0.7 Transfer 完成不同 REAPER、ReaImGui、SWS、音频格式与工程配置的测试前，0.6 Stable 仍可作为稳定回退版本。
+## 作者与许可
 
+PsyReaSFX 由 **Psysia** 创建。  
+Copyright © 2026 Psysia. All rights reserved.
+
+随包附带的 Orbitron 字体采用 SIL Open Font License 1.1；许可文本位于 `assets/fonts/OFL.txt`。
+
+项目主页：[github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)

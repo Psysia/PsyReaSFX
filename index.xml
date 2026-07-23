@@ -9,15 +9,18 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.8-beta.11" author="Psysia" time="2026-07-23T00:00:00Z">
+      <version name="0.7.9-beta.12" author="Psysia" time="2026-07-23T02:31:35Z">
         <changelog><![CDATA[
-- Removes the internal menu strip and its theme seam.
-- Adds the packaged icon and a two-tone PsyReaSFX wordmark to the toolbar.
-- Adds a permanent Help icon beside Settings.
-- Moves Watch Folder to General settings without removing any function.
+- Replaces the compressed toolbar image with a crisp vector brand mark.
+- Bundles Orbitron for the PsyReaSFX wordmark with a safe font fallback.
+- Makes toolbar icons borderless at rest and highlighted on interaction.
+- Places the navigation and inspector toggles beside their respective panels.
+- Rewrites the README and bilingual user guides as product documentation.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.8-beta.11/PsyReaSFX_v0_7_8_Beta_11.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.8-beta.11/assets/brand/psyreasfx-icon.png</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/PsyReaSFX_v0_7_9_Beta_12.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/assets/fonts/OFL.txt</source>
       </version>
     </reapack>
   </category>
