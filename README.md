@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.9--beta.12-19D8FF" alt="Version 0.7.9 beta 12">
+  <img src="https://img.shields.io/badge/Version-0.7.10--beta.13-19D8FF" alt="Version 0.7.10 beta 13">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -177,7 +177,7 @@ Settings for predictable browsing on very large libraries.
 
 ## Release status
 
-`0.7.9 Beta 12` is part of the active 0.7 development line. The 0.7 line is
+`0.7.10 Beta 13` is part of the active 0.7 development line. The 0.7 line is
 expanding and validating Transfer and delivery workflows; `0.6.21` remains the
 stable fallback while this testing continues.
 

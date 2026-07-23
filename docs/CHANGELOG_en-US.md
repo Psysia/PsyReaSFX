@@ -1,5 +1,33 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.10 Beta 13
+
+### Precision parameter editing
+
+- Double-clicking the displayed Pitch, Rate, or Gain value opens an in-place
+  numeric editor without resizing or reflowing the control strip.
+- Uses an accent highlight while editing; Enter or focus loss accepts, and
+  Escape restores the pre-edit value.
+- Double-clicking a parameter label or track restores its default value.
+- Resolves the old reset path being immediately overwritten by drag state.
+
+### Toolbar ergonomics
+
+- Returns the metadata-inspector toggle to the left workspace-control group
+  beside Navigation and Focus.
+- Uses one 32-pixel control height for toolbar icons and the search field.
+- Calculates search-field vertical padding from the active font for a shared
+  visual baseline.
+
+### Concise in-product guidance
+
+- Removes implementation details and historical commentary from Settings.
+- Keeps only actionable choices, safety warnings, and essential gestures in
+  the application.
+- Leaves architecture, caching behavior, and detailed workflows in the user
+  guide.
+- Removes a non-shortcut Saved Search explanation from the quick Help window.
+
 ## 0.7.9 Beta 12
 
 ### Compact brand system

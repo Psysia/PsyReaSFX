@@ -9,18 +9,18 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.9-beta.12" author="Psysia" time="2026-07-23T02:31:35Z">
+      <version name="0.7.10-beta.13" author="Psysia" time="2026-07-23T03:03:59Z">
         <changelog><![CDATA[
-- Replaces the compressed toolbar image with a crisp vector brand mark.
-- Bundles Orbitron for the PsyReaSFX wordmark with a safe font fallback.
-- Makes toolbar icons borderless at rest and highlighted on interaction.
-- Places the navigation and inspector toggles beside their respective panels.
-- Rewrites the README and bilingual user guides as product documentation.
+- Adds in-place numeric editing for Pitch, Rate, and Gain without layout reflow.
+- Restores parameter defaults by double-clicking the label or slider track.
+- Returns the metadata-panel toggle to the left workspace-control group.
+- Aligns the search field and toolbar icons to a shared 32-pixel height.
+- Keeps in-product guidance concise and moves technical detail to the user guide.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/PsyReaSFX_v0_7_9_Beta_12.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.9-beta.12/assets/fonts/OFL.txt</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.10-beta.13/PsyReaSFX_v0_7_10_Beta_13.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.10-beta.13/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.10-beta.13/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.10-beta.13/assets/fonts/OFL.txt</source>
       </version>
     </reapack>
   </category>

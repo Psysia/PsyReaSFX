@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.9 Beta 12  
+**Applies to:** PsyReaSFX 0.7.10 Beta 13  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -76,7 +76,7 @@ The first visit to a folder may require waveform and metadata work. Later visits
 
 ### Top toolbar
 
-The toolbar keeps navigation control at the far left and the metadata-inspector control at the far right, matching the panels they affect. The center contains search; preview, scan, Help and Settings actions sit beside it.
+The toolbar groups navigation, metadata-inspector and Focus controls beside the brand at the left. This keeps all workspace-layout actions together. The center contains search; preview, scan, Help and Settings actions sit beside it.
 
 Toolbar icons are borderless at rest. Hovering reveals the hit area and accent color; enabled states remain visible. Hover a control briefly to see its localized description.
 
@@ -285,6 +285,8 @@ You can undo the latest detection, clear every transient suggestion, or delete o
 | Channels | original, left, right or mono |
 
 Presets provide common pitch and rate values. These controls affect preview and, when selected, the Transfer render.
+
+Drag a parameter card or use the mouse wheel for continuous adjustment. Double-click its displayed value to enter an exact number without changing the control layout; the value field uses the accent color while editing. Press `Enter` or click elsewhere to accept, and `Esc` to cancel. Double-click the label or parameter track to restore the default.
 
 ## 13. Place audio in REAPER
 

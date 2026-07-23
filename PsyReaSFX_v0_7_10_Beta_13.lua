@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.9-beta.12
+-- @version 0.7.10-beta.13
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -89,6 +89,11 @@
 --   - 0.7.9：工具栏品牌标记改为矢量绘制，小尺寸与高 DPI 下保持清晰
 --   - 品牌字标使用随包 Orbitron 字体；图标统一为无边框悬停高亮
 --   - 左右面板开关分置工具栏两端，README 与用户手册按产品文档重写
+--   - 0.7.10：右侧元数据开关回归左侧工作区控制组，减少跨窗口操作距离
+--   - 工具栏搜索框与图标使用相同控制高度，统一顶部视觉基线
+--   - Pitch、Rate、Gain 支持双击数值原位输入，输入时高亮且不改变布局
+--   - 双击参数标签或滑轨恢复默认值，修复旧拖动状态覆盖重置的问题
+--   - 设置说明精简为操作与安全提示，技术实现细节移入用户手册
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -97,7 +102,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.9 Beta 12"
+local VERSION = "0.7.10 Beta 13"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -710,6 +715,7 @@ local state = {
   bottom_panel_height = 330,
   bottom_split_drag = nil,
   parameter_drag = nil,
+  parameter_edit = nil,
   selection_drag_handle_pressed = false,
 
   insert_lowercase = true,
@@ -1149,6 +1155,8 @@ I18N_EN = {
   ["右键擦播"] = "Right-button scrub",
   ["鼠标滚轮缩放；Shift+滚轮或中键拖动平移；双击重置；右键拖动擦播"] =
     "Wheel: zoom; Shift+wheel or middle-drag: pan; double-click: reset; right-drag: scrub",
+  ["拖动或滚轮调整；双击数值输入；双击标签或滑轨恢复默认值"] =
+    "Drag or use the wheel; double-click the value to type; double-click the label or track to reset",
   ["缩放与擦播"] = "Zoom and scrub",
   ["自动循环选区"] = "Auto-loop selection",
   ["启用右键擦播"] = "Enable right-button scrub",
@@ -1343,6 +1351,20 @@ I18N_EN = {
     "Calculated on demand with REAPER CalculateNormalization and cached in loudness_v1.tsv.",
   ["响度匹配仍使用快速波形估算，仅影响试听；上方显示值使用 REAPER 精确响度计算。"] =
     "Loudness matching uses a fast waveform estimate and affects preview only; displayed metrics use REAPER's precise loudness calculation.",
+  ["256 点：缓存较小；512 点：细节更多。"] =
+    "256 points uses less cache; 512 points shows more detail.",
+  ["立体声显示 L / R；多声道显示 CH 1–8。"] =
+    "Stereo uses L / R; multichannel files use CH 1–8.",
+  ["可在首次浏览大型库前预先生成高精度波形。"] =
+    "Generate high-resolution waveforms before the first large-library browse.",
+  ["仅影响试听，不修改源文件，也不用于交付标准化。"] =
+    "Preview only; source files and delivery normalization are unchanged.",
+  ["自动检查来源文件夹变化。"] =
+    "Automatically check source folders for changes.",
+  ["底色控制整体框架，强调色用于选择与交互。"] =
+    "The base color controls the workspace; the accent marks selection and interaction.",
+  ["可以移动已有缓存，源音频不受影响。"] =
+    "Existing cache files can be moved; source audio is unaffected.",
   ["启用估算响度匹配"] = "Enable estimated loudness matching",
   ["没有结果。添加音效库、扫描或修改搜索词。"] =
     "No results. Add a library, scan, or change the search query.",
@@ -12331,20 +12353,66 @@ function draw_parameter_card(
   height = height or UI_METRIC.parameter_h
 
   local x, y = ImGui.GetCursorScreenPos(ctx)
+  local compact_card = height <= 40
+  local translated_label = translate_ui_text(label)
+  local value_text = string.format(format_string, value)
+  local value_w =
+    select(1, ImGui.CalcTextSize(ctx, value_text)) or 0
+  local value_left =
+    math.max(
+      x + width * 0.48,
+      x + width - value_w - 18
+    )
+  local value_right = x + width - 6
+  local value_top = y + 1
+  local value_bottom =
+    y + (compact_card and 22 or 30)
+  local editing =
+    state.parameter_edit
+    and state.parameter_edit.id == id
 
-  ImGui.InvisibleButton(
-    ctx,
-    "##parameter_" .. tostring(id),
-    width,
-    height
-  )
+  if editing then
+    ImGui.Dummy(ctx, width, height)
+  else
+    ImGui.InvisibleButton(
+      ctx,
+      "##parameter_" .. tostring(id),
+      width,
+      height
+    )
+  end
 
-  local hovered = ImGui.IsItemHovered(ctx)
-  local active = ImGui.IsItemActive(ctx)
+  local after_x, after_y = ImGui.GetCursorScreenPos(ctx)
+  local hovered = not editing and ImGui.IsItemHovered(ctx)
+  local active = not editing and ImGui.IsItemActive(ctx)
   local mouse_x, mouse_y = ImGui.GetMousePos(ctx)
   local changed = false
+  local double_clicked =
+    hovered and ImGui.IsMouseDoubleClicked(ctx, 0)
+  local value_double_clicked =
+    double_clicked
+    and mouse_x >= value_left
+    and mouse_x <= value_right
+    and mouse_y >= value_top
+    and mouse_y <= value_bottom
 
-  if ImGui.IsItemClicked(ctx, 0) then
+  if value_double_clicked then
+    state.parameter_drag = nil
+    state.parameter_edit = {
+      id = id,
+      value = value,
+      original = value,
+      focus = true,
+      seen_active = false,
+    }
+    editing = true
+    active = true
+  elseif double_clicked then
+    state.parameter_drag = nil
+    value = default_value
+    changed = true
+    mark_interaction()
+  elseif hovered and ImGui.IsItemClicked(ctx, 0) then
     state.parameter_drag = {
       id = id,
       start_x = mouse_x,
@@ -12402,12 +12470,6 @@ function draw_parameter_card(
     end
   end
 
-  if hovered
-    and ImGui.IsMouseDoubleClicked(ctx, 0) then
-    value = default_value
-    changed = true
-  end
-
   if not ImGui.IsMouseDown(ctx, 0)
     and state.parameter_drag
     and state.parameter_drag.id == id then
@@ -12415,13 +12477,7 @@ function draw_parameter_card(
   end
 
   local draw_list = ImGui.GetWindowDrawList(ctx)
-
-  local translated_label = translate_ui_text(label)
-  local value_text = string.format(format_string, value)
-  local compact_card = height <= 40
   local text_y = compact_card and (y + 4) or (y + 8)
-  local value_w =
-    select(1, ImGui.CalcTextSize(ctx, value_text)) or 0
 
   ImGui.DrawList_AddText(
     draw_list,
@@ -12431,13 +12487,15 @@ function draw_parameter_card(
     translated_label
   )
 
-  ImGui.DrawList_AddText(
-    draw_list,
-    x + width - value_w - 10,
-    text_y,
-    active and COLOR.selected_text or COLOR.header_text,
-    value_text
-  )
+  if not editing then
+    ImGui.DrawList_AddText(
+      draw_list,
+      x + width - value_w - 10,
+      text_y,
+      active and COLOR.selected_text or COLOR.header_text,
+      value_text
+    )
+  end
 
   local track_left = x + 10
   local track_right = x + width - 10
@@ -12508,10 +12566,119 @@ function draw_parameter_card(
     16
   )
 
+  if editing and state.parameter_edit then
+    local editor = state.parameter_edit
+    local input_width = math.max(54, value_right - value_left)
+    local input_y = y + (compact_card and 0 or 3)
+
+    ImGui.SetCursorScreenPos(ctx, value_left, input_y)
+    ImGui.SetNextItemWidth(ctx, input_width)
+
+    ImGui.PushStyleVar(
+      ctx,
+      ImGui.StyleVar_FramePadding,
+      4,
+      2
+    )
+    ImGui.PushStyleVar(
+      ctx,
+      ImGui.StyleVar_FrameRounding,
+      UI_METRIC.radius_small
+    )
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_FrameBg,
+      rgba_with_alpha(COLOR.accent, 0x26)
+    )
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_FrameBgHovered,
+      rgba_with_alpha(COLOR.accent, 0x36)
+    )
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_FrameBgActive,
+      rgba_with_alpha(COLOR.accent, 0x46)
+    )
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_Text,
+      COLOR.selected_text
+    )
+
+    if editor.focus then
+      ImGui.SetKeyboardFocusHere(ctx)
+      editor.focus = false
+    end
+
+    local submitted, edited_value =
+      ImGui.InputDouble(
+        ctx,
+        "##parameter_editor_" .. tostring(id),
+        editor.value,
+        0,
+        0,
+        format_string,
+        ImGui.InputTextFlags_AutoSelectAll
+          | ImGui.InputTextFlags_EnterReturnsTrue
+      )
+
+    editor.value = edited_value
+
+    if ImGui.IsItemActive(ctx) then
+      editor.seen_active = true
+    end
+
+    local cancel =
+      ImGui.IsKeyPressed(ctx, ImGui.Key_Escape)
+    local finished =
+      submitted
+      or (
+        editor.seen_active
+        and ImGui.IsItemDeactivated(ctx)
+      )
+
+    if cancel then
+      if math.abs(editor.original - value) > 0.000001 then
+        value = editor.original
+        changed = true
+      end
+      state.parameter_edit = nil
+    else
+      local clamped_value =
+        clamp(edited_value, minimum, maximum)
+
+      if math.abs(clamped_value - value) > 0.000001 then
+        value = clamped_value
+        changed = true
+        mark_interaction()
+      end
+
+      if finished then
+        state.parameter_edit = nil
+      end
+    end
+
+    ImGui.PopStyleColor(ctx, 4)
+    ImGui.PopStyleVar(ctx, 2)
+
+    -- Restore the parameter card as the final layout item so neighboring
+    -- controls keep their original positions while the editor is visible.
+    ImGui.SetCursorScreenPos(ctx, x, y)
+    ImGui.Dummy(ctx, width, height)
+    ImGui.SetCursorScreenPos(ctx, after_x, after_y)
+  end
+
   if hovered then
+    local guidance =
+      state.language == "en"
+        and "Drag or use the wheel; double-click the value to type; double-click the label or track to reset"
+        or "拖动或滚轮调整；双击数值输入；双击标签或滑轨恢复默认值"
+
     tooltip(
       label
-        .. "：水平或垂直拖动调整；滚轮微调；双击恢复默认值"
+        .. " · "
+        .. guidance
     )
   end
 
@@ -13762,6 +13929,7 @@ function draw_toolbar()
     select(1, ImGui.GetContentRegionAvail(ctx))
 
   local compact_toolbar = toolbar_width < 1080
+  local control_size = 32
 
   draw_brand_mark(compact_toolbar)
   ImGui.SameLine(ctx)
@@ -13773,10 +13941,26 @@ function draw_toolbar()
       and "隐藏导航栏"
       or "显示导航栏",
     state.sidebar_visible,
-    30
+    control_size
   ) then
     state.sidebar_visible =
       not state.sidebar_visible
+    state.config_dirty = true
+  end
+
+  ImGui.SameLine(ctx)
+
+  if icon_button(
+    "inspector",
+    "panel_right",
+    state.inspector_visible
+      and "隐藏元数据面板"
+      or "显示元数据面板",
+    state.inspector_visible,
+    control_size
+  ) then
+    state.inspector_visible =
+      not state.inspector_visible
     state.config_dirty = true
   end
 
@@ -13793,7 +13977,7 @@ function draw_toolbar()
       and "退出专注模式"
       or "进入专注模式",
     focus_mode,
-    30
+    control_size
   ) then
     if focus_mode then
       state.sidebar_visible = true
@@ -13820,7 +14004,18 @@ function draw_toolbar()
     COLOR.input_text
   )
 
-  ImGui.SetNextItemWidth(ctx, -272)
+  local text_height = ImGui.GetTextLineHeight(ctx)
+  local input_padding_y =
+    math.max(2, (control_size - text_height) * 0.5)
+
+  ImGui.PushStyleVar(
+    ctx,
+    ImGui.StyleVar_FramePadding,
+    8,
+    input_padding_y
+  )
+
+  ImGui.SetNextItemWidth(ctx, -228)
 
   local changed
   changed, state.search =
@@ -13832,6 +14027,7 @@ function draw_toolbar()
     )
 
   ImGui.PopStyleColor(ctx, 2)
+  ImGui.PopStyleVar(ctx)
 
   if changed then
     state.results_dirty = true
@@ -13844,7 +14040,7 @@ function draw_toolbar()
     "close",
     "清空搜索",
     state.search ~= "",
-    30
+    control_size
   ) then
     state.search = ""
     state.results_dirty = true
@@ -13859,7 +14055,7 @@ function draw_toolbar()
       and "关闭自动试听"
       or "开启自动试听",
     state.auto_preview,
-    30
+    control_size
   ) then
     state.auto_preview = not state.auto_preview
     state.config_dirty = true
@@ -13872,7 +14068,7 @@ function draw_toolbar()
     "played_reset",
     "清除本次已播放高亮",
     session_played_count() > 0,
-    30
+    control_size
   ) then
     clear_session_played_highlights()
   end
@@ -13884,7 +14080,7 @@ function draw_toolbar()
     "refresh",
     "增量扫描",
     state.scan ~= nil,
-    30
+    control_size
   ) then
     start_scan("增量扫描")
   end
@@ -13896,7 +14092,7 @@ function draw_toolbar()
     "help",
     "使用说明与快捷键",
     false,
-    30
+    control_size
   ) then
     state.help_popup_requested = 1
   end
@@ -13908,7 +14104,7 @@ function draw_toolbar()
     "settings",
     "打开设置",
     false,
-    30
+    control_size
   ) then
     ImGui.OpenPopup(
       ctx,
@@ -13916,21 +14112,6 @@ function draw_toolbar()
     )
   end
 
-  ImGui.SameLine(ctx)
-
-  if icon_button(
-    "inspector",
-    "panel_right",
-    state.inspector_visible
-      and "隐藏元数据面板"
-      or "显示元数据面板",
-    state.inspector_visible,
-    30
-  ) then
-    state.inspector_visible =
-      not state.inspector_visible
-    state.config_dirty = true
-  end
 end
 
 function draw_sub_toolbar()
@@ -18249,11 +18430,6 @@ function draw_help_popup()
           "打开素材、集合和状态操作",
           "Open asset, collection, and status actions",
         },
-        {
-          "Saved search",
-          "保存并恢复搜索、筛选和排序条件",
-          "Save and restore search, filter, and sort settings",
-        },
       }
     )
 
@@ -18380,7 +18556,7 @@ function draw_settings_general()
 
   settings_section_title(
     "后台与浏览",
-    "控制素材目录的定时增量检查。手动扫描仍可使用 Ctrl+R 或主界面刷新按钮。"
+    "自动检查来源文件夹变化。"
   )
 
   local watch_changed
@@ -19309,7 +19485,7 @@ end
 function draw_settings_appearance()
   settings_section_title(
     "统一界面",
-    "PsyReaSFX 现在只维护一套紧凑、扁平且自适应的正式布局。字段与左右面板仍可自由调整。"
+    ""
   )
 
   if dark_button("恢复统一界面", 170) then
@@ -19344,7 +19520,7 @@ function draw_settings_appearance()
 
   settings_section_title(
     "封面与元数据",
-    "Artwork 只在可见行或当前选中素材中按需加载。"
+    ""
   )
 
   local changed
@@ -19378,7 +19554,7 @@ function draw_settings_appearance()
 
   settings_section_title(
     "颜色与状态",
-    "当前高亮与上次浏览快照分开管理；完整试听历史不会被删除。"
+    ""
   )
 
   local played_changed
@@ -19445,11 +19621,6 @@ function draw_settings_appearance()
     clear_saved_session_played_highlights()
   end
 
-  ImGui.TextDisabled(
-    ctx,
-    "颜色在下方“波形配色”中通过色盘选择，并即时生效。"
-  )
-
   ImGui.Separator(ctx)
 
   settings_section_title(
@@ -19515,27 +19686,11 @@ function draw_settings_appearance()
       )
   )
 
-  ImGui.TextDisabled(
-    ctx,
-    translate_ui_text(
-      APPEARANCE_PRESETS.dark.description
-    )
-      .. "　"
-      .. translate_ui_text(
-        APPEARANCE_PRESETS.heritage.description
-      )
-  )
-
   ImGui.Separator(ctx)
 
   settings_section_title(
     "自定义颜色",
-    "选择一个底色后，面板、表头、悬停、边框与波形背景会自动生成层级。"
-  )
-
-  ImGui.TextDisabled(
-    ctx,
-    "点击色块打开色盘；选择后即时生效。"
+    "底色控制整体框架，强调色用于选择与交互。"
   )
 
   draw_color_picker_row(
@@ -19557,11 +19712,6 @@ function draw_settings_appearance()
   settings_section_title(
     "波形配色",
     "普通、选中、已播放、标记、选区、播放指针与 Region。"
-  )
-
-  ImGui.TextDisabled(
-    ctx,
-    "点击色块打开色盘；选择后即时生效。"
   )
 
   local palette_width =
@@ -19657,7 +19807,7 @@ function draw_settings_waveforms()
 
   ImGui.TextDisabled(
     ctx,
-    "256 点是默认值，较旧版本的 128 点至少提升一倍；512 点适合较宽的 Waveform 列。"
+    "256 点：缓存较小；512 点：细节更多。"
   )
 
   local channel_lanes_changed
@@ -19677,7 +19827,7 @@ function draw_settings_waveforms()
 
   ImGui.TextDisabled(
     ctx,
-    "立体声显示 L / R；多声道显示 CH 1–8。仅高精度大波形使用独立声道缓存。"
+    "立体声显示 L / R；多声道显示 CH 1–8。"
   )
 
   ImGui.Separator(ctx)
@@ -19755,10 +19905,9 @@ function draw_settings_waveforms()
   end
 
   ImGui.Spacing(ctx)
-  ImGui.TextWrapped(
+  ImGui.TextDisabled(
     ctx,
-    "预缓存会逐个处理素材并写入磁盘缓存。处理会在鼠标交互时让步，"
-      .. "不会把整库高精度波形同时保存在内存中。"
+    "可在首次浏览大型库前预先生成高精度波形。"
   )
 
   ImGui.Separator(ctx)
@@ -19978,11 +20127,6 @@ function draw_settings_waveforms()
     request_loudness_analysis(selected_asset(), true)
   end
 
-  ImGui.TextDisabled(
-    ctx,
-    "使用 REAPER CalculateNormalization 按需计算；结果写入 loudness_v1.tsv。"
-  )
-
   ImGui.Separator(ctx)
   ImGui.Text(ctx, "估算响度匹配")
 
@@ -20017,7 +20161,7 @@ function draw_settings_waveforms()
 
   ImGui.TextDisabled(
     ctx,
-    "响度匹配仍使用快速波形估算，仅影响试听；上方显示值使用 REAPER 精确响度计算。"
+    "仅影响试听，不修改源文件，也不用于交付标准化。"
   )
   ImGui.Separator(ctx)
 
@@ -20029,7 +20173,7 @@ end
 function draw_settings_maintenance()
   settings_section_title(
     "运行环境",
-    "版本、扩展和路径信息集中放在此处，便于故障排查。"
+    ""
   )
 
   if ImGui.BeginChild(
@@ -20093,7 +20237,7 @@ function draw_settings_maintenance()
 
   settings_section_title(
     "波形缓存目录",
-    "可以迁移已有缓存，或切换到新的空目录。源音频不会被移动。"
+    "可以移动已有缓存，源音频不受影响。"
   )
 
   if ImGui.BeginChild(
