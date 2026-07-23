@@ -1,5 +1,29 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.15 Beta 19
+
+### Source-boundary anti-click path
+
+- Wraps every SWS audio Preview in a Section Source with a 20 ms
+  source-boundary fade, including playback started from the beginning with
+  `Space`.
+- Removes the UI-frame volume ramp introduced in Beta 18. Preview stops now
+  use SWS's sample-accurate audio-thread fade with a 25 ms release.
+- Keeps the Preview object's 20 ms safety fade-in as a second layer for older
+  media and non-zero seek starts.
+
+### Responsive Preview controls
+
+- Keeps all six Preview-state icons available when the navigation and metadata
+  panels are open.
+- Computes action, parameter and toggle widths from one shared layout model.
+  Controls stay beside Gain when they fit and wrap into a reserved row when
+  they do not.
+- Uses the same computed height for waveform reservation and control drawing,
+  preventing responsive controls from being clipped.
+- Removes manual vertical cursor relocation from the control deck, reducing
+  ReaImGui Child-boundary risk.
+
 ## 0.7.14 Beta 18
 
 ### Preview anti-click handling

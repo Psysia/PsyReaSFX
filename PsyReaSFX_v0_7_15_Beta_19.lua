@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.14-beta.18
+-- @version 0.7.15-beta.19
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -108,6 +108,9 @@
 --   - 0.7.14：空格停止试听使用短音量斜坡，减少连续从头试听的爆音
 --   - Preview 安全淡入延长，定位在播放前写入，降低缓冲边界不连续
 --   - 全部声道按钮显式区分选中、未选中与悬停状态
+--   - 0.7.15：试听统一经过带源边界淡入的 Section Source
+--   - 停止试听改用 SWS 音频线程淡出，移除会产生阶梯增益的 UI 帧斜坡
+--   - 左右面板展开时，Gain 右侧六个试听开关仍会保留并按宽度自动换行
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -116,7 +119,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.14 Beta 18"
+local VERSION = "0.7.15 Beta 19"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -670,7 +673,6 @@ local state = {
   preview_map_span = 1,
   preview_map_reverse = false,
   preview_percent = 0,
-  preview_stop_fade = nil,
   preview_backend =
     type(reaper.CF_CreatePreview) == "function"
       and "SWS"
@@ -9213,8 +9215,6 @@ function destroy_preview_sources()
 end
 
 function stop_preview()
-  state.preview_stop_fade = nil
-
   if state.preview_companion
     and type(reaper.CF_Preview_Stop) == "function" then
     pcall(
@@ -9249,22 +9249,10 @@ function request_preview_stop()
     return
   end
 
-  if state.preview_stop_fade then
-    return
-  end
-
-  local base_volume =
-    db_to_amp(
-      state.gain_db
-        + state.preview_match_offset_db
-    )
-
-  state.preview_stop_fade = {
-    started = reaper.time_precise(),
-    duration = 0.050,
-    base_volume = base_volume,
-  }
-
+  -- CF_Preview_Stop performs its fade on the audio thread using
+  -- D_FADEOUTLEN. A UI-frame volume ramp produces only a handful of
+  -- coarse gain steps and can itself become audible when Space is tapped
+  -- repeatedly, so stopping is deliberately delegated to SWS.
   pcall(
     reaper.CF_Preview_SetValue,
     state.preview,
@@ -9280,6 +9268,8 @@ function request_preview_stop()
       0
     )
   end
+
+  stop_preview()
 end
 
 function clear_row_selection()
@@ -9414,13 +9404,13 @@ function configure_preview_instance(
   reaper.CF_Preview_SetValue(
     preview,
     "D_FADEINLEN",
-    0.012
+    0.020
   )
 
   reaper.CF_Preview_SetValue(
     preview,
     "D_FADEOUTLEN",
-    0.018
+    0.025
   )
 end
 
@@ -9480,8 +9470,11 @@ function play_preview(
   local selection =
     use_selection and has_selection()
 
-  if (selection or state.reverse)
-    and type(reaper.CF_PCM_Source_SetSectionInfo)
+  -- Always wrap audio previews in a SECTION source when SWS supports it.
+  -- The section's source-boundary fade protects files whose first sample is
+  -- not near zero. This is materially different from a UI volume animation:
+  -- it is evaluated in the audio source path before the first audible buffer.
+  if type(reaper.CF_PCM_Source_SetSectionInfo)
       == "function" then
 
     local section =
@@ -9507,7 +9500,7 @@ function play_preview(
           offset,
           length,
           state.reverse,
-          0.005
+          0.020
         )
 
       -- 兼容不接受 fade 参数的旧版 SWS。
@@ -9735,41 +9728,6 @@ function poll_preview()
     return
   end
 
-  if state.preview_stop_fade then
-    local fade = state.preview_stop_fade
-    local elapsed =
-      reaper.time_precise() - fade.started
-    local progress =
-      clamp(
-        elapsed / math.max(0.001, fade.duration),
-        0,
-        1
-      )
-    local volume =
-      fade.base_volume * (1 - progress)
-
-    pcall(
-      reaper.CF_Preview_SetValue,
-      state.preview,
-      "D_VOLUME",
-      volume
-    )
-
-    if state.preview_companion then
-      pcall(
-        reaper.CF_Preview_SetValue,
-        state.preview_companion,
-        "D_VOLUME",
-        volume
-      )
-    end
-
-    if progress >= 1 then
-      stop_preview()
-      return
-    end
-  end
-
   local ok, position =
     reaper.CF_Preview_GetValue(
       state.preview,
@@ -9789,7 +9747,6 @@ function poll_preview()
     state.preview_companion = nil
     state.preview_source = nil
     state.preview_path = nil
-    state.preview_stop_fade = nil
     destroy_preview_sources()
     return
   end
@@ -13257,11 +13214,18 @@ function toolbar_separator(height)
   )
 end
 
-function bottom_controls_reserve_height(width)
-  local base = width >= 760 and 88 or 124
+function bottom_controls_reserve_height(width, asset)
+  local layout = preview_control_layout_metrics(width)
+  local base =
+    54
+      + layout.panel_height
+  local channel_count =
+    asset
+      and preview_asset_channel_count(asset)
+      or (state.preview_channel_count or 0)
 
   if state.preview_channel_strip_expanded
-    and (state.preview_channel_count or 0) > 2 then
+    and channel_count > 2 then
     base = base + (
       state.ui_density == "comfortable"
         and 42
@@ -16335,7 +16299,7 @@ function draw_large_wave(asset)
   local height =
     clamp(
       available_height
-        - bottom_controls_reserve_height(width),
+        - bottom_controls_reserve_height(width, asset),
       minimum_wave_height,
       state.multichannel_waveform
         and (asset.channels or 1) > 2
@@ -18017,8 +17981,7 @@ function draw_studio_parameters(asset, card_width, card_height)
   end
 end
 
-function draw_control_deck(asset)
-  local width = select(1, ImGui.GetContentRegionAvail(ctx))
+function preview_control_layout_metrics(width)
   local mode = state.preview_control_layout
   local minimal = mode == "minimal_rack"
   local focused = mode == "focus_rack"
@@ -18026,13 +17989,78 @@ function draw_control_deck(asset)
     state.ui_density == "compact" and 28
       or state.ui_density == "comfortable" and 32
       or 30
-  local two_rows = not minimal and width < 760
+  local button_gap =
+    math.max(
+      3,
+      math.floor(button_size * 0.18)
+    )
+  local action_width =
+    button_size * (minimal and 5 or 9)
+      + button_gap * (minimal and 4 or 10)
+      + (minimal and 0 or 7)
+  local toggle_width =
+    button_size * 6
+      + button_gap * 5
+  local parameter_min_width =
+    UI_METRIC.parameter_min_w * 3 + 20
+  local separator_width = 27
+  local all_inline_min_width =
+    action_width
+      + parameter_min_width
+      + toggle_width
+      + separator_width * 2
+      + 12
+  local two_rows =
+    not minimal
+      and width
+        < action_width
+          + parameter_min_width
+          + separator_width
+  local toggles_visible =
+    not minimal and not focused
+  local toggles_inline =
+    toggles_visible
+      and not two_rows
+      and width >= all_inline_min_width
+  local row_count =
+    minimal and 1
+      or two_rows and 2
+      or 1
+
+  if toggles_visible and not toggles_inline then
+    row_count = row_count + 1
+  end
+
+  return {
+    minimal = minimal,
+    focused = focused,
+    button_size = button_size,
+    button_gap = button_gap,
+    action_width = action_width,
+    toggle_width = toggle_width,
+    separator_width = separator_width,
+    two_rows = two_rows,
+    toggles_visible = toggles_visible,
+    toggles_inline = toggles_inline,
+    row_count = row_count,
+    panel_height =
+      row_count * button_size
+        + math.max(0, row_count - 1) * 8
+        + 4,
+  }
+end
+
+function draw_control_deck(asset)
+  local width = select(1, ImGui.GetContentRegionAvail(ctx))
+  local layout =
+    preview_control_layout_metrics(width)
+  local minimal = layout.minimal
+  local button_size = layout.button_size
+  local two_rows = layout.two_rows
   local show_channel_rail =
     preview_asset_channel_count(asset) > 2
       and state.preview_channel_strip_expanded
-  local panel_height =
-    two_rows and (button_size * 2 + 14)
-      or (button_size + 4)
+  local panel_height = layout.panel_height
 
   if show_channel_rail then
     panel_height =
@@ -18071,7 +18099,22 @@ function draw_control_deck(asset)
 
       local card_width =
         clamp(
-          (width - (two_rows and 20 or 500)) / 3,
+          (
+            width
+              - (
+                two_rows
+                  and 20
+                  or layout.action_width
+                    + layout.separator_width
+                    + (
+                      layout.toggles_inline
+                        and layout.toggle_width
+                          + layout.separator_width
+                        or 0
+                    )
+              )
+              - 20
+          ) / 3,
           UI_METRIC.parameter_min_w,
           150
         )
@@ -18082,28 +18125,24 @@ function draw_control_deck(asset)
         button_size
       )
 
-      if not two_rows
-        and not focused
-        and width >= 1180 then
+      if layout.toggles_inline then
         ImGui.SameLine(ctx, 0, 10)
         toolbar_separator(button_size)
         ImGui.SameLine(ctx, 0, 10)
+        draw_preview_toggle_icons(asset, button_size)
+      elseif layout.toggles_visible then
+        ImGui.Spacing(ctx)
         draw_preview_toggle_icons(asset, button_size)
       end
     end
 
     if show_channel_rail
       and state.preview_channel_strip_expanded then
-      ImGui.SetCursorPosX(ctx, 4)
-      ImGui.SetCursorPosY(
-        ctx,
-        panel_height - button_size - 4
-      )
+      ImGui.Spacing(ctx)
       draw_inline_channel_selector(
         asset,
         button_size
       )
-      ImGui.Dummy(ctx, 0, 0)
     end
   end
 

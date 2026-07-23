@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.14 Beta 18  
+**Applies to:** PsyReaSFX 0.7.15 Beta 19  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -227,8 +227,9 @@ selected > marked > played (when enabled) > normal
 
 - Click a position in a row waveform to select the asset and start from that point.
 - The active row shows a mini playhead.
-- `Space` plays or stops. Stop uses a brief volume ramp before the SWS Preview
-  object is destroyed; playback applies its safety fade from the first sample.
+- `Space` plays or stops. Playback is wrapped in a source-boundary safety fade,
+  while stop uses SWS's sample-accurate audio-thread fade instead of a
+  frame-driven interface animation.
 - `Up` and `Down` move through results.
 - Enable automatic audition to start playback when selection changes.
 
@@ -376,6 +377,10 @@ Embedded artwork inside audio containers is not extracted in this version.
 PsyReaSFX includes a neutral Dark preset and a deep-navy Heritage preset. Frame base and accent colors can be adjusted with color pickers. Waveform, selected, played, marked, selection, playhead and region colors are independently configurable.
 
 The interface is responsive: side panels temporarily yield to the center workspace when the window becomes narrow. Toolbar hit areas remain stable while the visual icons stay borderless until hover or activation.
+
+The six preview-state controls to the right of Gain remain available when the
+navigation and metadata panels are open. They stay inline whenever space allows
+and move to a dedicated row instead of disappearing on narrower workspaces.
 
 Language can be changed between Chinese and English in Settings without restarting. Asset names and user metadata are never translated.
 
