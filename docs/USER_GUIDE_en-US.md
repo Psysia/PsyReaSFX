@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.12 Beta 16  
+**Applies to:** PsyReaSFX 0.7.13 Beta 17  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -263,10 +263,10 @@ The channel-audition icon adapts to the source:
 
 - Mono and stereo files: left-click cycles Stereo/Original, Left, Right and Mono. The glyph moves to the left, right or center to show the active mode. Right-click restores Stereo/Original.
 - Files with more than two channels: left-click expands or collapses an inline channel rail inside the main preview strip. It does not open another window, so preview and application shortcuts remain available.
-- In the inline rail, click one lane for a single selection, `Ctrl`-click to toggle lanes, `Shift`-click for a contiguous range and hover the rail while pressing `Ctrl+A` to select all lanes. Right-click a lane to focus it immediately; right-click the multichannel icon to restore all lanes.
+- In the inline rail, click one lane for a single selection, `Ctrl`-click to toggle lanes, `Shift`-click for a contiguous range and hover the rail while pressing `Ctrl+A` to select all lanes. Right-click a lane to focus its waveform immediately; right-click the multichannel icon to restore all lanes.
 - Selected lanes remain at full waveform intensity; unselected lanes are dimmed without being removed, so channel context stays visible.
 
-The SWS preview API does not expose arbitrary source-channel isolation for multichannel files. PsyReaSFX therefore applies exact centered audition for mono/stereo modes, while 3–8 channel selection is a waveform-monitoring aid and audio continues to follow REAPER's multichannel device routing. This avoids temporary tracks or hidden project mutations.
+The SWS preview API does not expose arbitrary source-channel isolation for multichannel files. PsyReaSFX therefore applies exact centered audition for mono/stereo modes, while 3–8 channel selection and right-click focus are waveform-monitoring aids; audio continues to follow REAPER's multichannel device routing. The status line states this explicitly. This avoids temporary tracks or hidden project mutations.
 
 ### Loudness display
 

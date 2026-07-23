@@ -1,5 +1,18 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.13 Beta 17
+
+### Inline rail hotfix
+
+- Fixes a repeatable ReaImGui assertion when collapsing the inline channel
+  rail in the same frame that changed the control-strip height.
+- Skips the old cursor relocation immediately after collapse and submits a
+  defensive layout item after explicit positioning.
+- Renames right-click lane behavior from audition/solo to waveform focus,
+  matching the actual SWS capability.
+- Shows a status message that multichannel audio continues to follow REAPER's
+  device routing.
+
 ## 0.7.12 Beta 16
 
 ### Inline multichannel rail

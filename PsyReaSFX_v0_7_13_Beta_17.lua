@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.12-beta.16
+-- @version 0.7.13-beta.17
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -101,8 +101,10 @@
 --   - 立体声监听使用状态图标和左键循环；右键保留完整选项
 --   - 多声道选择支持 Ctrl、Shift、Ctrl+A，并实时联动独立波形声道
 --   - 0.7.12：多声道选择改为主窗口内联工具条，不再创建 Popup
---   - 声道条保持全局快捷键与试听可用，支持单选、多选、范围选择与右键 Solo
+--   - 声道条保持全局快捷键与试听可用，支持单选、多选、范围选择与右键聚焦
 --   - About 复用主工具栏矢量标志与 Orbitron 双色字标
+--   - 0.7.13：修复同帧收起声道条时 SetCursorPos 越过 Child 边界的崩溃
+--   - 多声道右键明确为波形聚焦，不再误称为 SWS 无法提供的源声道 Solo
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -111,7 +113,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.12 Beta 16"
+local VERSION = "0.7.13 Beta 17"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1213,7 +1215,9 @@ I18N_EN = {
   ["左键展开或收起声道条；右键恢复全部声道"] =
     "Left-click to expand or collapse the channel rail; right-click restores all channels",
   ["声道条"] = "Channel rail",
-  ["右键单独监听此声道"] = "Right-click to focus this channel",
+  ["右键聚焦此声道波形"] = "Right-click to focus this waveform lane",
+  ["已聚焦声道波形；音频仍遵循 REAPER 多声道设备路由"] =
+    "Waveform lane focused; audio still follows REAPER's multichannel device routing",
   ["Ctrl+单击追加或取消；Shift+单击连续选择；Ctrl+A 全选。"] =
     "Ctrl-click toggles channels; Shift-click selects a range; Ctrl+A selects all.",
   ["当前 SWS 预览接口不能隔离任意多声道源声道；选择会实时更新波形显示，试听仍遵循 REAPER 的多声道输出路由。"] =
@@ -16891,12 +16895,22 @@ function draw_inline_channel_selector(asset, button_size)
         false,
         true
       )
+      set_status(
+        preview_channel_label(
+          channel,
+          channel_count
+        )
+          .. " · "
+          .. translate_ui_text(
+            "已聚焦声道波形；音频仍遵循 REAPER 多声道设备路由"
+          )
+      )
     end
 
     if hovered then
       tooltip(
         translate_ui_text(
-          "右键单独监听此声道"
+          "右键聚焦此声道波形"
         )
       )
     end
@@ -17992,7 +18006,8 @@ function draw_control_deck(asset)
       end
     end
 
-    if show_channel_rail then
+    if show_channel_rail
+      and state.preview_channel_strip_expanded then
       ImGui.SetCursorPosX(ctx, 4)
       ImGui.SetCursorPosY(
         ctx,
@@ -18002,6 +18017,7 @@ function draw_control_deck(asset)
         asset,
         button_size
       )
+      ImGui.Dummy(ctx, 0, 0)
     end
   end
 
