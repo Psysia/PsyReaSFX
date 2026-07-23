@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.7.10 Beta 13  
+**适用版本：** PsyReaSFX 0.7.10 Beta 14  
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -138,6 +138,12 @@ PsyReaSFX_vX_X_X/
 每个实体来源独立拥有自动找到或手动指定的封面。同一逻辑库中，一个来源的封面不会套用到其他来源。
 
 右键展开后的实体来源，可以指定、重新发现或清除 Artwork。元数据面板中为某个单独素材指定的封面优先级最高。
+
+<p align="center">
+  <img src="../assets/screenshots/logical-library-workflow.gif" alt="展开包含多个实体来源的逻辑音效库" width="760">
+</p>
+
+上图展示了一个逻辑音效库展开为多个独立管理的实体来源。点击父级逻辑库会把这些路径作为一个库联合浏览，同时每个实体来源仍然单独显示并维护自己的 Artwork。
 
 ## 6. 搜索与筛选
 
@@ -301,9 +307,19 @@ PsyReaSFX 可以：
 
 这里的拖放是 PsyReaSFX 到 REAPER 的内部操作，不是 Windows 通用文件拖放。建议安装 SWS，以准确识别目标时间和轨道。
 
+<p align="center">
+  <img src="../assets/screenshots/waveform-edit-drag-reaper.gif" alt="建立波形选区并拖入 REAPER 编排区" width="100%">
+</p>
+
+上图展示了完整的“选区到编排区”流程：先在大波形中框选需要的范围，再把该范围直接拖入 REAPER 编排区。
+
 ## 14. Transfer：生成处理后的文件
 
 从底部工具栏打开 Transfer，或按 `Ctrl+T`。Transfer 会生成新文件；除非主动选择覆盖策略并确认，否则不会覆盖源素材。
+
+<p align="center">
+  <img src="../assets/screenshots/transfer-settings-zh.png" alt="PsyReaSFX 中文 Transfer 设置" width="820">
+</p>
 
 ### 输出与命名
 

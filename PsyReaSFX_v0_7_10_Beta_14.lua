@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.10-beta.13
+-- @version 0.7.10-beta.14
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -94,6 +94,9 @@
 --   - Pitch、Rate、Gain 支持双击数值原位输入，输入时高亮且不改变布局
 --   - 双击参数标签或滑轨恢复默认值，修复旧拖动状态覆盖重置的问题
 --   - 设置说明精简为操作与安全提示，技术实现细节移入用户手册
+--   - Beta 14 热修复：移除 InputDouble 不兼容的 EnterReturnsTrue 标志
+--   - 精确参数输入改用 Enter、Esc 与失焦状态确认，不改变原位编辑布局
+--   - Transfer 设置输入框使用隐藏标签，避免右侧标签被滚动条裁切
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -102,7 +105,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.10 Beta 13"
+local VERSION = "0.7.10 Beta 14"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -12611,7 +12614,7 @@ function draw_parameter_card(
       editor.focus = false
     end
 
-    local submitted, edited_value =
+    local input_changed, edited_value =
       ImGui.InputDouble(
         ctx,
         "##parameter_editor_" .. tostring(id),
@@ -12620,19 +12623,34 @@ function draw_parameter_card(
         0,
         format_string,
         ImGui.InputTextFlags_AutoSelectAll
-          | ImGui.InputTextFlags_EnterReturnsTrue
       )
 
     editor.value = edited_value
 
-    if ImGui.IsItemActive(ctx) then
+    local input_active = ImGui.IsItemActive(ctx)
+
+    if input_active then
       editor.seen_active = true
     end
 
     local cancel =
-      ImGui.IsKeyPressed(ctx, ImGui.Key_Escape)
+      input_active
+      and ImGui.IsKeyPressed(
+        ctx,
+        ImGui.Key_Escape,
+        false
+      )
+
+    local confirm =
+      input_active
+      and ImGui.IsKeyPressed(
+        ctx,
+        ImGui.Key_Enter,
+        false
+      )
+
     local finished =
-      submitted
+      confirm
       or (
         editor.seen_active
         and ImGui.IsItemDeactivated(ctx)
@@ -12648,7 +12666,8 @@ function draw_parameter_card(
       local clamped_value =
         clamp(edited_value, minimum, maximum)
 
-      if math.abs(clamped_value - value) > 0.000001 then
+      if input_changed
+        and math.abs(clamped_value - value) > 0.000001 then
         value = clamped_value
         changed = true
         mark_interaction()
@@ -19217,7 +19236,7 @@ function draw_transfer_settings_content()
   local changed
   changed, state.transfer_dir = ImGui.InputText(
     ctx,
-    "输出目录##transfer_dir",
+    "##transfer_dir",
     state.transfer_dir or DEFAULT_TRANSFER_DIR
   )
 
@@ -19254,7 +19273,7 @@ function draw_transfer_settings_content()
   ImGui.SetNextItemWidth(ctx, -1)
   changed, state.transfer_template = ImGui.InputText(
     ctx,
-    "命名模板##transfer_template",
+    "##transfer_template",
     state.transfer_template or "{name}"
   )
 

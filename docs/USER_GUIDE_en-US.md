@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.10 Beta 13  
+**Applies to:** PsyReaSFX 0.7.10 Beta 14  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -138,6 +138,12 @@ Offline sources remain listed. Their library relationship can therefore survive 
 Each physical source folder owns its own automatically detected or manually assigned cover. A cover from one source is never applied to sibling sources merely because they share a logical library.
 
 Right-click an expanded source to choose, rediscover or clear its Artwork. Asset-specific Artwork chosen in the metadata inspector has higher priority than source Artwork.
+
+<p align="center">
+  <img src="../assets/screenshots/logical-library-workflow.gif" alt="Expanding a logical library with multiple source folders" width="760">
+</p>
+
+The animation above shows one logical library expanded into several independently managed source folders. Clicking the parent searches them as one library; each source remains visible and keeps its own Artwork assignment.
 
 ## 6. Search and filter
 
@@ -301,9 +307,19 @@ PsyReaSFX can:
 
 Arrange-view drag is an internal PsyReaSFX-to-REAPER workflow, not generic Windows file drag-and-drop. SWS is recommended for accurate target position and track detection.
 
+<p align="center">
+  <img src="../assets/screenshots/waveform-edit-drag-reaper.gif" alt="Creating a waveform selection and dragging it into REAPER" width="100%">
+</p>
+
+The animation demonstrates the complete selection-to-arrange workflow: select a useful range in the detailed waveform, then drag that range directly to the REAPER arrange view.
+
 ## 14. Transfer: create processed files
 
 Open Transfer from the lower toolbar or press `Ctrl+T`. Transfer creates new files; it does not overwrite source media unless you explicitly choose an overwrite collision policy and confirm it.
+
+<p align="center">
+  <img src="../assets/screenshots/transfer-settings-en.png" alt="PsyReaSFX Transfer settings in English" width="820">
+</p>
 
 ### Output and naming
 

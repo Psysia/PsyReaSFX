@@ -1,5 +1,28 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.10 Beta 14
+
+### Numeric-editor hotfix
+
+- Removes the unsupported `EnterReturnsTrue` flag from ReaImGui
+  `InputDouble`, which caused an assertion immediately after double-clicking a
+  Pitch, Rate, or Gain value.
+- Uses active-item, Enter, Escape, and deactivation states to confirm or cancel
+  exact numeric editing without changing the control-strip layout.
+- Keeps label/track double-click reset and drag/wheel adjustment behavior.
+
+### Transfer settings layout
+
+- Changes the output-directory and naming-template controls to hidden internal
+  labels so no duplicate label is drawn beyond the right edge.
+- Prevents those labels from being clipped beneath the vertical scrollbar.
+
+### User-guide media
+
+- Adds the supplied logical-library workflow animation.
+- Adds the waveform-selection-to-REAPER drag animation.
+- Adds localized English and Chinese Transfer settings screenshots.
+
 ## 0.7.10 Beta 13
 
 ### Precision parameter editing
