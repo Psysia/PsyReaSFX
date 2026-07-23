@@ -1,5 +1,31 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.11 Beta 15
+
+### Numeric-editor shortcut isolation
+
+- Prevents the Enter key used to confirm Pitch, Rate or Gain from reaching the
+  global Insert-on-current-track shortcut in the same frame.
+- Isolates the complete numeric-editor lifetime, including its activation and
+  closing frame, from application-level keyboard commands.
+- Preserves in-place input, Escape cancel, focus-loss confirmation, drag,
+  wheel adjustment and label/track reset.
+
+### Channel-aware audition control
+
+- Replaces the static three-bar control with state-aware stereo, left, right,
+  mono and multichannel glyphs.
+- Left-click cycles the common modes for mono/stereo sources; right-click opens
+  the complete channel menu.
+- Uses mirrored mono hardware-output previews so Left, Right and Mono are heard
+  in the center rather than from only one speaker.
+- Opens a compact selector for 3–8 channel files with click, Ctrl-click,
+  Shift-click and Ctrl+A selection behavior.
+- Keeps selected waveform lanes at full intensity and dims unselected lanes
+  immediately.
+- Documents the SWS limitation for arbitrary multichannel source isolation;
+  multichannel lane focus never creates hidden tracks or mutates the project.
+
 ## 0.7.10 Beta 14
 
 ### Numeric-editor hotfix

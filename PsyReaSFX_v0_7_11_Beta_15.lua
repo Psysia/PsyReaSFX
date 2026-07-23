@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.10-beta.14
+-- @version 0.7.11-beta.15
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -97,6 +97,9 @@
 --   - Beta 14 热修复：移除 InputDouble 不兼容的 EnterReturnsTrue 标志
 --   - 精确参数输入改用 Enter、Esc 与失焦状态确认，不改变原位编辑布局
 --   - Transfer 设置输入框使用隐藏标签，避免右侧标签被滚动条裁切
+--   - 0.7.11：参数编辑与全局快捷键隔离，Enter 不再误插入素材
+--   - 立体声监听使用状态图标和左键循环；右键保留完整选项
+--   - 多声道选择支持 Ctrl、Shift、Ctrl+A，并实时联动独立波形声道
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -105,7 +108,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.10 Beta 14"
+local VERSION = "0.7.11 Beta 15"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -649,6 +652,8 @@ local state = {
   wave_cache_dir = DEFAULT_WAVE_CACHE_DIR,
 
   preview = nil,
+  preview_companion = nil,
+  preview_source = nil,
   preview_sources = nil,
   preview_path = nil,
   preview_position = 0,
@@ -697,6 +702,10 @@ local state = {
   reverse = false,
 
   preview_channel_mode = "original",
+  preview_channel_asset_key = nil,
+  preview_channel_count = 0,
+  preview_channel_selection = {},
+  preview_channel_anchor = 1,
   loudness_match = false,
   loudness_target_db = -18,
   preview_match_offset_db = 0,
@@ -719,6 +728,7 @@ local state = {
   bottom_split_drag = nil,
   parameter_drag = nil,
   parameter_edit = nil,
+  keyboard_consumed = false,
   selection_drag_handle_pressed = false,
 
   insert_lowercase = true,
@@ -1184,6 +1194,22 @@ I18N_EN = {
   ["其他：F 收藏；M 标记；L 循环；Ctrl+F 搜索；Ctrl+R 扫描；Ctrl+T Transfer。"] =
     "Other: F favorite; M mark; L loop; Ctrl+F search; Ctrl+R scan; Ctrl+T Transfer.",
   ["声道监听"] = "Channel audition",
+  ["声道选择"] = "Channel selection",
+  ["全部声道"] = "All channels",
+  ["全选声道"] = "Select all channels",
+  ["已选声道"] = "Selected channels",
+  ["立体声"] = "Stereo",
+  ["多声道"] = "Multichannel",
+  ["左键切换监听模式；右键打开完整声道选项"] =
+    "Left-click to cycle audition modes; right-click for all channel options",
+  ["左键打开声道选择；右键查看说明与重置"] =
+    "Left-click to choose channels; right-click for help and reset",
+  ["Ctrl+单击追加或取消；Shift+单击连续选择；Ctrl+A 全选。"] =
+    "Ctrl-click toggles channels; Shift-click selects a range; Ctrl+A selects all.",
+  ["当前 SWS 预览接口不能隔离任意多声道源声道；选择会实时更新波形显示，试听仍遵循 REAPER 的多声道输出路由。"] =
+    "The current SWS preview API cannot isolate arbitrary multichannel source lanes. Selection updates the waveform immediately; audition still follows REAPER's multichannel output routing.",
+  ["无法建立双声道监听镜像"] = "Could not create the centered audition mirror",
+  ["恢复全部声道"] = "Restore all channels",
   ["原始"] = "Original",
   ["左声道"] = "Left",
   ["右声道"] = "Right",
@@ -4451,7 +4477,9 @@ function save_config()
 
   file:write(
     "setting\tpreview_channel_mode\t",
-    state.preview_channel_mode,
+    state.preview_channel_mode == "custom"
+      and "original"
+      or state.preview_channel_mode,
     "\n"
   )
 
@@ -5380,20 +5408,145 @@ function loudness_match_offset_db(asset)
   )
 end
 
-function apply_preview_channel_mode(preview)
+function preview_asset_channel_count(asset)
+  return clamp(
+    math.floor(
+      tonumber(asset and asset.channels) or 1
+    ),
+    1,
+    8
+  )
+end
+
+function reset_preview_channel_selection(asset)
+  local count = preview_asset_channel_count(asset)
+  local selected = {}
+
+  for channel = 1, count do
+    selected[channel] = true
+  end
+
+  state.preview_channel_asset_key =
+    asset and path_key(asset.path) or nil
+  state.preview_channel_count = count
+  state.preview_channel_selection = selected
+  state.preview_channel_anchor = 1
+
+  if count > 2
+    and state.preview_channel_mode == "custom" then
+    state.preview_channel_mode = "original"
+  end
+
+  return selected, count
+end
+
+function ensure_preview_channel_selection(asset)
+  local count = preview_asset_channel_count(asset)
+  local key = asset and path_key(asset.path) or nil
+
+  if state.preview_channel_asset_key ~= key
+    or state.preview_channel_count ~= count then
+    return reset_preview_channel_selection(asset)
+  end
+
+  return state.preview_channel_selection, count
+end
+
+function selected_preview_channel_count(asset)
+  local selected, count =
+    ensure_preview_channel_selection(asset)
+  local selected_count = 0
+
+  for channel = 1, count do
+    if selected[channel] then
+      selected_count = selected_count + 1
+    end
+  end
+
+  return selected_count, count
+end
+
+function preview_channel_is_selected(asset, channel)
+  local selected, count =
+    ensure_preview_channel_selection(asset)
+
+  if count <= 2 then
+    if state.preview_channel_mode == "left" then
+      return channel == 1
+    elseif state.preview_channel_mode == "right" then
+      return channel == 2
+    end
+
+    return true
+  end
+
+  return selected[channel] == true
+end
+
+function select_all_preview_channels(asset)
+  local selected, count =
+    ensure_preview_channel_selection(asset)
+
+  for channel = 1, count do
+    selected[channel] = true
+  end
+
+  state.preview_channel_mode = "original"
+  state.preview_channel_anchor = 1
+end
+
+function preview_channel_label(channel, count)
+  if count == 1 then
+    return "M"
+  elseif count == 2 then
+    return channel == 1 and "L" or "R"
+  end
+
+  return string.format("CH %d", channel)
+end
+
+function cycle_preview_channel_mode(asset)
+  local count = preview_asset_channel_count(asset)
+
+  if count > 2 then
+    return false
+  end
+
+  local order =
+    count == 1
+      and { "original", "mono" }
+      or { "original", "left", "right", "mono" }
+  local current = 1
+
+  for index, mode in ipairs(order) do
+    if mode == state.preview_channel_mode then
+      current = index
+      break
+    end
+  end
+
+  state.preview_channel_mode =
+    order[current % #order + 1]
+  state.config_dirty = true
+
+  if state.preview then
+    update_preview_parameters()
+  end
+
+  return true
+end
+
+function apply_preview_channel_mode(preview, mono_output_channel)
   if not preview then
     return
   end
 
   local pan = 0
-  local width = 1
 
   if state.preview_channel_mode == "left" then
     pan = -1
   elseif state.preview_channel_mode == "right" then
     pan = 1
-  elseif state.preview_channel_mode == "mono" then
-    width = 0
   end
 
   pcall(
@@ -5403,11 +5556,25 @@ function apply_preview_channel_mode(preview)
     pan
   )
 
+  local use_centered_mono =
+    state.preview_channel_mode == "left"
+      or state.preview_channel_mode == "right"
+      or state.preview_channel_mode == "mono"
+
   pcall(
     reaper.CF_Preview_SetValue,
     preview,
-    "D_WIDTH",
-    width
+    "I_OUTCHAN",
+    use_centered_mono
+      and (
+        1024
+          + clamp(
+            math.floor(mono_output_channel or 0),
+            0,
+            1
+          )
+      )
+      or 0
   )
 end
 
@@ -8973,6 +9140,14 @@ function destroy_preview_sources()
 end
 
 function stop_preview()
+  if state.preview_companion
+    and type(reaper.CF_Preview_Stop) == "function" then
+    pcall(
+      reaper.CF_Preview_Stop,
+      state.preview_companion
+    )
+  end
+
   if state.preview
     and type(reaper.CF_Preview_Stop) == "function" then
     pcall(reaper.CF_Preview_Stop, state.preview)
@@ -8981,6 +9156,8 @@ function stop_preview()
   end
 
   state.preview = nil
+  state.preview_companion = nil
+  state.preview_source = nil
   state.preview_path = nil
   state.preview_position = 0
   state.preview_length = 0
@@ -9063,6 +9240,74 @@ function has_selection()
       > 0.002
     and state.region_end - state.region_start
       < 0.998
+end
+
+function preview_uses_centered_mono(asset)
+  return preview_asset_channel_count(asset) <= 2
+    and (
+      state.preview_channel_mode == "left"
+      or state.preview_channel_mode == "right"
+      or state.preview_channel_mode == "mono"
+    )
+end
+
+function configure_preview_instance(
+  preview,
+  mono_output_channel
+)
+  if not preview then
+    return
+  end
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "D_VOLUME",
+    db_to_amp(
+      state.gain_db
+        + state.preview_match_offset_db
+    )
+  )
+
+  apply_preview_channel_mode(
+    preview,
+    mono_output_channel
+  )
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "D_PITCH",
+    state.pitch
+  )
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "D_PLAYRATE",
+    state.rate
+  )
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "B_PPITCH",
+    state.preserve_pitch and 1 or 0
+  )
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "B_LOOP",
+    state.loop and 1 or 0
+  )
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "D_FADEINLEN",
+    0.004
+  )
+
+  reaper.CF_Preview_SetValue(
+    preview,
+    "D_FADEOUTLEN",
+    0.010
+  )
 end
 
 function play_preview(
@@ -9188,52 +9433,32 @@ function play_preview(
   state.preview_match_offset_db =
     loudness_match_offset_db(asset)
 
-  reaper.CF_Preview_SetValue(
-    preview,
-    "D_VOLUME",
-    db_to_amp(
-      state.gain_db
-        + state.preview_match_offset_db
-    )
-  )
+  state.preview_source = preview_source
+  configure_preview_instance(preview, 0)
 
-  apply_preview_channel_mode(preview)
+  local companion = nil
 
-  reaper.CF_Preview_SetValue(
-    preview,
-    "D_PITCH",
-    state.pitch
-  )
+  if preview_uses_centered_mono(asset) then
+    companion =
+      reaper.CF_CreatePreview(preview_source)
 
-  reaper.CF_Preview_SetValue(
-    preview,
-    "D_PLAYRATE",
-    state.rate
-  )
+    if not companion then
+      pcall(reaper.CF_Preview_Stop, preview)
+      state.preview_source = nil
 
-  reaper.CF_Preview_SetValue(
-    preview,
-    "B_PPITCH",
-    state.preserve_pitch and 1 or 0
-  )
+      for _, item in ipairs(sources) do
+        reaper.PCM_Source_Destroy(item)
+      end
 
-  reaper.CF_Preview_SetValue(
-    preview,
-    "B_LOOP",
-    state.loop and 1 or 0
-  )
+      set_status(
+        "无法建立双声道监听镜像",
+        true
+      )
+      return
+    end
 
-  reaper.CF_Preview_SetValue(
-    preview,
-    "D_FADEINLEN",
-    0.004
-  )
-
-  reaper.CF_Preview_SetValue(
-    preview,
-    "D_FADEOUTLEN",
-    0.010
-  )
+    configure_preview_instance(companion, 1)
+  end
 
   local seek_position = 0
 
@@ -9246,7 +9471,21 @@ function play_preview(
   local played =
     reaper.CF_Preview_Play(preview)
 
-  if not played then
+  local companion_played =
+    not companion
+      or reaper.CF_Preview_Play(companion)
+
+  if not played or not companion_played then
+    if played then
+      pcall(reaper.CF_Preview_Stop, preview)
+    end
+
+    if companion then
+      pcall(reaper.CF_Preview_Stop, companion)
+    end
+
+    state.preview_source = nil
+
     for _, item in ipairs(sources) do
       reaper.PCM_Source_Destroy(item)
     end
@@ -9261,9 +9500,18 @@ function play_preview(
       "D_POSITION",
       seek_position
     )
+
+    if companion then
+      reaper.CF_Preview_SetValue(
+        companion,
+        "D_POSITION",
+        seek_position
+      )
+    end
   end
 
   state.preview = preview
+  state.preview_companion = companion
   state.preview_sources = sources
   state.preview_path = asset.path
   record_preview_history(asset)
@@ -9316,40 +9564,56 @@ function update_preview_parameters()
   state.preview_match_offset_db =
     loudness_match_offset_db(asset)
 
-  reaper.CF_Preview_SetValue(
-    state.preview,
-    "D_VOLUME",
-    db_to_amp(
-      state.gain_db
-        + state.preview_match_offset_db
+  local needs_companion =
+    preview_uses_centered_mono(asset)
+
+  if needs_companion
+    and not state.preview_companion
+    and state.preview_source then
+    local companion =
+      reaper.CF_CreatePreview(state.preview_source)
+
+    if companion then
+      configure_preview_instance(companion, 1)
+
+      local ok_position, position =
+        reaper.CF_Preview_GetValue(
+          state.preview,
+          "D_POSITION",
+          0
+        )
+
+      if reaper.CF_Preview_Play(companion) then
+        if ok_position and position then
+          reaper.CF_Preview_SetValue(
+            companion,
+            "D_POSITION",
+            position
+          )
+        end
+
+        state.preview_companion = companion
+      else
+        pcall(reaper.CF_Preview_Stop, companion)
+      end
+    end
+  elseif not needs_companion
+    and state.preview_companion then
+    pcall(
+      reaper.CF_Preview_Stop,
+      state.preview_companion
     )
-  )
+    state.preview_companion = nil
+  end
 
-  apply_preview_channel_mode(state.preview)
+  configure_preview_instance(state.preview, 0)
 
-  reaper.CF_Preview_SetValue(
-    state.preview,
-    "D_PITCH",
-    state.pitch
-  )
-
-  reaper.CF_Preview_SetValue(
-    state.preview,
-    "D_PLAYRATE",
-    state.rate
-  )
-
-  reaper.CF_Preview_SetValue(
-    state.preview,
-    "B_PPITCH",
-    state.preserve_pitch and 1 or 0
-  )
-
-  reaper.CF_Preview_SetValue(
-    state.preview,
-    "B_LOOP",
-    state.loop and 1 or 0
-  )
+  if state.preview_companion then
+    configure_preview_instance(
+      state.preview_companion,
+      1
+    )
+  end
 end
 
 function poll_preview()
@@ -9365,7 +9629,16 @@ function poll_preview()
     )
 
   if not ok then
+    if state.preview_companion then
+      pcall(
+        reaper.CF_Preview_Stop,
+        state.preview_companion
+      )
+    end
+
     state.preview = nil
+    state.preview_companion = nil
+    state.preview_source = nil
     state.preview_path = nil
     destroy_preview_sources()
     return
@@ -11152,6 +11425,10 @@ function reset_interface_settings()
   state.multichannel_waveform = true
   state.bottom_panel_height = 330
   state.preview_channel_mode = "original"
+  state.preview_channel_asset_key = nil
+  state.preview_channel_count = 0
+  state.preview_channel_selection = {}
+  state.preview_channel_anchor = 1
   state.loudness_match = false
   state.loudness_target_db = -18
   state.transient_threshold = 0.24
@@ -11462,6 +11739,7 @@ end
 function draw_waveform_window(
   draw_list,
   waveform,
+  asset,
   x,
   y,
   width,
@@ -11509,6 +11787,12 @@ function draw_waveform_window(
   local lane_height = lanes_height / channel_count
 
   local function draw_lane(peaks, channel, lane_y)
+    local channel_selected =
+      preview_channel_is_selected(asset, channel)
+    local lane_wave_color =
+      channel_selected
+        and wave_color
+        or rgba_with_alpha(wave_color, 0x32)
     local center = lane_y + lane_height * 0.5
     local half = math.max(2, lane_height * 0.38)
 
@@ -11563,16 +11847,14 @@ function draw_waveform_window(
         center - amplitude * half,
         px,
         center + amplitude * half,
-        wave_color,
+        lane_wave_color,
         1
       )
     end
 
     if lane_height >= 18 then
       local label =
-        channel_count == 1 and "M"
-        or channel_count == 2 and (channel == 1 and "L" or "R")
-        or string.format("CH %d", channel)
+        preview_channel_label(channel, channel_count)
       local label_width = channel_count > 2 and 42 or 24
       local label_x = x + width - label_width - 7
       local label_y = lane_y + 2
@@ -11591,7 +11873,7 @@ function draw_waveform_window(
         draw_list,
         label_x + 6,
         label_y + 1,
-        COLOR.dim,
+        channel_selected and COLOR.accent or COLOR.dim,
         label
       )
     end
@@ -12073,10 +12355,47 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
     ImGui.DrawList_AddLine(draw_list, center_x - size * 0.08, top, center_x + size * 0.02, bottom, color_value, thickness)
     ImGui.DrawList_AddLine(draw_list, center_x + size * 0.02, bottom, right - size * 0.12, center_y, color_value, thickness)
     ImGui.DrawList_AddLine(draw_list, right - size * 0.12, center_y, right, center_y, color_value, thickness)
-  elseif icon == "channel" then
-    ImGui.DrawList_AddLine(draw_list, left, top, left, bottom, color_value, thickness)
-    ImGui.DrawList_AddLine(draw_list, center_x, top, center_x, bottom, color_value, thickness)
-    ImGui.DrawList_AddLine(draw_list, right, top, right, bottom, color_value, thickness)
+  elseif icon == "channel"
+    or icon == "channel_stereo"
+    or icon == "channel_left"
+    or icon == "channel_right"
+    or icon == "channel_mono"
+    or icon == "channel_multi" then
+    local quiet =
+      rgba_with_alpha(color_value, 0x58)
+
+    if icon == "channel_left" then
+      ImGui.DrawList_AddLine(draw_list, left, top, left, bottom, color_value, thickness * 1.25)
+      ImGui.DrawList_AddLine(draw_list, right, top + size * 0.10, right, bottom - size * 0.10, quiet, thickness)
+    elseif icon == "channel_right" then
+      ImGui.DrawList_AddLine(draw_list, left, top + size * 0.10, left, bottom - size * 0.10, quiet, thickness)
+      ImGui.DrawList_AddLine(draw_list, right, top, right, bottom, color_value, thickness * 1.25)
+    elseif icon == "channel_mono" then
+      ImGui.DrawList_AddLine(draw_list, center_x, top, center_x, bottom, color_value, thickness * 1.25)
+    elseif icon == "channel_multi" then
+      local xs = {
+        left,
+        center_x - size * 0.10,
+        center_x + size * 0.10,
+        right,
+      }
+
+      for index, line_x in ipairs(xs) do
+        local inset = (index % 2 == 0) and size * 0.08 or 0
+        ImGui.DrawList_AddLine(
+          draw_list,
+          line_x,
+          top + inset,
+          line_x,
+          bottom - inset,
+          color_value,
+          thickness
+        )
+      end
+    else
+      ImGui.DrawList_AddLine(draw_list, left, top, left, bottom, color_value, thickness)
+      ImGui.DrawList_AddLine(draw_list, right, top, right, bottom, color_value, thickness)
+    end
   elseif icon == "loudness" then
     for index = 0, 3 do
       local bar_x = left + index * size * 0.15
@@ -12401,6 +12720,7 @@ function draw_parameter_card(
 
   if value_double_clicked then
     state.parameter_drag = nil
+    state.keyboard_consumed = true
     state.parameter_edit = {
       id = id,
       value = value,
@@ -12570,6 +12890,10 @@ function draw_parameter_card(
   )
 
   if editing and state.parameter_edit then
+    -- The editor may deactivate on Enter before the global shortcut pass
+    -- runs later in this same frame. Keep the whole editor lifetime and its
+    -- closing frame isolated from application shortcuts.
+    state.keyboard_consumed = true
     local editor = state.parameter_edit
     local input_width = math.max(54, value_right - value_left)
     local input_y = y + (compact_card and 0 or 3)
@@ -15876,6 +16200,7 @@ function draw_large_wave(asset)
   draw_waveform_window(
     draw_list,
     waveform,
+    asset,
     x,
     y,
     width,
@@ -16356,27 +16681,188 @@ function draw_channel_popup(asset)
     return
   end
 
-  local modes = {
-    { key = "original", label = "原始" },
-    { key = "left", label = "左声道" },
-    { key = "right", label = "右声道" },
-    { key = "mono", label = "单声道" },
-  }
+  state.keyboard_consumed = true
 
-  for _, mode in ipairs(modes) do
-    if ImGui.MenuItem(
-      ctx,
-      mode.label,
-      nil,
-      state.preview_channel_mode == mode.key
-    ) then
-      state.preview_channel_mode = mode.key
-      state.config_dirty = true
+  local selected, channel_count =
+    ensure_preview_channel_selection(asset)
 
-      if state.preview then
-        update_preview_parameters()
+  ImGui.Text(ctx, "声道选择")
+  ImGui.Separator(ctx)
+
+  if channel_count <= 2 then
+    local modes =
+      channel_count == 1
+        and {
+          { key = "original", label = "原始" },
+          { key = "mono", label = "单声道" },
+        }
+        or {
+          { key = "original", label = "立体声" },
+          { key = "left", label = "左声道" },
+          { key = "right", label = "右声道" },
+          { key = "mono", label = "单声道" },
+        }
+
+    for _, mode in ipairs(modes) do
+      if ImGui.MenuItem(
+        ctx,
+        mode.label,
+        nil,
+        state.preview_channel_mode == mode.key
+      ) then
+        state.preview_channel_mode = mode.key
+        state.config_dirty = true
+
+        if state.preview then
+          update_preview_parameters()
+        end
       end
     end
+
+    ImGui.Separator(ctx)
+    ImGui.TextDisabled(
+      ctx,
+      "左键切换监听模式；右键打开完整声道选项"
+    )
+  else
+    local mods = ImGui.GetKeyMods(ctx)
+    local ctrl = (mods & ImGui.Mod_Ctrl) ~= 0
+    local shift = (mods & ImGui.Mod_Shift) ~= 0
+
+    if ctrl
+      and ImGui.IsKeyPressed(
+        ctx,
+        ImGui.Key_A,
+        false
+      ) then
+      select_all_preview_channels(asset)
+    end
+
+    local selected_total =
+      selected_preview_channel_count(asset)
+
+    if selected_total == channel_count then
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_Button,
+        rgba_with_alpha(COLOR.accent, 0x38)
+      )
+    end
+
+    if ImGui.Button(
+      ctx,
+      translate_ui_text("全部声道")
+        .. "##channel_all",
+      112,
+      28
+    ) then
+      select_all_preview_channels(asset)
+    end
+
+    if selected_total == channel_count then
+      ImGui.PopStyleColor(ctx)
+    end
+
+    ImGui.SameLine(ctx)
+    ImGui.TextDisabled(
+      ctx,
+      string.format(
+        "%s %d / %d",
+        translate_ui_text("已选声道"),
+        selected_total,
+        channel_count
+      )
+    )
+
+    for channel = 1, channel_count do
+      if (channel - 1) % 4 ~= 0 then
+        ImGui.SameLine(ctx, 0, 6)
+      end
+
+      local is_selected = selected[channel] == true
+
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_Button,
+        is_selected
+          and rgba_with_alpha(COLOR.accent, 0x48)
+          or COLOR.button
+      )
+      ImGui.PushStyleColor(
+        ctx,
+        ImGui.Col_ButtonHovered,
+        rgba_with_alpha(COLOR.accent, 0x58)
+      )
+
+      local clicked =
+        ImGui.Button(
+          ctx,
+          preview_channel_label(channel, channel_count)
+            .. "##preview_channel_"
+            .. tostring(channel),
+          68,
+          28
+        )
+
+      ImGui.PopStyleColor(ctx, 2)
+
+      if clicked then
+        if shift then
+          local first =
+            math.min(
+              state.preview_channel_anchor or channel,
+              channel
+            )
+          local last =
+            math.max(
+              state.preview_channel_anchor or channel,
+              channel
+            )
+
+          if not ctrl then
+            for item = 1, channel_count do
+              selected[item] = false
+            end
+          end
+
+          for item = first, last do
+            selected[item] = true
+          end
+        elseif ctrl then
+          selected[channel] = not selected[channel]
+
+          if selected_preview_channel_count(asset) == 0 then
+            selected[channel] = true
+          end
+
+          state.preview_channel_anchor = channel
+        else
+          for item = 1, channel_count do
+            selected[item] = item == channel
+          end
+
+          state.preview_channel_anchor = channel
+        end
+
+        local selected_after =
+          selected_preview_channel_count(asset)
+
+        state.preview_channel_mode =
+          selected_after == channel_count
+            and "original"
+            or "custom"
+      end
+    end
+
+    ImGui.Separator(ctx)
+    ImGui.TextDisabled(
+      ctx,
+      "Ctrl+单击追加或取消；Shift+单击连续选择；Ctrl+A 全选。"
+    )
+    ImGui.TextWrapped(
+      ctx,
+      "当前 SWS 预览接口不能隔离任意多声道源声道；选择会实时更新波形显示，试听仍遵循 REAPER 的多声道输出路由。"
+    )
   end
 
   ImGui.EndPopup(ctx)
@@ -16943,13 +17429,41 @@ function draw_preview_toggle_icons(asset, button_size)
 
   ImGui.SameLine(ctx, 0, button_gap)
 
-  if icon_button(
+  local channel_count =
+    preview_asset_channel_count(asset)
+  local channel_icon =
+    channel_count > 2
+      and "channel_multi"
+      or state.preview_channel_mode == "left"
+        and "channel_left"
+        or state.preview_channel_mode == "right"
+          and "channel_right"
+          or state.preview_channel_mode == "mono"
+            and "channel_mono"
+            or "channel_stereo"
+  local channel_tooltip =
+    channel_count > 2
+      and "左键打开声道选择；右键查看说明与重置"
+      or "左键切换监听模式；右键打开完整声道选项"
+  local channel_clicked, channel_hovered =
+    icon_button(
     "channel_mode",
-    "channel",
-    "声道监听",
+    channel_icon,
+    channel_tooltip,
     state.preview_channel_mode ~= "original",
     button_size
-  ) then
+  )
+
+  if channel_clicked then
+    if channel_count > 2 then
+      ImGui.OpenPopup(ctx, "声道监听##channel_mode")
+    else
+      cycle_preview_channel_mode(asset)
+    end
+  end
+
+  if channel_hovered
+    and ImGui.IsMouseClicked(ctx, 1) then
     ImGui.OpenPopup(ctx, "声道监听##channel_mode")
   end
 
@@ -17105,15 +17619,42 @@ function preview_context_summary(asset)
     )
   end
 
-  local channel_text = translate_ui_text(
-    state.preview_channel_mode == "left"
-      and "左声道"
-      or state.preview_channel_mode == "right"
-        and "右声道"
-        or state.preview_channel_mode == "mono"
-          and "单声道"
-          or "原始"
-  )
+  local channel_count =
+    preview_asset_channel_count(asset)
+  local channel_text
+
+  if channel_count > 2
+    and state.preview_channel_mode == "custom" then
+    local selected =
+      ensure_preview_channel_selection(asset)
+    local labels = {}
+
+    for channel = 1, channel_count do
+      if selected[channel] then
+        labels[#labels + 1] =
+          preview_channel_label(
+            channel,
+            channel_count
+          )
+      end
+    end
+
+    channel_text = table.concat(labels, "+")
+  else
+    channel_text = translate_ui_text(
+      state.preview_channel_mode == "left"
+        and "左声道"
+        or state.preview_channel_mode == "right"
+          and "右声道"
+          or state.preview_channel_mode == "mono"
+            and "单声道"
+            or channel_count > 2
+              and "全部声道"
+              or channel_count == 2
+                and "立体声"
+                or "原始"
+    )
+  end
 
   local match_text =
     state.loudness_match
@@ -20554,7 +21095,9 @@ end
 ----------------------------------------------------------------
 
 function keyboard()
-  if ImGui.IsAnyItemActive(ctx) then
+  if state.keyboard_consumed
+    or state.parameter_edit
+    or ImGui.IsAnyItemActive(ctx) then
     return
   end
 
@@ -20887,6 +21430,7 @@ end
 function draw_main()
   -- 每帧重置，只有当前真正悬停的控件可以登记一个提示。
   state.tooltip_pending_text = nil
+  state.keyboard_consumed = false
 
   ImGui.SetNextWindowSize(
     ctx,

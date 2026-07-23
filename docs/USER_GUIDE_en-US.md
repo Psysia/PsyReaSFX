@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.10 Beta 14  
+**Applies to:** PsyReaSFX 0.7.11 Beta 15  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -259,6 +259,14 @@ Enable `Settings → Waveforms → Show separate channel lanes` to show:
 
 The time ruler, selection, regions and playhead span all lanes. Channel-aware detailed waveforms use the RWF3 cache; existing list thumbnails remain compatible.
 
+The channel-audition icon adapts to the source:
+
+- Mono and stereo files: left-click cycles Stereo/Original, Left, Right and Mono. The glyph moves to the left, right or center to show the active mode. Right-click opens the complete mode menu.
+- Files with more than two channels: left-click opens a channel selector. Click one lane for a single selection, `Ctrl`-click to toggle lanes, `Shift`-click for a contiguous range and `Ctrl+A` to select all lanes.
+- Selected lanes remain at full waveform intensity; unselected lanes are dimmed without being removed, so channel context stays visible.
+
+The SWS preview API does not expose arbitrary source-channel isolation for multichannel files. PsyReaSFX therefore applies exact centered audition for mono/stereo modes, while 3–8 channel selection is a waveform-monitoring aid and audio continues to follow REAPER's multichannel device routing. This avoids temporary tracks or hidden project mutations.
+
 ### Loudness display
 
 The preview header can show LUFS-I, maximum momentary LUFS, maximum short-term LUFS and True Peak. Analysis runs on demand and is cached. Estimated preview matching is intended for fast comparison, not standards-compliant delivery measurement.
@@ -288,11 +296,11 @@ You can undo the latest detection, clear every transient suggestion, or delete o
 | Pitch behavior | preserve or varispeed |
 | Direction | normal or reverse |
 | Loop | complete file or current selection |
-| Channels | original, left, right or mono |
+| Channels | stereo/original, left, right, mono; CH 1–8 waveform focus |
 
 Presets provide common pitch and rate values. These controls affect preview and, when selected, the Transfer render.
 
-Drag a parameter card or use the mouse wheel for continuous adjustment. Double-click its displayed value to enter an exact number without changing the control layout; the value field uses the accent color while editing. Press `Enter` or click elsewhere to accept, and `Esc` to cancel. Double-click the label or parameter track to restore the default.
+Drag a parameter card or use the mouse wheel for continuous adjustment. Double-click its displayed value to enter an exact number without changing the control layout; the value field uses the accent color while editing. Press `Enter` or click elsewhere to accept, and `Esc` to cancel. Parameter editing consumes its keyboard events, so confirming a value cannot trigger the global Insert shortcut. Double-click the label or parameter track to restore the default.
 
 ## 13. Place audio in REAPER
 
