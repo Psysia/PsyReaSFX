@@ -1,5 +1,25 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.12 Beta 16
+
+### Inline multichannel rail
+
+- Replaces the channel Popup with an inline channel rail inside the main
+  preview strip, keeping application shortcuts and audition active.
+- Left-clicking the multichannel icon expands or collapses the rail;
+  right-clicking the icon restores all channels.
+- Supports click, Ctrl-click, Shift-click and hover-scoped Ctrl+A selection.
+- Right-clicking an individual lane focuses it immediately.
+- Keeps selected waveform lanes bright and unselected lanes dimmed in real
+  time, without creating hidden project tracks.
+- Compresses channel buttons responsively for narrower main windows.
+
+### Unified product identity
+
+- Reuses the same vector symbol and Orbitron two-color wordmark in the About
+  page and the main toolbar.
+- Keeps the About card aligned with the active interface accent and shell.
+
 ## 0.7.11 Beta 15
 
 ### Numeric-editor shortcut isolation

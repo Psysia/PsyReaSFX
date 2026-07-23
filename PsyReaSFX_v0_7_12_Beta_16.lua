@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.11-beta.15
+-- @version 0.7.12-beta.16
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,9 @@
 --   - 0.7.11：参数编辑与全局快捷键隔离，Enter 不再误插入素材
 --   - 立体声监听使用状态图标和左键循环；右键保留完整选项
 --   - 多声道选择支持 Ctrl、Shift、Ctrl+A，并实时联动独立波形声道
+--   - 0.7.12：多声道选择改为主窗口内联工具条，不再创建 Popup
+--   - 声道条保持全局快捷键与试听可用，支持单选、多选、范围选择与右键 Solo
+--   - About 复用主工具栏矢量标志与 Orbitron 双色字标
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -108,7 +111,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.11 Beta 15"
+local VERSION = "0.7.12 Beta 16"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -706,6 +709,7 @@ local state = {
   preview_channel_count = 0,
   preview_channel_selection = {},
   preview_channel_anchor = 1,
+  preview_channel_strip_expanded = false,
   loudness_match = false,
   loudness_target_db = -18,
   preview_match_offset_db = 0,
@@ -1202,8 +1206,14 @@ I18N_EN = {
   ["多声道"] = "Multichannel",
   ["左键切换监听模式；右键打开完整声道选项"] =
     "Left-click to cycle audition modes; right-click for all channel options",
+  ["左键切换监听模式；右键恢复立体声"] =
+    "Left-click to cycle audition modes; right-click restores Stereo",
   ["左键打开声道选择；右键查看说明与重置"] =
     "Left-click to choose channels; right-click for help and reset",
+  ["左键展开或收起声道条；右键恢复全部声道"] =
+    "Left-click to expand or collapse the channel rail; right-click restores all channels",
+  ["声道条"] = "Channel rail",
+  ["右键单独监听此声道"] = "Right-click to focus this channel",
   ["Ctrl+单击追加或取消；Shift+单击连续选择；Ctrl+A 全选。"] =
     "Ctrl-click toggles channels; Shift-click selects a range; Ctrl+A selects all.",
   ["当前 SWS 预览接口不能隔离任意多声道源声道；选择会实时更新波形显示，试听仍遵循 REAPER 的多声道输出路由。"] =
@@ -5493,6 +5503,61 @@ function select_all_preview_channels(asset)
 
   state.preview_channel_mode = "original"
   state.preview_channel_anchor = 1
+end
+
+function apply_preview_channel_selection(
+  asset,
+  channel,
+  ctrl,
+  shift,
+  solo
+)
+  local selected, channel_count =
+    ensure_preview_channel_selection(asset)
+
+  if solo or (not ctrl and not shift) then
+    for item = 1, channel_count do
+      selected[item] = item == channel
+    end
+  elseif shift then
+    local first =
+      math.min(
+        state.preview_channel_anchor or channel,
+        channel
+      )
+    local last =
+      math.max(
+        state.preview_channel_anchor or channel,
+        channel
+      )
+
+    if not ctrl then
+      for item = 1, channel_count do
+        selected[item] = false
+      end
+    end
+
+    for item = first, last do
+      selected[item] = true
+    end
+  else
+    selected[channel] = not selected[channel]
+
+    if selected_preview_channel_count(asset) == 0 then
+      selected[channel] = true
+    end
+  end
+
+  state.preview_channel_anchor = channel
+
+  local selected_after =
+    selected_preview_channel_count(asset)
+
+  state.preview_channel_mode =
+    selected_after == channel_count
+      and "original"
+      or "custom"
+  state.config_dirty = true
 end
 
 function preview_channel_label(channel, count)
@@ -11429,6 +11494,7 @@ function reset_interface_settings()
   state.preview_channel_count = 0
   state.preview_channel_selection = {}
   state.preview_channel_anchor = 1
+  state.preview_channel_strip_expanded = false
   state.loudness_match = false
   state.loudness_target_db = -18
   state.transient_threshold = 0.24
@@ -12543,6 +12609,50 @@ function draw_brand_symbol(draw_list, x, y, size)
   end
 end
 
+function draw_brand_wordmark(
+  draw_list,
+  x,
+  y,
+  font_size
+)
+  local prefix = "PsyRea"
+  local font_pushed = false
+
+  if brand_font then
+    ImGui.PushFont(
+      ctx,
+      brand_font,
+      font_size or 16
+    )
+    font_pushed = true
+  end
+
+  local prefix_width =
+    select(
+      1,
+      ImGui.CalcTextSize(ctx, prefix)
+    ) or 48
+
+  ImGui.DrawList_AddText(
+    draw_list,
+    x,
+    y,
+    COLOR.header_text,
+    prefix
+  )
+  ImGui.DrawList_AddText(
+    draw_list,
+    x + prefix_width,
+    y,
+    COLOR.accent,
+    "SFX"
+  )
+
+  if font_pushed then
+    ImGui.PopFont(ctx)
+  end
+end
+
 function draw_brand_mark(compact)
   local draw_list =
     ImGui.GetWindowDrawList(ctx)
@@ -12565,35 +12675,12 @@ function draw_brand_mark(compact)
   if not compact then
     local word_x = x + 42
     local word_y = y + 8
-    local prefix = "PsyRea"
-    local font_pushed = false
-
-    if brand_font then
-      ImGui.PushFont(ctx, brand_font, 16)
-      font_pushed = true
-    end
-
-    local prefix_width =
-      select(1, ImGui.CalcTextSize(ctx, prefix)) or 48
-
-    ImGui.DrawList_AddText(
+    draw_brand_wordmark(
       draw_list,
       word_x,
       word_y,
-      COLOR.header_text,
-      prefix
+      16
     )
-    ImGui.DrawList_AddText(
-      draw_list,
-      word_x + prefix_width,
-      word_y,
-      COLOR.accent,
-      "SFX"
-    )
-
-    if font_pushed then
-      ImGui.PopFont(ctx)
-    end
   end
 
   tooltip("PsyReaSFX · Sound Assets Organized")
@@ -13086,7 +13173,18 @@ function toolbar_separator(height)
 end
 
 function bottom_controls_reserve_height(width)
-  return width >= 760 and 88 or 124
+  local base = width >= 760 and 88 or 124
+
+  if state.preview_channel_strip_expanded
+    and (state.preview_channel_count or 0) > 2 then
+    base = base + (
+      state.ui_density == "comfortable"
+        and 42
+        or 38
+    )
+  end
+
+  return base
 end
 
 function draw_bottom_splitter(width, total_height)
@@ -16673,199 +16771,164 @@ function draw_preview_presets_popup()
   ImGui.EndPopup(ctx)
 end
 
-function draw_channel_popup(asset)
-  if not ImGui.BeginPopup(
-    ctx,
-    "声道监听##channel_mode"
-  ) then
-    return
-  end
-
-  state.keyboard_consumed = true
-
+function draw_inline_channel_selector(asset, button_size)
   local selected, channel_count =
     ensure_preview_channel_selection(asset)
 
-  ImGui.Text(ctx, "声道选择")
-  ImGui.Separator(ctx)
+  if channel_count <= 2
+    or not state.preview_channel_strip_expanded then
+    return
+  end
 
-  if channel_count <= 2 then
-    local modes =
-      channel_count == 1
-        and {
-          { key = "original", label = "原始" },
-          { key = "mono", label = "单声道" },
-        }
-        or {
-          { key = "original", label = "立体声" },
-          { key = "left", label = "左声道" },
-          { key = "right", label = "右声道" },
-          { key = "mono", label = "单声道" },
-        }
-
-    for _, mode in ipairs(modes) do
-      if ImGui.MenuItem(
-        ctx,
-        mode.label,
-        nil,
-        state.preview_channel_mode == mode.key
-      ) then
-        state.preview_channel_mode = mode.key
-        state.config_dirty = true
-
-        if state.preview then
-          update_preview_parameters()
-        end
-      end
-    end
-
-    ImGui.Separator(ctx)
-    ImGui.TextDisabled(
-      ctx,
-      "左键切换监听模式；右键打开完整声道选项"
-    )
-  else
-    local mods = ImGui.GetKeyMods(ctx)
-    local ctrl = (mods & ImGui.Mod_Ctrl) ~= 0
-    local shift = (mods & ImGui.Mod_Shift) ~= 0
-
-    if ctrl
-      and ImGui.IsKeyPressed(
-        ctx,
-        ImGui.Key_A,
-        false
-      ) then
-      select_all_preview_channels(asset)
-    end
-
-    local selected_total =
-      selected_preview_channel_count(asset)
-
-    if selected_total == channel_count then
-      ImGui.PushStyleColor(
-        ctx,
-        ImGui.Col_Button,
-        rgba_with_alpha(COLOR.accent, 0x38)
-      )
-    end
-
-    if ImGui.Button(
-      ctx,
-      translate_ui_text("全部声道")
-        .. "##channel_all",
-      112,
-      28
-    ) then
-      select_all_preview_channels(asset)
-    end
-
-    if selected_total == channel_count then
-      ImGui.PopStyleColor(ctx)
-    end
-
-    ImGui.SameLine(ctx)
-    ImGui.TextDisabled(
-      ctx,
-      string.format(
-        "%s %d / %d",
-        translate_ui_text("已选声道"),
-        selected_total,
-        channel_count
-      )
+  button_size = button_size or UI_METRIC.icon_button
+  local available_width =
+    select(1, ImGui.GetContentRegionAvail(ctx))
+  local channel_button_width =
+    clamp(
+      (
+        available_width
+          - 48
+          - 72
+          - 58
+          - (channel_count + 2) * 5
+      ) / channel_count,
+      34,
+      51
     )
 
-    for channel = 1, channel_count do
-      if (channel - 1) % 4 ~= 0 then
-        ImGui.SameLine(ctx, 0, 6)
-      end
+  local start_x, start_y =
+    ImGui.GetCursorScreenPos(ctx)
+  local mods = ImGui.GetKeyMods(ctx)
+  local ctrl = (mods & ImGui.Mod_Ctrl) ~= 0
+  local shift = (mods & ImGui.Mod_Shift) ~= 0
+  local selected_total =
+    selected_preview_channel_count(asset)
 
-      local is_selected = selected[channel] == true
+  ImGui.TextDisabled(
+    ctx,
+    translate_ui_text("声道条")
+  )
+  ImGui.SameLine(ctx, 0, 9)
 
-      ImGui.PushStyleColor(
-        ctx,
-        ImGui.Col_Button,
-        is_selected
-          and rgba_with_alpha(COLOR.accent, 0x48)
-          or COLOR.button
-      )
-      ImGui.PushStyleColor(
-        ctx,
-        ImGui.Col_ButtonHovered,
-        rgba_with_alpha(COLOR.accent, 0x58)
-      )
+  local all_selected = selected_total == channel_count
 
-      local clicked =
-        ImGui.Button(
-          ctx,
-          preview_channel_label(channel, channel_count)
-            .. "##preview_channel_"
-            .. tostring(channel),
-          68,
-          28
-        )
-
-      ImGui.PopStyleColor(ctx, 2)
-
-      if clicked then
-        if shift then
-          local first =
-            math.min(
-              state.preview_channel_anchor or channel,
-              channel
-            )
-          local last =
-            math.max(
-              state.preview_channel_anchor or channel,
-              channel
-            )
-
-          if not ctrl then
-            for item = 1, channel_count do
-              selected[item] = false
-            end
-          end
-
-          for item = first, last do
-            selected[item] = true
-          end
-        elseif ctrl then
-          selected[channel] = not selected[channel]
-
-          if selected_preview_channel_count(asset) == 0 then
-            selected[channel] = true
-          end
-
-          state.preview_channel_anchor = channel
-        else
-          for item = 1, channel_count do
-            selected[item] = item == channel
-          end
-
-          state.preview_channel_anchor = channel
-        end
-
-        local selected_after =
-          selected_preview_channel_count(asset)
-
-        state.preview_channel_mode =
-          selected_after == channel_count
-            and "original"
-            or "custom"
-      end
-    end
-
-    ImGui.Separator(ctx)
-    ImGui.TextDisabled(
+  if all_selected then
+    ImGui.PushStyleColor(
       ctx,
-      "Ctrl+单击追加或取消；Shift+单击连续选择；Ctrl+A 全选。"
-    )
-    ImGui.TextWrapped(
-      ctx,
-      "当前 SWS 预览接口不能隔离任意多声道源声道；选择会实时更新波形显示，试听仍遵循 REAPER 的多声道输出路由。"
+      ImGui.Col_Button,
+      rgba_with_alpha(COLOR.accent, 0x34)
     )
   end
 
-  ImGui.EndPopup(ctx)
+  if ImGui.Button(
+    ctx,
+    translate_ui_text("全部声道")
+      .. "##inline_channel_all",
+    72,
+    button_size
+  ) then
+    select_all_preview_channels(asset)
+  end
+
+  if all_selected then
+    ImGui.PopStyleColor(ctx)
+  end
+
+  for channel = 1, channel_count do
+    ImGui.SameLine(ctx, 0, 5)
+
+    local is_selected = selected[channel] == true
+
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_Button,
+      is_selected
+        and rgba_with_alpha(COLOR.accent, 0x40)
+        or rgba_with_alpha(COLOR.button, 0x74)
+    )
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_ButtonHovered,
+      rgba_with_alpha(COLOR.accent, 0x56)
+    )
+
+    local button_label =
+      channel_button_width < 42
+        and tostring(channel)
+        or preview_channel_label(
+          channel,
+          channel_count
+        )
+
+    local clicked =
+      ImGui.Button(
+        ctx,
+        button_label
+          .. "##inline_preview_channel_"
+          .. tostring(channel),
+        channel_button_width,
+        button_size
+      )
+
+    local hovered = ImGui.IsItemHovered(ctx)
+
+    ImGui.PopStyleColor(ctx, 2)
+
+    if clicked then
+      apply_preview_channel_selection(
+        asset,
+        channel,
+        ctrl,
+        shift,
+        false
+      )
+    elseif hovered
+      and ImGui.IsMouseClicked(ctx, 1) then
+      apply_preview_channel_selection(
+        asset,
+        channel,
+        false,
+        false,
+        true
+      )
+    end
+
+    if hovered then
+      tooltip(
+        translate_ui_text(
+          "右键单独监听此声道"
+        )
+      )
+    end
+  end
+
+  ImGui.SameLine(ctx, 0, 9)
+  ImGui.TextDisabled(
+    ctx,
+    string.format(
+      "%d / %d",
+      selected_preview_channel_count(asset),
+      channel_count
+    )
+  )
+
+  local mouse_x, mouse_y = ImGui.GetMousePos(ctx)
+  local rail_hovered =
+    mouse_x >= start_x
+      and mouse_x <= start_x + available_width
+      and mouse_y >= start_y
+      and mouse_y <= start_y + button_size + 4
+
+  if rail_hovered
+    and ctrl
+    and ImGui.IsKeyPressed(
+      ctx,
+      ImGui.Key_A,
+      false
+    ) then
+    select_all_preview_channels(asset)
+    state.keyboard_consumed = true
+  end
 end
 
 function draw_regions_popup(asset)
@@ -17443,8 +17506,8 @@ function draw_preview_toggle_icons(asset, button_size)
             or "channel_stereo"
   local channel_tooltip =
     channel_count > 2
-      and "左键打开声道选择；右键查看说明与重置"
-      or "左键切换监听模式；右键打开完整声道选项"
+      and "左键展开或收起声道条；右键恢复全部声道"
+      or "左键切换监听模式；右键恢复立体声"
   local channel_clicked, channel_hovered =
     icon_button(
     "channel_mode",
@@ -17456,7 +17519,8 @@ function draw_preview_toggle_icons(asset, button_size)
 
   if channel_clicked then
     if channel_count > 2 then
-      ImGui.OpenPopup(ctx, "声道监听##channel_mode")
+      state.preview_channel_strip_expanded =
+        not state.preview_channel_strip_expanded
     else
       cycle_preview_channel_mode(asset)
     end
@@ -17464,7 +17528,16 @@ function draw_preview_toggle_icons(asset, button_size)
 
   if channel_hovered
     and ImGui.IsMouseClicked(ctx, 1) then
-    ImGui.OpenPopup(ctx, "声道监听##channel_mode")
+    if channel_count > 2 then
+      select_all_preview_channels(asset)
+    else
+      state.preview_channel_mode = "original"
+      state.config_dirty = true
+
+      if state.preview then
+        update_preview_parameters()
+      end
+    end
   end
 
   ImGui.SameLine(ctx, 0, button_gap)
@@ -17496,7 +17569,6 @@ function draw_preview_toggle_icons(asset, button_size)
     end
   end
 
-  draw_channel_popup(asset)
 end
 
 function draw_preview_controls(asset, available_width, hide_toggles, force_compact)
@@ -17855,9 +17927,17 @@ function draw_control_deck(asset)
       or state.ui_density == "comfortable" and 32
       or 30
   local two_rows = not minimal and width < 760
+  local show_channel_rail =
+    preview_asset_channel_count(asset) > 2
+      and state.preview_channel_strip_expanded
   local panel_height =
     two_rows and (button_size * 2 + 14)
       or (button_size + 4)
+
+  if show_channel_rail then
+    panel_height =
+      panel_height + button_size + 10
+  end
 
   ImGui.PushStyleVar(
     ctx,
@@ -17910,6 +17990,18 @@ function draw_control_deck(asset)
         ImGui.SameLine(ctx, 0, 10)
         draw_preview_toggle_icons(asset, button_size)
       end
+    end
+
+    if show_channel_rail then
+      ImGui.SetCursorPosX(ctx, 4)
+      ImGui.SetCursorPosY(
+        ctx,
+        panel_height - button_size - 4
+      )
+      draw_inline_channel_selector(
+        asset,
+        button_size
+      )
     end
   end
 
@@ -19551,53 +19643,29 @@ function draw_settings_about()
     2
   )
 
-  local icon_size = math.min(152, card_height - 44)
+  local icon_size = math.min(132, card_height - 54)
   local icon_x = x + 24
   local icon_y = y + (card_height - icon_size) * 0.5
-  local icon = artwork_image_from_path(BRAND_ICON_PATH)
-
-  if icon then
-    ImGui.DrawList_AddImageRounded(
-      draw_list,
-      icon,
-      icon_x,
-      icon_y,
-      icon_x + icon_size,
-      icon_y + icon_size,
-      0,
-      0,
-      1,
-      1,
-      0xFFFFFFFF,
-      22,
-      0
-    )
-  else
-    ImGui.DrawList_AddRectFilled(
-      draw_list,
-      icon_x,
-      icon_y,
-      icon_x + icon_size,
-      icon_y + icon_size,
-      COLOR.button,
-      22
-    )
-  end
+  draw_brand_symbol(
+    draw_list,
+    icon_x,
+    icon_y,
+    icon_size
+  )
 
   local text_x = icon_x + icon_size + 28
 
-  ImGui.DrawList_AddText(
+  draw_brand_wordmark(
     draw_list,
     text_x,
-    y + 28,
-    COLOR.header_text,
-    SCRIPT_NAME
+    y + 34,
+    28
   )
 
   ImGui.DrawList_AddText(
     draw_list,
     text_x,
-    y + 62,
+    y + 78,
     COLOR.header_text,
     translate_ui_text("音效资产井然有序")
   )
@@ -19605,7 +19673,7 @@ function draw_settings_about()
   ImGui.DrawList_AddText(
     draw_list,
     text_x,
-    y + 91,
+    y + 105,
     COLOR.dim,
     translate_ui_text("浏览 · 整理 · 试听")
   )
@@ -19613,7 +19681,7 @@ function draw_settings_about()
   ImGui.DrawList_AddText(
     draw_list,
     text_x,
-    y + 130,
+    y + 143,
     COLOR.accent,
     "v" .. VERSION .. "  ·  " .. AUTHOR_NAME
   )
@@ -19621,7 +19689,7 @@ function draw_settings_about()
   ImGui.DrawList_AddText(
     draw_list,
     text_x,
-    y + 161,
+    y + 172,
     COLOR.dim,
     COPYRIGHT_TEXT
   )
