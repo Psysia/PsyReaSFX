@@ -1,5 +1,22 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.14 Beta 18
+
+### Preview anti-click handling
+
+- Stops Space-bar and transport-button preview through a short 50 ms volume
+  ramp before destroying the SWS Preview object.
+- Extends Preview fade-in to 12 ms and fade-out to 18 ms.
+- Writes a non-zero seek position before starting playback, avoiding the
+  first-buffer jump from the beginning of the file.
+- Clears pending fade state on every preview cleanup path.
+
+### Channel-rail state
+
+- Gives All Channels explicit selected, idle and subtle hover colors instead
+  of inheriting the global button state.
+- The All Channels fill now represents the real lane selection count.
+
 ## 0.7.13 Beta 17
 
 ### Inline rail hotfix

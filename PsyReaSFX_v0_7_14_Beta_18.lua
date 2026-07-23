@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.13-beta.17
+-- @version 0.7.14-beta.18
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -105,6 +105,9 @@
 --   - About 复用主工具栏矢量标志与 Orbitron 双色字标
 --   - 0.7.13：修复同帧收起声道条时 SetCursorPos 越过 Child 边界的崩溃
 --   - 多声道右键明确为波形聚焦，不再误称为 SWS 无法提供的源声道 Solo
+--   - 0.7.14：空格停止试听使用短音量斜坡，减少连续从头试听的爆音
+--   - Preview 安全淡入延长，定位在播放前写入，降低缓冲边界不连续
+--   - 全部声道按钮显式区分选中、未选中与悬停状态
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -113,7 +116,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.13 Beta 17"
+local VERSION = "0.7.14 Beta 18"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -667,6 +670,7 @@ local state = {
   preview_map_span = 1,
   preview_map_reverse = false,
   preview_percent = 0,
+  preview_stop_fade = nil,
   preview_backend =
     type(reaper.CF_CreatePreview) == "function"
       and "SWS"
@@ -9209,6 +9213,8 @@ function destroy_preview_sources()
 end
 
 function stop_preview()
+  state.preview_stop_fade = nil
+
   if state.preview_companion
     and type(reaper.CF_Preview_Stop) == "function" then
     pcall(
@@ -9235,6 +9241,45 @@ function stop_preview()
   state.preview_map_reverse = false
   state.preview_percent = 0
   destroy_preview_sources()
+end
+
+function request_preview_stop()
+  if not state.preview then
+    stop_preview()
+    return
+  end
+
+  if state.preview_stop_fade then
+    return
+  end
+
+  local base_volume =
+    db_to_amp(
+      state.gain_db
+        + state.preview_match_offset_db
+    )
+
+  state.preview_stop_fade = {
+    started = reaper.time_precise(),
+    duration = 0.050,
+    base_volume = base_volume,
+  }
+
+  pcall(
+    reaper.CF_Preview_SetValue,
+    state.preview,
+    "B_LOOP",
+    0
+  )
+
+  if state.preview_companion then
+    pcall(
+      reaper.CF_Preview_SetValue,
+      state.preview_companion,
+      "B_LOOP",
+      0
+    )
+  end
 end
 
 function clear_row_selection()
@@ -9369,13 +9414,13 @@ function configure_preview_instance(
   reaper.CF_Preview_SetValue(
     preview,
     "D_FADEINLEN",
-    0.004
+    0.012
   )
 
   reaper.CF_Preview_SetValue(
     preview,
     "D_FADEOUTLEN",
-    0.010
+    0.018
   )
 end
 
@@ -9537,6 +9582,22 @@ function play_preview(
         * duration
   end
 
+  if seek_position > 0 then
+    reaper.CF_Preview_SetValue(
+      preview,
+      "D_POSITION",
+      seek_position
+    )
+
+    if companion then
+      reaper.CF_Preview_SetValue(
+        companion,
+        "D_POSITION",
+        seek_position
+      )
+    end
+  end
+
   local played =
     reaper.CF_Preview_Play(preview)
 
@@ -9561,22 +9622,6 @@ function play_preview(
 
     set_status("试听启动失败", true)
     return
-  end
-
-  if seek_position > 0 then
-    reaper.CF_Preview_SetValue(
-      preview,
-      "D_POSITION",
-      seek_position
-    )
-
-    if companion then
-      reaper.CF_Preview_SetValue(
-        companion,
-        "D_POSITION",
-        seek_position
-      )
-    end
   end
 
   state.preview = preview
@@ -9690,6 +9735,41 @@ function poll_preview()
     return
   end
 
+  if state.preview_stop_fade then
+    local fade = state.preview_stop_fade
+    local elapsed =
+      reaper.time_precise() - fade.started
+    local progress =
+      clamp(
+        elapsed / math.max(0.001, fade.duration),
+        0,
+        1
+      )
+    local volume =
+      fade.base_volume * (1 - progress)
+
+    pcall(
+      reaper.CF_Preview_SetValue,
+      state.preview,
+      "D_VOLUME",
+      volume
+    )
+
+    if state.preview_companion then
+      pcall(
+        reaper.CF_Preview_SetValue,
+        state.preview_companion,
+        "D_VOLUME",
+        volume
+      )
+    end
+
+    if progress >= 1 then
+      stop_preview()
+      return
+    end
+  end
+
   local ok, position =
     reaper.CF_Preview_GetValue(
       state.preview,
@@ -9709,6 +9789,7 @@ function poll_preview()
     state.preview_companion = nil
     state.preview_source = nil
     state.preview_path = nil
+    state.preview_stop_fade = nil
     destroy_preview_sources()
     return
   end
@@ -16816,13 +16897,20 @@ function draw_inline_channel_selector(asset, button_size)
 
   local all_selected = selected_total == channel_count
 
-  if all_selected then
-    ImGui.PushStyleColor(
-      ctx,
-      ImGui.Col_Button,
-      rgba_with_alpha(COLOR.accent, 0x34)
-    )
-  end
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Button,
+    all_selected
+      and rgba_with_alpha(COLOR.accent, 0x48)
+      or rgba_with_alpha(COLOR.button, 0x74)
+  )
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_ButtonHovered,
+    all_selected
+      and rgba_with_alpha(COLOR.accent, 0x58)
+      or rgba_with_alpha(COLOR.accent, 0x20)
+  )
 
   if ImGui.Button(
     ctx,
@@ -16834,9 +16922,7 @@ function draw_inline_channel_selector(asset, button_size)
     select_all_preview_channels(asset)
   end
 
-  if all_selected then
-    ImGui.PopStyleColor(ctx)
-  end
+  ImGui.PopStyleColor(ctx, 2)
 
   for channel = 1, channel_count do
     ImGui.SameLine(ctx, 0, 5)
@@ -17357,7 +17443,7 @@ function draw_action_strip(asset, minimal, button_size)
     button_size
   ) then
     if state.preview then
-      stop_preview()
+      request_preview_stop()
     else
       play_preview(asset, nil, true)
     end
@@ -21303,7 +21389,7 @@ function keyboard()
     false
   ) then
     if state.preview then
-      stop_preview()
+      request_preview_stop()
     else
       play_preview(nil, nil, true)
     end

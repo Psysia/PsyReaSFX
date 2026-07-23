@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.13 Beta 17  
+**Applies to:** PsyReaSFX 0.7.14 Beta 18  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -227,7 +227,8 @@ selected > marked > played (when enabled) > normal
 
 - Click a position in a row waveform to select the asset and start from that point.
 - The active row shows a mini playhead.
-- `Space` plays or stops.
+- `Space` plays or stops. Stop uses a brief volume ramp before the SWS Preview
+  object is destroyed; playback applies its safety fade from the first sample.
 - `Up` and `Down` move through results.
 - Enable automatic audition to start playback when selection changes.
 
@@ -265,6 +266,7 @@ The channel-audition icon adapts to the source:
 - Files with more than two channels: left-click expands or collapses an inline channel rail inside the main preview strip. It does not open another window, so preview and application shortcuts remain available.
 - In the inline rail, click one lane for a single selection, `Ctrl`-click to toggle lanes, `Shift`-click for a contiguous range and hover the rail while pressing `Ctrl+A` to select all lanes. Right-click a lane to focus its waveform immediately; right-click the multichannel icon to restore all lanes.
 - Selected lanes remain at full waveform intensity; unselected lanes are dimmed without being removed, so channel context stays visible.
+- All Channels uses its selected fill only when every lane is active.
 
 The SWS preview API does not expose arbitrary source-channel isolation for multichannel files. PsyReaSFX therefore applies exact centered audition for mono/stereo modes, while 3–8 channel selection and right-click focus are waveform-monitoring aids; audio continues to follow REAPER's multichannel device routing. The status line states this explicitly. This avoids temporary tracks or hidden project mutations.
 
