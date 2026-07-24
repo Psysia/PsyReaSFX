@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.7.20--beta.24-19D8FF" alt="0.7.20 beta 24">
+  <img src="https://img.shields.io/badge/版本-0.7.21--beta.25-19D8FF" alt="0.7.21 beta 25">
   <img src="https://img.shields.io/badge/宿主-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/界面-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/安装-ReaPack-1F6FCC" alt="ReaPack">
@@ -165,7 +165,7 @@ Cover、Image、Thumbnail 文件夹会在严格的深度和目录数量预算内
 
 ## 发布状态
 
-`0.7.20 Beta 24` 已完成计划中的 0.7 功能集合，并继续进行 Transfer 与交付工作流的兼容性、回归和实机验证。测试期间，`0.6.21` 仍可作为稳定回退版本。
+`0.7.21 Beta 25` 已完成计划中的 0.7 功能集合，并继续进行 Transfer 与交付工作流的兼容性、回归和实机验证。测试期间，`0.6.21` 仍可作为稳定回退版本。
 
 ## 作者与许可
 

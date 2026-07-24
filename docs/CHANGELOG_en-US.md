@@ -1,5 +1,18 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.21 Beta 25
+
+### Visible Transfer selection state
+
+- Replaces Transfer's generic choice buttons with dedicated segmented
+  controls.
+- Fixes an ordering bug where the generic dark-button colors were pushed after
+  the selected color and therefore hid the active state.
+- Shows the active scope, format, sample rate, channel mode, normalization
+  method and collision policy with an accent fill, distinct border and
+  high-contrast text.
+- Keeps neutral and hover states consistent with the selected theme.
+
 ## 0.7.20 Beta 24
 
 ### Transfer folder actions

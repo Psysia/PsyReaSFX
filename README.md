@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.20--beta.24-19D8FF" alt="Version 0.7.20 beta 24">
+  <img src="https://img.shields.io/badge/Version-0.7.21--beta.25-19D8FF" alt="Version 0.7.21 beta 25">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -229,7 +229,7 @@ inspector retains its neutral empty-state illustration.
 
 ## Release status
 
-`0.7.20 Beta 24` completes the planned 0.7 feature set and continues the
+`0.7.21 Beta 25` completes the planned 0.7 feature set and continues the
 compatibility and regression phase for Transfer and delivery workflows;
 `0.6.21` remains the
 stable fallback while this testing continues.

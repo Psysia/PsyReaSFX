@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.20 Beta 24  
+**Applies to:** PsyReaSFX 0.7.21 Beta 25  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -370,6 +370,11 @@ Choose the output folder and build a naming template from these tokens:
 Names are sanitized for Windows. Optional lowercase conversion runs after token expansion.
 
 ### Current capabilities
+
+Mutually exclusive Transfer choices use segmented controls. The active scope,
+format, sample rate, channel mode, normalization method and collision policy
+are shown with the current theme accent, a distinct border and
+high-contrast text.
 
 - Scope: full current asset, current selection, or all selected assets.
 - Format: explicit WAV 16-bit, 24-bit or 32-bit PCM, or REAPER's default FLAC sink.

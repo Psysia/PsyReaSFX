@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.20-beta.24
+-- @version 0.7.21-beta.25
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -126,6 +126,8 @@
 --   - 0.7.20：修复 Transfer 面板重复按钮 ID 与 Windows 目录打开失效
 --   - 输出目录、最近输出与任务报告统一使用 SWS 优先、系统命令回退的打开流程
 --   - 新增导出完成后自动打开输出目录，并随工程外配置持久化
+--   - 0.7.21：Transfer 互斥选项改为明确的分段选择器状态
+--   - 当前项统一使用强调色背景、边框与高对比文字，不再被通用按钮样式覆盖
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -134,7 +136,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.20 Beta 24"
+local VERSION = "0.7.21 Beta 25"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -21462,28 +21464,68 @@ function settings_section_title(title, description)
   ImGui.Spacing(ctx)
 end
 
+function transfer_option_button(label, width, selected)
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Button,
+    selected and COLOR.selected or COLOR.button
+  )
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_ButtonHovered,
+    selected and COLOR.accent or COLOR.button_hover
+  )
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_ButtonActive,
+    COLOR.accent
+  )
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Text,
+    selected and COLOR.selected_text or COLOR.text
+  )
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Border,
+    selected
+      and rgba_with_alpha(COLOR.selected_text, 0xA0)
+      or rgba_with_alpha(COLOR.border, 0x70)
+  )
+
+  ImGui.PushStyleVar(
+    ctx,
+    ImGui.StyleVar_FrameBorderSize,
+    selected and 1.5 or 1
+  )
+
+  local clicked = ImGui.Button(
+    ctx,
+    label,
+    width or 128,
+    0
+  )
+
+  ImGui.PopStyleVar(ctx)
+  ImGui.PopStyleColor(ctx, 5)
+  return clicked
+end
+
 function transfer_choice(label, key, options)
   ImGui.TextDisabled(ctx, label)
 
   for index, option in ipairs(options) do
     local selected = state[key] == option.value
 
-    if selected then
-      ImGui.PushStyleColor(
-        ctx,
-        ImGui.Col_Button,
-        rgba_with_alpha(COLOR.selected, 0x88)
-      )
-    end
-
-    local clicked = dark_button(
+    local clicked = transfer_option_button(
       option.label .. "##" .. key .. "_" .. option.value,
-      option.width or 128
+      option.width or 128,
+      selected
     )
-
-    if selected then
-      ImGui.PopStyleColor(ctx)
-    end
 
     if clicked then
       state[key] = option.value
