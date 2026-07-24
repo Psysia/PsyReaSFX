@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.15-beta.19
+-- @version 0.7.16-beta.20
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -111,6 +111,9 @@
 --   - 0.7.15：试听统一经过带源边界淡入的 Section Source
 --   - 停止试听改用 SWS 音频线程淡出，移除会产生阶梯增益的 UI 帧斜坡
 --   - 左右面板展开时，Gain 右侧六个试听开关仍会保留并按宽度自动换行
+--   - 0.7.16：显式捕获 PsyReaSFX 聚焦窗口中的键盘输入，防止 Space
+--     同时触发 REAPER 全局传输
+--   - 停止试听后延迟释放媒体源，让 SWS 音频线程完成淡出，避免截断爆音
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -119,7 +122,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.15 Beta 19"
+local VERSION = "0.7.16 Beta 20"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -666,6 +669,7 @@ local state = {
   preview_companion = nil,
   preview_source = nil,
   preview_sources = nil,
+  retired_preview_sources = {},
   preview_path = nil,
   preview_position = 0,
   preview_length = 0,
@@ -9202,16 +9206,59 @@ end
 -- Preview
 ----------------------------------------------------------------
 
-function destroy_preview_sources()
-  if state.preview_sources then
-    for _, source in ipairs(state.preview_sources) do
-      if source then
-        reaper.PCM_Source_Destroy(source)
-      end
+function destroy_preview_source_list(sources)
+  if not sources then
+    return
+  end
+
+  for _, source in ipairs(sources) do
+    if source then
+      reaper.PCM_Source_Destroy(source)
+    end
+  end
+end
+
+function cleanup_retired_preview_sources(force)
+  local pending =
+    state.retired_preview_sources or {}
+  local now = reaper.time_precise()
+  local keep = {}
+
+  for _, retired in ipairs(pending) do
+    if force or now >= retired.release_at then
+      destroy_preview_source_list(retired.sources)
+    else
+      keep[#keep + 1] = retired
     end
   end
 
+  state.retired_preview_sources = keep
+end
+
+function destroy_preview_sources(after_fade)
+  local sources = state.preview_sources
   state.preview_sources = nil
+
+  if not sources then
+    return
+  end
+
+  if after_fade then
+    state.retired_preview_sources =
+      state.retired_preview_sources or {}
+
+    state.retired_preview_sources[
+      #state.retired_preview_sources + 1
+    ] = {
+      sources = sources,
+      -- Keep SECTION and file sources alive beyond SWS's 25 ms fade.
+      -- Destroying them in the same UI frame truncates the audio-thread
+      -- fade and is audible as a click when Space is tapped repeatedly.
+      release_at = reaper.time_precise() + 0.100,
+    }
+  else
+    destroy_preview_source_list(sources)
+  end
 end
 
 function stop_preview()
@@ -9240,7 +9287,7 @@ function stop_preview()
   state.preview_map_span = 1
   state.preview_map_reverse = false
   state.preview_percent = 0
-  destroy_preview_sources()
+  destroy_preview_sources(true)
 end
 
 function request_preview_stop()
@@ -21666,6 +21713,19 @@ function draw_main()
     )
 
   if visible then
+    -- PsyReaSFX owns Space and the other browser shortcuts while its main
+    -- window (or any child panel) is focused. Explicit capture prevents the
+    -- same Space press from also reaching REAPER's global transport action.
+    if ImGui.IsWindowFocused(
+      ctx,
+      ImGui.FocusedFlags_RootAndChildWindows
+    ) then
+      ImGui.SetNextFrameWantCaptureKeyboard(
+        ctx,
+        true
+      )
+    end
+
     draw_toolbar()
     draw_sub_toolbar()
     draw_import_progress()
@@ -21977,6 +22037,7 @@ end
 
 function cleanup()
   stop_preview()
+  cleanup_retired_preview_sources(true)
   destroy_wave_job(state.wave_active)
 
   for key in pairs(state.artwork_images) do
@@ -22099,6 +22160,7 @@ function loop()
   process_wave_queue()
   process_pending_transient_detection()
   process_loudness_queue()
+  cleanup_retired_preview_sources(false)
   poll_preview()
   watch_folders()
   autosave()

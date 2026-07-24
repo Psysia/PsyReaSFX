@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.7.15 Beta 19  
+**适用版本：** PsyReaSFX 0.7.16 Beta 20  
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 

@@ -1,5 +1,27 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.16 Beta 20
+
+### Space-bar anti-click fix
+
+- Explicitly captures keyboard input while the PsyReaSFX main window or one
+  of its child panels has focus, preventing the same Space press from also
+  reaching REAPER's global transport action.
+- Keeps stopped Preview media sources alive for 100 ms so the SWS audio
+  thread can finish its 25 ms release before the underlying Section and file
+  sources are destroyed.
+- Cleans retired Preview sources incrementally without adding a blocking wait
+  to the interface.
+
+### Privacy-safe project media
+
+- Replaces the workspace and Focus-mode screenshots with current Beta 20
+  captures.
+- Replaces both Transfer screenshots with versions whose local output paths
+  are concealed.
+- Promotes the logical-library and waveform-to-REAPER demonstrations from the
+  user guide to the main project page.
+
 ## 0.7.15 Beta 19
 
 ### Source-boundary anti-click path

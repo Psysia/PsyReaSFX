@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.15--beta.19-19D8FF" alt="Version 0.7.15 beta 19">
+  <img src="https://img.shields.io/badge/Version-0.7.16--beta.20-19D8FF" alt="Version 0.7.16 beta 20">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -88,6 +88,27 @@ the result list and preview area.
   <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX focus mode" width="100%">
 </p>
 
+## See it in action
+
+### Build one library from multiple source folders
+
+Create a logical library first, expand it in place, and attach independent
+source folders over time. Each source retains its own path, online state and
+Artwork assignment.
+
+<p align="center">
+  <img src="assets/screenshots/logical-library-workflow.gif" alt="Expanding a logical library with multiple source folders" width="760">
+</p>
+
+### Select on the waveform and deliver to REAPER
+
+Drag across the detailed waveform to define a precise range, audition the
+selection, then drag that range directly into the REAPER arrange view.
+
+<p align="center">
+  <img src="assets/screenshots/waveform-edit-drag-reaper.gif" alt="Creating a waveform selection and dragging it into REAPER" width="100%">
+</p>
+
 ## Core capabilities
 
 ### Libraries that match real storage
@@ -124,6 +145,10 @@ Transfer can export the full file or current waveform selection using an
 output directory, naming template, format, sample rate, channel mode, fades,
 normalization and collision policy. The result can be inserted back into the
 current REAPER project.
+
+<p align="center">
+  <img src="assets/screenshots/transfer-settings-en.png" alt="Privacy-safe PsyReaSFX Transfer settings" width="860">
+</p>
 
 ## Quick start
 
@@ -177,7 +202,7 @@ Settings for predictable browsing on very large libraries.
 
 ## Release status
 
-`0.7.15 Beta 19` is part of the active 0.7 development line. The 0.7 line is
+`0.7.16 Beta 20` is part of the active 0.7 development line. The 0.7 line is
 expanding and validating Transfer and delivery workflows; `0.6.21` remains the
 stable fallback while this testing continues.
 

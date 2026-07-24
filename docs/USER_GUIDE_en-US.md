@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.15 Beta 19  
+**Applies to:** PsyReaSFX 0.7.16 Beta 20  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
