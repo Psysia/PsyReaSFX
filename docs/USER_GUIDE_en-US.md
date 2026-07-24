@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.19 Beta 23  
+**Applies to:** PsyReaSFX 0.7.20 Beta 24  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -382,7 +382,9 @@ Names are sanitized for Windows. Optional lowercase conversion runs after token 
 - Smart source tail: for a waveform selection, extend to the last source event
   above a configurable dBFS threshold, limited by a maximum duration and hold.
 - Collision: increment, skip, or explicitly confirmed overwrite.
-- Completion: optionally insert rendered files into REAPER.
+- Completion: optionally insert rendered files into REAPER and/or open the
+  output folder after a normally completed job with at least one successful
+  output.
 
 ### Batch variants
 
@@ -407,6 +409,9 @@ next task from starting.
 The latest job writes `transfer_report_latest.tsv` in the PsyReaSFX data
 directory with status, source path, variant, output path, message and elapsed
 time for every completed task. The Transfer panel can open that directory.
+The output-folder buttons in Transfer settings and Latest output use the same
+system-folder opener. On Windows, SWS is used first when available, with a
+non-blocking operating-system command as fallback.
 
 Overwrite mode uses a safe commit sequence: render to a temporary file, move
 the old destination to a unique backup, commit the new file, then remove the

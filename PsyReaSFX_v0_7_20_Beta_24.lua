@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.19-beta.23
+-- @version 0.7.20-beta.24
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -123,6 +123,9 @@
 --   - 0.7.19：Transfer 补齐 WAV 16/24/32-bit、RMS-I、抖动与源元数据保留
 --   - 批量变体支持自定义 Pitch、Rate、Gain 与 Normal/Reverse 笛卡尔组合
 --   - 批处理改为每帧一个渲染任务，支持进度、取消、结果报告与安全覆盖提交
+--   - 0.7.20：修复 Transfer 面板重复按钮 ID 与 Windows 目录打开失效
+--   - 输出目录、最近输出与任务报告统一使用 SWS 优先、系统命令回退的打开流程
+--   - 新增导出完成后自动打开输出目录，并随工程外配置持久化
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -131,7 +134,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.19 Beta 23"
+local VERSION = "0.7.20 Beta 24"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -782,6 +785,7 @@ local state = {
   transfer_normalize = "off",
   transfer_normalize_target = -1,
   transfer_insert_after = false,
+  transfer_open_dir_after = false,
   transfer_lowercase = false,
   transfer_dither = true,
   transfer_noise_shaping = false,
@@ -1001,6 +1005,7 @@ I18N_EN = {
   ["自动递增是默认且最安全的重名策略。"] = "Increment is the default and safest collision policy.",
   ["文件名转为小写"] = "Lowercase filename",
   ["导出后插入 REAPER"] = "Insert into REAPER after export",
+  ["导出完成后打开输出目录"] = "Open output directory after export",
   ["导出当前素材"] = "Export current asset",
   ["导出所选素材"] = "Export selected assets",
   ["打开 Transfer 面板"] = "Open Transfer panel",
@@ -1025,6 +1030,8 @@ I18N_EN = {
   ["当前文件后停止"] = "Stop after current file",
   ["Transfer 已暂停：请停止工程播放"] = "Transfer paused: stop project playback to continue",
   ["打开任务报告目录"] = "Open report folder",
+  ["目录不存在："] = "Folder does not exist: ",
+  ["无法打开目录："] = "Could not open folder: ",
   ["未找到临时渲染文件"] = "Temporary render file was not found",
   ["无法创建临时渲染路径"] = "Could not create a temporary render path",
   ["无法创建安全覆盖备份"] = "Could not create a safe overwrite backup",
@@ -4204,6 +4211,8 @@ function load_config()
           tonumber(value) or -1
       elseif name == "transfer_insert_after" then
         state.transfer_insert_after = value == "1"
+      elseif name == "transfer_open_dir_after" then
+        state.transfer_open_dir_after = value == "1"
       elseif name == "transfer_lowercase" then
         state.transfer_lowercase = value == "1"
       elseif name == "transfer_dither" then
@@ -4579,6 +4588,12 @@ function save_config()
   file:write(
     "setting\ttransfer_insert_after\t",
     state.transfer_insert_after and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_open_dir_after\t",
+    state.transfer_open_dir_after and "1" or "0",
     "\n"
   )
 
@@ -11976,6 +11991,17 @@ function finish_transfer_job(job, canceled)
     state.transfer_last_error = ""
     set_status(summary)
   end
+
+  if not canceled
+    and (job.success_count or 0) > 0
+    and state.transfer_open_dir_after then
+    local completed_directory =
+      state.transfer_last_output ~= ""
+        and dirname(state.transfer_last_output)
+        or (job.output_directory or state.transfer_dir)
+
+    open_folder(completed_directory)
+  end
 end
 
 function process_transfer_job()
@@ -12202,6 +12228,7 @@ function run_transfer(assets, batch_mode)
     failures = {},
     records = {},
     started_at = reaper.time_precise(),
+    output_directory = state.transfer_dir,
   }
   set_status(
     string.format(
@@ -12576,24 +12603,51 @@ function open_url(url)
 end
 
 function open_folder(path)
+  path = normalize_slashes(trim(path or ""))
+
+  if path == "" or not directory_exists(path) then
+    set_status(
+      translate_ui_text("目录不存在：") .. path,
+      true
+    )
+    return false
+  end
+
+  -- SWS delegates paths to the operating system and handles Unicode
+  -- directory names more reliably than manually assembled shell commands.
+  if type(reaper.CF_ShellExecute) == "function" then
+    local ok, result = pcall(reaper.CF_ShellExecute, path)
+
+    if ok and result ~= false and result ~= 0 then
+      return true
+    end
+  end
+
   local os_name = reaper.GetOS()
+  local command
 
   if os_name:match("Win") then
-    reaper.ExecProcess(
-      'explorer.exe "' .. path .. '"',
-      0
-    )
+    command =
+      'cmd.exe /D /S /C start "" "'
+        .. path:gsub('"', "")
+        .. '"'
   elseif os_name:match("OSX") then
-    reaper.ExecProcess(
-      'open "' .. path .. '"',
-      0
-    )
+    command = 'open "' .. path:gsub('"', '\\"') .. '"'
   else
-    reaper.ExecProcess(
-      'xdg-open "' .. path .. '"',
-      0
-    )
+    command = 'xdg-open "' .. path:gsub('"', '\\"') .. '"'
   end
+
+  local ok = pcall(reaper.ExecProcess, command, -1)
+
+  if not ok then
+    set_status(
+      translate_ui_text("无法打开目录：") .. path,
+      true
+    )
+    return false
+  end
+
+  return true
 end
 
 function choose_folder(title, initial)
@@ -12956,6 +13010,7 @@ function reset_interface_settings()
   state.transfer_normalize = "off"
   state.transfer_normalize_target = -1
   state.transfer_insert_after = false
+  state.transfer_open_dir_after = false
   state.transfer_lowercase = false
   state.transfer_dither = true
   state.transfer_noise_shaping = false
@@ -21530,7 +21585,7 @@ function draw_transfer_settings_content()
 
   ImGui.SameLine(ctx, 0, 6)
 
-  if dark_button("打开输出目录", 140) then
+  if dark_button("打开输出目录##transfer_settings_open_dir", 140) then
     local directory = state.transfer_dir or DEFAULT_TRANSFER_DIR
     reaper.RecursiveCreateDirectory(directory, 0)
     open_folder(directory)
@@ -21932,6 +21987,16 @@ function draw_transfer_settings_content()
     state.config_dirty = true
   end
 
+  changed, state.transfer_open_dir_after = ImGui.Checkbox(
+    ctx,
+    "导出完成后打开输出目录",
+    state.transfer_open_dir_after
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
   ImGui.TextDisabled(
     ctx,
     "Transfer 只处理源素材与当前 Pitch / Rate / Gain / Reverse / Preserve Pitch，不经过工程轨道或 Master FX。"
@@ -21982,7 +22047,7 @@ function draw_transfer_popup()
     if state.transfer_last_output ~= "" then
       ImGui.TextWrapped(ctx, state.transfer_last_output)
 
-      if dark_button("打开输出目录", 140) then
+      if dark_button("打开输出目录##transfer_recent_open_dir", 140) then
         open_folder(dirname(state.transfer_last_output))
       end
     else
@@ -21998,7 +22063,7 @@ function draw_transfer_popup()
     end
 
     if reaper.file_exists(TRANSFER_REPORT_FILE) then
-      if dark_button("打开任务报告目录", 170) then
+      if dark_button("打开任务报告目录##transfer_report_open_dir", 170) then
         open_folder(dirname(TRANSFER_REPORT_FILE))
       end
     end

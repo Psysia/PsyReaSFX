@@ -1,5 +1,24 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.20 Beta 24
+
+### Transfer folder actions
+
+- Gives Transfer settings, Latest output and report-folder buttons unique
+  Dear ImGui IDs, removing the conflicting-visible-item warning.
+- Replaces the single `ExecProcess` folder action with a validated,
+  Unicode-safe opener that prefers SWS and falls back to a non-blocking
+  operating-system command.
+- Reports a missing or unopenable directory instead of silently doing nothing.
+
+### Completion behavior
+
+- Adds **Open output directory after export** beside the existing optional
+  REAPER insertion behavior.
+- Persists the option in `config.tsv`.
+- Opens the directory only after a normal job completion with at least one
+  successful output; canceled or fully failed jobs do not open it.
+
 ## 0.7.19 Beta 23
 
 ### Completed 0.7 Transfer feature set

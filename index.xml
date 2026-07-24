@@ -9,17 +9,16 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.19-beta.23" author="Psysia" time="2026-07-24T05:44:22Z">
+      <version name="0.7.20-beta.24" author="Psysia" time="2026-07-24T06:25:36Z">
         <changelog><![CDATA[
-- Adds explicit WAV 16/24/32-bit PCM, RMS-I, metadata preservation and 16-bit dither.
-- Adds bounded Pitch, Rate, Gain and normal/reverse batch variants.
-- Runs one render task per defer cycle with progress and stop-after-current.
-- Adds TSV reports and temporary-file safe overwrite commits.
+- Fixes duplicate Transfer folder-button IDs and restores folder opening.
+- Uses a Unicode-safe SWS-first folder opener with a system fallback.
+- Adds an option to open the output folder automatically after export.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.19-beta.23/PsyReaSFX_v0_7_19_Beta_23.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.19-beta.23/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.19-beta.23/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.19-beta.23/assets/fonts/OFL.txt</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.20-beta.24/PsyReaSFX_v0_7_20_Beta_24.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.20-beta.24/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.20-beta.24/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.20-beta.24/assets/fonts/OFL.txt</source>
       </version>
     </reapack>
   </category>

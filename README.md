@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.19--beta.23-19D8FF" alt="Version 0.7.19 beta 23">
+  <img src="https://img.shields.io/badge/Version-0.7.20--beta.24-19D8FF" alt="Version 0.7.20 beta 24">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -154,6 +154,8 @@ set of normal/reverse deliverables. Variant-aware naming tokens keep outputs
 distinct, while per-file progress, stop-after-current, a TSV task report and
 safe temporary-file replacement make large jobs inspectable and recoverable.
 Finished files can optionally be inserted into the current REAPER project.
+The output folder can also open automatically after a successful job. Output,
+latest-result and report-folder actions use one Unicode-safe system opener.
 
 For selections that end before the source file does, optional **Smart source
 tail** scans the remaining source audio for the last event above a configurable
@@ -227,7 +229,7 @@ inspector retains its neutral empty-state illustration.
 
 ## Release status
 
-`0.7.19 Beta 23` completes the planned 0.7 feature set and begins the
+`0.7.20 Beta 24` completes the planned 0.7 feature set and continues the
 compatibility and regression phase for Transfer and delivery workflows;
 `0.6.21` remains the
 stable fallback while this testing continues.
