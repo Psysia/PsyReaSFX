@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.18 Beta 22  
+**Applies to:** PsyReaSFX 0.7.19 Beta 23  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -360,21 +360,58 @@ Choose the output folder and build a naming template from these tokens:
 | `{index}` | Two-digit batch index |
 | `{date}` | `YYYYMMDD` export date |
 | `{region}` | Saved region name, `selection` or `full` |
+| `{pitch}` | Variant pitch in semitones |
+| `{rate}` | Variant playback rate |
+| `{gain}` | Variant gain in dB |
+| `{direction}` | `normal` or `reverse` |
+| `{variant}` | Complete safe variant label |
+| `{variant_index}` | Two-digit variant index |
 
 Names are sanitized for Windows. Optional lowercase conversion runs after token expansion.
 
 ### Current capabilities
 
 - Scope: full current asset, current selection, or all selected assets.
-- Format: WAV 24-bit PCM or REAPER's default FLAC sink.
+- Format: explicit WAV 16-bit, 24-bit or 32-bit PCM, or REAPER's default FLAC sink.
 - Sample rate: source, 44.1, 48, 96 or 192 kHz.
 - Channels: source count, mono or stereo.
 - Processing: current Pitch, Rate, Gain, Reverse and Preserve Pitch.
-- Finishing: fades and Peak, True Peak or LUFS-I normalization.
+- Finishing: fades and Peak, True Peak, RMS-I or LUFS-I normalization.
+- Delivery integrity: preserve supported source metadata; optional dither and
+  noise shaping for WAV 16-bit.
 - Smart source tail: for a waveform selection, extend to the last source event
   above a configurable dBFS threshold, limited by a maximum duration and hold.
 - Collision: increment, skip, or explicitly confirmed overwrite.
 - Completion: optionally insert rendered files into REAPER.
+
+### Batch variants
+
+Enable **Batch variants** to enter lists of Pitch, Rate and Gain values. Values
+may be separated by commas, spaces or semicolons. A blank field uses the
+current main-view value. PsyReaSFX builds the Cartesian product of those lists
+and can optionally add both normal and reverse directions.
+
+Each parameter accepts up to 16 unique values, each asset is limited to 128
+variants, and a job is limited to 4,096 tasks. When a template contains no
+variant token, the default automatic suffix adds a safe label such as
+`p0_r1_g0_fwd`. Keep this option enabled unless the template itself guarantees
+unique output names.
+
+### Long jobs, cancellation and reports
+
+Batch Transfer schedules one render at a time, returning control to the UI
+between files. The footer shows completed and total tasks. **Stop after current
+file** does not interrupt REAPER while it is writing a file; it prevents the
+next task from starting.
+
+The latest job writes `transfer_report_latest.tsv` in the PsyReaSFX data
+directory with status, source path, variant, output path, message and elapsed
+time for every completed task. The Transfer panel can open that directory.
+
+Overwrite mode uses a safe commit sequence: render to a temporary file, move
+the old destination to a unique backup, commit the new file, then remove the
+backup. If commit fails, PsyReaSFX attempts to restore the original instead of
+deleting it before rendering.
 
 Transfer creates a temporary dry media item, uses REAPER's selected-media-item renderer, then restores render settings, selection, cursor, time selection and project dirty state. The temporary item is removed on success and failure paths.
 

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.7.18--beta.22-19D8FF" alt="0.7.18 beta 22">
+  <img src="https://img.shields.io/badge/版本-0.7.19--beta.23-19D8FF" alt="0.7.19 beta 23">
   <img src="https://img.shields.io/badge/宿主-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/界面-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/安装-ReaPack-1F6FCC" alt="ReaPack">
@@ -91,7 +91,9 @@ PsyReaSFX 把素材库管理、波形浏览、搜索、试听、整理、REAPER 
 
 ### Transfer 与 REAPER 交付
 
-Transfer 可以导出完整文件或当前波形选区，并配置输出目录、命名模板、格式、采样率、声道模式、淡化、标准化和重名策略。处理结果还可以自动插回当前 REAPER 工程。
+Transfer 可以导出完整文件或当前波形选区，并配置输出目录、命名模板、WAV 16/24/32-bit PCM 或 FLAC、采样率、声道模式、淡化、Peak / True Peak / RMS-I / LUFS-I 标准化和重名策略。在 REAPER 与目标容器支持时可尽可能保留源元数据；WAV 16-bit 还可启用抖动与噪声整形。
+
+批量变体可以把 Pitch、Rate、Gain 数值列表与正向/反向组合成有界任务。变体命名字段会保持输出唯一；逐文件进度、“当前文件后停止”、TSV 任务报告和临时文件安全替换，让大型批处理可以检查和恢复。处理结果还可以自动插回当前 REAPER 工程。
 
 当选区结束位置早于源文件结尾时，可选的**源文件智能尾音**会在后续
 源音频中查找最后一个超过阈值的声音，并在可配置的最长范围内追加
@@ -160,7 +162,7 @@ Cover、Image、Thumbnail 文件夹会在严格的深度和目录数量预算内
 
 ## 发布状态
 
-`0.7.18 Beta 22` 属于当前 0.7 开发线，重点扩展和验证 Transfer、试听与交付工作流。测试期间，`0.6.21` 仍可作为稳定回退版本。
+`0.7.19 Beta 23` 已完成计划中的 0.7 功能集合，进入 Transfer 与交付工作流的兼容性、回归和实机验证阶段。测试期间，`0.6.21` 仍可作为稳定回退版本。
 
 ## 作者与许可
 

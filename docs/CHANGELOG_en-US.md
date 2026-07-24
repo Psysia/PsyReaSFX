@@ -1,5 +1,40 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.19 Beta 23
+
+### Completed 0.7 Transfer feature set
+
+- Adds explicit WAV 16-bit, 24-bit and 32-bit PCM output alongside FLAC.
+- Adds integrated RMS normalization next to Peak, True Peak and LUFS-I.
+- Adds optional supported-source metadata preservation and WAV 16-bit dither
+  with optional noise shaping.
+- Uses explicit REAPER sink configurations for each WAV bit depth.
+
+### Batch Variants
+
+- Adds custom comma-, space- or semicolon-separated Pitch, Rate and Gain lists.
+- Builds bounded Cartesian combinations with optional normal and reverse
+  directions.
+- Adds `{pitch}`, `{rate}`, `{gain}`, `{direction}`, `{variant}` and
+  `{variant_index}` naming tokens.
+- Adds automatic safe variant suffixes when the template contains no variant
+  field.
+- Limits each parameter to 16 values, each asset to 128 variants and each job
+  to 4,096 tasks.
+- Adds Current values, Pitch ±3/±6 and Subtle variations presets.
+
+### Job reliability and performance
+
+- Replaces the synchronous all-files loop with one render task per defer cycle.
+- Adds task progress and Stop after current file behavior.
+- Writes a per-task TSV report with source, variant, output, result and timing.
+- Prompts for overwrite mode once per job only when an existing or duplicate
+  target is detected.
+- Renders to a unique temporary path before touching a destination.
+- Uses backup, commit and restore steps for overwrite mode, preventing the old
+  file from being deleted before a successful render exists.
+- Keeps Transfer task state out of the waveform, metadata and Artwork queues.
+
 ## 0.7.18 Beta 22
 
 ### Square-first Artwork selection

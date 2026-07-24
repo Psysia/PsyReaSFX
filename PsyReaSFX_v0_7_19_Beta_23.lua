@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.18-beta.22
+-- @version 0.7.19-beta.23
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -120,6 +120,9 @@
 --   - 0.7.18：Artwork 候选优先选择接近 1:1 的封面，并以轻量文件头读取
 --     替代完整图片解码；无封面列表单元格保持空白
 --   - 左侧导航的声音、音效库、集合、保存搜索、工作流和活动分组可独立折叠
+--   - 0.7.19：Transfer 补齐 WAV 16/24/32-bit、RMS-I、抖动与源元数据保留
+--   - 批量变体支持自定义 Pitch、Rate、Gain 与 Normal/Reverse 笛卡尔组合
+--   - 批处理改为每帧一个渲染任务，支持进度、取消、结果报告与安全覆盖提交
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -128,7 +131,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.18 Beta 22"
+local VERSION = "0.7.19 Beta 23"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -259,6 +262,9 @@ local DEFAULT_WAVE_CACHE_DIR =
 
 local DEFAULT_TRANSFER_DIR =
   DATA_DIR .. SEP .. "Transfer"
+
+local TRANSFER_REPORT_FILE =
+  DATA_DIR .. SEP .. "transfer_report_latest.tsv"
 
 local WAVE_CACHE_DIR =
   DEFAULT_WAVE_CACHE_DIR
@@ -777,12 +783,24 @@ local state = {
   transfer_normalize_target = -1,
   transfer_insert_after = false,
   transfer_lowercase = false,
+  transfer_dither = true,
+  transfer_noise_shaping = false,
+  transfer_preserve_metadata = true,
+  transfer_variants_enabled = false,
+  transfer_variant_pitches = "",
+  transfer_variant_rates = "",
+  transfer_variant_gains = "",
+  transfer_variant_include_reverse = false,
+  transfer_variant_auto_suffix = true,
   transfer_popup_requested = 0,
   transfer_running = false,
+  transfer_job = nil,
+  transfer_cancel_requested = false,
   transfer_last_output = "",
   transfer_last_outputs = {},
   transfer_last_error = "",
   transfer_last_tail_ms = 0,
+  transfer_last_summary = "",
 
   status = "准备就绪",
   status_error = false,
@@ -915,6 +933,7 @@ I18N_EN = {
   ["恢复默认输出目录"] = "Restore default output directory",
   ["命名模板"] = "Naming template",
   ["可用字段：{name} {category} {subcategory} {library} {index} {date} {region}"] = "Fields: {name} {category} {subcategory} {library} {index} {date} {region}",
+  ["可用字段：{name} {category} {subcategory} {library} {index} {date} {region} {pitch} {rate} {gain} {direction} {variant} {variant_index}"] = "Fields: {name} {category} {subcategory} {library} {index} {date} {region} {pitch} {rate} {gain} {direction} {variant} {variant_index}",
   ["导出范围"] = "Export scope",
   ["当前选区"] = "Current selection",
   ["完整文件"] = "Full file",
@@ -922,6 +941,9 @@ I18N_EN = {
   ["格式与范围"] = "Format and scope",
   ["当前素材可导出波形选区；批量导出始终使用每个完整文件。"] = "The current asset can export its waveform selection; batch export always uses each full file.",
   ["输出格式"] = "Output format",
+  ["WAV · 16-bit"] = "WAV · 16-bit",
+  ["WAV · 24-bit"] = "WAV · 24-bit",
+  ["WAV · 32-bit PCM"] = "WAV · 32-bit PCM",
   ["WAV · 24-bit PCM"] = "WAV · 24-bit PCM",
   ["FLAC · REAPER 默认"] = "FLAC · REAPER default",
   ["采样率"] = "Sample rate",
@@ -930,6 +952,11 @@ I18N_EN = {
   ["跟随源声道"] = "Source channels",
   ["单声道"] = "Mono",
   ["立体声"] = "Stereo",
+  ["尽可能保留源文件元数据"] = "Preserve source metadata when possible",
+  ["启用抖动"] = "Enable dither",
+  ["噪声整形"] = "Noise shaping",
+  ["抖动主要用于降低到 16-bit；较高位深通常无需启用。"] = "Dither is mainly useful when reducing to 16-bit; higher bit depths usually do not need it.",
+  ["当前位深保持抖动关闭；WAV 16-bit 可单独启用。"] = "Dither stays off at the current bit depth; it can be enabled separately for WAV 16-bit.",
   ["淡入"] = "Fade in",
   ["淡出"] = "Fade out",
   ["智能保留选区尾音"] = "Preserve selection tail intelligently",
@@ -938,12 +965,32 @@ I18N_EN = {
   ["最大尾音"] = "Maximum tail",
   ["尾音留白"] = "Tail hold",
   ["只延伸源文件中已有的尾音；Transfer 仍不经过工程轨道、发送或 Master FX。"] = "Only existing source-file tails are extended; Transfer still does not pass through project tracks, sends, or Master FX.",
+  ["批量变体"] = "Batch variants",
+  ["按 Pitch、Rate、Gain 与方向生成笛卡尔组合；每个参数最多 16 项，单素材最多 128 个变体。"] = "Generate Cartesian combinations of Pitch, Rate, Gain, and direction; up to 16 values per parameter and 128 variants per asset.",
+  ["启用批量变体"] = "Enable batch variants",
+  ["留空表示使用主界面当前值；可用逗号、空格或分号分隔。"] = "Leave blank to use the current main-view value; separate values with commas, spaces, or semicolons.",
+  ["Pitch 列表"] = "Pitch values",
+  ["Rate 列表"] = "Rate values",
+  ["Gain 列表"] = "Gain values",
+  ["当前参数"] = "Current values",
+  ["Pitch ±3 / ±6"] = "Pitch ±3 / ±6",
+  ["轻量变化"] = "Subtle variations",
+  ["同时生成正向与反向"] = "Generate normal and reverse",
+  ["模板未含变体字段时自动追加安全后缀"] = "Append a safe suffix when the template has no variant field",
+  ["每个素材将生成"] = "Variants per asset:",
+  ["变体设置无效"] = "Invalid variant settings",
+  ["无效的变体数值"] = "Invalid variant value",
+  ["每个变体参数最多允许 16 个数值"] = "Each variant parameter accepts at most 16 values",
+  ["变体组合超过 128 个，请减少参数数量"] = "Variant combinations exceed 128; reduce the number of values",
+  ["导出任务超过 4096 个，请减少素材或变体数量"] = "Export tasks exceed 4096; reduce the asset or variant count",
+  ["反向变体需要安装 SWS Extension"] = "Reverse variants require SWS Extension",
   ["处理"] = "Processing",
   ["当前 Pitch、Rate、Gain、Reverse 与 Preserve Pitch 会写入导出文件。"] = "Current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings are written into the exported file.",
   ["标准化"] = "Normalize",
   ["关闭标准化"] = "Off",
   ["Peak"] = "Peak",
   ["True Peak"] = "True Peak",
+  ["RMS-I"] = "RMS-I",
   ["LUFS-I"] = "LUFS-I",
   ["目标值"] = "Target",
   ["重名策略"] = "Name collision",
@@ -968,6 +1015,24 @@ I18N_EN = {
   ["已跳过已有文件："] = "Skipped existing file: ",
   ["Transfer 完成："] = "Transfer complete: ",
   ["Transfer 部分完成"] = "Transfer partially completed",
+  ["正在导出"] = "Exporting",
+  ["Transfer 完成"] = "Transfer complete",
+  ["Transfer 已停止"] = "Transfer stopped",
+  ["完成"] = "Completed",
+  ["跳过"] = "Skipped",
+  ["失败"] = "Failed",
+  ["未知错误"] = "Unknown error",
+  ["当前文件后停止"] = "Stop after current file",
+  ["Transfer 已暂停：请停止工程播放"] = "Transfer paused: stop project playback to continue",
+  ["打开任务报告目录"] = "Open report folder",
+  ["未找到临时渲染文件"] = "Temporary render file was not found",
+  ["无法创建临时渲染路径"] = "Could not create a temporary render path",
+  ["无法创建安全覆盖备份"] = "Could not create a safe overwrite backup",
+  ["无法备份原有文件"] = "Could not back up the existing file",
+  ["输出提交失败，原文件保存在："] = "Output commit failed; the original file is preserved at: ",
+  ["输出提交失败，原文件已恢复"] = "Output commit failed; the original file was restored",
+  ["同名输出将使用安全替换：先完成临时渲染，再备份并替换原文件。是否继续？"] = "Existing outputs will use safe replacement: render a temporary file first, then back up and replace the original. Continue?",
+  ["确认覆盖策略"] = "Confirm overwrite policy",
   ["覆盖现有文件？"] = "Overwrite existing file?",
   ["此操作会替换磁盘上的同名文件："] = "This will replace the existing file on disk: ",
   ["选择 Transfer 输出目录"] = "Choose Transfer output directory",
@@ -4079,8 +4144,14 @@ function load_config()
         state.transfer_template =
           value ~= "" and value or "{name}"
       elseif name == "transfer_format" then
+        local valid_formats = {
+          wav16 = true,
+          wav24 = true,
+          wav32 = true,
+          flac = true,
+        }
         state.transfer_format =
-          value == "flac" and "flac" or "wav24"
+          valid_formats[value] and value or "wav24"
       elseif name == "transfer_sample_rate" then
         local valid_rates = {
           source = true,
@@ -4125,6 +4196,7 @@ function load_config()
         state.transfer_normalize =
           value == "peak" and "peak"
           or value == "true_peak" and "true_peak"
+          or value == "rms_i" and "rms_i"
           or value == "lufs_i" and "lufs_i"
           or "off"
       elseif name == "transfer_normalize_target" then
@@ -4134,6 +4206,24 @@ function load_config()
         state.transfer_insert_after = value == "1"
       elseif name == "transfer_lowercase" then
         state.transfer_lowercase = value == "1"
+      elseif name == "transfer_dither" then
+        state.transfer_dither = value ~= "0"
+      elseif name == "transfer_noise_shaping" then
+        state.transfer_noise_shaping = value == "1"
+      elseif name == "transfer_preserve_metadata" then
+        state.transfer_preserve_metadata = value ~= "0"
+      elseif name == "transfer_variants_enabled" then
+        state.transfer_variants_enabled = value == "1"
+      elseif name == "transfer_variant_pitches" then
+        state.transfer_variant_pitches = value or ""
+      elseif name == "transfer_variant_rates" then
+        state.transfer_variant_rates = value or ""
+      elseif name == "transfer_variant_gains" then
+        state.transfer_variant_gains = value or ""
+      elseif name == "transfer_variant_include_reverse" then
+        state.transfer_variant_include_reverse = value == "1"
+      elseif name == "transfer_variant_auto_suffix" then
+        state.transfer_variant_auto_suffix = value ~= "0"
       elseif name == "theme_preset" then
         local legacy_key =
           "sound" .. "ly"
@@ -4495,6 +4585,60 @@ function save_config()
   file:write(
     "setting\ttransfer_lowercase\t",
     state.transfer_lowercase and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_dither\t",
+    state.transfer_dither and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_noise_shaping\t",
+    state.transfer_noise_shaping and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_preserve_metadata\t",
+    state.transfer_preserve_metadata and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_variants_enabled\t",
+    state.transfer_variants_enabled and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_variant_pitches\t",
+    escape_tsv(state.transfer_variant_pitches or ""),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_variant_rates\t",
+    escape_tsv(state.transfer_variant_rates or ""),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_variant_gains\t",
+    escape_tsv(state.transfer_variant_gains or ""),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_variant_include_reverse\t",
+    state.transfer_variant_include_reverse and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_variant_auto_suffix\t",
+    state.transfer_variant_auto_suffix and "1" or "0",
     "\n"
   )
 
@@ -10691,8 +10835,188 @@ function transfer_region_name(asset)
   return has_selection() and "selection" or "full"
 end
 
-function expand_transfer_template(asset, index)
-  local value = state.transfer_template or "{name}"
+function transfer_variant_number(value, decimals)
+  local format_string = "%." .. tostring(decimals or 2) .. "f"
+  local text = string.format(format_string, tonumber(value) or 0)
+  text = text:gsub("(%..-)0+$", "%1")
+  text = text:gsub("%.$", "")
+
+  if text == "-0" then
+    text = "0"
+  end
+
+  return text
+end
+
+function transfer_variant_token(value, decimals)
+  local text = transfer_variant_number(value, decimals)
+  text = text:gsub("%+", "")
+  text = text:gsub("%-", "m")
+  text = text:gsub("%.", "p")
+  return text
+end
+
+function parse_transfer_variant_values(
+  text,
+  fallback,
+  minimum,
+  maximum,
+  decimals,
+  label
+)
+  local values = {}
+  local seen = {}
+  local had_token = false
+
+  for token in tostring(text or ""):gmatch("[^,%s;|]+") do
+    had_token = true
+    local value = tonumber(token)
+
+    if not value then
+      return nil,
+        string.format(
+          "%s: %s",
+          translate_ui_text("无效的变体数值"),
+          token
+        )
+    end
+
+    value = clamp(value, minimum, maximum)
+    local scale = 10 ^ (decimals or 2)
+    value = math.floor(value * scale + 0.5) / scale
+    local key = string.format("%.6f", value)
+
+    if not seen[key] then
+      seen[key] = true
+      values[#values + 1] = value
+    end
+
+    if #values > 16 then
+      return nil,
+        translate_ui_text("每个变体参数最多允许 16 个数值")
+    end
+  end
+
+  if not had_token or #values == 0 then
+    values[1] = fallback
+  end
+
+  table.sort(values)
+  return values, nil
+end
+
+function build_transfer_variants()
+  if not state.transfer_variants_enabled then
+    return {
+      {
+        pitch = state.pitch,
+        rate = state.rate,
+        gain_db = state.gain_db,
+        reverse = state.reverse,
+        index = 1,
+        count = 1,
+        label = "current",
+      },
+    }, nil
+  end
+
+  local pitches, pitch_error =
+    parse_transfer_variant_values(
+      state.transfer_variant_pitches,
+      state.pitch,
+      -48,
+      48,
+      2,
+      "Pitch"
+    )
+
+  if not pitches then
+    return nil, pitch_error
+  end
+
+  local rates, rate_error =
+    parse_transfer_variant_values(
+      state.transfer_variant_rates,
+      state.rate,
+      0.1,
+      4,
+      3,
+      "Rate"
+    )
+
+  if not rates then
+    return nil, rate_error
+  end
+
+  local gains, gain_error =
+    parse_transfer_variant_values(
+      state.transfer_variant_gains,
+      state.gain_db,
+      -60,
+      24,
+      2,
+      "Gain"
+    )
+
+  if not gains then
+    return nil, gain_error
+  end
+
+  local directions =
+    state.transfer_variant_include_reverse
+      and { false, true }
+      or { state.reverse }
+  local variants = {}
+
+  for _, pitch in ipairs(pitches) do
+    for _, rate in ipairs(rates) do
+      for _, gain_db in ipairs(gains) do
+        for _, reverse in ipairs(directions) do
+          if #variants >= 128 then
+            return nil,
+              translate_ui_text(
+                "变体组合超过 128 个，请减少参数数量"
+              )
+          end
+
+          local label =
+            "p" .. transfer_variant_token(pitch, 2)
+              .. "_r" .. transfer_variant_token(rate, 3)
+              .. "_g" .. transfer_variant_token(gain_db, 2)
+              .. (reverse and "_rev" or "_fwd")
+
+          variants[#variants + 1] = {
+            pitch = pitch,
+            rate = rate,
+            gain_db = gain_db,
+            reverse = reverse,
+            label = label,
+          }
+        end
+      end
+    end
+  end
+
+  for index, variant in ipairs(variants) do
+    variant.index = index
+    variant.count = #variants
+  end
+
+  return variants, nil
+end
+
+function expand_transfer_template(asset, index, variant)
+  local template = state.transfer_template or "{name}"
+  local value = template
+  variant = variant or {
+    pitch = state.pitch,
+    rate = state.rate,
+    gain_db = state.gain_db,
+    reverse = state.reverse,
+    index = 1,
+    count = 1,
+    label = "current",
+  }
   local replacements = {
     name = strip_extension(asset.name or ""),
     category = asset.category or "",
@@ -10701,6 +11025,15 @@ function expand_transfer_template(asset, index)
     index = string.format("%02d", tonumber(index) or 1),
     date = os.date("%Y%m%d"),
     region = transfer_region_name(asset),
+    pitch = transfer_variant_number(variant.pitch, 2),
+    rate = transfer_variant_number(variant.rate, 3),
+    gain = transfer_variant_number(variant.gain_db, 2),
+    direction = variant.reverse and "reverse" or "normal",
+    variant = variant.label or "current",
+    variant_index = string.format(
+      "%02d",
+      tonumber(variant.index) or 1
+    ),
   }
 
   value = value:gsub("{([%w_]+)}", function(key)
@@ -10708,6 +11041,18 @@ function expand_transfer_template(asset, index)
       and tostring(replacements[key])
       or "{" .. key .. "}"
   end)
+
+  if state.transfer_variants_enabled
+    and state.transfer_variant_auto_suffix
+    and (variant.count or 1) > 1
+    and not template:find("{variant}", 1, true)
+    and not template:find("{variant_index}", 1, true)
+    and not template:find("{pitch}", 1, true)
+    and not template:find("{rate}", 1, true)
+    and not template:find("{gain}", 1, true)
+    and not template:find("{direction}", 1, true) then
+    value = value .. "_" .. tostring(variant.label or "variant")
+  end
 
   return sanitize_transfer_name(value)
 end
@@ -10719,9 +11064,14 @@ function transfer_format_info()
     return "flac", "Y2FsZg=="
   end
 
-  -- REAPER's documented default WAV sink configuration:
-  -- WAV, 24-bit PCM, automatic WAV/RF64 selection.
-  return "wav", "ZXZhdw=="
+  if state.transfer_format == "wav16" then
+    return "wav", "ZXZhdxAAAQ=="
+  elseif state.transfer_format == "wav32" then
+    return "wav", "ZXZhdyAAAQ=="
+  end
+
+  -- Explicit WAV 24-bit PCM sink configuration.
+  return "wav", "ZXZhdxgAAQ=="
 end
 
 function transfer_sample_rate(asset)
@@ -10756,6 +11106,8 @@ function transfer_normalize_flags()
     flags = 1 | 4
   elseif state.transfer_normalize == "true_peak" then
     flags = 1 | 6
+  elseif state.transfer_normalize == "rms_i" then
+    flags = 1 | 2
   elseif state.transfer_normalize == "lufs_i" then
     flags = 1
   end
@@ -10771,9 +11123,9 @@ function transfer_normalize_flags()
   return flags
 end
 
-function resolve_transfer_output(asset, index)
+function resolve_transfer_output(asset, index, variant)
   local extension_name = transfer_format_info()
-  local base = expand_transfer_template(asset, index)
+  local base = expand_transfer_template(asset, index, variant)
   local directory = normalize_slashes(trim(state.transfer_dir or ""))
 
   if directory == "" then
@@ -10970,10 +11322,11 @@ function detect_transfer_tail_end(
   asset,
   source,
   duration,
-  selection_end
+  selection_end,
+  reverse
 )
   if not state.transfer_smart_tail
-    or state.reverse
+    or reverse
     or not source
     or duration <= 0
     or selection_end >= 0.9999 then
@@ -11087,7 +11440,13 @@ function detect_transfer_tail_end(
     )
 end
 
-function create_transfer_item(asset, use_selection)
+function create_transfer_item(asset, use_selection, variant)
+  variant = variant or {
+    pitch = state.pitch,
+    rate = state.rate,
+    gain_db = state.gain_db,
+    reverse = state.reverse,
+  }
   local track_index = reaper.CountTracks(PROJ)
   reaper.InsertTrackInProject(PROJ, track_index, 0)
   local track = reaper.GetTrack(PROJ, track_index)
@@ -11129,7 +11488,8 @@ function create_transfer_item(asset, use_selection)
         asset,
         source,
         duration,
-        end_percent
+        end_percent,
+        variant.reverse
       )
   else
     state.transfer_last_tail_ms = 0
@@ -11140,7 +11500,7 @@ function create_transfer_item(asset, use_selection)
   local take_source = source
   local take_start_offset = source_start
 
-  if state.reverse then
+  if variant.reverse then
     if type(reaper.CF_PCM_Source_SetSectionInfo) ~= "function" then
       reaper.PCM_Source_Destroy(source)
       return track, nil, "reverse requires SWS"
@@ -11180,21 +11540,26 @@ function create_transfer_item(asset, use_selection)
 
   reaper.SetMediaItemTake_Source(take, take_source)
   reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", take_start_offset)
-  reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", state.rate)
-  reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", state.pitch)
+  reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", variant.rate)
+  reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", variant.pitch)
   reaper.SetMediaItemTakeInfo_Value(
     take,
     "B_PPITCH",
     state.preserve_pitch and 1 or 0
   )
-  reaper.SetMediaItemTakeInfo_Value(take, "D_VOL", db_to_amp(state.gain_db))
+  reaper.SetMediaItemTakeInfo_Value(
+    take,
+    "D_VOL",
+    db_to_amp(variant.gain_db)
+  )
 
   if state.transfer_channels == "mono" then
     reaper.SetMediaItemTakeInfo_Value(take, "I_CHANMODE", 2)
   end
 
   local item_position = reaper.GetProjectLength(PROJ) + 10
-  local item_length = source_length / math.max(0.01, state.rate)
+  local item_length =
+    source_length / math.max(0.01, variant.rate)
   reaper.SetMediaItemPosition(item, item_position, false)
   reaper.SetMediaItemLength(item, item_length, false)
   -- Transfer fades are applied by REAPER's render post-processing flags.
@@ -11219,8 +11584,29 @@ function configure_transfer_render(asset, output_path)
   local _, sink_config = transfer_format_info()
   local output_directory = dirname(output_path)
   local output_pattern = strip_extension(basename(output_path))
+  local render_settings = 32
+  local dither_flags = 0
 
-  reaper.GetSetProjectInfo(PROJ, "RENDER_SETTINGS", 32, true)
+  if state.transfer_preserve_metadata then
+    render_settings = render_settings | 32768
+  end
+
+  if state.transfer_format == "wav16"
+    and state.transfer_dither then
+    dither_flags = dither_flags | 1
+  end
+
+  if state.transfer_format == "wav16"
+    and state.transfer_noise_shaping then
+    dither_flags = dither_flags | 2
+  end
+
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_SETTINGS",
+    render_settings,
+    true
+  )
   reaper.GetSetProjectInfo(PROJ, "RENDER_BOUNDSFLAG", 4, true)
   reaper.GetSetProjectInfo(
     PROJ,
@@ -11237,7 +11623,12 @@ function configure_transfer_render(asset, output_path)
   reaper.GetSetProjectInfo(PROJ, "RENDER_TAILFLAG", 0, true)
   reaper.GetSetProjectInfo(PROJ, "RENDER_TAILMS", 0, true)
   reaper.GetSetProjectInfo(PROJ, "RENDER_ADDTOPROJ", 0, true)
-  reaper.GetSetProjectInfo(PROJ, "RENDER_DITHER", 0, true)
+  reaper.GetSetProjectInfo(
+    PROJ,
+    "RENDER_DITHER",
+    dither_flags,
+    true
+  )
   reaper.GetSetProjectInfo(
     PROJ,
     "RENDER_NORMALIZE",
@@ -11285,32 +11676,132 @@ function configure_transfer_render(asset, output_path)
   reaper.GetSetProjectInfo_String(PROJ, "RENDER_FORMAT2", "", true)
 end
 
-function render_transfer_asset(asset, index, use_selection)
-  local output_path, collision, existing =
-    resolve_transfer_output(asset, index)
+function unique_transfer_sidecar_path(output_path, label, task_index)
+  local directory = dirname(output_path)
+  local extension_name =
+    output_path:match("%.([^%.\\/]*)$") or "wav"
+  local base = strip_extension(basename(output_path))
+  local stamp =
+    tostring(math.floor(reaper.time_precise() * 1000000))
+  local attempt = 0
 
-  if collision == "skip" then
-    return false, nil, translate_ui_text("已跳过已有文件：") .. existing, true
-  elseif not output_path then
-    return false, nil, translate_ui_text("Transfer 渲染失败"), false
-  end
-
-  if collision == "overwrite" and reaper.file_exists(output_path) then
-    local answer = reaper.MB(
-      translate_ui_text("此操作会替换磁盘上的同名文件：")
-        .. "\n\n"
-        .. output_path,
-      translate_ui_text("覆盖现有文件？"),
-      4
+  while attempt < 1000 do
+    local candidate = join_path(
+      directory,
+      string.format(
+        "%s.psyreasfx_%s_%s_%04d_%03d.%s",
+        base,
+        label,
+        stamp,
+        tonumber(task_index) or 0,
+        attempt,
+        extension_name
+      )
     )
 
-    if answer ~= 6 then
-      return false, nil, translate_ui_text("已跳过已有文件：") .. output_path, true
+    if not reaper.file_exists(candidate) then
+      return candidate
     end
 
-    if not os.remove(output_path) then
-      return false, nil, translate_ui_text("Transfer 渲染失败"), false
-    end
+    attempt = attempt + 1
+  end
+
+  return nil
+end
+
+function commit_transfer_output(
+  temporary_path,
+  output_path,
+  replace_existing,
+  task_index
+)
+  if not temporary_path
+    or not reaper.file_exists(temporary_path) then
+    return false, translate_ui_text("未找到临时渲染文件")
+  end
+
+  if not replace_existing
+    or not reaper.file_exists(output_path) then
+    local ok, message = os.rename(temporary_path, output_path)
+    return ok == true, message
+  end
+
+  local backup_path =
+    unique_transfer_sidecar_path(
+      output_path,
+      "backup",
+      task_index
+    )
+
+  if not backup_path then
+    return false, translate_ui_text("无法创建安全覆盖备份")
+  end
+
+  local backed_up, backup_error =
+    os.rename(output_path, backup_path)
+
+  if not backed_up then
+    return false,
+      translate_ui_text("无法备份原有文件")
+        .. (backup_error and (": " .. backup_error) or "")
+  end
+
+  local committed, commit_error =
+    os.rename(temporary_path, output_path)
+
+  if committed then
+    os.remove(backup_path)
+    return true, nil
+  end
+
+  local restored, restore_error =
+    os.rename(backup_path, output_path)
+
+  if not restored then
+    return false,
+      translate_ui_text("输出提交失败，原文件保存在：")
+        .. backup_path
+        .. (restore_error and (": " .. restore_error) or "")
+  end
+
+  return false,
+    translate_ui_text("输出提交失败，原文件已恢复")
+      .. (commit_error and (": " .. commit_error) or "")
+end
+
+function render_transfer_asset(task)
+  local asset = task.asset
+  local output_path, collision, existing =
+    resolve_transfer_output(
+      asset,
+      task.asset_index,
+      task.variant
+    )
+
+  if collision == "skip" then
+    return false,
+      nil,
+      translate_ui_text("已跳过已有文件：") .. existing,
+      true
+  elseif not output_path then
+    return false,
+      nil,
+      translate_ui_text("Transfer 渲染失败"),
+      false
+  end
+
+  local temporary_path =
+    unique_transfer_sidecar_path(
+      output_path,
+      "render",
+      task.task_index
+    )
+
+  if not temporary_path then
+    return false,
+      nil,
+      translate_ui_text("无法创建临时渲染路径"),
+      false
   end
 
   local context = capture_transfer_context()
@@ -11322,13 +11813,17 @@ function render_transfer_asset(asset, index, use_selection)
 
   local setup_ok, setup_error = xpcall(function()
     temporary_track, _, render_error =
-      create_transfer_item(asset, use_selection)
+      create_transfer_item(
+        asset,
+        task.use_selection,
+        task.variant
+      )
 
     if render_error then
       error(render_error)
     end
 
-    configure_transfer_render(asset, output_path)
+    configure_transfer_render(asset, temporary_path)
   end, debug.traceback)
 
   reaper.PreventUIRefresh(-1)
@@ -11338,7 +11833,8 @@ function render_transfer_asset(asset, index, use_selection)
       reaper.Main_OnCommand(42230, 0)
     end)
 
-    render_ok = action_ok and reaper.file_exists(output_path)
+    render_ok =
+      action_ok and reaper.file_exists(temporary_path)
     render_error = action_error
   else
     render_error = setup_error
@@ -11346,7 +11842,11 @@ function render_transfer_asset(asset, index, use_selection)
 
   reaper.PreventUIRefresh(1)
   local restore_ok, restore_error =
-    pcall(restore_transfer_context, context, temporary_track)
+    pcall(
+      restore_transfer_context,
+      context,
+      temporary_track
+    )
   reaper.PreventUIRefresh(-1)
 
   if not restore_ok then
@@ -11354,10 +11854,31 @@ function render_transfer_asset(asset, index, use_selection)
     render_error = restore_error
   end
 
+  if render_ok then
+    local commit_ok, commit_error =
+      commit_transfer_output(
+        temporary_path,
+        output_path,
+        collision == "overwrite",
+        task.task_index
+      )
+    render_ok = commit_ok
+    render_error = commit_error
+  end
+
   if not render_ok then
-    return false, nil,
+    if reaper.file_exists(temporary_path) then
+      os.remove(temporary_path)
+    end
+
+    return false,
+      nil,
       translate_ui_text("Transfer 渲染失败")
-        .. (render_error and (": " .. tostring(render_error)) or ""),
+        .. (
+          render_error
+            and (": " .. tostring(render_error))
+            or ""
+        ),
       false
   end
 
@@ -11368,6 +11889,164 @@ function render_transfer_asset(asset, index, use_selection)
   end
 
   return true, output_path, nil, false
+end
+
+function write_transfer_report(job, canceled)
+  local handle = io.open(TRANSFER_REPORT_FILE, "wb")
+
+  if not handle then
+    return false
+  end
+
+  handle:write(
+    "status\tasset\tvariant\toutput\tmessage\tseconds\n"
+  )
+
+  for _, record in ipairs(job.records or {}) do
+    handle:write(
+      table.concat({
+        escape_tsv(record.status or ""),
+        escape_tsv(record.asset or ""),
+        escape_tsv(record.variant or ""),
+        escape_tsv(record.output or ""),
+        escape_tsv(record.message or ""),
+        escape_tsv(
+          string.format("%.3f", record.seconds or 0)
+        ),
+      }, "\t"),
+      "\n"
+    )
+  end
+
+  if canceled then
+    handle:write(
+      table.concat({
+        "canceled",
+        "",
+        "",
+        "",
+        escape_tsv("Stopped after current file"),
+        "",
+      }, "\t"),
+      "\n"
+    )
+  end
+
+  handle:close()
+  return true
+end
+
+function finish_transfer_job(job, canceled)
+  if not job then
+    return
+  end
+
+  write_transfer_report(job, canceled)
+
+  state.transfer_running = false
+  state.transfer_job = nil
+  state.transfer_cancel_requested = false
+  state.config_dirty = true
+
+  local summary = string.format(
+    "%s %d · %s %d · %s %d",
+    translate_ui_text("完成"),
+    job.success_count or 0,
+    translate_ui_text("跳过"),
+    job.skipped_count or 0,
+    translate_ui_text("失败"),
+    #(job.failures or {})
+  )
+
+  if canceled then
+    summary =
+      translate_ui_text("Transfer 已停止") .. " · " .. summary
+  else
+    summary =
+      translate_ui_text("Transfer 完成") .. " · " .. summary
+  end
+
+  state.transfer_last_summary = summary
+
+  if #(job.failures or {}) > 0 then
+    state.transfer_last_error =
+      table.concat(job.failures, "\n")
+    set_status(summary, true)
+  else
+    state.transfer_last_error = ""
+    set_status(summary)
+  end
+end
+
+function process_transfer_job()
+  local job = state.transfer_job
+
+  if not job then
+    return
+  end
+
+  if (reaper.GetPlayStateEx(PROJ) & 1) == 1 then
+    set_status(
+      translate_ui_text(
+        "Transfer 已暂停：请停止工程播放"
+      ),
+      true
+    )
+    return
+  end
+
+  if state.transfer_cancel_requested then
+    finish_transfer_job(job, true)
+    return
+  end
+
+  local task = job.tasks[job.next_index]
+
+  if not task then
+    finish_transfer_job(job, false)
+    return
+  end
+
+  local started_at = reaper.time_precise()
+  local ok, output, message, skipped =
+    render_transfer_asset(task)
+  local elapsed =
+    math.max(0, reaper.time_precise() - started_at)
+
+  if ok then
+    job.success_count = job.success_count + 1
+    state.transfer_last_outputs[
+      #state.transfer_last_outputs + 1
+    ] = output
+    state.transfer_last_output = output
+  elseif skipped then
+    job.skipped_count = job.skipped_count + 1
+  else
+    job.failures[#job.failures + 1] =
+      (task.asset.name or "")
+        .. " · "
+        .. (message or translate_ui_text("未知错误"))
+  end
+
+  job.records[#job.records + 1] = {
+    status = ok and "success" or (skipped and "skipped" or "failed"),
+    asset = task.asset.path or task.asset.name or "",
+    variant = task.variant.label or "current",
+    output = output or "",
+    message = message or "",
+    seconds = elapsed,
+  }
+
+  job.next_index = job.next_index + 1
+  job.completed = job.next_index - 1
+  set_status(
+    string.format(
+      "%s %d / %d",
+      translate_ui_text("正在导出"),
+      job.completed,
+      job.total
+    )
+  )
 end
 
 function run_transfer(assets, batch_mode)
@@ -11400,60 +12079,137 @@ function run_transfer(assets, batch_mode)
     return
   end
 
-  stop_preview()
-  state.transfer_running = true
-  state.transfer_last_error = ""
-  state.transfer_last_outputs = {}
-  set_status("正在导出…")
+  local variants, variant_error = build_transfer_variants()
 
-  local success_count = 0
-  local skipped_count = 0
-  local failures = {}
+  if not variants then
+    set_status(variant_error, true)
+    return
+  end
 
-  for index, asset in ipairs(assets) do
+  if type(reaper.CF_PCM_Source_SetSectionInfo) ~= "function" then
+    for _, variant in ipairs(variants) do
+      if variant.reverse then
+        set_status(
+          translate_ui_text(
+            "反向变体需要安装 SWS Extension"
+          ),
+          true
+        )
+        return
+      end
+    end
+  end
+
+  local total = #assets * #variants
+
+  if total > 4096 then
+    set_status(
+      translate_ui_text(
+        "导出任务超过 4096 个，请减少素材或变体数量"
+      ),
+      true
+    )
+    return
+  end
+
+  local has_overwrite_target = false
+
+  if state.transfer_collision == "overwrite" then
+    local planned_targets = {}
+    local extension_name = transfer_format_info()
+
+    for asset_index, asset in ipairs(assets) do
+      for _, variant in ipairs(variants) do
+        local planned_path = join_path(
+          directory,
+          expand_transfer_template(
+            asset,
+            asset_index,
+            variant
+          ) .. "." .. extension_name
+        )
+        local planned_key = path_key(planned_path)
+        local _, collision =
+          resolve_transfer_output(
+            asset,
+            asset_index,
+            variant
+          )
+
+        if collision == "overwrite"
+          or planned_targets[planned_key] then
+          has_overwrite_target = true
+          break
+        end
+
+        planned_targets[planned_key] = true
+      end
+
+      if has_overwrite_target then
+        break
+      end
+    end
+  end
+
+  if has_overwrite_target then
+    local answer = reaper.MB(
+      translate_ui_text(
+        "同名输出将使用安全替换：先完成临时渲染，再备份并替换原文件。是否继续？"
+      ),
+      translate_ui_text("确认覆盖策略"),
+      4
+    )
+
+    if answer ~= 6 then
+      return
+    end
+  end
+
+  local tasks = {}
+  local task_index = 0
+
+  for asset_index, asset in ipairs(assets) do
     local use_selection =
       not batch_mode
       and state.transfer_scope == "selection"
       and has_selection()
 
-    local ok, output, message, skipped =
-      render_transfer_asset(asset, index, use_selection)
-
-    if ok then
-      success_count = success_count + 1
-      state.transfer_last_outputs[#state.transfer_last_outputs + 1] = output
-      state.transfer_last_output = output
-    elseif skipped then
-      skipped_count = skipped_count + 1
-    else
-      failures[#failures + 1] = message or asset.name
+    for _, variant in ipairs(variants) do
+      task_index = task_index + 1
+      tasks[task_index] = {
+        asset = asset,
+        asset_index = asset_index,
+        use_selection = use_selection,
+        variant = variant,
+        task_index = task_index,
+      }
     end
   end
 
-  state.transfer_running = false
-  state.config_dirty = true
-
-  if #failures > 0 then
-    state.transfer_last_error = table.concat(failures, "\n")
-    set_status(
-      string.format(
-        "%s · %d / %d",
-        translate_ui_text("Transfer 部分完成"),
-        success_count,
-        #assets
-      ),
-      true
+  stop_preview()
+  state.transfer_running = true
+  state.transfer_cancel_requested = false
+  state.transfer_last_error = ""
+  state.transfer_last_outputs = {}
+  state.transfer_last_summary = ""
+  state.transfer_job = {
+    tasks = tasks,
+    total = #tasks,
+    next_index = 1,
+    completed = 0,
+    success_count = 0,
+    skipped_count = 0,
+    failures = {},
+    records = {},
+    started_at = reaper.time_precise(),
+  }
+  set_status(
+    string.format(
+      "%s 0 / %d",
+      translate_ui_text("正在导出"),
+      #tasks
     )
-  else
-    set_status(
-      translate_ui_text("Transfer 完成：")
-        .. string.format(
-          "%d%s",
-          success_count,
-          skipped_count > 0 and (" · skip " .. skipped_count) or ""
-        )
-    )
-  end
+  )
 end
 
 ----------------------------------------------------------------
@@ -12201,9 +12957,21 @@ function reset_interface_settings()
   state.transfer_normalize_target = -1
   state.transfer_insert_after = false
   state.transfer_lowercase = false
+  state.transfer_dither = true
+  state.transfer_noise_shaping = false
+  state.transfer_preserve_metadata = true
+  state.transfer_variants_enabled = false
+  state.transfer_variant_pitches = ""
+  state.transfer_variant_rates = ""
+  state.transfer_variant_gains = ""
+  state.transfer_variant_include_reverse = false
+  state.transfer_variant_auto_suffix = true
+  state.transfer_job = nil
+  state.transfer_cancel_requested = false
   state.transfer_last_output = ""
   state.transfer_last_outputs = {}
   state.transfer_last_error = ""
+  state.transfer_last_summary = ""
   state.theme_preset = "dark"
   state.custom_accent_hex = "#1F6FCC"
   state.custom_shell_hex = "#101114"
@@ -20669,6 +21437,8 @@ function transfer_choice(label, key, options)
       if key == "transfer_normalize" then
         if option.value == "lufs_i" then
           state.transfer_normalize_target = -16
+        elseif option.value == "rms_i" then
+          state.transfer_normalize_target = -18
         elseif option.value ~= "off" then
           state.transfer_normalize_target = -1
         end
@@ -20776,7 +21546,7 @@ function draw_transfer_settings_content()
   ImGui.Separator(ctx)
   settings_section_title(
     "命名模板",
-    "可用字段：{name} {category} {subcategory} {library} {index} {date} {region}"
+    "可用字段：{name} {category} {subcategory} {library} {index} {date} {region} {pitch} {rate} {gain} {direction} {variant} {variant_index}"
   )
 
   ImGui.SetNextItemWidth(ctx, -1)
@@ -20814,7 +21584,9 @@ function draw_transfer_settings_content()
   ImGui.TextDisabled(ctx, "没有有效选区时自动使用完整文件")
 
   transfer_choice("输出格式", "transfer_format", {
-    { value = "wav24", label = "WAV · 24-bit PCM", width = 170 },
+    { value = "wav16", label = "WAV · 16-bit", width = 126 },
+    { value = "wav24", label = "WAV · 24-bit", width = 126 },
+    { value = "wav32", label = "WAV · 32-bit PCM", width = 154 },
     { value = "flac", label = "FLAC · REAPER 默认", width = 190 },
   })
 
@@ -20831,6 +21603,49 @@ function draw_transfer_settings_content()
     { value = "mono", label = "单声道", width = 92 },
     { value = "stereo", label = "立体声", width = 92 },
   })
+
+  changed, state.transfer_preserve_metadata =
+    ImGui.Checkbox(
+      ctx,
+      "尽可能保留源文件元数据",
+      state.transfer_preserve_metadata
+    )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  if state.transfer_format == "wav16" then
+    changed, state.transfer_dither =
+      ImGui.Checkbox(
+        ctx,
+        "启用抖动",
+        state.transfer_dither
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    ImGui.SameLine(ctx, 0, 18)
+
+    changed, state.transfer_noise_shaping =
+      ImGui.Checkbox(
+        ctx,
+        "噪声整形",
+        state.transfer_noise_shaping
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+  elseif state.transfer_format ~= "flac" then
+    ImGui.TextDisabled(
+      ctx,
+      "当前位深保持抖动关闭；WAV 16-bit 可单独启用。"
+    )
+  end
 
   ImGui.Separator(ctx)
   settings_section_title(
@@ -20933,10 +21748,140 @@ function draw_transfer_settings_content()
     )
   end
 
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "批量变体",
+    "按 Pitch、Rate、Gain 与方向生成笛卡尔组合；每个参数最多 16 项，单素材最多 128 个变体。"
+  )
+
+  changed, state.transfer_variants_enabled =
+    ImGui.Checkbox(
+      ctx,
+      "启用批量变体",
+      state.transfer_variants_enabled
+    )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  if state.transfer_variants_enabled then
+    ImGui.TextDisabled(
+      ctx,
+      "留空表示使用主界面当前值；可用逗号、空格或分号分隔。"
+    )
+
+    ImGui.SetNextItemWidth(ctx, 420)
+    changed, state.transfer_variant_pitches =
+      ImGui.InputText(
+        ctx,
+        "Pitch 列表##transfer_variant_pitches",
+        state.transfer_variant_pitches or ""
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    ImGui.SetNextItemWidth(ctx, 420)
+    changed, state.transfer_variant_rates =
+      ImGui.InputText(
+        ctx,
+        "Rate 列表##transfer_variant_rates",
+        state.transfer_variant_rates or ""
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    ImGui.SetNextItemWidth(ctx, 420)
+    changed, state.transfer_variant_gains =
+      ImGui.InputText(
+        ctx,
+        "Gain 列表##transfer_variant_gains",
+        state.transfer_variant_gains or ""
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    if dark_button("当前参数", 110) then
+      state.transfer_variant_pitches = ""
+      state.transfer_variant_rates = ""
+      state.transfer_variant_gains = ""
+      state.transfer_variant_include_reverse = false
+      state.config_dirty = true
+    end
+
+    ImGui.SameLine(ctx, 0, 6)
+
+    if dark_button("Pitch ±3 / ±6", 142) then
+      state.transfer_variant_pitches = "-6,-3,0,3,6"
+      state.transfer_variant_rates = ""
+      state.transfer_variant_gains = ""
+      state.config_dirty = true
+    end
+
+    ImGui.SameLine(ctx, 0, 6)
+
+    if dark_button("轻量变化", 110) then
+      state.transfer_variant_pitches = "-2,0,2"
+      state.transfer_variant_rates = "0.95,1,1.05"
+      state.transfer_variant_gains = "-1,0,1"
+      state.config_dirty = true
+    end
+
+    changed, state.transfer_variant_include_reverse =
+      ImGui.Checkbox(
+        ctx,
+        "同时生成正向与反向",
+        state.transfer_variant_include_reverse
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    changed, state.transfer_variant_auto_suffix =
+      ImGui.Checkbox(
+        ctx,
+        "模板未含变体字段时自动追加安全后缀",
+        state.transfer_variant_auto_suffix
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    local variants, variant_error =
+      build_transfer_variants()
+
+    if variants then
+      ImGui.TextColored(
+        ctx,
+        COLOR.success,
+        string.format(
+          "%s %d",
+          translate_ui_text("每个素材将生成"),
+          #variants
+        )
+      )
+    else
+      ImGui.TextColored(
+        ctx,
+        COLOR.error,
+        variant_error or translate_ui_text("变体设置无效")
+      )
+    end
+  end
+
   transfer_choice("标准化", "transfer_normalize", {
     { value = "off", label = "关闭标准化", width = 112 },
     { value = "peak", label = "Peak", width = 82 },
     { value = "true_peak", label = "True Peak", width = 102 },
+    { value = "rms_i", label = "RMS-I", width = 88 },
     { value = "lufs_i", label = "LUFS-I", width = 90 },
   })
 
@@ -20946,9 +21891,18 @@ function draw_transfer_settings_content()
       ctx,
       "目标值",
       state.transfer_normalize_target,
-      state.transfer_normalize == "lufs_i" and -36 or -12,
+      (
+        state.transfer_normalize == "lufs_i"
+          or state.transfer_normalize == "rms_i"
+      ) and -36 or -12,
       0,
-      state.transfer_normalize == "lufs_i" and "%.1f LUFS" or "%.1f dBFS"
+      state.transfer_normalize == "lufs_i"
+        and "%.1f LUFS"
+        or (
+          state.transfer_normalize == "rms_i"
+            and "%.1f dB RMS"
+            or "%.1f dBFS"
+        )
     )
 
     if changed then
@@ -21010,7 +21964,7 @@ function draw_transfer_popup()
   end
 
   local width, height = ImGui.GetContentRegionAvail(ctx)
-  local footer_height = 72
+  local footer_height = state.transfer_running and 106 or 72
 
   if ImGui.BeginChild(
     ctx,
@@ -21035,6 +21989,20 @@ function draw_transfer_popup()
       ImGui.TextDisabled(ctx, "尚未执行 Transfer")
     end
 
+    if state.transfer_last_summary ~= "" then
+      ImGui.TextColored(
+        ctx,
+        COLOR.success,
+        state.transfer_last_summary
+      )
+    end
+
+    if reaper.file_exists(TRANSFER_REPORT_FILE) then
+      if dark_button("打开任务报告目录", 170) then
+        open_folder(dirname(TRANSFER_REPORT_FILE))
+      end
+    end
+
     if state.transfer_last_error ~= "" then
       ImGui.TextColored(ctx, COLOR.error, state.transfer_last_error)
     end
@@ -21046,21 +22014,45 @@ function draw_transfer_popup()
   local asset = selected_asset()
   local selected = selected_assets()
 
-  if dark_button("导出当前素材", 160) then
+  if state.transfer_running and state.transfer_job then
+    local job = state.transfer_job
+    local fraction =
+      job.total > 0
+        and clamp((job.completed or 0) / job.total, 0, 1)
+        or 0
+
+    ImGui.ProgressBar(
+      ctx,
+      fraction,
+      -142,
+      22,
+      string.format(
+        "%d / %d",
+        job.completed or 0,
+        job.total or 0
+      )
+    )
+
+    ImGui.SameLine(ctx, 0, 8)
+
+    if dark_button("当前文件后停止", 132) then
+      state.transfer_cancel_requested = true
+    end
+  elseif dark_button("导出当前素材", 160) then
     run_transfer(asset and { asset } or {}, false)
-  end
+  else
+    ImGui.SameLine(ctx, 0, 8)
 
-  ImGui.SameLine(ctx, 0, 8)
-
-  if dark_button(
-    string.format(
-      "%s (%d)",
-      translate_ui_text("导出所选素材"),
-      #selected
-    ),
-    190
-  ) then
-    run_transfer(selected, true)
+    if dark_button(
+      string.format(
+        "%s (%d)",
+        translate_ui_text("导出所选素材"),
+        #selected
+      ),
+      190
+    ) then
+      run_transfer(selected, true)
+    end
   end
 
   ImGui.SameLine(ctx, 0, 8)
@@ -22801,7 +23793,8 @@ function watch_folders()
   if not state.watch_enabled
     or state.scan
     or state.import_session
-    or state.precache_session then
+    or state.precache_session
+    or state.transfer_running then
     return
   end
 
@@ -22818,6 +23811,10 @@ function cleanup()
   stop_preview()
   cleanup_retired_preview_sources(true)
   destroy_wave_job(state.wave_active)
+
+  if state.transfer_job then
+    finish_transfer_job(state.transfer_job, true)
+  end
 
   for key in pairs(state.artwork_images) do
     release_artwork_image(key)
@@ -22931,14 +23928,21 @@ function loop()
     return
   end
 
-  process_scan()
-  process_import_session()
-  process_metadata_queue()
-  process_artwork_queue()
-  process_wave_precache()
-  process_wave_queue()
-  process_pending_transient_detection()
-  process_loudness_queue()
+  if state.transfer_running then
+    -- Transfer receives the background-work budget while active. Library
+    -- scanning, waveform generation, Artwork and loudness analysis resume
+    -- automatically after the job finishes or is stopped.
+    process_transfer_job()
+  else
+    process_scan()
+    process_import_session()
+    process_metadata_queue()
+    process_artwork_queue()
+    process_wave_precache()
+    process_wave_queue()
+    process_pending_transient_detection()
+    process_loudness_queue()
+  end
   cleanup_retired_preview_sources(false)
   poll_preview()
   watch_folders()

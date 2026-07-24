@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.18--beta.22-19D8FF" alt="Version 0.7.18 beta 22">
+  <img src="https://img.shields.io/badge/Version-0.7.19--beta.23-19D8FF" alt="Version 0.7.19 beta 23">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -143,9 +143,17 @@ unless you explicitly use a Transfer operation that writes a new output file.
 ### Transfer and REAPER delivery
 
 Transfer can export the full file or current waveform selection using an
-output directory, naming template, format, sample rate, channel mode, fades,
-normalization and collision policy. The result can be inserted back into the
-current REAPER project.
+output directory, naming template, explicit WAV 16/24/32-bit PCM or FLAC,
+sample rate, channel mode, fades, Peak/True Peak/RMS-I/LUFS-I normalization
+and collision policy. Source metadata can be preserved where REAPER and the
+target container support it; 16-bit WAV output offers optional dither and
+noise shaping.
+
+Batch Variants turn comma-separated Pitch, Rate and Gain lists into a bounded
+set of normal/reverse deliverables. Variant-aware naming tokens keep outputs
+distinct, while per-file progress, stop-after-current, a TSV task report and
+safe temporary-file replacement make large jobs inspectable and recoverable.
+Finished files can optionally be inserted into the current REAPER project.
 
 For selections that end before the source file does, optional **Smart source
 tail** scans the remaining source audio for the last event above a configurable
@@ -219,8 +227,9 @@ inspector retains its neutral empty-state illustration.
 
 ## Release status
 
-`0.7.18 Beta 22` is part of the active 0.7 development line. The 0.7 line is
-expanding and validating Transfer and delivery workflows; `0.6.21` remains the
+`0.7.19 Beta 23` completes the planned 0.7 feature set and begins the
+compatibility and regression phase for Transfer and delivery workflows;
+`0.6.21` remains the
 stable fallback while this testing continues.
 
 ## Author and license
