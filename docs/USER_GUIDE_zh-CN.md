@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.7.16 Beta 20  
+**适用版本：** PsyReaSFX 0.7.17 Beta 21  
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -137,6 +137,11 @@ PsyReaSFX_vX_X_X/
 
 每个实体来源独立拥有自动找到或手动指定的封面。同一逻辑库中，一个来源的封面不会套用到其他来源。
 
+自动识别支持封面与音频放在一起、放在来源子目录，以及
+`1. Audio / 2. Artwork` 这类带编号的兄弟目录结构。识别目录角色前会
+去除排序编号，兼容 Artwork、Cover、Images、Graphics、Thumbnail
+等名称。嵌套搜索具有严格的深度与目录数量限制，适合大型商业素材库。
+
 右键展开后的实体来源，可以指定、重新发现或清除 Artwork。元数据面板中为某个单独素材指定的封面优先级最高。
 
 <p align="center">
@@ -194,7 +199,11 @@ whoosh category:movement -long
 
 ### Artwork 列
 
-Artwork 会检查实体来源根目录和常见的 `Artwork`、`Images`、`Docs`、`Documentation` 文件夹，并进行有限层级的向上查找。优先文件名包括 `artwork`、`cover`、`folder`、`front`、`album` 和 `thumbnail`，支持 PNG、JPG、JPEG。
+Artwork 会检查实体来源根目录、直接封面子目录，以及产品父目录下
+符合封面角色的兄弟目录。它同时兼容封面和 WAV 同目录，以及
+`1. Motion Graphics / 2. Artwork` 这样的结构。优先文件名包括
+`artwork`、`cover`、`folder`、`front`、`album` 和 `thumbnail`，
+支持 PNG、JPG、JPEG。
 
 发现任务采用低优先级队列，同时缓存“该文件夹没有封面”的结果。隐藏 Artwork 列后，不再请求列表缩略图。
 
@@ -355,12 +364,16 @@ PsyReaSFX 可以：
 - 声道：跟随源文件、单声道、立体声。
 - 处理：当前 Pitch、Rate、Gain、Reverse 和 Preserve Pitch。
 - 收尾：Fade，以及 Peak、True Peak 或 LUFS-I 标准化。
+- 源文件智能尾音：对波形选区按 dBFS 阈值查找最后一个有效声音，
+  并受最大时长与安全留白限制。
 - 重名：自动编号、跳过，或明确确认后覆盖。
 - 完成：可把输出文件自动插回 REAPER。
 
 Transfer 会临时建立干声媒体对象，使用 REAPER 的“渲染所选媒体对象”机制，然后恢复原来的渲染设置、选择、光标、时间选区和工程脏状态。无论成功或失败，临时对象都会清理。
 
-当前限制：Transfer 暂不经过轨道 FX、发送、文件夹路由或 Master FX。执行前请停止工程播放。Reverse Transfer 需要 SWS。
+智能尾音只分析选区之后仍存在于源文件中的音频，不会渲染工程轨道
+FX、发送、文件夹路由或 Master FX 新产生的尾音。执行 Transfer 前
+请停止工程播放。Reverse Transfer 需要 SWS。
 
 ## 15. 元数据与 Artwork
 

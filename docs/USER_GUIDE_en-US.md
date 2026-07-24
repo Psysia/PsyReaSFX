@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.16 Beta 20  
+**Applies to:** PsyReaSFX 0.7.17 Beta 21  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -137,6 +137,12 @@ Offline sources remain listed. Their library relationship can therefore survive 
 
 Each physical source folder owns its own automatically detected or manually assigned cover. A cover from one source is never applied to sibling sources merely because they share a logical library.
 
+Automatic discovery supports a cover beside the audio files, a cover in a
+child folder, and numbered sibling layouts such as `1. Audio / 2. Artwork`.
+Artwork, Cover, Images, Graphics, Thumbnail and similar role names are matched
+after stripping ordering prefixes. Nested image folders are searched only to a
+small bounded depth, so this remains safe for large products.
+
 Right-click an expanded source to choose, rediscover or clear its Artwork. Asset-specific Artwork chosen in the metadata inspector has higher priority than source Artwork.
 
 <p align="center">
@@ -194,7 +200,11 @@ Hidden fields are not drawn, reducing interface work for large result sets.
 
 ### Artwork column
 
-Artwork discovery checks the source root and common `Artwork`, `Images`, `Docs` and `Documentation` folders, then performs a bounded parent search. Preferred names include `artwork`, `cover`, `folder`, `front`, `album` and `thumbnail`; PNG, JPG and JPEG are supported.
+Artwork discovery checks the source root, direct cover folders and compatible
+siblings under the product parent. This handles both a cover next to WAV files
+and layouts such as `1. Motion Graphics / 2. Artwork`. Preferred file names
+include `artwork`, `cover`, `folder`, `front`, `album` and `thumbnail`; PNG,
+JPG and JPEG are supported.
 
 Discovery is low priority and uses positive and negative folder caching. Hiding the Artwork column stops list-thumbnail requests for it.
 
@@ -357,12 +367,17 @@ Names are sanitized for Windows. Optional lowercase conversion runs after token 
 - Channels: source count, mono or stereo.
 - Processing: current Pitch, Rate, Gain, Reverse and Preserve Pitch.
 - Finishing: fades and Peak, True Peak or LUFS-I normalization.
+- Smart source tail: for a waveform selection, extend to the last source event
+  above a configurable dBFS threshold, limited by a maximum duration and hold.
 - Collision: increment, skip, or explicitly confirmed overwrite.
 - Completion: optionally insert rendered files into REAPER.
 
 Transfer creates a temporary dry media item, uses REAPER's selected-media-item renderer, then restores render settings, selection, cursor, time selection and project dirty state. The temporary item is removed on success and failure paths.
 
-Current limitation: Transfer does not yet pass through track FX, sends, folder routing or Master FX. Stop project playback before a Transfer job. Reverse Transfer requires SWS.
+Smart source tail only analyzes audio that already exists after the selection
+inside the source file. It does not render new tails created by project FX,
+sends, folder routing or Master FX. Stop project playback before a Transfer
+job. Reverse Transfer requires SWS.
 
 ## 15. Metadata and Artwork
 

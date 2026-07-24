@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.16--beta.20-19D8FF" alt="Version 0.7.16 beta 20">
+  <img src="https://img.shields.io/badge/Version-0.7.17--beta.21-19D8FF" alt="Version 0.7.17 beta 21">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -146,6 +146,11 @@ output directory, naming template, format, sample rate, channel mode, fades,
 normalization and collision policy. The result can be inserted back into the
 current REAPER project.
 
+For selections that end before the source file does, optional **Smart source
+tail** scans the remaining source audio for the last event above a configurable
+threshold, then preserves a bounded hold period. This retains source-recorded
+reverb and delay tails without adding the same fixed duration to every export.
+
 <p align="center">
   <img src="assets/screenshots/transfer-settings-en.png" alt="Privacy-safe PsyReaSFX Transfer settings" width="860">
 </p>
@@ -192,6 +197,12 @@ small tasks. Only visible result rows and the selected file receive immediate
 high-priority work. Waveforms are cached on disk and can be precached from
 Settings for predictable browsing on very large libraries.
 
+Artwork discovery supports both covers beside WAV files and commercial-library
+layouts such as `1. Audio / 2. Artwork`. Numbered Artwork, Cover, Image and
+Thumbnail folders are searched with strict depth and folder budgets. Each
+physical source retains its own result, so one source never silently supplies
+the cover for another source in the same logical library.
+
 ## Documentation
 
 - [User Guide — English](docs/USER_GUIDE_en-US.md)
@@ -202,7 +213,7 @@ Settings for predictable browsing on very large libraries.
 
 ## Release status
 
-`0.7.16 Beta 20` is part of the active 0.7 development line. The 0.7 line is
+`0.7.17 Beta 21` is part of the active 0.7 development line. The 0.7 line is
 expanding and validating Transfer and delivery workflows; `0.6.21` remains the
 stable fallback while this testing continues.
 

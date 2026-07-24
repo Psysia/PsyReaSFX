@@ -1,5 +1,30 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.17 Beta 21
+
+### Product-aware Artwork discovery
+
+- Detects covers stored beside source audio, inside direct cover folders, or
+  in numbered sibling layouts such as `1. Audio / 2. Artwork`.
+- Normalizes ordering prefixes and recognizes Artwork, Cover, Images,
+  Graphics, Thumbnail, Album Art and equivalent Chinese folder roles.
+- Searches nested cover folders with strict depth and directory-count budgets,
+  preserving UI responsiveness on large commercial libraries.
+- Invalidates negative Artwork results created by the older discovery model,
+  so existing libraries retry automatically after the update.
+- Keeps every discovered or manually assigned cover owned by its physical
+  source folder; sibling sources in one logical library remain isolated.
+
+### Smart source tail for Transfer
+
+- Adds an optional smart-tail pass for waveform-selection exports.
+- Scans the source audio after the selection for the last event above a
+  configurable dBFS threshold, maximum extension and hold time.
+- Reuses disk waveform caches when available and loads only a bounded envelope
+  otherwise; no eager full-library analysis is introduced.
+- Makes the source-only boundary explicit: project FX, sends, folder routing
+  and Master FX are still outside the Transfer render path.
+
 ## 0.7.16 Beta 20
 
 ### Space-bar anti-click fix

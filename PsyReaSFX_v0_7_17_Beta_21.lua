@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.16-beta.20
+-- @version 0.7.17-beta.21
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -114,6 +114,9 @@
 --   - 0.7.16：显式捕获 PsyReaSFX 聚焦窗口中的键盘输入，防止 Space
 --     同时触发 REAPER 全局传输
 --   - 停止试听后延迟释放媒体源，让 SWS 音频线程完成淡出，避免截断爆音
+--   - 0.7.17：Artwork 自动识别支持编号封面目录与音频目录的兄弟目录
+--     结构，例如 “1. Audio / 2. Artwork”，并保持实体来源之间相互隔离
+--   - Transfer 新增源文件选区智能尾音，可按阈值、上限与留白延长输出
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -122,7 +125,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.16 Beta 20"
+local VERSION = "0.7.17 Beta 21"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -763,6 +766,10 @@ local state = {
   transfer_collision = "increment",
   transfer_fade_in_ms = 5,
   transfer_fade_out_ms = 20,
+  transfer_smart_tail = false,
+  transfer_tail_threshold_db = -60,
+  transfer_tail_max_ms = 5000,
+  transfer_tail_hold_ms = 180,
   transfer_normalize = "off",
   transfer_normalize_target = -1,
   transfer_insert_after = false,
@@ -772,6 +779,7 @@ local state = {
   transfer_last_output = "",
   transfer_last_outputs = {},
   transfer_last_error = "",
+  transfer_last_tail_ms = 0,
 
   status = "准备就绪",
   status_error = false,
@@ -912,6 +920,12 @@ I18N_EN = {
   ["立体声"] = "Stereo",
   ["淡入"] = "Fade in",
   ["淡出"] = "Fade out",
+  ["智能保留选区尾音"] = "Preserve selection tail intelligently",
+  ["分析选区结束后的源音频，保留最后一个超过阈值的尾音，并受最大长度限制。"] = "Analyze source audio after the selection and keep the last tail above the threshold, limited by the maximum duration.",
+  ["尾音阈值"] = "Tail threshold",
+  ["最大尾音"] = "Maximum tail",
+  ["尾音留白"] = "Tail hold",
+  ["只延伸源文件中已有的尾音；Transfer 仍不经过工程轨道、发送或 Master FX。"] = "Only existing source-file tails are extended; Transfer still does not pass through project tracks, sends, or Master FX.",
   ["处理"] = "Processing",
   ["当前 Pitch、Rate、Gain、Reverse 与 Preserve Pitch 会写入导出文件。"] = "Current Pitch, Rate, Gain, Reverse, and Preserve Pitch settings are written into the exported file.",
   ["标准化"] = "Normalize",
@@ -2768,6 +2782,8 @@ function rebuild_library_indexes()
       tostring(record.artwork_path or "")
     record.artwork_checked =
       record.artwork_checked == true
+    record.artwork_scan_version =
+      tonumber(record.artwork_scan_version) or 0
     state.root_by_id[record.id] = record
     state.root_by_path[path_key(record.path)] = record
 
@@ -3857,7 +3873,7 @@ function save_libraries()
     return false
   end
 
-  file:write("version\t2\n")
+  file:write("version\t3\n")
 
   for _, library in ipairs(state.libraries) do
     file:write(
@@ -3890,6 +3906,8 @@ function save_libraries()
       escape_tsv(record.artwork_path or ""),
       "\t",
       record.artwork_checked == true and "1" or "0",
+      "\t",
+      tostring(record.artwork_scan_version or 0),
       "\n"
     )
   end
@@ -3934,12 +3952,25 @@ function load_or_migrate_libraries()
           enabled = fields[6] ~= "0",
           artwork_path = fields[7] or "",
           artwork_checked = fields[8] == "1",
+          artwork_scan_version = tonumber(fields[9]) or 0,
         }
       end
     end
 
     file:close()
     rebuild_library_indexes()
+
+    -- Re-run negative automatic searches when the discovery algorithm gains
+    -- new folder-layout support. Explicit manual paths and "-" opt-outs remain
+    -- untouched.
+    for _, record in ipairs(state.root_records) do
+      if tostring(record.artwork_path or "") == ""
+        and record.artwork_scan_version
+          < ARTWORK_DISCOVERY_VERSION then
+        record.artwork_checked = false
+        state.libraries_dirty = true
+      end
+    end
 
     -- Beta 5/6 stored an automatically discovered source cover on the
     -- logical library. Migrate it only when ownership is unambiguous.
@@ -3979,6 +4010,7 @@ function load_or_migrate_libraries()
       enabled = true,
       artwork_path = "",
       artwork_checked = false,
+      artwork_scan_version = 0,
     }
   end
 
@@ -4066,6 +4098,17 @@ function load_config()
       elseif name == "transfer_fade_out_ms" then
         state.transfer_fade_out_ms =
           tonumber(value) or 20
+      elseif name == "transfer_smart_tail" then
+        state.transfer_smart_tail = value == "1"
+      elseif name == "transfer_tail_threshold_db" then
+        state.transfer_tail_threshold_db =
+          clamp(tonumber(value) or -60, -96, -18)
+      elseif name == "transfer_tail_max_ms" then
+        state.transfer_tail_max_ms =
+          clamp(tonumber(value) or 5000, 100, 30000)
+      elseif name == "transfer_tail_hold_ms" then
+        state.transfer_tail_hold_ms =
+          clamp(tonumber(value) or 180, 0, 2000)
       elseif name == "transfer_normalize" then
         state.transfer_normalize =
           value == "peak" and "peak"
@@ -4385,6 +4428,30 @@ function save_config()
   file:write(
     "setting\ttransfer_fade_out_ms\t",
     tostring(state.transfer_fade_out_ms),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_smart_tail\t",
+    state.transfer_smart_tail and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_tail_threshold_db\t",
+    tostring(state.transfer_tail_threshold_db),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_tail_max_ms\t",
+    tostring(state.transfer_tail_max_ms),
+    "\n"
+  )
+
+  file:write(
+    "setting\ttransfer_tail_hold_ms\t",
+    tostring(state.transfer_tail_hold_ms),
     "\n"
   )
 
@@ -6776,13 +6843,67 @@ local ARTWORK_NAME_PRIORITY = {
 local ARTWORK_SUBFOLDER_NAMES = {
   artwork = true,
   artworks = true,
+  art = true,
   cover = true,
   covers = true,
   image = true,
   images = true,
-  docs = true,
-  documentation = true,
+  thumbnail = true,
+  thumbnails = true,
+  graphics = true,
+  ["album art"] = true,
+  ["product art"] = true,
+  ["product artwork"] = true,
+  ["product images"] = true,
+  ["封面"] = true,
+  ["图片"] = true,
+  ["图像"] = true,
 }
+
+ARTWORK_DISCOVERY_VERSION = 2
+
+function normalized_artwork_folder_name(name)
+  local value = safe_lower(trim(name or ""))
+
+  -- Commercial libraries commonly prefix deliverable folders with an
+  -- ordering number: "1. Audio", "2. Artwork", "03_Covers", etc.
+  value = value:gsub("^%d+%s*", "")
+  value = value:gsub("^%p+%s*", "")
+  value = value:gsub("[_%-%.]+", " ")
+  value = value:gsub("%s+", " ")
+
+  return trim(value)
+end
+
+function artwork_folder_priority(name)
+  local label = normalized_artwork_folder_name(name)
+
+  if ARTWORK_SUBFOLDER_NAMES[label] then
+    return label == "artwork" and 1
+      or label == "artworks" and 1
+      or label == "art" and 2
+      or label:find("cover", 1, true) and 3
+      or label:find("image", 1, true) and 4
+      or label:find("thumbnail", 1, true) and 5
+      or 6
+  end
+
+  if label:find("artwork", 1, true)
+    or label:find("封面", 1, true) then
+    return 1
+  elseif label:find("cover", 1, true) then
+    return 3
+  elseif label:find("product image", 1, true)
+    or label:find("album art", 1, true)
+    or label:find("图片", 1, true)
+    or label:find("图像", 1, true) then
+    return 4
+  elseif label:find("thumbnail", 1, true) then
+    return 5
+  end
+
+  return nil
+end
 
 function is_artwork_file(filename)
   local ext = extension(filename):lower()
@@ -6841,6 +6962,109 @@ function find_artwork_in_folder(folder)
   return result
 end
 
+function find_artwork_in_tree(
+  folder,
+  maximum_depth,
+  budget
+)
+  budget = budget or {
+    remaining = 64,
+    exhausted = false,
+  }
+
+  local cache_key =
+    "tree:"
+      .. tostring(maximum_depth or 0)
+      .. ":"
+      .. path_key(folder)
+  local cached = state.artwork_folder_cache[cache_key]
+
+  if cached ~= nil then
+    return cached == false and "" or cached
+  end
+
+  local found = find_artwork_in_folder(folder)
+
+  if found == "" and (maximum_depth or 0) > 0 then
+    local index = 0
+    while budget.remaining > 0 do
+      local subdir =
+        reaper.EnumerateSubdirectories(folder, index)
+
+      if not subdir then
+        break
+      end
+
+      index = index + 1
+      budget.remaining = budget.remaining - 1
+      found = find_artwork_in_tree(
+        join_path(folder, subdir),
+        maximum_depth - 1,
+        budget
+      )
+
+      if found ~= "" then
+        break
+      end
+    end
+
+    if found == ""
+      and budget.remaining <= 0 then
+      budget.exhausted = true
+    end
+  end
+
+  -- A positive result is always safe to cache. Do not turn an intentionally
+  -- bounded partial walk into a permanent negative result.
+  if found ~= "" or not budget.exhausted then
+    state.artwork_folder_cache[cache_key] =
+      found ~= "" and found or false
+  end
+
+  return found
+end
+
+function artwork_candidate_folders(parent, excluded_path)
+  local candidates = {}
+  local index = 0
+
+  while index < 128 do
+    local subdir =
+      reaper.EnumerateSubdirectories(parent, index)
+
+    if not subdir then
+      break
+    end
+
+    index = index + 1
+
+    local path = join_path(parent, subdir)
+    local priority = artwork_folder_priority(subdir)
+
+    if priority
+      and (
+        not excluded_path
+        or path_key(path) ~= path_key(excluded_path)
+      ) then
+      candidates[#candidates + 1] = {
+        path = path,
+        name = subdir,
+        priority = priority,
+      }
+    end
+  end
+
+  table.sort(candidates, function(a, b)
+    if a.priority == b.priority then
+      return safe_lower(a.name) < safe_lower(b.name)
+    end
+
+    return a.priority < b.priority
+  end)
+
+  return candidates
+end
+
 function find_library_artwork_in_root(root)
   if not root or root == "" then
     return ""
@@ -6852,21 +7076,40 @@ function find_library_artwork_in_root(root)
     return found
   end
 
-  local index = 0
+  local discovery_budget = {
+    remaining = 64,
+    exhausted = false,
+  }
 
-  while true do
-    local subdir =
-      reaper.EnumerateSubdirectories(root, index)
+  -- First inspect recognized child folders inside the source. The normalized
+  -- role matcher understands numbered layouts such as "2. Artwork".
+  for _, candidate in ipairs(
+    artwork_candidate_folders(root)
+  ) do
+    found = find_artwork_in_tree(
+      candidate.path,
+      2,
+      discovery_budget
+    )
 
-    if not subdir then
-      break
+    if found ~= "" then
+      return found
     end
+  end
 
-    index = index + 1
+  -- A frequent commercial-library layout keeps "1. Audio" and "2. Artwork"
+  -- as siblings under the product folder. Search only artwork-like siblings
+  -- of this source, never arbitrary siblings or another logical-library root.
+  local parent = dirname(root)
 
-    if ARTWORK_SUBFOLDER_NAMES[safe_lower(subdir)] then
-      found = find_artwork_in_folder(
-        join_path(root, subdir)
+  if parent ~= "" and parent ~= root then
+    for _, candidate in ipairs(
+      artwork_candidate_folders(parent, root)
+    ) do
+      found = find_artwork_in_tree(
+        candidate.path,
+        2,
+        discovery_budget
       )
 
       if found ~= "" then
@@ -6922,6 +7165,7 @@ function root_artwork_for_asset(asset)
   if path ~= "" and path ~= "-" then
     record.artwork_path = ""
     record.artwork_checked = false
+    record.artwork_scan_version = 0
     state.libraries_dirty = true
   end
 
@@ -6941,6 +7185,8 @@ function remember_root_artwork(record, path)
   end
 
   record.artwork_checked = true
+  record.artwork_scan_version =
+    ARTWORK_DISCOVERY_VERSION
 end
 
 function invalidate_root_artwork_assets(record)
@@ -6975,6 +7221,8 @@ function choose_artwork_for_root(record)
   if ok and filename and filename ~= "" then
     record.artwork_path = normalize_slashes(filename)
     record.artwork_checked = true
+    record.artwork_scan_version =
+      ARTWORK_DISCOVERY_VERSION
     state.libraries_dirty = true
     invalidate_root_artwork_assets(record)
     set_status(
@@ -6991,6 +7239,7 @@ function redetect_root_artwork(record)
 
   record.artwork_path = ""
   record.artwork_checked = false
+  record.artwork_scan_version = 0
   state.artwork_folder_cache = {}
   state.libraries_dirty = true
   invalidate_root_artwork_assets(record)
@@ -7007,6 +7256,8 @@ function clear_root_artwork(record)
 
   record.artwork_path = "-"
   record.artwork_checked = true
+  record.artwork_scan_version =
+    ARTWORK_DISCOVERY_VERSION
   state.libraries_dirty = true
   invalidate_root_artwork_assets(record)
   set_status(
@@ -7086,6 +7337,8 @@ function discover_artwork_path(asset)
 
   if record then
     record.artwork_checked = true
+    record.artwork_scan_version =
+      ARTWORK_DISCOVERY_VERSION
     state.libraries_dirty = true
   end
 
@@ -7100,13 +7353,17 @@ function queue_artwork(asset, priority)
 
   local current =
     tostring(asset.artwork_path or "")
-  local shared =
-    select(1, root_artwork_for_asset(asset))
+  local shared, record =
+    root_artwork_for_asset(asset)
 
   if current == "-"
     or valid_artwork_path(current)
     or shared ~= ""
-    or (current == "" and asset.artwork_checked == true) then
+    or (
+      current == ""
+      and asset.artwork_checked == true
+      and (not record or record.artwork_checked)
+    ) then
     return
   end
 
@@ -7282,13 +7539,20 @@ function artwork_image_for_asset(asset, priority)
   end
 
   if path == "" then
-    path = select(1, root_artwork_for_asset(asset))
+    local shared, record =
+      root_artwork_for_asset(asset)
+    path = shared
+
+    if path == ""
+      and (
+        asset.artwork_checked ~= true
+        or (record and not record.artwork_checked)
+      ) then
+      queue_artwork(asset, priority)
+    end
   end
 
   if path == "" then
-    if asset.artwork_checked ~= true then
-      queue_artwork(asset, priority)
-    end
     return nil
   end
 
@@ -7465,6 +7729,7 @@ function clear_artwork_cache()
   for _, record in ipairs(state.root_records) do
     if tostring(record.artwork_path or "") == "" then
       record.artwork_checked = false
+      record.artwork_scan_version = 0
     end
   end
 
@@ -10463,6 +10728,127 @@ function restore_transfer_context(context, temporary_track)
   reaper.UpdateArrange()
 end
 
+function detect_transfer_tail_end(
+  asset,
+  source,
+  duration,
+  selection_end
+)
+  if not state.transfer_smart_tail
+    or state.reverse
+    or not source
+    or duration <= 0
+    or selection_end >= 0.9999 then
+    return selection_end, 0
+  end
+
+  local maximum_seconds =
+    math.max(
+      0,
+      tonumber(state.transfer_tail_max_ms) or 0
+    ) / 1000
+
+  if maximum_seconds <= 0 then
+    return selection_end, 0
+  end
+
+  local maximum_end =
+    math.min(
+      1,
+      selection_end + maximum_seconds / duration
+    )
+
+  if maximum_end <= selection_end then
+    return selection_end, 0
+  end
+
+  local points = 4096
+  local waveform =
+    load_wave_from_disk(asset, points, false)
+
+  if not waveform then
+    points =
+      clamp(
+        math.ceil(duration * 220),
+        2048,
+        8192
+      )
+    waveform =
+      read_waveform_from_source(
+        source,
+        duration,
+        tonumber(asset.channels) or 1,
+        points,
+        false
+      )
+  end
+
+  if not waveform
+    or not waveform.peaks
+    or (waveform.count or 0) <= 0 then
+    return selection_end, 0
+  end
+
+  local count = waveform.count
+  local threshold =
+    db_to_amp(
+      clamp(
+        tonumber(state.transfer_tail_threshold_db)
+          or -60,
+        -96,
+        -18
+      )
+    )
+  local first_index =
+    clamp(
+      math.floor(selection_end * count) + 1,
+      1,
+      count
+    )
+  local final_index =
+    clamp(
+      math.ceil(maximum_end * count),
+      first_index,
+      count
+    )
+  local last_above = nil
+
+  -- Scan the entire allowed window rather than stopping at the first quiet
+  -- gap. This preserves delayed repeats that arrive after a short silence.
+  for index = first_index, final_index do
+    if (waveform.peaks[index] or 0) >= threshold then
+      last_above = index
+    end
+  end
+
+  if not last_above then
+    return selection_end, 0
+  end
+
+  local hold_seconds =
+    math.max(
+      0,
+      tonumber(state.transfer_tail_hold_ms) or 0
+    ) / 1000
+  local detected_end =
+    math.min(
+      maximum_end,
+      last_above / count
+        + hold_seconds / duration
+    )
+
+  detected_end =
+    clamp(detected_end, selection_end, 1)
+
+  return detected_end,
+    math.max(
+      0,
+      (detected_end - selection_end)
+        * duration
+        * 1000
+    )
+end
+
 function create_transfer_item(asset, use_selection)
   local track_index = reaper.CountTracks(PROJ)
   reaper.InsertTrackInProject(PROJ, track_index, 0)
@@ -10499,6 +10885,16 @@ function create_transfer_item(asset, use_selection)
   if use_selection and has_selection() then
     start_percent = clamp(state.region_start, 0, 1)
     end_percent = clamp(state.region_end, start_percent, 1)
+
+    end_percent, state.transfer_last_tail_ms =
+      detect_transfer_tail_end(
+        asset,
+        source,
+        duration,
+        end_percent
+      )
+  else
+    state.transfer_last_tail_ms = 0
   end
 
   local source_start = duration * start_percent
@@ -11307,6 +11703,7 @@ function add_root_to_library(
     enabled = true,
     artwork_path = "",
     artwork_checked = false,
+    artwork_scan_version = 0,
   }
 
   state.root_records[#state.root_records + 1] = record
@@ -11558,6 +11955,10 @@ function reset_interface_settings()
   state.transfer_collision = "increment"
   state.transfer_fade_in_ms = 5
   state.transfer_fade_out_ms = 20
+  state.transfer_smart_tail = false
+  state.transfer_tail_threshold_db = -60
+  state.transfer_tail_max_ms = 5000
+  state.transfer_tail_hold_ms = 180
   state.transfer_normalize = "off"
   state.transfer_normalize_target = -1
   state.transfer_insert_after = false
@@ -20152,6 +20553,73 @@ function draw_transfer_settings_content()
 
   if changed then
     state.config_dirty = true
+  end
+
+  changed, state.transfer_smart_tail = ImGui.Checkbox(
+    ctx,
+    "智能保留选区尾音",
+    state.transfer_smart_tail
+  )
+
+  if changed then
+    state.config_dirty = true
+  end
+
+  if state.transfer_smart_tail then
+    ImGui.TextDisabled(
+      ctx,
+      "分析选区结束后的源音频，保留最后一个超过阈值的尾音，并受最大长度限制。"
+    )
+
+    ImGui.SetNextItemWidth(ctx, 230)
+    changed, state.transfer_tail_threshold_db =
+      ImGui.SliderDouble(
+        ctx,
+        "尾音阈值",
+        state.transfer_tail_threshold_db,
+        -96,
+        -18,
+        "%.1f dBFS"
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    ImGui.SetNextItemWidth(ctx, 230)
+    changed, state.transfer_tail_max_ms =
+      ImGui.SliderDouble(
+        ctx,
+        "最大尾音",
+        state.transfer_tail_max_ms,
+        100,
+        30000,
+        "%.0f ms"
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    ImGui.SetNextItemWidth(ctx, 230)
+    changed, state.transfer_tail_hold_ms =
+      ImGui.SliderDouble(
+        ctx,
+        "尾音留白",
+        state.transfer_tail_hold_ms,
+        0,
+        2000,
+        "%.0f ms"
+      )
+
+    if changed then
+      state.config_dirty = true
+    end
+
+    ImGui.TextDisabled(
+      ctx,
+      "只延伸源文件中已有的尾音；Transfer 仍不经过工程轨道、发送或 Master FX。"
+    )
   end
 
   transfer_choice("标准化", "transfer_normalize", {
