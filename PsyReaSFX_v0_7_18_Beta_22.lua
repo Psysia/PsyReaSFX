@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.17-beta.21
+-- @version 0.7.18-beta.22
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -117,6 +117,9 @@
 --   - 0.7.17：Artwork 自动识别支持编号封面目录与音频目录的兄弟目录
 --     结构，例如 “1. Audio / 2. Artwork”，并保持实体来源之间相互隔离
 --   - Transfer 新增源文件选区智能尾音，可按阈值、上限与留白延长输出
+--   - 0.7.18：Artwork 候选优先选择接近 1:1 的封面，并以轻量文件头读取
+--     替代完整图片解码；无封面列表单元格保持空白
+--   - 左侧导航的声音、音效库、集合、保存搜索、工作流和活动分组可独立折叠
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -125,7 +128,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.17 Beta 21"
+local VERSION = "0.7.18 Beta 22"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -826,11 +829,20 @@ local state = {
   region_hex = "#E2B764",
 
   sidebar_visible = true,
+  sidebar_sections = {
+    sounds = true,
+    libraries = true,
+    collections = true,
+    saved_searches = true,
+    workflow = true,
+    activity = true,
+  },
   inspector_visible = true,
   inspector_width = INSPECTOR_DEFAULT_W,
   inspector_artwork_pinned = true,
   artwork_enabled = true,
   artwork_folder_cache = {},
+  artwork_dimension_cache = {},
   artwork_images = {},
   artwork_image_order = {},
   artwork_image_limit = 96,
@@ -4280,6 +4292,13 @@ function load_config()
         state.playhead_hex = value or "#50E36D"
       elseif name == "region_hex" then
         state.region_hex = value or "#E2B764"
+      elseif name:match("^sidebar_section_") then
+        local key =
+          name:gsub("^sidebar_section_", "")
+
+        if state.sidebar_sections[key] ~= nil then
+          state.sidebar_sections[key] = value ~= "0"
+        end
       elseif name == "sidebar_visible" then
         state.sidebar_visible = value == "1"
       elseif name == "inspector_visible" then
@@ -4741,6 +4760,24 @@ function save_config()
     state.sidebar_visible and "1" or "0",
     "\n"
   )
+
+  for _, key in ipairs({
+    "sounds",
+    "libraries",
+    "collections",
+    "saved_searches",
+    "workflow",
+    "activity",
+  }) do
+    file:write(
+      "setting\tsidebar_section_",
+      key,
+      "\t",
+      state.sidebar_sections[key] ~= false
+        and "1" or "0",
+      "\n"
+    )
+  end
 
   file:write(
     "setting\tinspector_visible\t",
@@ -6860,7 +6897,7 @@ local ARTWORK_SUBFOLDER_NAMES = {
   ["图像"] = true,
 }
 
-ARTWORK_DISCOVERY_VERSION = 2
+ARTWORK_DISCOVERY_VERSION = 3
 
 function normalized_artwork_folder_name(name)
   local value = safe_lower(trim(name or ""))
@@ -6915,6 +6952,205 @@ function is_artwork_file(filename)
     or ext == "tga"
 end
 
+function image_u16_be(data, offset)
+  local a, b = data:byte(offset, offset + 1)
+
+  if not a or not b then
+    return nil
+  end
+
+  return a * 256 + b
+end
+
+function image_u16_le(data, offset)
+  local a, b = data:byte(offset, offset + 1)
+
+  if not a or not b then
+    return nil
+  end
+
+  return a + b * 256
+end
+
+function image_u32_be(data, offset)
+  local a, b, c, d = data:byte(offset, offset + 3)
+
+  if not a or not b or not c or not d then
+    return nil
+  end
+
+  return ((a * 256 + b) * 256 + c) * 256 + d
+end
+
+function image_u32_le(data, offset)
+  local a, b, c, d = data:byte(offset, offset + 3)
+
+  if not a or not b or not c or not d then
+    return nil
+  end
+
+  return a + b * 256 + c * 65536 + d * 16777216
+end
+
+function jpeg_dimensions(data)
+  if data:sub(1, 2) ~= "\255\216" then
+    return nil, nil
+  end
+
+  local position = 3
+  local length = #data
+
+  while position <= length - 8 do
+    while position <= length
+      and data:byte(position) ~= 0xFF do
+      position = position + 1
+    end
+
+    while position <= length
+      and data:byte(position) == 0xFF do
+      position = position + 1
+    end
+
+    local marker = data:byte(position)
+
+    if not marker then
+      break
+    end
+
+    position = position + 1
+
+    if marker == 0xD8
+      or marker == 0xD9
+      or marker == 0x01
+      or (marker >= 0xD0 and marker <= 0xD7) then
+      -- Standalone marker without a segment length.
+    else
+      local segment_length =
+        image_u16_be(data, position)
+
+      if not segment_length
+        or segment_length < 2 then
+        break
+      end
+
+      local is_size_marker =
+        (marker >= 0xC0 and marker <= 0xC3)
+        or (marker >= 0xC5 and marker <= 0xC7)
+        or (marker >= 0xC9 and marker <= 0xCB)
+        or (marker >= 0xCD and marker <= 0xCF)
+
+      if is_size_marker then
+        local height =
+          image_u16_be(data, position + 3)
+        local width =
+          image_u16_be(data, position + 5)
+
+        return width, height
+      end
+
+      position = position + segment_length
+    end
+  end
+
+  return nil, nil
+end
+
+function artwork_image_dimensions(path)
+  local key = path_key(path)
+  local cached = state.artwork_dimension_cache[key]
+
+  if cached ~= nil then
+    return cached.width, cached.height
+  end
+
+  local width, height = nil, nil
+  local file = io.open(path, "rb")
+
+  if file then
+    local data = file:read(262144) or ""
+    file:close()
+
+    if data:sub(1, 8) == "\137PNG\r\n\26\n" then
+      width = image_u32_be(data, 17)
+      height = image_u32_be(data, 21)
+    elseif data:sub(1, 2) == "\255\216" then
+      width, height = jpeg_dimensions(data)
+    elseif data:sub(1, 2) == "BM" then
+      width = image_u32_le(data, 19)
+      height = image_u32_le(data, 23)
+    elseif #data >= 18 then
+      -- TGA stores dimensions in the fixed 18-byte header.
+      width = image_u16_le(data, 13)
+      height = image_u16_le(data, 15)
+    end
+  end
+
+  if not width or not height
+    or width <= 0 or height <= 0 then
+    width, height = 0, 0
+  end
+
+  state.artwork_dimension_cache[key] = {
+    width = width,
+    height = height,
+  }
+
+  return width, height
+end
+
+function artwork_candidate_score(path, filename)
+  local width, height =
+    artwork_image_dimensions(path)
+  local square_class = 3
+  local square_delta = math.huge
+  local area = 0
+
+  if width > 0 and height > 0 then
+    square_delta =
+      math.abs(width - height)
+        / math.max(width, height)
+    square_class = square_delta <= 0.06 and 0
+      or square_delta <= 0.18 and 1
+      or 2
+    area = width * height
+  end
+
+  return {
+    path = path,
+    filename = safe_lower(filename),
+    square_class = square_class,
+    square_delta = square_delta,
+    name_priority =
+      ARTWORK_NAME_PRIORITY[safe_lower(filename)]
+        or 1000,
+    area = area,
+  }
+end
+
+function artwork_candidate_is_better(candidate, current)
+  if not current then
+    return true
+  end
+
+  if candidate.square_class ~= current.square_class then
+    return candidate.square_class < current.square_class
+  end
+
+  if candidate.name_priority ~= current.name_priority then
+    return candidate.name_priority < current.name_priority
+  end
+
+  if candidate.square_delta ~= current.square_delta then
+    return candidate.square_delta < current.square_delta
+  end
+
+  if candidate.area ~= current.area then
+    return candidate.area > current.area
+  end
+
+  return candidate.filename < current.filename
+end
+
 function find_artwork_in_folder(folder)
   local folder_key = path_key(folder)
   local cached = state.artwork_folder_cache[folder_key]
@@ -6923,12 +7159,12 @@ function find_artwork_in_folder(folder)
     return cached == false and "" or cached
   end
 
-  local best = ""
-  local best_priority = math.huge
-  local fallback = ""
+  local best = nil
   local index = 0
 
-  while true do
+  -- A bounded candidate set prevents a documentation folder with thousands
+  -- of images from turning one low-priority Artwork job into a long stall.
+  while index < 128 do
     local filename =
       reaper.EnumerateFiles(folder, index)
 
@@ -6937,24 +7173,19 @@ function find_artwork_in_folder(folder)
     end
 
     if is_artwork_file(filename) then
-      local lower = filename:lower()
-      local priority =
-        ARTWORK_NAME_PRIORITY[lower]
+      local path = join_path(folder, filename)
+      local candidate =
+        artwork_candidate_score(path, filename)
 
-      if priority
-        and priority < best_priority then
-        best = join_path(folder, filename)
-        best_priority = priority
-      elseif fallback == "" then
-        fallback = join_path(folder, filename)
+      if artwork_candidate_is_better(candidate, best) then
+        best = candidate
       end
     end
 
     index = index + 1
   end
 
-  local result =
-    best ~= "" and best or fallback
+  local result = best and best.path or ""
 
   state.artwork_folder_cache[folder_key] =
     result ~= "" and result or false
@@ -7241,6 +7472,7 @@ function redetect_root_artwork(record)
   record.artwork_checked = false
   record.artwork_scan_version = 0
   state.artwork_folder_cache = {}
+  state.artwork_dimension_cache = {}
   state.libraries_dirty = true
   invalidate_root_artwork_assets(record)
   set_status(
@@ -7623,20 +7855,23 @@ function draw_artwork_cover(
   width,
   height,
   crop,
-  rounding
+  rounding,
+  show_placeholder
 )
   local image =
     artwork_image_for_asset(asset, true)
 
   if not image then
-    draw_artwork_placeholder(
-      draw_list,
-      x,
-      y,
-      width,
-      height,
-      rounding
-    )
+    if show_placeholder ~= false then
+      draw_artwork_placeholder(
+        draw_list,
+        x,
+        y,
+        width,
+        height,
+        rounding
+      )
+    end
     return false
   end
 
@@ -7645,14 +7880,16 @@ function draw_artwork_cover(
 
   if not image_w or not image_h
     or image_w <= 0 or image_h <= 0 then
-    draw_artwork_placeholder(
-      draw_list,
-      x,
-      y,
-      width,
-      height,
-      rounding
-    )
+    if show_placeholder ~= false then
+      draw_artwork_placeholder(
+        draw_list,
+        x,
+        y,
+        width,
+        height,
+        rounding
+      )
+    end
     return false
   end
 
@@ -7723,6 +7960,7 @@ function clear_artwork_cache()
   state.artwork_images = {}
   state.artwork_image_order = {}
   state.artwork_folder_cache = {}
+  state.artwork_dimension_cache = {}
   state.artwork_queue = {}
   state.artwork_queued = {}
 
@@ -12018,6 +12256,14 @@ function reset_interface_settings()
   state.wave_view_start = 0
   state.wave_view_end = 1
   state.sidebar_visible = true
+  state.sidebar_sections = {
+    sounds = true,
+    libraries = true,
+    collections = true,
+    saved_searches = true,
+    workflow = true,
+    activity = true,
+  }
   state.inspector_visible = true
   state.inspector_width = INSPECTOR_DEFAULT_W
   state.column_visible = {
@@ -14356,6 +14602,51 @@ function sidebar_item(
   end
 end
 
+function sidebar_section_header(key, label)
+  local expanded =
+    state.sidebar_sections[key] ~= false
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Header,
+    0x00000000
+  )
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_HeaderHovered,
+    rgba_with_alpha(COLOR.button_hover, 0xB8)
+  )
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_HeaderActive,
+    rgba_with_alpha(COLOR.selected, 0x88)
+  )
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Text,
+    COLOR.dim
+  )
+
+  local clicked = ImGui.Selectable(
+    ctx,
+    (expanded and "▾  " or "▸  ")
+      .. label
+      .. "##sidebar_section_"
+      .. key,
+    false
+  )
+
+  ImGui.PopStyleColor(ctx, 4)
+
+  if clicked then
+    expanded = not expanded
+    state.sidebar_sections[key] = expanded
+    state.config_dirty = true
+  end
+
+  return expanded
+end
+
 function draw_sidebar()
   if dark_button("隐藏导航 <", -1) then
     state.sidebar_visible = false
@@ -14365,13 +14656,10 @@ function draw_sidebar()
 
   ImGui.Spacing(ctx)
 
-  ImGui.TextColored(
-    ctx,
-    COLOR.text,
+  if sidebar_section_header(
+    "sounds",
     "SOUNDS"
-  )
-
-  ImGui.Spacing(ctx)
+  ) then
 
   sidebar_item(
     string.format("全部素材  %d", #state.assets),
@@ -14439,8 +14727,12 @@ function draw_sidebar()
     end
   )
 
-  ImGui.Separator(ctx)
-  ImGui.TextDisabled(ctx, "LIBRARIES")
+  end
+
+  if sidebar_section_header(
+    "libraries",
+    "LIBRARIES"
+  ) then
 
   sidebar_item(
     "全部音效库",
@@ -14653,8 +14945,12 @@ function draw_sidebar()
 
   draw_library_manager_popup()
 
-  ImGui.Separator(ctx)
-  ImGui.TextDisabled(ctx, "COLLECTIONS")
+  end
+
+  if sidebar_section_header(
+    "collections",
+    "COLLECTIONS"
+  ) then
 
   if #state.collections == 0 then
     ImGui.TextDisabled(ctx, "尚无播放列表或项目素材箱")
@@ -14748,8 +15044,12 @@ function draw_sidebar()
     create_collection("project")
   end
 
-  ImGui.Separator(ctx)
-  ImGui.TextDisabled(ctx, "SAVED SEARCHES")
+  end
+
+  if sidebar_section_header(
+    "saved_searches",
+    "SAVED SEARCHES"
+  ) then
 
   if #state.saved_searches == 0 then
     ImGui.TextDisabled(ctx, "尚无保存搜索")
@@ -14806,8 +15106,12 @@ function draw_sidebar()
     save_current_search()
   end
 
-  ImGui.Separator(ctx)
-  ImGui.TextDisabled(ctx, "WORKFLOW")
+  end
+
+  if sidebar_section_header(
+    "workflow",
+    "WORKFLOW"
+  ) then
 
   sidebar_item(
     "全部状态",
@@ -14842,8 +15146,12 @@ function draw_sidebar()
     )
   end
 
-  ImGui.Separator(ctx)
-  ImGui.TextDisabled(ctx, "ACTIVITY")
+  end
+
+  if sidebar_section_header(
+    "activity",
+    "ACTIVITY"
+  ) then
 
   ImGui.TextWrapped(
     ctx,
@@ -14854,6 +15162,7 @@ function draw_sidebar()
       state.preview_backend
     )
   )
+  end
 end
 
 
@@ -16313,7 +16622,8 @@ function draw_result_row(
         size,
         size,
         true,
-        compact_row and 1 or 3
+        compact_row and 1 or 3,
+        false
       )
     elseif key == "filename" then
       local favorite =
@@ -19234,6 +19544,7 @@ function draw_inspector_artwork_header(asset)
     asset.artwork_path = ""
     asset.artwork_checked = false
     state.artwork_folder_cache = {}
+    state.artwork_dimension_cache = {}
     queue_artwork(asset, true)
     state.db_dirty = true
   end

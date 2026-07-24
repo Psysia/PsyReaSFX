@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.17--beta.21-19D8FF" alt="Version 0.7.17 beta 21">
+  <img src="https://img.shields.io/badge/Version-0.7.18--beta.22-19D8FF" alt="Version 0.7.18 beta 22">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -82,7 +82,8 @@ The workspace is intentionally modular:
   audition controls and REAPER delivery actions.
 
 The left and right panels can be hidden independently. Focus mode leaves only
-the result list and preview area.
+the result list and preview area. Navigation groups can also be collapsed
+individually, and their open/closed state is restored on the next launch.
 
 <p align="center">
   <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX focus mode" width="100%">
@@ -203,6 +204,11 @@ Thumbnail folders are searched with strict depth and folder budgets. Each
 physical source retains its own result, so one source never silently supplies
 the cover for another source in the same logical library.
 
+When several images are available, PsyReaSFX reads only their lightweight
+headers and prefers a near-square cover before applying filename and resolution
+tie-breakers. Missing covers leave the Artwork result cell empty; the larger
+inspector retains its neutral empty-state illustration.
+
 ## Documentation
 
 - [User Guide — English](docs/USER_GUIDE_en-US.md)
@@ -213,7 +219,7 @@ the cover for another source in the same logical library.
 
 ## Release status
 
-`0.7.17 Beta 21` is part of the active 0.7 development line. The 0.7 line is
+`0.7.18 Beta 22` is part of the active 0.7 development line. The 0.7 line is
 expanding and validating Transfer and delivery workflows; `0.6.21` remains the
 stable fallback while this testing continues.
 

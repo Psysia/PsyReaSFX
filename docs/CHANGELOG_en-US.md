@@ -1,5 +1,33 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.18 Beta 22
+
+### Square-first Artwork selection
+
+- Prefers square and near-square cover candidates before landscape or portrait
+  images when several files are available.
+- Uses recognized cover names, resolution and stable filename order as
+  secondary selection rules.
+- Reads PNG, JPEG, BMP and TGA dimensions from bounded file headers instead of
+  decoding every candidate image.
+- Limits each folder scan to 128 image candidates and caches dimension results,
+  keeping discovery predictable for large libraries.
+- Advances the Artwork discovery generation so earlier negative results are
+  retried automatically.
+
+### Collapsible navigation groups
+
+- Makes Sounds, Libraries, Collections, Saved searches, Workflow and Activity
+  independently collapsible.
+- Persists each group's state in the interface configuration.
+- Keeps the existing borderless, theme-aware navigation style.
+
+### Cleaner missing-Artwork state
+
+- Leaves the Artwork result cell empty when no cover is available.
+- Retains the larger neutral empty state in the metadata inspector, where its
+  context and cover actions are still useful.
+
 ## 0.7.17 Beta 21
 
 ### Product-aware Artwork discovery

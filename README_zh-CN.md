@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.7.17--beta.21-19D8FF" alt="0.7.17 beta 21">
+  <img src="https://img.shields.io/badge/版本-0.7.18--beta.22-19D8FF" alt="0.7.18 beta 22">
   <img src="https://img.shields.io/badge/宿主-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/界面-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/安装-ReaPack-1F6FCC" alt="ReaPack">
@@ -143,6 +143,13 @@ Cover、Image、Thumbnail 文件夹会在严格的深度和目录数量预算内
 识别结果仍归属于各自实体路径，不会把一个来源的封面套用到同一逻辑库
 的其他来源。
 
+存在多张候选图时，PsyReaSFX 只读取轻量图片头部，优先选择接近 1:1 的
+封面，再以文件名和分辨率决定同级候选。没有封面时，结果列表的 Artwork
+单元格保持空白；右侧大检查器继续保留中性的空状态提示。
+
+左侧导航中的声音、音效库、集合、保存搜索、工作流和活动分组可以分别
+折叠，状态会在下次启动时恢复。
+
 ## 文档
 
 - [中文用户使用说明书](docs/USER_GUIDE_zh-CN.md)
@@ -153,7 +160,7 @@ Cover、Image、Thumbnail 文件夹会在严格的深度和目录数量预算内
 
 ## 发布状态
 
-`0.7.17 Beta 21` 属于当前 0.7 开发线，重点扩展和验证 Transfer、试听与交付工作流。测试期间，`0.6.21` 仍可作为稳定回退版本。
+`0.7.18 Beta 22` 属于当前 0.7 开发线，重点扩展和验证 Transfer、试听与交付工作流。测试期间，`0.6.21` 仍可作为稳定回退版本。
 
 ## 作者与许可
 

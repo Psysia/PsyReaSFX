@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.17 Beta 21  
+**Applies to:** PsyReaSFX 0.7.18 Beta 22  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -94,9 +94,11 @@ The left panel contains:
 
 Use the arrow before a library to expand or collapse its source folders. Clicking a logical library aggregates all of its sources; clicking a source filters to that path.
 
+The **Sounds**, **Libraries**, **Collections**, **Saved searches**, **Workflow** and **Activity** groups can each be collapsed from their header. PsyReaSFX remembers these choices between sessions, so the navigation can stay compact without hiding the entire panel.
+
 ### Results
 
-The center list combines a pinned header with virtualized rows. The waveform, filename, description, status, categories, duration, format, Artwork, library and path fields can be shown independently.
+The center list combines a pinned header with virtualized rows. The waveform, filename, description, status, categories, duration, format, Artwork, library and path fields can be shown independently. When no cover is available, the Artwork cell remains empty instead of showing a repeated placeholder.
 
 ### Metadata inspector
 
@@ -142,6 +144,8 @@ child folder, and numbered sibling layouts such as `1. Audio / 2. Artwork`.
 Artwork, Cover, Images, Graphics, Thumbnail and similar role names are matched
 after stripping ordering prefixes. Nested image folders are searched only to a
 small bounded depth, so this remains safe for large products.
+
+When several candidates are available, PsyReaSFX prefers square or near-square images, then recognized cover filenames, visual resolution and stable filename order. PNG, JPEG, BMP and TGA dimensions are read from their headers only; candidate images are not fully decoded during discovery. This keeps cover selection responsive on large libraries.
 
 Right-click an expanded source to choose, rediscover or clear its Artwork. Asset-specific Artwork chosen in the metadata inspector has higher priority than source Artwork.
 
