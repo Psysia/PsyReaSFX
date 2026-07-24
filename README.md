@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.23--beta.27-19D8FF" alt="Version 0.7.23 beta 27">
+  <img src="https://img.shields.io/badge/Version-0.7.23%20Stable-19D8FF" alt="Version 0.7.23 Stable">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -242,12 +242,11 @@ inspector retains its neutral empty-state illustration.
 
 ## Release status
 
-`0.7.23 Beta 27` replaces the persistent tree with icon-driven cascading folder
-navigation and continues the
-compatibility and regression phase for the 0.7 browsing, Transfer and delivery
-workflows;
-`0.6.21` remains the
-stable fallback while this testing continues.
+`0.7.23 Stable` completes the 0.7 browsing, audition and Transfer cycle. The
+folder browser now opens only after a deliberate click on its toolbar icon,
+while logical libraries, physical sources and indexed subfolders continue to
+expand through familiar hover-driven cascading menus. This avoids accidental
+work-area obstruction without slowing deliberate hierarchy navigation.
 
 ## Author and license
 

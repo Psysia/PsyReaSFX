@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.23-beta.27
+-- @version 0.7.23
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -132,7 +132,8 @@
 --   - 逻辑库、来源路径和真实子目录可逐级展开；选择任意层级立即过滤结果
 --   - 目录树分帧构建并持久化展开状态，不会因浏览目录重新扫描硬盘
 --   - 0.7.23：目录入口改为搜索框旁的无边框文件夹图标
---   - 鼠标悬停图标后使用原生级联菜单逐级浏览逻辑库、来源与子目录
+--   - 左键点击图标才打开第一层，避免鼠标经过工具栏时意外遮挡工作区
+--   - 菜单内部继续以悬停级联浏览逻辑库、来源与子目录
 --   - 选中目录后只保留紧凑 Pathname 条件条，不再常驻占用结果区高度
 --
 --   必需：ReaImGui 0.10+
@@ -142,7 +143,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.23 Beta 27"
+local VERSION = "0.7.23 Stable"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -609,7 +610,7 @@ local state = {
   expanded_source_folders = {},
   expanded_folder_nodes = {},
   folder_browser_open = false,
-  folder_menu_icon_hovered = false,
+  folder_menu_active = false,
   folder_navigation_trees = {},
   folder_navigation_job = nil,
   folder_navigation_ready = false,
@@ -16352,9 +16353,11 @@ function draw_folder_hover_popup()
     ctx,
     "文件夹层级##folder_hover_menu"
   ) then
+    state.folder_menu_active = false
     return
   end
 
+  state.folder_menu_active = true
   ensure_folder_navigation_build()
 
   if ImGui.MenuItem(
@@ -17056,21 +17059,17 @@ function draw_toolbar()
 
   ImGui.SameLine(ctx)
 
-  local folder_clicked, folder_hovered =
+  local folder_clicked =
     icon_button(
       "folder_hierarchy",
       "folder_search",
       nil,
-      state.root_filter ~= nil
-        or state.library_filter_id ~= nil,
+      state.folder_menu_active,
       control_size
     )
 
-  if folder_clicked
-    or (
-      folder_hovered
-      and not state.folder_menu_icon_hovered
-    ) then
+  if folder_clicked then
+    state.folder_menu_active = true
     ensure_folder_navigation_build()
     ImGui.OpenPopup(
       ctx,
@@ -17078,7 +17077,6 @@ function draw_toolbar()
     )
   end
 
-  state.folder_menu_icon_hovered = folder_hovered
   draw_folder_hover_popup()
   ImGui.SameLine(ctx)
 

@@ -1,5 +1,20 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.23 Stable
+
+### Deliberate folder-browser entry
+
+- Opens the first folder-navigation level only after a left click on the
+  borderless toolbar icon.
+- Highlights the icon while the cascade is open and clears that state when the
+  menu closes.
+- Keeps hover-driven expansion inside the cascade for logical libraries,
+  physical sources and indexed subfolders.
+- Prevents accidental work-area obstruction when the pointer merely crosses
+  the toolbar.
+- Promotes the completed 0.7 browsing, audition and Transfer feature set to
+  Stable.
+
 ## 0.7.23 Beta 27
 
 ### Hover-driven cascading folder browser

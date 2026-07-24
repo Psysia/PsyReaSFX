@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.23 Beta 27  
+**Applies to:** PsyReaSFX 0.7.23 Stable  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -564,9 +564,10 @@ PsyReaSFX uses UTF-8 internally. A particular source metadata field may use a le
 
 Increase the window size, use focus mode, reduce visible columns, or reset interface settings. Include copied Maintenance diagnostics with a screenshot when reporting a reproducible layout problem.
 
-## 21. Beta status and support
+## 21. Stable support
 
-The 0.7 line is actively validating Transfer across REAPER, ReaImGui, SWS, file formats and project configurations. PsyReaSFX 0.6.21 remains the stable fallback during this cycle.
+PsyReaSFX 0.7.23 is the current stable release. Later 0.7 updates are limited
+to compatibility and blocking fixes; new product areas move to the 0.8 line.
 
 Project home: [github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
 

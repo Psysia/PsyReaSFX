@@ -9,16 +9,16 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.7.23-beta.27" author="Psysia" time="2026-07-24T08:42:19Z">
+      <version name="0.7.23" author="Psysia" time="2026-07-24T09:15:50Z">
         <changelog><![CDATA[
-- Replaces the persistent folder tree with a borderless hover icon.
-- Uses cascading menus for logical libraries, sources and indexed subfolders.
-- Leaves a compact removable Pathname condition after selection.
+- Finalizes the 0.7 browsing, audition and Transfer workflow as Stable.
+- Opens the first folder level only after a deliberate toolbar click.
+- Keeps hover-driven cascading for libraries, sources and indexed subfolders.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23-beta.27/PsyReaSFX_v0_7_23_Beta_27.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23-beta.27/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23-beta.27/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23-beta.27/assets/fonts/OFL.txt</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23/assets/fonts/OFL.txt</source>
       </version>
     </reapack>
   </category>

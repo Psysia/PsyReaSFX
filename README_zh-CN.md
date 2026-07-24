@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/版本-0.7.23--beta.27-19D8FF" alt="0.7.23 beta 27">
+  <img src="https://img.shields.io/badge/版本-0.7.23%20Stable-19D8FF" alt="0.7.23 Stable">
   <img src="https://img.shields.io/badge/宿主-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/界面-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/安装-ReaPack-1F6FCC" alt="ReaPack">
@@ -179,10 +179,10 @@ Cover、Image、Thumbnail 文件夹会在严格的深度和目录数量预算内
 
 ## 发布状态
 
-`0.7.23 Beta 27` 将常驻目录树替换为图标驱动的级联浏览，并继续进行
-0.7 浏览、
-Transfer 与交付工作流的兼容性、回归和实机验证。测试期间，`0.6.21`
-仍可作为稳定回退版本。
+`0.7.23 Stable` 完成 0.7 浏览、试听与 Transfer 工作流的阶段开发。
+文件夹浏览器只会在主动点击工具栏图标后打开第一层；进入菜单后，逻辑库、
+实体来源和已索引子目录仍按常见的悬停级联方式展开。这样既避免鼠标掠过
+工具栏时意外遮挡工作区，也保留快速浏览深层目录的效率。
 
 ## 作者与许可
 
