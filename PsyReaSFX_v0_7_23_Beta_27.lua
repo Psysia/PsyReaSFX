@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.22-beta.26
+-- @version 0.7.23-beta.27
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -131,6 +131,9 @@
 --   - 0.7.22：主工作区新增索引驱动的文件夹层级浏览器与 Path 路径条件
 --   - 逻辑库、来源路径和真实子目录可逐级展开；选择任意层级立即过滤结果
 --   - 目录树分帧构建并持久化展开状态，不会因浏览目录重新扫描硬盘
+--   - 0.7.23：目录入口改为搜索框旁的无边框文件夹图标
+--   - 鼠标悬停图标后使用原生级联菜单逐级浏览逻辑库、来源与子目录
+--   - 选中目录后只保留紧凑 Pathname 条件条，不再常驻占用结果区高度
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -139,7 +142,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.22 Beta 26"
+local VERSION = "0.7.23 Beta 27"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -606,6 +609,7 @@ local state = {
   expanded_source_folders = {},
   expanded_folder_nodes = {},
   folder_browser_open = false,
+  folder_menu_icon_hovered = false,
   folder_navigation_trees = {},
   folder_navigation_job = nil,
   folder_navigation_ready = false,
@@ -1715,6 +1719,16 @@ I18N_PREFIX_EN = {
   ["正在建立目录索引…"] = "Building folder index…",
   ["折叠此层级"] = "Collapse this level",
   ["展开此层级"] = "Expand this level",
+  ["浏览文件夹层级"] = "Browse folder hierarchy",
+  ["显示全部音效库"] = "Show all libraries",
+  ["显示此逻辑库的全部素材"] =
+    "Show all assets in this logical library",
+  ["显示此来源的全部素材"] =
+    "Show all assets in this source folder",
+  ["显示此目录及子目录"] =
+    "Show this folder and its descendants",
+  ["目录索引正在后台建立…"] =
+    "The folder index is being built in the background…",
   ["扫描全部来源"] = "Scan all sources",
   ["扫描此来源"] = "Scan this source",
   ["移除来源路径"] = "Remove source folder",
@@ -4485,7 +4499,10 @@ function load_config()
         state.language =
           value == "en" and "en" or "zh"
       elseif name == "folder_browser_open" then
-        state.folder_browser_open = value == "1"
+        -- 0.7.22 used a persistent inline tree. The 0.7.23 hover cascade is
+        -- transient, so an old saved open state must not start background
+        -- work or reserve workspace height.
+        state.folder_browser_open = false
       elseif name == "active_folder_path" then
         local configured =
           canonical_source_path(value or "")
@@ -14203,11 +14220,37 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
         thickness
       )
     end
-  elseif icon == "folder" then
+  elseif icon == "folder"
+    or icon == "folder_search" then
     ImGui.DrawList_AddRect(draw_list, left, top + size * 0.10, right, bottom, color_value, 2, 0, thickness)
     ImGui.DrawList_AddLine(draw_list, left, top + size * 0.10, center_x - size * 0.05, top + size * 0.10, color_value, thickness)
     ImGui.DrawList_AddLine(draw_list, center_x - size * 0.05, top + size * 0.10, center_x + size * 0.03, top, color_value, thickness)
     ImGui.DrawList_AddLine(draw_list, center_x + size * 0.03, top, right - size * 0.05, top, color_value, thickness)
+
+    if icon == "folder_search" then
+      local lens_x = right - size * 0.08
+      local lens_y = bottom - size * 0.08
+      local lens_r = size * 0.13
+
+      ImGui.DrawList_AddCircle(
+        draw_list,
+        lens_x,
+        lens_y,
+        lens_r,
+        color_value,
+        14,
+        thickness
+      )
+      ImGui.DrawList_AddLine(
+        draw_list,
+        lens_x + lens_r * 0.70,
+        lens_y + lens_r * 0.70,
+        right + size * 0.07,
+        bottom + size * 0.07,
+        color_value,
+        thickness
+      )
+    end
   elseif icon == "drag" then
     ImGui.DrawList_AddLine(draw_list, left, center_y, right, center_y, color_value, thickness)
     ImGui.DrawList_AddTriangleFilled(draw_list, right, center_y, right - size * 0.18, center_y - size * 0.13, right - size * 0.18, center_y + size * 0.13, color_value)
@@ -16160,6 +16203,267 @@ function draw_folder_browser()
   ImGui.PopStyleColor(ctx)
 end
 
+function activate_library_path(library_id)
+  state.view = "all"
+  state.library_filter_id = library_id
+  state.root_filter = nil
+  state.active_collection_id = nil
+  state.status_filter = nil
+  clear_row_selection()
+  state.results_dirty = true
+  state.config_dirty = true
+end
+
+function select_path_from_hover_menu(path, library_id)
+  activate_folder_path(path, library_id, false)
+  ImGui.CloseCurrentPopup(ctx)
+end
+
+function draw_folder_cascade_node(node, library_id)
+  local has_children = #node.children > 0
+  local label =
+    compact(node.name, 44)
+      .. "  "
+      .. tostring(node.total_count)
+      .. "##folder_cascade_"
+      .. node.key
+
+  if has_children then
+    if ImGui.BeginMenu(ctx, label) then
+      if ImGui.MenuItem(
+        ctx,
+        "显示此目录及子目录##folder_cascade_select"
+      ) then
+        select_path_from_hover_menu(
+          node.path,
+          library_id
+        )
+      end
+
+      ImGui.Separator(ctx)
+
+      for _, child in ipairs(node.children) do
+        draw_folder_cascade_node(child, library_id)
+      end
+
+      ImGui.EndMenu(ctx)
+    end
+  elseif ImGui.MenuItem(ctx, label) then
+    select_path_from_hover_menu(
+      node.path,
+      library_id
+    )
+  end
+end
+
+function draw_source_cascade_menu(record, library)
+  local tree = state.folder_navigation_trees[record.id]
+  local source_name =
+    record.alias ~= "" and record.alias
+    or basename(record.path)
+  local count =
+    state.folder_navigation_ready
+      and tree
+      and tree.total_count
+      or nil
+  local label =
+    (directory_exists(record.path) and "● " or "○ ")
+      .. compact(source_name, 42)
+      .. (count and ("  " .. tostring(count)) or "")
+      .. "##folder_cascade_source_"
+      .. record.id
+
+  if ImGui.BeginMenu(ctx, label) then
+    if ImGui.MenuItem(
+      ctx,
+      "显示此来源的全部素材##source_cascade_select"
+    ) then
+      select_path_from_hover_menu(
+        record.path,
+        library.id
+      )
+    end
+
+    if not state.folder_navigation_ready then
+      ImGui.Separator(ctx)
+
+      local job = state.folder_navigation_job
+      local done =
+        job and math.max(0, job.index - 1) or 0
+      local total = job and job.total or #state.assets
+
+      ImGui.TextDisabled(
+        ctx,
+        string.format(
+          "%s  %d / %d",
+          translate_ui_text(
+            "目录索引正在后台建立…"
+          ),
+          done,
+          total
+        )
+      )
+    elseif tree and #tree.children > 0 then
+      ImGui.Separator(ctx)
+
+      for _, child in ipairs(tree.children) do
+        draw_folder_cascade_node(
+          child,
+          library.id
+        )
+      end
+    end
+
+    ImGui.EndMenu(ctx)
+  end
+end
+
+function draw_library_cascade_menu(library)
+  local label =
+    compact(library.name, 40)
+      .. "  "
+      .. tostring(library_asset_count(library.id))
+      .. "##folder_cascade_library_"
+      .. library.id
+
+  if ImGui.BeginMenu(ctx, label) then
+    if ImGui.MenuItem(
+      ctx,
+      "显示此逻辑库的全部素材##library_cascade_select"
+    ) then
+      activate_library_path(library.id)
+      ImGui.CloseCurrentPopup(ctx)
+    end
+
+    if #library.roots > 0 then
+      ImGui.Separator(ctx)
+
+      for _, record in ipairs(library.roots) do
+        draw_source_cascade_menu(record, library)
+      end
+    end
+
+    ImGui.EndMenu(ctx)
+  end
+end
+
+function draw_folder_hover_popup()
+  if not ImGui.BeginPopup(
+    ctx,
+    "文件夹层级##folder_hover_menu"
+  ) then
+    return
+  end
+
+  ensure_folder_navigation_build()
+
+  if ImGui.MenuItem(
+    ctx,
+    "显示全部音效库##folder_cascade_all"
+  ) then
+    clear_folder_path(false)
+    ImGui.CloseCurrentPopup(ctx)
+  end
+
+  if #state.libraries > 0 then
+    ImGui.Separator(ctx)
+
+    for _, library in ipairs(state.libraries) do
+      draw_library_cascade_menu(library)
+    end
+  end
+
+  ImGui.EndPopup(ctx)
+end
+
+function active_path_condition_label()
+  if state.root_filter then
+    local suffix =
+      state.root_filter:sub(-1) == SEP
+        and "*"
+        or (SEP .. "*")
+
+    return "Pathname: "
+      .. state.root_filter
+      .. suffix
+  end
+
+  local library =
+    state.library_filter_id
+      and state.library_by_id[
+        state.library_filter_id
+      ]
+      or nil
+
+  if library then
+    return "Library: " .. library.name
+  end
+
+  return nil
+end
+
+function draw_path_condition_bar()
+  local label = active_path_condition_label()
+
+  if not label then
+    return
+  end
+
+  local available =
+    select(1, ImGui.GetContentRegionAvail(ctx))
+  local text_width =
+    select(1, ImGui.CalcTextSize(ctx, label))
+  local clear_size = 22
+  local max_button_width =
+    math.max(48, available - clear_size - 7)
+  local button_width = math.min(
+    math.max(80, text_width + 28),
+    max_button_width
+  )
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Button,
+    rgba_with_alpha(COLOR.selected, 0xC0)
+  )
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_ButtonHovered,
+    rgba_with_alpha(COLOR.selected, 0xE8)
+  )
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_Text,
+    COLOR.selected_text
+  )
+
+  if ImGui.Button(
+    ctx,
+    label .. "##active_path_condition",
+    button_width,
+    clear_size
+  ) then
+    ensure_folder_navigation_build()
+    ImGui.OpenPopup(
+      ctx,
+      "文件夹层级##folder_hover_menu"
+    )
+  end
+
+  ImGui.PopStyleColor(ctx, 3)
+  ImGui.SameLine(ctx, 0, 3)
+
+  if icon_button(
+    "clear_path_condition",
+    "close",
+    "清除路径条件",
+    false,
+    clear_size
+  ) then
+    clear_folder_path(false)
+  end
+end
+
 function draw_sidebar()
   if dark_button("隐藏导航 <", -1) then
     state.sidebar_visible = false
@@ -16750,6 +17054,32 @@ function draw_toolbar()
     state.config_dirty = true
   end
 
+  ImGui.SameLine(ctx)
+
+  local folder_clicked, folder_hovered =
+    icon_button(
+      "folder_hierarchy",
+      "folder_search",
+      nil,
+      state.root_filter ~= nil
+        or state.library_filter_id ~= nil,
+      control_size
+    )
+
+  if folder_clicked
+    or (
+      folder_hovered
+      and not state.folder_menu_icon_hovered
+    ) then
+    ensure_folder_navigation_build()
+    ImGui.OpenPopup(
+      ctx,
+      "文件夹层级##folder_hover_menu"
+    )
+  end
+
+  state.folder_menu_icon_hovered = folder_hovered
+  draw_folder_hover_popup()
   ImGui.SameLine(ctx)
 
   ImGui.PushStyleColor(
@@ -24294,8 +24624,7 @@ function draw_main()
 
     draw_toolbar()
     draw_sub_toolbar()
-    draw_path_navigation_bar()
-    draw_folder_browser()
+    draw_path_condition_bar()
     draw_import_progress()
     ImGui.Separator(ctx)
 

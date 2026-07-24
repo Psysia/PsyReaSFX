@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.22 Beta 26  
+**Applies to:** PsyReaSFX 0.7.23 Beta 27  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -137,23 +137,24 @@ Offline sources remain listed. Their library relationship can therefore survive 
 
 ### Browse the indexed folder hierarchy
 
-The **Path** bar sits below the main toolbar. Click it to open the folder
-browser inside the main window. It contains:
+Hover the borderless folder-search icon beside the search field. A native
+cascading menu opens without changing the workspace layout. It contains:
 
 1. all logical libraries;
 2. each physical source folder owned by a library;
 3. every indexed subfolder that contains audio directly or through a
    descendant.
 
-Use the arrow to expand or collapse a branch. Click the branch name to close
-the browser and show audio from that folder and all descendants. Click the
-`×` beside the Path bar to clear only the folder condition while keeping the
-owning logical library selected.
+Move the pointer sideways through each menu level. A folder with descendants
+opens the next menu automatically; choose **Show this folder and its
+descendants** when you want the current level itself. A leaf folder can be
+selected directly. The cascade then closes and a compact `Pathname` condition
+appears above the results. Its `×` clears the complete path or library filter.
 
-Folder expansion and the active path are saved between launches. The tree is
-built from `index_v3.tsv` in bounded background batches; browsing never starts
-a disk rescan. Run a normal library scan when the physical folder structure
-has changed.
+The active path is saved between launches. The hierarchy is built from
+`index_v3.tsv` in bounded background batches; hovering never starts a disk
+rescan or permanently reserves vertical workspace. Run a normal library scan
+when the physical folder structure has changed.
 
 ### Artwork ownership
 

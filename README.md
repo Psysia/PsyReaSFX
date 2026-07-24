@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.22--beta.26-19D8FF" alt="Version 0.7.22 beta 26">
+  <img src="https://img.shields.io/badge/Version-0.7.23--beta.27-19D8FF" alt="Version 0.7.23 beta 27">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -122,15 +122,15 @@ relationship.
 
 ### Indexed folder hierarchy
 
-The main workspace includes a persistent **Path** bar. Open it to browse every
-logical library, physical source and indexed subfolder in one hierarchy. The
-arrow only expands or collapses a branch; clicking its name immediately shows
-the audio in that folder and all descendants. The selected path remains visible
-as a removable condition, and expansion state is restored on the next launch.
+Hover the borderless folder-search icon beside the search field to open a
+native cascading browser: `logical library → physical source → indexed
+subfolder`. Move sideways through the menus and click any level to show the
+audio in that folder and all descendants. The browser closes immediately and
+leaves only a compact, removable `Pathname` condition above the results.
 
 The hierarchy is generated from the existing asset index in small background
-batches. Opening a branch never rescans the drive, and directories with no
-indexed audio are intentionally omitted.
+batches. Hover navigation never rescans the drive, never reserves permanent
+workspace height, and intentionally omits directories with no indexed audio.
 
 ### Search that stays close to the material
 
@@ -242,7 +242,8 @@ inspector retains its neutral empty-state illustration.
 
 ## Release status
 
-`0.7.22 Beta 26` adds the indexed folder hierarchy and continues the
+`0.7.23 Beta 27` replaces the persistent tree with icon-driven cascading folder
+navigation and continues the
 compatibility and regression phase for the 0.7 browsing, Transfer and delivery
 workflows;
 `0.6.21` remains the

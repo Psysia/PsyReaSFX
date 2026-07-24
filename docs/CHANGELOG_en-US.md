@@ -1,5 +1,20 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.23 Beta 27
+
+### Hover-driven cascading folder browser
+
+- Replaces the persistent in-window tree with a borderless folder-search icon
+  beside the search field.
+- Opens the hierarchy on hover and uses native cascading menus for logical
+  libraries, physical sources and indexed subfolders.
+- Lets the pointer move horizontally through successive directory levels,
+  matching established professional asset-browser navigation.
+- Closes the cascade after selection and leaves only a compact, removable
+  `Pathname` condition.
+- Keeps the 0.7.22 indexed, background-batched data model without rescanning
+  storage.
+
 ## 0.7.22 Beta 26
 
 ### Indexed folder hierarchy
