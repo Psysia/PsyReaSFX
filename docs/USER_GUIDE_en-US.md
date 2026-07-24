@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.21 Beta 25  
+**Applies to:** PsyReaSFX 0.7.22 Beta 26  
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -134,6 +134,26 @@ Choose **New library**, enter a name and confirm. No folder is required. Add sou
 Duplicate roots and overlapping parent/child roots are blocked to prevent double indexing. If a folder already belongs to another logical library, PsyReaSFX can move the logical ownership. These operations never move or delete disk files.
 
 Offline sources remain listed. Their library relationship can therefore survive removable drives, network volumes and drive-letter changes.
+
+### Browse the indexed folder hierarchy
+
+The **Path** bar sits below the main toolbar. Click it to open the folder
+browser inside the main window. It contains:
+
+1. all logical libraries;
+2. each physical source folder owned by a library;
+3. every indexed subfolder that contains audio directly or through a
+   descendant.
+
+Use the arrow to expand or collapse a branch. Click the branch name to close
+the browser and show audio from that folder and all descendants. Click the
+`×` beside the Path bar to clear only the folder condition while keeping the
+owning logical library selected.
+
+Folder expansion and the active path are saved between launches. The tree is
+built from `index_v3.tsv` in bounded background batches; browsing never starts
+a disk rescan. Run a normal library scan when the physical folder structure
+has changed.
 
 ### Artwork ownership
 
@@ -456,6 +476,7 @@ PsyReaSFX prioritizes interaction over background work:
 
 - only visible result rows are drawn;
 - hidden columns do no drawing work;
+- folder trees are built from the existing index in bounded batches;
 - scans, metadata, loudness, Artwork and waveform work are frame-budgeted;
 - heavy tasks yield during mouse interaction;
 - selected assets and visible rows receive priority;

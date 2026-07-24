@@ -1,5 +1,27 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.7.22 Beta 26
+
+### Indexed folder hierarchy
+
+- Adds a persistent Path bar to the main workspace.
+- Browses logical libraries, physical source folders and real indexed
+  subfolders in one in-window hierarchy.
+- Separates disclosure from navigation: arrows expand or collapse; names
+  filter the result list to that folder and all descendants.
+- Keeps the active path as a removable condition and restores folder expansion
+  state after restart.
+
+### Large-library performance
+
+- Builds the hierarchy from `index_v3.tsv`; opening a folder never rescans the
+  drive.
+- Processes a bounded number of assets per defer cycle and yields to scans,
+  imports, Transfer jobs and active interaction.
+- Stores only one folder node per indexed directory rather than copying asset
+  records into every branch.
+- Invalidates the hierarchy only when source ownership or indexed paths change.
+
 ## 0.7.21 Beta 25
 
 ### Visible Transfer selection state

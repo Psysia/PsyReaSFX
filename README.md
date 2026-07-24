@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.21--beta.25-19D8FF" alt="Version 0.7.21 beta 25">
+  <img src="https://img.shields.io/badge/Version-0.7.22--beta.26-19D8FF" alt="Version 0.7.22 beta 26">
   <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
   <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
@@ -74,7 +74,7 @@ metadata and project choices must remain understandable over time.
 The workspace is intentionally modular:
 
 - **Navigation** holds logical libraries, source folders, favorites,
-  collections, saved searches and workflow filters.
+  indexed folder hierarchy, collections, saved searches and workflow filters.
 - **Results** keeps a pinned, configurable column header with inline waveform,
   metadata, Artwork and duration fields.
 - **Inspector** provides pinned Artwork and non-destructive metadata editing.
@@ -119,6 +119,18 @@ attach source folders from different drives or locations. Each source keeps
 its own path, online state and Artwork. Drag folders from Windows Explorer onto
 a library, All Libraries, or the central drop target to choose the intended
 relationship.
+
+### Indexed folder hierarchy
+
+The main workspace includes a persistent **Path** bar. Open it to browse every
+logical library, physical source and indexed subfolder in one hierarchy. The
+arrow only expands or collapses a branch; clicking its name immediately shows
+the audio in that folder and all descendants. The selected path remains visible
+as a removable condition, and expansion state is restored on the next launch.
+
+The hierarchy is generated from the existing asset index in small background
+batches. Opening a branch never rescans the drive, and directories with no
+indexed audio are intentionally omitted.
 
 ### Search that stays close to the material
 
@@ -203,10 +215,11 @@ updates arrive through the same repository URL.
 ## Performance model
 
 PsyReaSFX avoids loading an entire library into the interface at once. Scans,
-metadata work, waveform construction and Artwork discovery are divided into
-small tasks. Only visible result rows and the selected file receive immediate
-high-priority work. Waveforms are cached on disk and can be precached from
-Settings for predictable browsing on very large libraries.
+folder-hierarchy construction, metadata work, waveform construction and Artwork
+discovery are divided into small tasks. Only visible result rows and the
+selected file receive immediate high-priority work. Waveforms are cached on
+disk and can be precached from Settings for predictable browsing on very large
+libraries.
 
 Artwork discovery supports both covers beside WAV files and commercial-library
 layouts such as `1. Audio / 2. Artwork`. Numbered Artwork, Cover, Image and
@@ -229,8 +242,9 @@ inspector retains its neutral empty-state illustration.
 
 ## Release status
 
-`0.7.21 Beta 25` completes the planned 0.7 feature set and continues the
-compatibility and regression phase for Transfer and delivery workflows;
+`0.7.22 Beta 26` adds the indexed folder hierarchy and continues the
+compatibility and regression phase for the 0.7 browsing, Transfer and delivery
+workflows;
 `0.6.21` remains the
 stable fallback while this testing continues.
 

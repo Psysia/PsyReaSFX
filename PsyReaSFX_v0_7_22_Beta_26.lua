@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.21-beta.25
+-- @version 0.7.22-beta.26
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -128,6 +128,9 @@
 --   - 新增导出完成后自动打开输出目录，并随工程外配置持久化
 --   - 0.7.21：Transfer 互斥选项改为明确的分段选择器状态
 --   - 当前项统一使用强调色背景、边框与高对比文字，不再被通用按钮样式覆盖
+--   - 0.7.22：主工作区新增索引驱动的文件夹层级浏览器与 Path 路径条件
+--   - 逻辑库、来源路径和真实子目录可逐级展开；选择任意层级立即过滤结果
+--   - 目录树分帧构建并持久化展开状态，不会因浏览目录重新扫描硬盘
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -136,7 +139,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.21 Beta 25"
+local VERSION = "0.7.22 Beta 26"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -600,6 +603,14 @@ local state = {
   library_counts_dirty = true,
   library_filter_id = nil,
   expanded_libraries = {},
+  expanded_source_folders = {},
+  expanded_folder_nodes = {},
+  folder_browser_open = false,
+  folder_navigation_trees = {},
+  folder_navigation_job = nil,
+  folder_navigation_ready = false,
+  folder_navigation_revision = 0,
+  folder_navigation_built_revision = -1,
   pending_folder_drop = nil,
   assets = {},
   by_path = {},
@@ -1695,6 +1706,15 @@ I18N_PREFIX_EN = {
   ["添加来源路径…"] = "Add source folder…",
   ["添加路径"] = "Add folder",
   ["来源路径"] = "Source folder",
+  ["展开全部音效库的文件夹结构"] =
+    "Browse the folder hierarchy of all libraries",
+  ["清除路径条件"] = "Clear path filter",
+  ["文件夹层级"] = "Folder hierarchy",
+  ["箭头展开；单击名称跳转并显示该目录及其子目录"] =
+    "Use arrows to expand; click a name to show that folder and its descendants",
+  ["正在建立目录索引…"] = "Building folder index…",
+  ["折叠此层级"] = "Collapse this level",
+  ["展开此层级"] = "Expand this level",
   ["扫描全部来源"] = "Scan all sources",
   ["扫描此来源"] = "Scan this source",
   ["移除来源路径"] = "Remove source folder",
@@ -2807,6 +2827,191 @@ function path_is_inside(path, root)
   return p:sub(1, #r) == r
 end
 
+function invalidate_folder_navigation()
+  -- A large import can add tens of thousands of assets before the hierarchy
+  -- is requested. Once the cache is already dirty, avoid allocating another
+  -- empty table and advancing the revision for every discovered file.
+  if not state.folder_navigation_ready
+    and not state.folder_navigation_job
+    and next(state.folder_navigation_trees) == nil
+    and state.folder_navigation_built_revision
+      ~= state.folder_navigation_revision then
+    return
+  end
+
+  state.folder_navigation_revision =
+    (state.folder_navigation_revision or 0) + 1
+  state.folder_navigation_ready = false
+  state.folder_navigation_trees = {}
+  state.folder_navigation_job = nil
+end
+
+function new_folder_navigation_node(name, path, parent, root_id)
+  return {
+    name = name or basename(path),
+    path = canonical_source_path(path),
+    key = path_key(path),
+    parent = parent,
+    root_id = root_id,
+    children = {},
+    children_by_key = {},
+    direct_count = 0,
+    total_count = 0,
+  }
+end
+
+function add_asset_to_folder_navigation(asset, trees)
+  local root_id = tostring(asset.root_id or "")
+  local root_node = trees[root_id]
+
+  if not root_node then
+    return
+  end
+
+  local folder = canonical_source_path(
+    asset.folder ~= "" and asset.folder
+      or dirname(asset.path)
+  )
+
+  if not path_is_inside(folder, root_node.path) then
+    return
+  end
+
+  local node = root_node
+  local relative = folder:sub(#root_node.path + 1)
+  relative = relative:gsub("^[\\/]+", "")
+
+  for segment in relative:gmatch("[^\\/]+") do
+    local child_path = join_path(node.path, segment)
+    local child_key = path_key(child_path)
+    local child = node.children_by_key[child_key]
+
+    if not child then
+      child = new_folder_navigation_node(
+        segment,
+        child_path,
+        node,
+        root_id
+      )
+      node.children_by_key[child_key] = child
+      node.children[#node.children + 1] = child
+    end
+
+    node = child
+  end
+
+  node.direct_count = node.direct_count + 1
+end
+
+function finalize_folder_navigation_node(node)
+  table.sort(
+    node.children,
+    function(a, b)
+      local a_name = safe_lower(a.name)
+      local b_name = safe_lower(b.name)
+
+      if a_name == b_name then
+        return a.key < b.key
+      end
+
+      return a_name < b_name
+    end
+  )
+
+  local total = node.direct_count
+
+  for _, child in ipairs(node.children) do
+    total = total + finalize_folder_navigation_node(child)
+  end
+
+  node.total_count = total
+  return total
+end
+
+function start_folder_navigation_build()
+  local trees = {}
+
+  for _, record in ipairs(state.root_records) do
+    if record.enabled and record.path ~= "" then
+      trees[record.id] = new_folder_navigation_node(
+        record.alias ~= "" and record.alias
+          or basename(record.path),
+        record.path,
+        nil,
+        record.id
+      )
+    end
+  end
+
+  state.folder_navigation_trees = trees
+  state.folder_navigation_ready = false
+  state.folder_navigation_job = {
+    revision = state.folder_navigation_revision,
+    index = 1,
+    total = #state.assets,
+    trees = trees,
+  }
+end
+
+function ensure_folder_navigation_build()
+  if state.folder_navigation_ready
+    and state.folder_navigation_built_revision
+      == state.folder_navigation_revision then
+    return true
+  end
+
+  local job = state.folder_navigation_job
+
+  if not job
+    or job.revision ~= state.folder_navigation_revision then
+    start_folder_navigation_build()
+  end
+
+  return false
+end
+
+function process_folder_navigation_build()
+  local job = state.folder_navigation_job
+
+  if not job
+    or state.scan
+    or state.import_session
+    or state.transfer_running
+    or not can_run_heavy_job() then
+    return
+  end
+
+  if job.revision ~= state.folder_navigation_revision then
+    start_folder_navigation_build()
+    job = state.folder_navigation_job
+  end
+
+  local processed = 0
+  local budget = 700
+
+  while job.index <= job.total and processed < budget do
+    local asset = state.assets[job.index]
+
+    if asset and asset.ready and not asset.pending_batch then
+      add_asset_to_folder_navigation(asset, job.trees)
+    end
+
+    job.index = job.index + 1
+    processed = processed + 1
+  end
+
+  if job.index > job.total then
+    for _, tree in pairs(job.trees) do
+      finalize_folder_navigation_node(tree)
+    end
+
+    state.folder_navigation_trees = job.trees
+    state.folder_navigation_built_revision = job.revision
+    state.folder_navigation_ready = true
+    state.folder_navigation_job = nil
+  end
+end
+
 function stable_id(prefix, seed)
   local hash = 5381
   local value = path_key(tostring(seed or ""))
@@ -2883,6 +3088,8 @@ function rebuild_library_indexes()
       state.roots[#state.roots + 1] = record.path
     end
   end
+
+  invalidate_folder_navigation()
 end
 
 function create_library(name, seed)
@@ -2979,6 +3186,7 @@ function refresh_all_asset_library_bindings()
     refresh_asset_library_binding(asset)
   end
 
+  invalidate_folder_navigation()
   state.results_dirty = true
   state.db_dirty = true
 end
@@ -3826,6 +4034,8 @@ function add_or_update_asset(asset)
   local existing = state.by_path[key]
 
   if existing then
+    local old_folder = path_key(existing.folder or "")
+    local old_root_id = tostring(existing.root_id or "")
     local used_count = existing.used_count
     local last_used = existing.last_used
     local workflow_status =
@@ -3870,6 +4080,12 @@ function add_or_update_asset(asset)
 
     existing._search_blob = nil
     state.library_counts_dirty = true
+
+    if old_folder ~= path_key(existing.folder or "")
+      or old_root_id ~= tostring(existing.root_id or "") then
+      invalidate_folder_navigation()
+    end
+
     return existing
   end
 
@@ -3901,6 +4117,7 @@ function add_or_update_asset(asset)
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
   state.library_counts_dirty = true
+  invalidate_folder_navigation()
   return asset
 end
 
@@ -3913,6 +4130,7 @@ function rebuild_assets()
 
   state.results_dirty = true
   state.library_counts_dirty = true
+  invalidate_folder_navigation()
 end
 
 ----------------------------------------------------------------
@@ -4118,7 +4336,15 @@ function load_config()
   for line in file:lines() do
     local fields = split_tsv(line)
 
-    if fields[1] == "root"
+    if fields[1] == "folder_open"
+      and fields[2]
+      and fields[2] ~= "" then
+      state.expanded_folder_nodes[path_key(fields[2])] = true
+    elseif fields[1] == "source_open"
+      and fields[2]
+      and fields[2] ~= "" then
+      state.expanded_source_folders[fields[2]] = true
+    elseif fields[1] == "root"
       and fields[2]
       and fields[2] ~= "" then
       state.legacy_roots[#state.legacy_roots + 1] =
@@ -4258,6 +4484,13 @@ function load_config()
       elseif name == "language" then
         state.language =
           value == "en" and "en" or "zh"
+      elseif name == "folder_browser_open" then
+        state.folder_browser_open = value == "1"
+      elseif name == "active_folder_path" then
+        local configured =
+          canonical_source_path(value or "")
+        state.root_filter =
+          configured ~= "" and configured or nil
       elseif name == "mini_wave_points" then
         local points = tonumber(value) or MINI_WAVE_DEFAULT_POINTS
         state.mini_wave_points =
@@ -4465,6 +4698,22 @@ function save_config()
         "\n"
       )
     end
+  end
+
+  for path in pairs(state.expanded_folder_nodes) do
+    file:write(
+      "folder_open\t",
+      escape_tsv(path),
+      "\n"
+    )
+  end
+
+  for root_id in pairs(state.expanded_source_folders) do
+    file:write(
+      "source_open\t",
+      escape_tsv(root_id),
+      "\n"
+    )
   end
 
   file:write(
@@ -4680,6 +4929,18 @@ function save_config()
   file:write(
     "setting\tlanguage\t",
     state.language,
+    "\n"
+  )
+
+  file:write(
+    "setting\tfolder_browser_open\t",
+    state.folder_browser_open and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tactive_folder_path\t",
+    escape_tsv(state.root_filter or ""),
     "\n"
   )
 
@@ -12905,8 +13166,7 @@ function remove_root(root)
   end
 
   if state.root_filter
-    and path_key(state.root_filter)
-      == path_key(root) then
+    and path_is_inside(state.root_filter, root) then
     state.root_filter = nil
   end
 
@@ -12979,6 +13239,10 @@ function reset_interface_settings()
   state.view = "all"
   state.root_filter = nil
   state.library_filter_id = nil
+  state.folder_browser_open = false
+  state.expanded_source_folders = {}
+  state.expanded_folder_nodes = {}
+  invalidate_folder_navigation()
   state.active_collection_id = nil
   state.status_filter = nil
   state.sort_mode = "name"
@@ -15470,6 +15734,430 @@ function sidebar_section_header(key, label)
   end
 
   return expanded
+end
+
+function activate_folder_path(path, library_id, close_browser)
+  path = canonical_source_path(path)
+
+  state.view = "all"
+  state.root_filter = path ~= "" and path or nil
+  state.library_filter_id = library_id
+  state.active_collection_id = nil
+  state.status_filter = nil
+  clear_row_selection()
+  state.results_dirty = true
+  state.config_dirty = true
+
+  if close_browser ~= false then
+    state.folder_browser_open = false
+  end
+end
+
+function clear_folder_path(keep_library)
+  local library_id = nil
+
+  if keep_library and state.root_filter then
+    local _, record = root_for_path(state.root_filter)
+    library_id = record and record.library_id or nil
+  end
+
+  state.root_filter = nil
+  state.library_filter_id = library_id
+  state.view = "all"
+  state.active_collection_id = nil
+  clear_row_selection()
+  state.results_dirty = true
+  state.config_dirty = true
+end
+
+function folder_path_label()
+  if not state.root_filter then
+    if state.library_filter_id then
+      local library =
+        state.library_by_id[state.library_filter_id]
+
+      if library then
+        return (
+          state.language == "en"
+          and "Library: "
+          or "音效库："
+        ) .. library.name
+      end
+    end
+
+    return (
+      state.language == "en"
+      and "Path: "
+      or "路径："
+    ) .. translate_ui_text("全部音效库")
+  end
+
+  local _, record = root_for_path(state.root_filter)
+  local library = record
+    and state.library_by_id[record.library_id]
+    or nil
+  local parts = {}
+
+  if library then
+    parts[#parts + 1] = library.name
+  end
+
+  if record then
+    parts[#parts + 1] =
+      record.alias ~= "" and record.alias
+      or basename(record.path)
+
+    local relative =
+      state.root_filter:sub(#record.path + 1)
+        :gsub("^[\\/]+", "")
+
+    for segment in relative:gmatch("[^\\/]+") do
+      parts[#parts + 1] = segment
+    end
+  else
+    parts[#parts + 1] = state.root_filter
+  end
+
+  return (
+    state.language == "en"
+    and "Path: "
+    or "路径："
+  ) .. table.concat(parts, " / ")
+end
+
+function draw_path_navigation_bar()
+  local available = select(1, ImGui.GetContentRegionAvail(ctx))
+  local clear_width = state.root_filter and 30 or 0
+  local button_width = math.max(160, available - clear_width - 6)
+  local active =
+    state.folder_browser_open or state.root_filter ~= nil
+
+  if active then
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_Button,
+      rgba_with_alpha(COLOR.selected, 0xA8)
+    )
+    ImGui.PushStyleColor(
+      ctx,
+      ImGui.Col_ButtonHovered,
+      rgba_with_alpha(COLOR.selected, 0xD8)
+    )
+  end
+
+  local path_button_clicked = ImGui.Button(
+    ctx,
+    (state.folder_browser_open and "▾  " or "▸  ")
+      .. folder_path_label()
+      .. "##folder_path_bar",
+    button_width,
+    0
+  )
+
+  if path_button_clicked then
+    state.folder_browser_open =
+      not state.folder_browser_open
+    state.config_dirty = true
+
+    if state.folder_browser_open then
+      ensure_folder_navigation_build()
+    end
+  end
+
+  if active then
+    ImGui.PopStyleColor(ctx, 2)
+  end
+
+  tooltip(
+    state.root_filter
+      or translate_ui_text(
+        "展开全部音效库的文件夹结构"
+      )
+  )
+
+  if state.root_filter then
+    ImGui.SameLine(ctx)
+
+    if dark_button("×##clear_folder_path", 30) then
+      clear_folder_path(true)
+    end
+
+    tooltip("清除路径条件")
+  end
+end
+
+function draw_folder_tree_node(node, depth, library_id)
+  local has_children = #node.children > 0
+  local expanded =
+    state.expanded_folder_nodes[node.key] == true
+  local selected = state.root_filter
+    and path_key(state.root_filter) == node.key
+
+  ImGui.PushID(ctx, "folder_node_" .. node.key)
+  ImGui.SetCursorPosX(ctx, 18 + depth * 18)
+
+  if has_children then
+    if dark_button(expanded and "▾" or "▸", 20) then
+      state.expanded_folder_nodes[node.key] = not expanded
+      state.config_dirty = true
+      expanded = not expanded
+    end
+  else
+    ImGui.TextDisabled(ctx, "·")
+  end
+
+  ImGui.SameLine(ctx, 0, 2)
+
+  sidebar_item(
+    compact(node.name, 42)
+      .. "  "
+      .. tostring(node.total_count)
+      .. "##folder_name",
+    selected,
+    function()
+      activate_folder_path(
+        node.path,
+        library_id,
+        true
+      )
+    end
+  )
+
+  tooltip(node.path)
+
+  if ImGui.BeginPopupContextItem(
+    ctx,
+    "folder_context"
+  ) then
+    if ImGui.MenuItem(ctx, "打开目录") then
+      open_folder(node.path)
+    end
+
+    if has_children
+      and ImGui.MenuItem(
+        ctx,
+        expanded and "折叠此层级" or "展开此层级"
+      ) then
+      state.expanded_folder_nodes[node.key] = not expanded
+      state.config_dirty = true
+      expanded = not expanded
+    end
+
+    ImGui.EndPopup(ctx)
+  end
+
+  if expanded then
+    for _, child in ipairs(node.children) do
+      draw_folder_tree_node(
+        child,
+        depth + 1,
+        library_id
+      )
+    end
+  end
+
+  ImGui.PopID(ctx)
+end
+
+function draw_folder_browser()
+  if not state.folder_browser_open then
+    return
+  end
+
+  ensure_folder_navigation_build()
+
+  local available_w, available_h =
+    ImGui.GetContentRegionAvail(ctx)
+  local browser_h = math.min(
+    clamp(available_h * 0.34, 150, 300),
+    math.max(90, available_h - 250)
+  )
+
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_ChildBg,
+    rgba_with_alpha(COLOR.panel, 0xFC)
+  )
+
+  local visible = ImGui.BeginChild(
+    ctx,
+    "folder_browser_inline",
+    available_w,
+    browser_h,
+    ImGui.ChildFlags_Borders,
+    0
+  )
+
+  if visible then
+    ImGui.TextColored(
+      ctx,
+      COLOR.text,
+      translate_ui_text("文件夹层级")
+    )
+    ImGui.SameLine(ctx)
+    ImGui.TextDisabled(
+      ctx,
+      translate_ui_text(
+        "箭头展开；单击名称跳转并显示该目录及其子目录"
+      )
+    )
+    ImGui.Separator(ctx)
+
+    sidebar_item(
+      translate_ui_text("全部音效库")
+        .. "  "
+        .. tostring(#state.assets)
+        .. "##folder_browser_all",
+      state.root_filter == nil
+        and state.library_filter_id == nil,
+      function()
+        clear_folder_path(false)
+        state.folder_browser_open = false
+      end
+    )
+
+    for _, library in ipairs(state.libraries) do
+      local expanded =
+        state.expanded_libraries[library.id] == true
+      local selected =
+        state.library_filter_id == library.id
+        and state.root_filter == nil
+
+      ImGui.PushID(ctx, "folder_library_" .. library.id)
+
+      if dark_button(expanded and "▾" or "▸", 20) then
+        expanded = not expanded
+        state.expanded_libraries[library.id] = expanded
+        state.libraries_dirty = true
+        state.config_dirty = true
+      end
+
+      ImGui.SameLine(ctx, 0, 2)
+
+      sidebar_item(
+        compact(library.name, 44)
+          .. "  "
+          .. tostring(library_asset_count(library.id))
+          .. "##folder_library_name",
+        selected,
+        function()
+          state.view = "all"
+          state.library_filter_id = library.id
+          state.root_filter = nil
+          state.active_collection_id = nil
+          clear_row_selection()
+          state.results_dirty = true
+          state.config_dirty = true
+          state.folder_browser_open = false
+        end
+      )
+
+      if expanded then
+        for _, record in ipairs(library.roots) do
+          ImGui.PushID(
+            ctx,
+            "folder_source_row_" .. record.id
+          )
+
+          local source_expanded =
+            state.expanded_source_folders[record.id] == true
+          local source_selected =
+            state.root_filter
+            and path_key(state.root_filter)
+              == path_key(record.path)
+          local tree =
+            state.folder_navigation_trees[record.id]
+          local has_children =
+            tree and #tree.children > 0
+          local can_expand =
+            has_children
+            or not state.folder_navigation_ready
+
+          ImGui.SetCursorPosX(ctx, 18)
+
+          if can_expand then
+            if dark_button(
+              source_expanded and "▾" or "▸",
+              20
+            ) then
+              source_expanded = not source_expanded
+              state.expanded_source_folders[record.id] =
+                source_expanded
+              state.config_dirty = true
+              ensure_folder_navigation_build()
+            end
+          else
+            ImGui.TextDisabled(ctx, "·")
+          end
+
+          ImGui.SameLine(ctx, 0, 2)
+
+          local source_name =
+            record.alias ~= "" and record.alias
+            or basename(record.path)
+          local source_count =
+            tree and tree.total_count or 0
+
+          sidebar_item(
+            (directory_exists(record.path) and "● " or "○ ")
+              .. compact(source_name, 40)
+              .. (
+                state.folder_navigation_ready
+                and ("  " .. tostring(source_count))
+                or ""
+              )
+              .. "##folder_source_"
+              .. record.id,
+            source_selected,
+            function()
+              activate_folder_path(
+                record.path,
+                library.id,
+                true
+              )
+            end
+          )
+
+          tooltip(record.path)
+
+          if source_expanded then
+            if not state.folder_navigation_ready then
+              local job = state.folder_navigation_job
+              local done = job
+                and math.max(0, job.index - 1)
+                or 0
+              local total = job and job.total or #state.assets
+              ImGui.SetCursorPosX(ctx, 42)
+              ImGui.TextDisabled(
+                ctx,
+                string.format(
+                  "%s  %d / %d",
+                  translate_ui_text("正在建立目录索引…"),
+                  done,
+                  total
+                )
+              )
+            elseif tree then
+              for _, child in ipairs(tree.children) do
+                draw_folder_tree_node(
+                  child,
+                  2,
+                  library.id
+                )
+              end
+            end
+          end
+
+          ImGui.PopID(ctx)
+        end
+      end
+
+      ImGui.PopID(ctx)
+    end
+  end
+
+  ImGui.EndChild(ctx)
+  ImGui.PopStyleColor(ctx)
 end
 
 function draw_sidebar()
@@ -23606,6 +24294,8 @@ function draw_main()
 
     draw_toolbar()
     draw_sub_toolbar()
+    draw_path_navigation_bar()
+    draw_folder_browser()
     draw_import_progress()
     ImGui.Separator(ctx)
 
@@ -23996,6 +24686,23 @@ apply_wave_cache_directory(
 install_i18n_wrappers()
 load_database()
 refresh_all_asset_library_bindings()
+
+if state.root_filter then
+  local _, active_root_record =
+    root_for_path(state.root_filter)
+
+  if active_root_record then
+    state.library_filter_id =
+      active_root_record.library_id
+  else
+    state.root_filter = nil
+  end
+end
+
+if state.folder_browser_open then
+  ensure_folder_navigation_build()
+end
+
 load_collections()
 load_saved_searches()
 load_history()
@@ -24044,6 +24751,7 @@ function loop()
     process_scan()
     process_import_session()
     process_metadata_queue()
+    process_folder_navigation_build()
     process_artwork_queue()
     process_wave_precache()
     process_wave_queue()
