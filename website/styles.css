@@ -993,6 +993,7 @@ footer {
   }
 
   .hero-grid {
+    grid-template-columns: minmax(0, 1fr);
     gap: 52px;
   }
 
@@ -1009,12 +1010,15 @@ footer {
   }
 
   .hero-visual {
+    width: 100%;
     min-width: 0;
     margin-right: 0;
+    overflow: hidden;
   }
 
   .window-chrome {
     width: 100%;
+    max-width: 100%;
     transform: none;
   }
 
