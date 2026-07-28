@@ -940,8 +940,13 @@ footer {
   .split-layout,
   .split-layout.reverse,
   .install-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 50px;
+  }
+
+  .split-layout > *,
+  .install-grid > * {
+    min-width: 0;
   }
 
   .split-layout.reverse .feature-copy {
@@ -1073,6 +1078,8 @@ footer {
   }
 
   .install-card {
+    width: 100%;
+    min-width: 0;
     padding: 18px;
   }
 
