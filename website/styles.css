@@ -1009,11 +1009,19 @@ footer {
   }
 
   .hero-visual {
-    margin-right: -65%;
+    min-width: 0;
+    margin-right: 0;
   }
 
   .window-chrome {
+    width: 100%;
     transform: none;
+  }
+
+  .window-chrome > img {
+    width: 165%;
+    min-width: 0;
+    max-width: none;
   }
 
   .floating-stat {
