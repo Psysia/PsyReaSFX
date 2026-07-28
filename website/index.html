@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07090d">
+  <meta name="description" content="PsyReaSFX is a high-performance sound asset browser, audition and delivery workflow built inside REAPER.">
+  <meta property="og:title" content="PsyReaSFX — Sound Assets Organized">
+  <meta property="og:description" content="Browse, organize, preview and deliver large sound libraries without leaving REAPER.">
+  <meta property="og:image" content="https://psysia.github.io/PsyReaSFX/assets/brand/psyreasfx-hero.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://psysia.github.io/PsyReaSFX/">
+  <title>PsyReaSFX — Sound Assets Organized</title>
+  <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon.png">
+  <link rel="preload" href="assets/screenshots/compact-workspace.png" as="image">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
+
+  <header class="site-header" id="top">
+    <div class="shell header-inner">
+      <a class="brand" href="#top" aria-label="PsyReaSFX home">
+        <img src="assets/brand/psyreasfx-icon.png" alt="" width="44" height="44">
+        <span class="wordmark">PsyRea<span>SFX</span></span>
+      </a>
+
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <a href="#product" data-i18n="navProduct">Product</a>
+        <a href="#workflow" data-i18n="navWorkflow">Workflow</a>
+        <a href="#install" data-i18n="navInstall">Install</a>
+        <a href="#docs" data-i18n="navDocs">Docs</a>
+      </nav>
+
+      <div class="header-actions">
+        <button class="language-toggle" type="button" data-language-toggle aria-label="Switch language">
+          <span class="language-current">EN</span>
+          <span class="language-divider">/</span>
+          <span class="language-other">中文</span>
+        </button>
+        <a class="icon-link" href="https://github.com/Psysia/PsyReaSFX" aria-label="View PsyReaSFX on GitHub">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.24c-3.24.7-3.92-1.38-3.92-1.38-.53-1.35-1.3-1.71-1.3-1.71-1.06-.73.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.79 2.73 1.27 3.4.97.1-.75.4-1.27.74-1.56-2.59-.3-5.31-1.29-5.31-5.72 0-1.26.45-2.3 1.2-3.11-.12-.3-.52-1.48.11-3.07 0 0 .98-.31 3.16 1.19a10.8 10.8 0 0 1 5.76 0c2.18-1.5 3.16-1.19 3.16-1.19.63 1.59.23 2.77.11 3.07.75.81 1.2 1.85 1.2 3.11 0 4.45-2.73 5.42-5.33 5.71.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="product">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="shell hero-grid">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="status-dot"></span>
+            <span data-i18n="stable">0.7.23 Stable</span>
+            <span class="eyebrow-divider"></span>
+            <span data-i18n="builtFor">Built for REAPER</span>
+          </div>
+          <h1 data-i18n="heroTitle">Your sound library,<br><span>finally in flow.</span></h1>
+          <p class="hero-lead" data-i18n="heroLead">Browse, organize, audition and deliver large sound libraries without leaving REAPER.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#install" data-i18n="installReapack">Install with ReaPack</a>
+            <a class="button secondary" data-latest-download href="https://github.com/Psysia/PsyReaSFX/releases/latest" data-i18n="downloadStable">Download Stable</a>
+          </div>
+          <div class="hero-meta">
+            <span data-i18n="freeUpdate">One repository · Automatic updates</span>
+            <span class="meta-dot"></span>
+            <span>ReaImGui 0.10+</span>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="window-chrome">
+            <div class="window-bar">
+              <span></span><span></span><span></span>
+              <p>PsyReaSFX <b data-version>0.7.23</b></p>
+            </div>
+            <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation, inline waveforms and metadata inspector" width="1700" height="1050">
+          </div>
+          <div class="floating-stat stat-top">
+            <strong data-i18n="inlineWaveforms">Inline waveforms</strong>
+            <span data-i18n="visibleFirst">Visible-first caching</span>
+          </div>
+          <div class="floating-stat stat-bottom">
+            <strong data-i18n="nonDestructive">Non-destructive</strong>
+            <span data-i18n="sourceSafe">Source media stays untouched</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="trust-strip" aria-label="Core product characteristics">
+      <div class="shell trust-grid">
+        <div><strong data-i18n="insideReaper">Inside REAPER</strong><span data-i18n="oneWorkspace">One dockable workspace</span></div>
+        <div><strong data-i18n="largeLibraries">Large libraries</strong><span data-i18n="boundedWork">Bounded background work</span></div>
+        <div><strong data-i18n="waveformFirst">Waveform first</strong><span data-i18n="seekSelect">Seek, select and deliver</span></div>
+        <div><strong data-i18n="bilingual">Bilingual</strong><span data-i18n="englishChinese">English and Simplified Chinese</span></div>
+      </div>
+    </section>
+
+    <section class="section" id="workflow">
+      <div class="shell">
+        <div class="section-heading">
+          <p class="kicker" data-i18n="completeLoop">THE COMPLETE SOUND-LIBRARY LOOP</p>
+          <h2 data-i18n="fourMoves">Four moves. One workspace.</h2>
+          <p data-i18n="fourMovesLead">Keep discovery, decisions and delivery connected instead of rebuilding context across separate tools.</p>
+        </div>
+
+        <div class="workflow-grid">
+          <article class="workflow-card">
+            <span class="step-number">01</span>
+            <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path><path d="M8 11h6M11 8v6"></path></svg></div>
+            <h3 data-i18n="discover">Discover</h3>
+            <p data-i18n="discoverText">Search filenames and metadata, browse indexed folders, then audition from any point in an inline waveform.</p>
+          </article>
+          <article class="workflow-card">
+            <span class="step-number">02</span>
+            <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M4 7h6l2 2h8v10H4z"></path><path d="M4 7V5h6l2 2"></path></svg></div>
+            <h3 data-i18n="organize">Organize</h3>
+            <p data-i18n="organizeText">Unify multiple folders as one logical library, then use Artwork, metadata, collections and workflow states.</p>
+          </article>
+          <article class="workflow-card">
+            <span class="step-number">03</span>
+            <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M3 12h2l1.5-5L9 18l2-12 2 12 2.5-11 1.5 5h4"></path></svg></div>
+            <h3 data-i18n="audition">Audition</h3>
+            <p data-i18n="auditionText">Inspect channel lanes, select and loop a range, tune Pitch, Rate and Gain, and compare loudness.</p>
+          </article>
+          <article class="workflow-card">
+            <span class="step-number">04</span>
+            <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M5 12h11"></path><path d="m13 8 4 4-4 4"></path><path d="M19 5v14"></path></svg></div>
+            <h3 data-i18n="deliver">Deliver</h3>
+            <p data-i18n="deliverText">Insert or drag into REAPER, preserve BWF placement, or render processed variants with Transfer.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section feature-band">
+      <div class="shell split-layout">
+        <div class="media-card portrait-media">
+          <img src="assets/screenshots/logical-library-workflow.gif" alt="A logical PsyReaSFX library expanding to show independent source folders" loading="lazy" width="528" height="318">
+        </div>
+        <div class="feature-copy">
+          <p class="kicker" data-i18n="librariesKicker">LIBRARIES THAT MATCH REAL STORAGE</p>
+          <h2 data-i18n="oneNameManyFolders">One library name.<br>As many source folders as you need.</h2>
+          <p data-i18n="oneNameText">Create the logical library first, then attach locations across drives over time. Each source keeps its own path, online state and Artwork.</p>
+          <ul class="check-list">
+            <li data-i18n="folderDrag">Drag folders directly from Explorer</li>
+            <li data-i18n="indexedHierarchy">Browse the indexed folder hierarchy without rescanning</li>
+            <li data-i18n="sourceArtwork">Keep Artwork assigned to the correct physical source</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="shell split-layout reverse">
+        <div class="feature-copy">
+          <p class="kicker" data-i18n="waveformKicker">FROM WAVEFORM TO TIMELINE</p>
+          <h2 data-i18n="hearItPlaceIt">Hear it. Shape it.<br>Place it.</h2>
+          <p data-i18n="hearItText">Click an inline waveform to start at that exact moment. Build a precise range in the detailed preview, audition it, then drag the selection into the REAPER arrange view.</p>
+          <ul class="check-list">
+            <li data-i18n="channelLanes">Mono, stereo and multichannel lanes</li>
+            <li data-i18n="regionsTransient">Regions and transient suggestions</li>
+            <li data-i18n="loudnessStats">LUFS and True Peak statistics</li>
+          </ul>
+        </div>
+        <div class="media-card wide-media">
+          <img src="assets/screenshots/waveform-edit-drag-reaper.gif" alt="Selecting a range in the PsyReaSFX waveform and dragging it into REAPER" loading="lazy" width="1262" height="726">
+        </div>
+      </div>
+    </section>
+
+    <section class="section transfer-section">
+      <div class="shell">
+        <div class="section-heading">
+          <p class="kicker">TRANSFER</p>
+          <h2 data-i18n="deliverWithoutLosing">Deliver without losing the thread.</h2>
+          <p data-i18n="transferLead">Turn the full source, a waveform selection or a controlled batch of variants into new files with repeatable settings.</p>
+        </div>
+        <div class="transfer-stage">
+          <picture>
+            <source data-transfer-source media="(min-width: 1px)" srcset="assets/screenshots/transfer-settings-en.png">
+            <img data-transfer-image src="assets/screenshots/transfer-settings-en.png" alt="PsyReaSFX Transfer settings" loading="lazy" width="1700" height="1050">
+          </picture>
+          <div class="transfer-caps">
+            <span>WAV 16/24/32-bit</span>
+            <span>FLAC</span>
+            <span>Peak / RMS-I / LUFS-I</span>
+            <span data-i18n="smartTail">Smart source tail</span>
+            <span data-i18n="batchVariants">Batch variants</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section capabilities-section">
+      <div class="shell">
+        <div class="section-heading left-heading">
+          <p class="kicker" data-i18n="designedDepth">DESIGNED FOR DEPTH</p>
+          <h2 data-i18n="dailyFast">Fast for the daily work.<br>Deep when the project asks.</h2>
+        </div>
+        <div class="capabilities-grid">
+          <article><h3 data-i18n="metadataTitle">Metadata & Artwork</h3><p data-i18n="metadataText">Edit a non-destructive database, pin cover art and keep source files safe.</p></article>
+          <article><h3 data-i18n="searchTitle">Search & filters</h3><p data-i18n="searchText">Combine text, library, UCS fields, marks and workflow states.</p></article>
+          <article><h3 data-i18n="organizeTitle">Collections</h3><p data-i18n="collectionsText">Build playlists, project bins, favorites and reusable saved searches.</p></article>
+          <article><h3 data-i18n="performanceTitle">Large-library performance</h3><p data-i18n="performanceText">Visible-first work, bounded queues and persistent waveform caches keep browsing responsive.</p></article>
+          <article><h3 data-i18n="channelTitle">Channel-aware preview</h3><p data-i18n="channelText">Read mono, stereo and up to eight detailed waveform lanes with focused views.</p></article>
+          <article><h3 data-i18n="reaperTitle">REAPER delivery</h3><p data-i18n="reaperText">Insert on the current track, a new track, the BWF position or drag the selected range.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section install-section" id="install">
+      <div class="shell install-grid">
+        <div>
+          <p class="kicker" data-i18n="quickStart">QUICK START</p>
+          <h2 data-i18n="installOnce">Install once.<br>Update inside REAPER.</h2>
+          <p data-i18n="installLead">Import the repository in ReaPack, synchronize, then install PsyReaSFX. Future stable updates arrive through the same URL.</p>
+          <ol class="install-steps">
+            <li data-i18n="stepOne">Open Extensions → ReaPack → Import repositories…</li>
+            <li data-i18n="stepTwo">Paste the repository URL below.</li>
+            <li data-i18n="stepThree">Synchronize packages, search for PsyReaSFX and install.</li>
+          </ol>
+        </div>
+        <div class="install-card">
+          <div class="install-card-head">
+            <span>ReaPack repository</span>
+            <span class="stable-pill"><span class="status-dot"></span><span data-version>0.7.23</span></span>
+          </div>
+          <div class="copy-field">
+            <code id="reapack-url">https://github.com/Psysia/PsyReaSFX/raw/main/index.xml</code>
+            <button type="button" data-copy-reapack><span data-i18n="copy">Copy</span></button>
+          </div>
+          <div class="requirements">
+            <div><span data-i18n="host">Host</span><strong>REAPER 7.x</strong></div>
+            <div><span data-i18n="required">Required</span><strong>ReaImGui 0.10+</strong></div>
+            <div><span data-i18n="recommended">Recommended</span><strong>SWS Extension</strong></div>
+          </div>
+          <a class="button primary full-width" data-latest-download href="https://github.com/Psysia/PsyReaSFX/releases/latest" data-i18n="downloadLatest">Download latest Stable</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section docs-section" id="docs">
+      <div class="shell">
+        <div class="section-heading">
+          <p class="kicker" data-i18n="learnAndBuild">LEARN & BUILD</p>
+          <h2 data-i18n="docsWhenNeeded">The detail is there when you need it.</h2>
+        </div>
+        <div class="docs-grid">
+          <a href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/USER_GUIDE_en-US.md">
+            <span>01</span><div><h3 data-i18n="userGuide">User Guide</h3><p data-i18n="userGuideText">Complete workflows, controls and troubleshooting.</p></div><b>↗</b>
+          </a>
+          <a href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/CHANGELOG_en-US.md">
+            <span>02</span><div><h3 data-i18n="changelog">Changelog</h3><p data-i18n="changelogText">What changed, why it changed and compatibility notes.</p></div><b>↗</b>
+          </a>
+          <a href="https://github.com/Psysia/PsyReaSFX/issues">
+            <span>03</span><div><h3 data-i18n="issueTracker">Issue tracker</h3><p data-i18n="issueText">Report a reproducible problem or follow development.</p></div><b>↗</b>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="shell final-cta-inner">
+        <img src="assets/brand/psyreasfx-icon.png" alt="" width="92" height="92" loading="lazy">
+        <div>
+          <p class="kicker" data-i18n="soundAssetsOrganized">SOUND ASSETS, ORGANIZED</p>
+          <h2 data-i18n="stayInFlow">Stay in the sound. Stay in the flow.</h2>
+        </div>
+        <a class="button primary" href="#install" data-i18n="getPsy">Get PsyReaSFX</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-inner">
+      <a class="brand footer-brand" href="#top">
+        <img src="assets/brand/psyreasfx-icon.png" alt="" width="36" height="36" loading="lazy">
+        <span class="wordmark">PsyRea<span>SFX</span></span>
+      </a>
+      <p>Copyright © 2026 Psysia. All rights reserved.</p>
+      <div>
+        <a href="https://github.com/Psysia/PsyReaSFX">GitHub</a>
+        <a href="https://github.com/Psysia/PsyReaSFX/releases/latest" data-i18n="releases">Releases</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
