@@ -47,13 +47,13 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 ## Choose your edition
 
-| PsyReaSFX for REAPER | PsyReaSFX Desktop Preview |
+| PsyReaSFX for REAPER | PsyReaSFX Desktop Alpha |
 |---|---|
-| The complete 0.7 Stable workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. Install through ReaPack for automatic updates. | A new standalone Windows x64 companion for library indexing, search, waveform browsing, preview, Artwork, favorites and file drag into REAPER. No REAPER or separate .NET installation is required to browse. |
+| The complete 0.7 Stable workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. Install through ReaPack for automatic updates. | The standalone migration now shares the `0.7.23` product baseline. Alpha 1 introduces the SQLite catalog and imports existing Lua libraries, asset metadata, collections, history, Regions, loudness and settings without modifying the Lua files. |
 
-[Install the REAPER edition](#install-with-reapack) · [Download Desktop Preview](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_1_0_Preview_1_win_x64.zip) · [Desktop guide](docs/DESKTOP_PREVIEW_en-US.md)
+[Install the REAPER edition](#install-with-reapack) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_1_win_x64.zip) · [Desktop Alpha notes](docs/DESKTOP_ALPHA_en-US.md)
 
-Desktop Preview 1 is intentionally not feature parity with the REAPER edition. Both editions can be installed side by side and use separate local data.
+Desktop Alpha 1 is the first parity-migration build, not the final Stable desktop release. It reads the existing Lua data directory without modifying it and keeps its own SQLite catalog.
 
 ## One workspace for the sound-library loop
 

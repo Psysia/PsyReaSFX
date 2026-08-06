@@ -24,13 +24,13 @@ PsyReaSFX 把素材库管理、波形浏览、搜索、试听、整理、REAPER 
 
 ## 选择适合你的版本
 
-| REAPER 版 PsyReaSFX | PsyReaSFX Desktop Preview |
+| REAPER 版 PsyReaSFX | PsyReaSFX Desktop Alpha |
 |---|---|
-| 完整的 0.7 Stable 工作流：元数据、波形选区、多声道试听、REAPER 插入与 Transfer 渲染。通过 ReaPack 安装并自动更新。 | 全新的 Windows x64 独立伴侣：逻辑库、索引、搜索、列表与大波形、试听、Artwork、收藏和把文件拖入 REAPER。浏览时无需启动 REAPER，也无需单独安装 .NET。 |
+| 完整的 0.7 Stable 工作流：元数据、波形选区、多声道试听、REAPER 插入与 Transfer 渲染。通过 ReaPack 安装并自动更新。 | 与 Lua 版统一使用 `0.7.23` 基线的 Windows x64 独立移植版。Alpha 1 已建立 SQLite 大库目录并迁移现有 Lua 数据，完整工作流仍在逐项移植。 |
 
-[安装 REAPER 版](#通过-reapack-安装) · [下载 Desktop Preview](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_1_0_Preview_1_win_x64.zip) · [桌面版说明](docs/DESKTOP_PREVIEW_zh-CN.md)
+[安装 REAPER 版](#通过-reapack-安装) · [下载 Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_1_win_x64.zip) · [桌面版说明](docs/DESKTOP_ALPHA_zh-CN.md)
 
-Desktop Preview 1 暂未与 REAPER 版完全等价。两个版本可以同时安装，并使用相互独立的本地数据。
+Desktop Alpha 1 与 Lua 版统一使用 `0.7.23` 产品基线，已建立 SQLite 大库目录并只读迁移现有 Lua 逻辑库、素材元数据、集合、历史、Region、响度和设置。它仍处于完整功能迁移阶段，尚未标记为桌面稳定版。
 
 ## 工作流程
 
