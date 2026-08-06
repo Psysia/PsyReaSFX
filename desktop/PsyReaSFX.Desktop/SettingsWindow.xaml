@@ -1,0 +1,111 @@
+<Window x:Class="PsyReaSFX.Desktop.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PsyReaSFX 设置" Width="880" Height="620" MinWidth="760" MinHeight="520"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        Icon="Assets/psyreasfx-icon.png">
+  <Window.Resources>
+    <Style x:Key="SettingsNav" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="Margin" Value="0,2" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Card" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+            <ContentPresenter />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Card" Property="Background" Value="{StaticResource PanelHoverBrush}" /></Trigger>
+            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Card" Property="Background" Value="#14283D" /><Setter Property="Foreground" Value="{StaticResource AccentBrightBrush}" /></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Margin" Value="0,7" />
+    </Style>
+    <Style x:Key="Choice" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+      <Setter Property="Background" Value="{StaticResource PanelRaisedBrush}" />
+      <Setter Property="Padding" Value="16,7" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value><ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Card" Background="{TemplateBinding Background}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Center" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Card" Property="BorderBrush" Value="#3B5064" /></Trigger>
+            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Card" Property="Background" Value="#14324A" /><Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource AccentBrush}" /><Setter Property="Foreground" Value="{StaticResource AccentBrightBrush}" /></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <Grid Background="{StaticResource BgBrush}">
+    <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="58" /></Grid.RowDefinitions>
+    <Grid Grid.Row="0" Margin="10">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="1" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+      <Border Background="{StaticResource PanelBrush}" CornerRadius="6" Padding="10">
+        <StackPanel>
+          <StackPanel Orientation="Horizontal" Margin="4,2,4,14">
+            <Image Source="Assets/psyreasfx-icon.png" Width="34" Height="34" />
+            <StackPanel Margin="9,0,0,0"><TextBlock Text="PsyReaSFX" FontSize="17" FontWeight="SemiBold"/><TextBlock Text="Desktop settings" Foreground="{StaticResource MutedBrush}" /></StackPanel>
+          </StackPanel>
+          <RadioButton x:Name="GeneralNav" GroupName="Page" Style="{StaticResource SettingsNav}" IsChecked="True" Checked="Page_Checked">常规</RadioButton>
+          <RadioButton x:Name="WaveformNav" GroupName="Page" Style="{StaticResource SettingsNav}" Checked="Page_Checked">波形与性能</RadioButton>
+          <RadioButton x:Name="MaintenanceNav" GroupName="Page" Style="{StaticResource SettingsNav}" Checked="Page_Checked">维护</RadioButton>
+          <RadioButton x:Name="AboutNav" GroupName="Page" Style="{StaticResource SettingsNav}" Checked="Page_Checked">关于</RadioButton>
+        </StackPanel>
+      </Border>
+      <Border Grid.Column="1" Background="{StaticResource LineBrush}" />
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="22,12,18,22">
+          <StackPanel x:Name="GeneralPage">
+            <TextBlock Text="常规" FontSize="19" FontWeight="SemiBold"/><TextBlock Text="只显示当前桌面版已经实际接通的选项。" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,15"/>
+            <TextBlock Text="试听" Style="{StaticResource SectionLabel}" Margin="0,4,0,2"/>
+            <CheckBox x:Name="AutoPreviewCheck" Content="选择素材后自动试听" />
+            <TextBlock Text="列表连续移动时会短暂等待，避免为经过的每一行反复打开文件。" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,16"/>
+            <TextBlock Text="启动布局" Style="{StaticResource SectionLabel}" Margin="0,0,0,2"/>
+            <CheckBox x:Name="NavigationCheck" Content="启动时显示左侧导航" />
+            <CheckBox x:Name="InspectorCheck" Content="启动时显示右侧元数据" />
+          </StackPanel>
+          <StackPanel x:Name="WaveformPage" Visibility="Collapsed">
+            <TextBlock Text="波形与性能" FontSize="19" FontWeight="SemiBold"/><TextBlock Text="精度越高，首次读取所需的磁盘与处理时间越多。" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,15"/>
+            <TextBlock Text="列表波形精度" Style="{StaticResource SectionLabel}" Margin="0,4,0,7"/>
+            <StackPanel Orientation="Horizontal"><RadioButton x:Name="Inline256" GroupName="InlineResolution" Style="{StaticResource Choice}">256 点（更快）</RadioButton><RadioButton x:Name="Inline512" GroupName="InlineResolution" Style="{StaticResource Choice}">512 点（更细）</RadioButton></StackPanel>
+            <TextBlock Text="大波形精度" Style="{StaticResource SectionLabel}" Margin="0,20,0,7"/>
+            <StackPanel Orientation="Horizontal"><RadioButton x:Name="Detail2048" GroupName="DetailResolution" Style="{StaticResource Choice}">2048 点</RadioButton><RadioButton x:Name="Detail4096" GroupName="DetailResolution" Style="{StaticResource Choice}">4096 点</RadioButton></StackPanel>
+            <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,20"/>
+            <TextBlock Text="性能说明" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,7,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Text="PsyReaSFX 只为屏幕上可见的结果读取列表波形。正在试听时会优先保证音频与播放指针，不让后台波形任务抢占交互。"/>
+          </StackPanel>
+          <StackPanel x:Name="MaintenancePage" Visibility="Collapsed">
+            <TextBlock Text="维护" FontSize="19" FontWeight="SemiBold"/><TextBlock Text="数据、设置与诊断入口。" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,15"/>
+            <TextBlock Text="桌面数据库" Style="{StaticResource SectionLabel}" Margin="0,4,0,3"/><TextBlock x:Name="DataPathText" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            <Button Content="打开数据目录" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OpenData_Click"/>
+            <TextBlock Text="诊断日志" Style="{StaticResource SectionLabel}" Margin="0,20,0,3"/><TextBlock x:Name="LogPathText" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+            <Button Content="打开日志目录" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OpenLogs_Click"/>
+          </StackPanel>
+          <StackPanel x:Name="AboutPage" Visibility="Collapsed" HorizontalAlignment="Center" MaxWidth="520">
+            <Image Source="Assets/psyreasfx-icon.png" Width="92" Height="92" Margin="0,18,0,12"/>
+            <TextBlock TextAlignment="Center" FontFamily="./Assets/Fonts/#Orbitron" FontSize="26" FontWeight="SemiBold"><Run Text="PsyRea"/><Run Text="SFX" Foreground="{StaticResource AccentBrightBrush}"/></TextBlock>
+            <TextBlock Text="Sound assets organized" TextAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,20"/>
+            <TextBlock Text="Desktop 0.7.23 · Alpha 4 Light RC1" TextAlignment="Center"/>
+            <TextBlock Text="Copyright © 2026 Psysia. All rights reserved." TextAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,8"/>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+    </Grid>
+    <Border Grid.Row="1" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Background="{StaticResource PanelBrush}">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="10">
+        <Button Content="取消" Width="100" Click="Cancel_Click"/><Button Content="保存并关闭" Width="126" Background="#14324A" BorderBrush="{StaticResource AccentBrush}" Click="Save_Click"/>
+      </StackPanel>
+    </Border>
+  </Grid>
+</Window>
