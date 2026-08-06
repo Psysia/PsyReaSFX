@@ -435,6 +435,69 @@ h1 span {
   background: rgba(255, 255, 255, .012);
 }
 
+.desktop-preview-bar {
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(25, 216, 255, .08), rgba(50, 118, 239, .045) 52%, rgba(7, 9, 13, 0));
+}
+
+.desktop-preview-inner {
+  min-height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 52px;
+  padding-block: 34px;
+}
+
+.desktop-preview-inner h2 {
+  margin: 6px 0 7px;
+  font-size: clamp(25px, 3vw, 38px);
+  letter-spacing: -.035em;
+}
+
+.desktop-preview-inner p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.preview-label {
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+
+.desktop-preview-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+}
+
+.text-link {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.text-link:hover {
+  color: var(--cyan);
+}
+
+@media (max-width: 760px) {
+  .desktop-preview-inner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .desktop-preview-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+}
+
 .trust-grid {
   min-height: 112px;
   display: grid;

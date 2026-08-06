@@ -22,6 +22,16 @@ PsyReaSFX 把素材库管理、波形浏览、搜索、试听、整理、REAPER 
 
 它面向需要长期维护大型个人或制作素材库的游戏音频设计师、声音设计师和 REAPER 用户。磁盘路径、元数据、试听记录与工程候选能够保持清晰，同时尽量减少扫描、缓存和界面对工作的打断。
 
+## 选择适合你的版本
+
+| REAPER 版 PsyReaSFX | PsyReaSFX Desktop Preview |
+|---|---|
+| 完整的 0.7 Stable 工作流：元数据、波形选区、多声道试听、REAPER 插入与 Transfer 渲染。通过 ReaPack 安装并自动更新。 | 全新的 Windows x64 独立伴侣：逻辑库、索引、搜索、列表与大波形、试听、Artwork、收藏和把文件拖入 REAPER。浏览时无需启动 REAPER，也无需单独安装 .NET。 |
+
+[安装 REAPER 版](#通过-reapack-安装) · [下载 Desktop Preview](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_1_0_Preview_1_win_x64.zip) · [桌面版说明](docs/DESKTOP_PREVIEW_zh-CN.md)
+
+Desktop Preview 1 暂未与 REAPER 版完全等价。两个版本可以同时安装，并使用相互独立的本地数据。
+
 ## 工作流程
 
 | 发现 | 整理 |

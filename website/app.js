@@ -27,6 +27,11 @@ const messages = {
     seekSelect: "Seek, select and deliver",
     bilingual: "Bilingual",
     englishChinese: "English and Simplified Chinese",
+    desktopPreviewLabel: "NEW · DESKTOP PREVIEW",
+    desktopPreviewTitle: "Browse before you open the project.",
+    desktopPreviewText: "A standalone Windows x64 companion for logical libraries, fast search, waveforms, preview, Artwork, favorites and file drag into REAPER.",
+    downloadDesktop: "Download Desktop Preview",
+    desktopGuide: "Desktop guide ↗",
     completeLoop: "THE COMPLETE SOUND-LIBRARY LOOP",
     fourMoves: "Four moves. One workspace.",
     fourMovesLead: "Keep discovery, decisions and delivery connected instead of rebuilding context across separate tools.",
@@ -118,6 +123,11 @@ const messages = {
     seekSelect: "定位、选区与交付",
     bilingual: "双语界面",
     englishChinese: "English 与简体中文",
+    desktopPreviewLabel: "全新 · 桌面预览版",
+    desktopPreviewTitle: "打开工程前，先进入你的音效库。",
+    desktopPreviewText: "Windows x64 独立伴侣：逻辑库、快速搜索、波形、试听、Artwork、收藏和把文件拖入 REAPER。",
+    downloadDesktop: "下载桌面预览版",
+    desktopGuide: "桌面版说明 ↗",
     completeLoop: "完整的音效素材库工作闭环",
     fourMoves: "四个环节，一个工作区。",
     fourMovesLead: "将发现、决策与交付保持在同一上下文中，不再频繁切换和重建工作状态。",
@@ -220,6 +230,9 @@ function applyLanguage(language) {
   document.querySelectorAll('a[href*="CHANGELOG_"]').forEach((link) => {
     link.href = `https://github.com/${REPOSITORY}/blob/main/docs/CHANGELOG_${selected === "zh" ? "zh-CN" : "en-US"}.md`;
   });
+  document.querySelectorAll("[data-desktop-guide]").forEach((link) => {
+    link.href = `https://github.com/${REPOSITORY}/blob/main/docs/DESKTOP_PREVIEW_${selected === "zh" ? "zh-CN" : "en-US"}.md`;
+  });
 
   localStorage.setItem("psyreasfx-language", selected);
 }
@@ -231,14 +244,19 @@ async function updateLatestRelease() {
     });
     if (!response.ok) return;
     const release = await response.json();
-    const asset = release.assets?.find((item) => item.name.toLowerCase().endsWith(".zip"));
+    const assets = release.assets || [];
+    const stableAsset = assets.find((item) => /PsyReaSFX_v0_7_23_Stable\.zip$/i.test(item.name));
+    const desktopAsset = assets.find((item) => /PsyReaSFX_Desktop_.*win_x64\.zip$/i.test(item.name));
     const version = String(release.tag_name || "v0.7.23").replace(/^v/, "");
 
     document.querySelectorAll("[data-version]").forEach((element) => {
       element.textContent = version;
     });
     document.querySelectorAll("[data-latest-download]").forEach((link) => {
-      link.href = asset?.browser_download_url || release.html_url;
+      link.href = stableAsset?.browser_download_url || release.html_url;
+    });
+    document.querySelectorAll("[data-desktop-download]").forEach((link) => {
+      link.href = desktopAsset?.browser_download_url || release.html_url;
     });
   } catch {
     // Static fallbacks remain fully usable when the GitHub API is unavailable.
