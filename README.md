@@ -49,11 +49,11 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 | PsyReaSFX for REAPER | PsyReaSFX Desktop Alpha |
 |---|---|
-| The complete 0.7 Stable workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. Install through ReaPack for automatic updates. | The standalone migration now shares the `0.7.23` product baseline. Alpha 1 introduces the SQLite catalog and imports existing Lua libraries, asset metadata, collections, history, Regions, loudness and settings without modifying the Lua files. |
+| The complete 0.7 Stable workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. Install through ReaPack for automatic updates. | The standalone migration now shares the `0.7.23` product baseline. Alpha 4 Light RC1 adds persistent resizable result columns, workflow states, independent marks, and non-destructive single/batch metadata editing on top of the SQLite catalog and Lua read-only migration. |
 
-[Install the REAPER edition](#install-with-reapack) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_1_win_x64.zip) · [Desktop Alpha notes](docs/DESKTOP_ALPHA_en-US.md)
+[Install the REAPER edition](#install-with-reapack) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_4_Light_RC1_win_x64.zip) · [Desktop Alpha notes](desktop/README.md)
 
-Desktop Alpha 1 is the first parity-migration build, not the final Stable desktop release. It reads the existing Lua data directory without modifying it and keeps its own SQLite catalog.
+Desktop Alpha 4 Light RC1 is a development build, not the final Stable desktop release. It reads the existing Lua data directory without modifying it, keeps its own SQLite catalog, and now supports persistent column layouts plus non-destructive organization and metadata workflows.
 
 ## One workspace for the sound-library loop
 
