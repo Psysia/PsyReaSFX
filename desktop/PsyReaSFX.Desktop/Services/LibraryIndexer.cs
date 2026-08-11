@@ -4,20 +4,26 @@ namespace PsyReaSFX.Desktop.Services;
 
 public sealed class LibraryIndexer
 {
+    private readonly ConcurrentBag<FailedScanItem> _failures = [];
+    public IReadOnlyList<FailedScanItem> LastFailures => _failures.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase).ToArray();
+
     public async Task<List<AudioAsset>> BuildAsync(
         IEnumerable<LibraryDefinition> libraries,
         IEnumerable<AudioAsset> previous,
         IProgress<(int Count, string File)> progress,
         CancellationToken cancellationToken)
     {
-        var previousMap = previous.ToDictionary(a => a.FilePath, StringComparer.OrdinalIgnoreCase);
+        while (_failures.TryTake(out _)) { }
+        var previousMap = previous.Where(asset => !string.IsNullOrWhiteSpace(asset.FilePath))
+            .GroupBy(asset => asset.FilePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
         var result = new ConcurrentBag<AudioAsset>();
         var files = new List<(LibraryDefinition Library, LibrarySource Source, string Path)>();
 
         await Task.Run(() =>
         {
             foreach (var library in libraries)
-            foreach (var source in library.Sources)
+            foreach (var source in library.Sources.Where(source => source.Enabled))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!Directory.Exists(source.Path)) continue;
@@ -36,7 +42,10 @@ public sealed class LibraryIndexer
                             files.Add((library, source, path));
                     }
                 }
-                catch { }
+                catch (Exception exception)
+                {
+                    _failures.Add(new FailedScanItem(source.Path, exception.Message, DateTimeOffset.UtcNow, 1));
+                }
             }
         }, cancellationToken);
 
@@ -90,7 +99,10 @@ public sealed class LibraryIndexer
                 }
                 result.Add(asset);
             }
-            catch { }
+            catch (Exception exception)
+            {
+                _failures.Add(new FailedScanItem(entry.Path, exception.Message, DateTimeOffset.UtcNow, 1));
+            }
             var count = Interlocked.Increment(ref done);
             if (count % 50 == 0 || count == files.Count) progress.Report((count, entry.Path));
             return ValueTask.CompletedTask;

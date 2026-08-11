@@ -31,6 +31,34 @@ public sealed class PsyReaSFXDatabase
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task BackupAsync(string destinationPath, CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+        await using var source = await OpenAsync(cancellationToken);
+        await using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = destinationPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ToString());
+        await destination.OpenAsync(cancellationToken);
+        source.BackupDatabase(destination);
+    }
+
+    public static async Task<string> CheckIntegrityAsync(string databasePath, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
+        await connection.OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA integrity_check";
+        return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken)) ?? "unknown";
+    }
+
     public async Task<MigrationSummary> ImportLuaIfNeededAsync(string? sourceDirectory = null, CancellationToken cancellationToken = default)
     {
         sourceDirectory ??= LuaDataLocator.Find();
@@ -97,6 +125,33 @@ public sealed class PsyReaSFXDatabase
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) snapshot.Favorites.Add(reader.GetString(0));
         }
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT path FROM session_played";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) snapshot.SessionPlayed.Add(reader.GetString(0));
+        }
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT id,name,kind FROM collections ORDER BY name COLLATE NOCASE";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                snapshot.Collections.Add(new CollectionRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        }
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT collection_id,path,sort_order FROM collection_items ORDER BY collection_id,sort_order";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                snapshot.CollectionItems.Add(new CollectionItemRecord(reader.GetString(0), reader.GetString(1), reader.GetInt32(2)));
+        }
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT id,name,query,view,root,sort_mode,sort_desc,status_filter,collection_id,library_id FROM saved_searches ORDER BY name COLLATE NOCASE";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                snapshot.SavedSearches.Add(new SavedSearchRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetBoolean(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetString(9)));
+        }
         return snapshot;
     }
 
@@ -122,6 +177,15 @@ public sealed class PsyReaSFXDatabase
             command.Parameters.AddWithValue("$path", path);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
+        await ExecuteAsync(connection, "DELETE FROM session_played", cancellationToken);
+        foreach (var path in snapshot.SessionPlayed)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "INSERT OR IGNORE INTO session_played(path) VALUES($path)";
+            command.Parameters.AddWithValue("$path", path);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await ReplaceOrganizationAsync(connection, snapshot, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -144,7 +208,118 @@ public sealed class PsyReaSFXDatabase
             command.Parameters.AddWithValue("$path", path);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
+        await ReplaceOrganizationAsync(connection, snapshot, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task ReplaceSessionPlayedAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await ExecuteAsync(connection, "DELETE FROM session_played", cancellationToken);
+        foreach (var path in paths.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = "INSERT OR IGNORE INTO session_played(path) VALUES($path)";
+            command.Parameters.AddWithValue("$path", path);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<RegionRecord>> LoadRegionsAsync(string assetPath, CancellationToken cancellationToken = default)
+    {
+        var rows = new List<RegionRecord>();
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT asset_path,start,finish,name,source,batch_id FROM regions WHERE asset_path=$path ORDER BY start,finish,name COLLATE NOCASE";
+        command.Parameters.AddWithValue("$path", assetPath);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            rows.Add(new RegionRecord(reader.GetString(0), reader.GetDouble(1), reader.GetDouble(2), reader.GetString(3), reader.GetString(4), reader.GetString(5)));
+        return rows;
+    }
+
+    public async Task UpsertRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "INSERT OR REPLACE INTO regions(asset_path,start,finish,name,source,batch_id) VALUES($path,$start,$finish,$name,$source,$batch)";
+        command.Parameters.AddWithValue("$path", region.AssetPath);
+        command.Parameters.AddWithValue("$start", region.Start);
+        command.Parameters.AddWithValue("$finish", region.Finish);
+        command.Parameters.AddWithValue("$name", region.Name);
+        command.Parameters.AddWithValue("$source", region.Source);
+        command.Parameters.AddWithValue("$batch", region.BatchId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM regions WHERE asset_path=$path AND start=$start AND finish=$finish AND name=$name";
+        command.Parameters.AddWithValue("$path", region.AssetPath);
+        command.Parameters.AddWithValue("$start", region.Start);
+        command.Parameters.AddWithValue("$finish", region.Finish);
+        command.Parameters.AddWithValue("$name", region.Name);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<LoudnessRecord?> LoadLoudnessAsync(string assetPath, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT asset_path,size,lufs_i,lufs_m,lufs_s,true_peak FROM loudness WHERE asset_path=$path";
+        command.Parameters.AddWithValue("$path", assetPath);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new LoudnessRecord(reader.GetString(0), reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetDouble(2), reader.IsDBNull(3) ? null : reader.GetDouble(3),
+            reader.IsDBNull(4) ? null : reader.GetDouble(4), reader.IsDBNull(5) ? null : reader.GetDouble(5));
+    }
+
+    public async Task UpsertLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = "INSERT OR REPLACE INTO loudness(asset_path,size,lufs_i,lufs_m,lufs_s,true_peak) VALUES($path,$size,$i,$m,$s,$tp)";
+        command.Parameters.AddWithValue("$path", row.AssetPath);
+        command.Parameters.AddWithValue("$size", row.Size);
+        command.Parameters.AddWithValue("$i", (object?)row.LufsI ?? DBNull.Value);
+        command.Parameters.AddWithValue("$m", (object?)row.LufsM ?? DBNull.Value);
+        command.Parameters.AddWithValue("$s", (object?)row.LufsS ?? DBNull.Value);
+        command.Parameters.AddWithValue("$tp", (object?)row.TruePeak ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task ReplaceOrganizationAsync(SqliteConnection connection, CatalogSnapshot snapshot, CancellationToken token)
+    {
+        await ExecuteAsync(connection, "DELETE FROM collection_items", token);
+        await ExecuteAsync(connection, "DELETE FROM collections", token);
+        await ExecuteAsync(connection, "DELETE FROM saved_searches", token);
+        foreach (var collection in snapshot.Collections)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO collections(id,name,kind) VALUES($id,$name,$kind)";
+            command.Parameters.AddWithValue("$id", collection.Id); command.Parameters.AddWithValue("$name", collection.Name); command.Parameters.AddWithValue("$kind", collection.Kind);
+            await command.ExecuteNonQueryAsync(token);
+        }
+        foreach (var item in snapshot.CollectionItems)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO collection_items(collection_id,path,sort_order) VALUES($id,$path,$order)";
+            command.Parameters.AddWithValue("$id", item.CollectionId); command.Parameters.AddWithValue("$path", item.Path); command.Parameters.AddWithValue("$order", item.SortOrder);
+            await command.ExecuteNonQueryAsync(token);
+        }
+        foreach (var saved in snapshot.SavedSearches)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = "INSERT INTO saved_searches(id,name,query,view,root,sort_mode,sort_desc,status_filter,collection_id,library_id) VALUES($id,$name,$query,$view,$root,$sort,$desc,$status,$collection,$library)";
+            command.Parameters.AddWithValue("$id", saved.Id); command.Parameters.AddWithValue("$name", saved.Name); command.Parameters.AddWithValue("$query", saved.Query); command.Parameters.AddWithValue("$view", saved.View); command.Parameters.AddWithValue("$root", saved.Root); command.Parameters.AddWithValue("$sort", saved.SortMode); command.Parameters.AddWithValue("$desc", saved.SortDescending); command.Parameters.AddWithValue("$status", (object?)saved.StatusFilter ?? DBNull.Value); command.Parameters.AddWithValue("$collection", (object?)saved.CollectionId ?? DBNull.Value); command.Parameters.AddWithValue("$library", (object?)saved.LibraryId ?? DBNull.Value);
+            await command.ExecuteNonQueryAsync(token);
+        }
     }
 
     public async Task SaveAssetActivityAsync(IEnumerable<AssetRecord> assets, CancellationToken cancellationToken = default)

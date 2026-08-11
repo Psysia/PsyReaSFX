@@ -7,12 +7,45 @@ namespace PsyReaSFX.Desktop.Services;
 internal static class LuaWaveCache
 {
     private static readonly Lazy<(string Directory, int MiniPoints)> Settings = new(FindSettings);
+    private static readonly object ConfigurationGate = new();
+    private static string? _configuredDirectory;
+
+    public static string DefaultCacheDirectory
+    {
+        get
+        {
+            var discovered = Settings.Value.Directory;
+            return discovered.Length > 0
+                ? discovered
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "PsyReaSFX", "Desktop", "wave_cache_v3");
+        }
+    }
+
+    public static string CacheDirectory
+    {
+        get
+        {
+            lock (ConfigurationGate)
+                return string.IsNullOrWhiteSpace(_configuredDirectory) ? DefaultCacheDirectory : _configuredDirectory;
+        }
+    }
+
+    public static void Configure(string? directory)
+    {
+        var resolved = string.IsNullOrWhiteSpace(directory) ? DefaultCacheDirectory : Path.GetFullPath(directory.Trim());
+        lock (ConfigurationGate) _configuredDirectory = resolved;
+        Directory.CreateDirectory(resolved);
+    }
+
+    public static bool ValidateFile(string path) => TryReadFile(path, out _);
 
     public static bool TryRead(string sourcePath, int requestedPoints, bool preserveChannels, out float[][] waveform)
     {
         waveform = [];
         var settings = Settings.Value;
-        if (settings.Directory.Length == 0 || !Directory.Exists(settings.Directory)) return false;
+        var directory = CacheDirectory;
+        if (directory.Length == 0 || !Directory.Exists(directory)) return false;
         long size;
         try { size = new FileInfo(sourcePath).Length; }
         catch { return false; }
@@ -26,13 +59,91 @@ internal static class LuaWaveCache
         {
             var suffix = preserveChannels ? "|channels-rwf3" : "";
             var key = Fnv1a(NormalizePath(sourcePath) + "|" + size + "|" + points + suffix);
-            var cachePath = Path.Combine(settings.Directory, key + ".rwf");
+            var cachePath = Path.Combine(directory, key + ".rwf");
             if (!File.Exists(cachePath)) continue;
             if (!TryReadFile(cachePath, out var cached)) continue;
             waveform = Resample(cached, requestedPoints);
             return waveform.Length > 0;
         }
         return false;
+    }
+
+    public static void TryWrite(string sourcePath, int points, bool preserveChannels, float[][] waveform)
+    {
+        if (waveform.Length == 0 || points <= 0 || waveform.Any(channel => channel.Length != points)) return;
+        try
+        {
+            var directory = CacheDirectory;
+            Directory.CreateDirectory(directory);
+            var size = new FileInfo(sourcePath).Length;
+            var suffix = preserveChannels ? "|channels-rwf3" : "";
+            var key = Fnv1a(NormalizePath(sourcePath) + "|" + size + "|" + points + suffix);
+            var target = Path.Combine(directory, key + ".rwf");
+            if (ValidateFile(target)) return;
+            var temporary = target + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                using (var stream = File.Open(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    var header = Encoding.ASCII.GetBytes($"RWF3 {points} {waveform.Length}\n");
+                    stream.Write(header);
+                    var bytes = new byte[checked(points * waveform.Length * 2)];
+                    for (var point = 0; point < points; point++)
+                    for (var channel = 0; channel < waveform.Length; channel++)
+                    {
+                        var value = (ushort)Math.Clamp((int)Math.Round(waveform[channel][point] * 65535), 0, 65535);
+                        var offset = (point * waveform.Length + channel) * 2;
+                        bytes[offset] = (byte)(value & 0xff);
+                        bytes[offset + 1] = (byte)(value >> 8);
+                    }
+                    stream.Write(bytes);
+                }
+                File.Move(temporary, target, true);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+        catch { }
+    }
+
+    public static async Task<(int Copied, int Failed)> MigrateAsync(string sourceDirectory, string destinationDirectory,
+        bool removeSource, CancellationToken cancellationToken = default)
+    {
+        sourceDirectory = Path.GetFullPath(sourceDirectory);
+        destinationDirectory = Path.GetFullPath(destinationDirectory);
+        if (sourceDirectory.Equals(destinationDirectory, StringComparison.OrdinalIgnoreCase)) return (0, 0);
+        if (IsSameOrNested(destinationDirectory, sourceDirectory) || IsSameOrNested(sourceDirectory, destinationDirectory))
+            throw new InvalidOperationException("The old and new waveform cache directories cannot contain one another.");
+        Directory.CreateDirectory(destinationDirectory);
+        if (!Directory.Exists(sourceDirectory)) return (0, 0);
+        var copied = 0;
+        var failed = 0;
+        foreach (var source in Directory.EnumerateFiles(sourceDirectory, "*.rwf", SearchOption.TopDirectoryOnly))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var destination = Path.Combine(destinationDirectory, Path.GetFileName(source));
+                await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024,
+                                 FileOptions.Asynchronous | FileOptions.SequentialScan))
+                await using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024,
+                                 FileOptions.Asynchronous | FileOptions.SequentialScan))
+                    await input.CopyToAsync(output, cancellationToken);
+                if (!ValidateFile(destination))
+                    throw new InvalidDataException($"The copied waveform cache is invalid: {Path.GetFileName(destination)}");
+                if (removeSource) File.Delete(source);
+                copied++;
+            }
+            catch { failed++; }
+        }
+        return (copied, failed);
+    }
+
+    private static bool IsSameOrNested(string candidate, string root)
+    {
+        var normalizedCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        if (normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)) return true;
+        return normalizedCandidate.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryReadFile(string path, out float[][] waveform)

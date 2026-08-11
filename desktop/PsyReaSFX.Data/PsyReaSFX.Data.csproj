@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>PsyReaSFX.Data</AssemblyName>
     <RootNamespace>PsyReaSFX.Data</RootNamespace>
-    <Version>0.7.23-desktop-alpha.4-light-rc.1</Version>
+    <Version>0.7.23-desktop-alpha.7-light-hotfix.2</Version>
     <Authors>Psysia</Authors>
     <Description>Persistent catalog and Lua compatibility layer for PsyReaSFX.</Description>
   </PropertyGroup>

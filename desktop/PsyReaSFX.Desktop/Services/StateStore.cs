@@ -6,6 +6,7 @@ public sealed class StateStore
 {
     private readonly PsyReaSFXDatabase _database = new();
     public string DataDirectory => _database.DataDirectory;
+    public string DatabasePath => _database.DatabasePath;
     public MigrationSummary? LastMigration { get; private set; }
     public Exception? LastError { get; private set; }
 
@@ -42,8 +43,29 @@ public sealed class StateStore
     public void SaveActivities(IEnumerable<AudioAsset> assets) =>
         _database.SaveAssetActivityAsync(assets.Select(ToAsset)).GetAwaiter().GetResult();
 
+    public Task SaveActivitiesAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default) =>
+        _database.SaveAssetActivityAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+
     public Task SaveAssetDetailsAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default) =>
         _database.SaveAssetDetailsAsync(assets.Select(ToAsset), cancellationToken);
+
+    public void SaveSessionPlayed(IEnumerable<string> paths) =>
+        _database.ReplaceSessionPlayedAsync(paths).GetAwaiter().GetResult();
+
+    public Task<IReadOnlyList<RegionRecord>> LoadRegionsAsync(string assetPath, CancellationToken cancellationToken = default) =>
+        _database.LoadRegionsAsync(assetPath, cancellationToken);
+
+    public Task SaveRegionAsync(RegionRecord region, CancellationToken cancellationToken = default) =>
+        _database.UpsertRegionAsync(region, cancellationToken);
+
+    public Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default) =>
+        _database.DeleteRegionAsync(region, cancellationToken);
+
+    public Task<LoudnessRecord?> LoadLoudnessAsync(string assetPath, CancellationToken cancellationToken = default) =>
+        _database.LoadLoudnessAsync(assetPath, cancellationToken);
+
+    public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default) =>
+        _database.UpsertLoudnessAsync(row, cancellationToken);
 
     private static PersistedState FromSnapshot(CatalogSnapshot snapshot)
     {
@@ -61,6 +83,17 @@ public sealed class StateStore
                 ArtworkChecked = row.ArtworkChecked, ArtworkScanVersion = row.ArtworkScanVersion
             });
         state.Index = snapshot.Assets.Select(FromAsset).ToList();
+        foreach (var asset in state.Index)
+            asset.IsSessionPlayed = snapshot.SessionPlayed.Contains(asset.FilePath);
+        var collections = snapshot.Collections.ToDictionary(row => row.Id, row => new AssetCollection { Id = row.Id, Name = row.Name, Kind = row.Kind }, StringComparer.OrdinalIgnoreCase);
+        foreach (var collection in collections.Values) state.Collections.Add(collection);
+        foreach (var item in snapshot.CollectionItems.OrderBy(item => item.SortOrder))
+            if (collections.TryGetValue(item.CollectionId, out var collection)) collection.Items.Add(item.Path);
+        foreach (var row in snapshot.SavedSearches) state.SavedSearches.Add(new SavedSearchDefinition
+        {
+            Id = row.Id, Name = row.Name, Query = row.Query, View = row.View, Root = row.Root, SortMode = row.SortMode,
+            SortDescending = row.SortDescending, StatusFilter = row.StatusFilter ?? "", CollectionId = row.CollectionId ?? "", LibraryId = row.LibraryId ?? ""
+        });
         return state;
     }
 
@@ -75,6 +108,16 @@ public sealed class StateStore
         }
         snapshot.Assets.AddRange(state.Index.Select(ToAsset));
         snapshot.Favorites.UnionWith(state.Favorites);
+        snapshot.SessionPlayed.UnionWith(state.Index.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath));
+        foreach (var collection in state.Collections)
+        {
+            snapshot.Collections.Add(new CollectionRecord(collection.Id, collection.Name, collection.Kind));
+            for (var i = 0; i < collection.Items.Count; i++) snapshot.CollectionItems.Add(new CollectionItemRecord(collection.Id, collection.Items[i], i));
+        }
+        foreach (var saved in state.SavedSearches)
+            snapshot.SavedSearches.Add(new SavedSearchRecord(saved.Id, saved.Name, saved.Query, saved.View, saved.Root, saved.SortMode, saved.SortDescending,
+                string.IsNullOrWhiteSpace(saved.StatusFilter) ? null : saved.StatusFilter, string.IsNullOrWhiteSpace(saved.CollectionId) ? null : saved.CollectionId,
+                string.IsNullOrWhiteSpace(saved.LibraryId) ? null : saved.LibraryId));
         return snapshot;
     }
 

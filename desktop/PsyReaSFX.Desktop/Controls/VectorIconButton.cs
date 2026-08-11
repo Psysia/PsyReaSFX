@@ -106,10 +106,12 @@ public sealed class VectorIconButton : FrameworkElement
     private static void DrawGlyph(DrawingContext dc, string icon, Rect bounds, Brush brush)
     {
         var x = bounds.X; var y = bounds.Y; var s = bounds.Width;
-        var left = x + s * .29; var right = x + s * .71;
-        var top = y + s * .29; var bottom = y + s * .71;
+        // One optical box for every toolbar glyph. Individual icons used to
+        // mix 14 px and 19 px silhouettes inside the same 34 px button.
+        var left = x + s * .24; var right = x + s * .76;
+        var top = y + s * .24; var bottom = y + s * .76;
         var cx = x + s * .5; var cy = y + s * .5;
-        var thickness = Math.Max(1.25, s * .048);
+        var thickness = Math.Max(1.35, s * .052);
         var pen = new Pen(brush, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
         if (pen.CanFreeze) pen.Freeze();
 
@@ -140,16 +142,30 @@ public sealed class VectorIconButton : FrameworkElement
                 Line(left, top, right, bottom); Line(right, top, left, bottom);
                 break;
             case "refresh":
-                DrawArc(dc, pen, cx, cy, s * .19, -45, 285);
-                Triangle(new Point(right + s * .015, top + s * .09), new Point(right - s * .13, top + s * .07), new Point(right - s * .04, top + s * .20));
+                DrawArc(dc, pen, cx, cy, s * .21, -45, 285);
+                Triangle(new Point(cx + s * .235, cy - s * .13), new Point(cx + s * .08, cy - s * .145), new Point(cx + s * .17, cy - s * .015));
+                break;
+            case "history_reset":
+                DrawArc(dc, pen, cx, cy, s * .21, -62, 292);
+                Triangle(new Point(cx - s * .24, cy - s * .12), new Point(cx - s * .08, cy - s * .14), new Point(cx - s * .17, cy - s * .005));
+                Line(cx, cy - s * .13, cx, cy + s * .015);
+                Line(cx, cy + s * .015, cx + s * .105, cy + s * .07);
+                break;
+            case "transfer":
+                Line(cx, top, cx, cy + s * .03);
+                Triangle(new Point(cx, cy + s * .15), new Point(cx - s * .12, cy + s * .02), new Point(cx + s * .12, cy + s * .02));
+                Line(left, bottom - s * .08, left, bottom);
+                Line(left, bottom, right, bottom);
+                Line(right, bottom, right, bottom - s * .08);
                 break;
             case "speaker":
                 dc.DrawRectangle(brush, null, new Rect(left, cy - s * .055, s * .08, s * .11));
                 Triangle(new Point(left + s * .06, cy - s * .07), new Point(cx, top + s * .02), new Point(cx, bottom - s * .02));
-                DrawArc(dc, pen, cx - s * .02, cy, s * .16, -52, 104);
+                DrawArc(dc, pen, cx - s * .025, cy, s * .16, -52, 104);
+                DrawArc(dc, pen, cx - s * .025, cy, s * .235, -45, 90);
                 break;
             case "help":
-                dc.DrawEllipse(null, pen, new Point(cx, cy), s * .205, s * .205);
+                dc.DrawEllipse(null, pen, new Point(cx, cy), s * .235, s * .235);
                 var q = new StreamGeometry();
                 using (var c = q.Open())
                 {
@@ -196,8 +212,27 @@ public sealed class VectorIconButton : FrameworkElement
                 Line(right - s * .04, bottom - s * .08, left + s * .07, bottom - s * .08);
                 Triangle(new Point(left, bottom - s * .08), new Point(left + s * .12, bottom - s * .175), new Point(left + s * .12, bottom + s * .015));
                 break;
+            case "reverse":
+                Line(left + s * .03, top + s * .08, right - s * .04, top + s * .08);
+                Triangle(new Point(left, top + s * .08), new Point(left + s * .12, top - s * .015), new Point(left + s * .12, top + s * .175));
+                Line(right - s * .03, bottom - s * .08, left + s * .04, bottom - s * .08);
+                Triangle(new Point(right, bottom - s * .08), new Point(right - s * .12, bottom - s * .175), new Point(right - s * .12, bottom + s * .015));
+                break;
+            case "pitch_lock":
+                Line(left, cy + s * .12, left, cy - s * .02);
+                Line(left + s * .09, cy + s * .12, left + s * .09, cy - s * .11);
+                Line(left + s * .18, cy + s * .12, left + s * .18, cy - s * .18);
+                dc.DrawRoundedRectangle(null, pen, new Rect(cx + s * .025, cy - s * .005, s * .18, s * .16), 2, 2);
+                DrawArc(dc, pen, cx + s * .115, cy - s * .005, s * .07, 180, 180);
+                break;
             case "channel_stereo":
                 Line(left, top, left, bottom); Line(right, top, right, bottom);
+                break;
+            case "loudness_match":
+                Line(cx - s * .16, bottom, cx - s * .16, cy + s * .02);
+                Line(cx - s * .055, bottom, cx - s * .055, cy - s * .12);
+                Line(cx + s * .055, bottom, cx + s * .055, top);
+                Line(cx + s * .16, bottom, cx + s * .16, cy - s * .04);
                 break;
             case "channel_left":
                 Line(left, top, left, bottom); Line(right, top + s * .07, right, bottom - s * .07);

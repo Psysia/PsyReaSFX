@@ -9,6 +9,13 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
         AppDiagnostics.Write("Desktop startup entered.");
+        try
+        {
+            var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PsyReaSFX");
+            CatalogReliabilityService.ApplyPendingRestore(dataDirectory);
+        }
+        catch (Exception exception) { AppDiagnostics.Write("Pending catalog restore could not be applied.", exception); }
+        ThemeManager.Apply(new DesktopPreferencesStore().Load());
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             AppDiagnostics.Write("Unhandled AppDomain exception.", args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) =>

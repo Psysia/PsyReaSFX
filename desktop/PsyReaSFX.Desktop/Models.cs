@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using PsyReaSFX.Desktop.Services;
 
 namespace PsyReaSFX.Desktop;
 
@@ -43,6 +44,8 @@ public sealed class AudioAsset : INotifyPropertyChanged
     private string _subcategory = "";
     private string _workflowStatus = "none";
     private bool _marked;
+    private bool _isSessionPlayed;
+    private string _uiLanguage = "zh-CN";
     public string FilePath { get; set; } = "";
     public string FileName { get; set; } = "";
     public string LibraryName { get; set; } = "";
@@ -98,12 +101,14 @@ public sealed class AudioAsset : INotifyPropertyChanged
     public bool IsFavorite { get => _isFavorite; set { _isFavorite = value; OnPropertyChanged(); OnPropertyChanged(nameof(FavoriteGlyph)); } }
     public string FavoriteGlyph => IsFavorite ? "★" : "☆";
     public bool HasBeenPreviewed => PreviewCount > 0;
+    public bool IsSessionPlayed { get => _isSessionPlayed; set { if (_isSessionPlayed == value) return; _isSessionPlayed = value; OnPropertyChanged(); } }
+    public string UiLanguage { get => _uiLanguage; set { if (_uiLanguage == value) return; _uiLanguage = value; OnPropertyChanged(); OnPropertyChanged(nameof(WorkflowStatusText)); } }
     public string WorkflowStatusText => WorkflowStatus switch
     {
-        "candidate" => "候选",
-        "approved" => "已采用",
-        "rejected" => "已排除",
-        _ => "未标记"
+        "candidate" => UiLocalization.IsEnglish(UiLanguage) ? "Candidate" : "候选",
+        "approved" => UiLocalization.IsEnglish(UiLanguage) ? "Approved" : "已采用",
+        "rejected" => UiLocalization.IsEnglish(UiLanguage) ? "Rejected" : "已排除",
+        _ => UiLocalization.IsEnglish(UiLanguage) ? "Unmarked" : "未标记"
     };
     public string MarkedText => Marked ? "●" : "";
     public string SearchDescription => !string.IsNullOrWhiteSpace(Description)
@@ -127,5 +132,70 @@ public sealed class PersistedState
     public ObservableCollection<LibraryDefinition> Libraries { get; set; } = [];
     public List<AudioAsset> Index { get; set; } = [];
     public HashSet<string> Favorites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public ObservableCollection<AssetCollection> Collections { get; set; } = [];
+    public ObservableCollection<SavedSearchDefinition> SavedSearches { get; set; } = [];
     public string Language { get; set; } = "zh-CN";
 }
+
+public sealed class AssetCollection : INotifyPropertyChanged
+{
+    private string _name = "Collection";
+    private ObservableCollection<string> _items = [];
+
+    public AssetCollection() => AttachItems(_items);
+
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (_name == value) return;
+            _name = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayText));
+        }
+    }
+    public string Kind { get; set; } = "playlist";
+    public ObservableCollection<string> Items
+    {
+        get => _items;
+        set
+        {
+            if (ReferenceEquals(_items, value)) return;
+            DetachItems(_items);
+            _items = value ?? [];
+            AttachItems(_items);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayText));
+        }
+    }
+    public string DisplayText => $"{Name}  {Items.Count:N0}";
+    public override string ToString() => DisplayText;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void AttachItems(ObservableCollection<string> items) => items.CollectionChanged += Items_CollectionChanged;
+    private void DetachItems(ObservableCollection<string> items) => items.CollectionChanged -= Items_CollectionChanged;
+    private void Items_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>
+        OnPropertyChanged(nameof(DisplayText));
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+public sealed class SavedSearchDefinition
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = "Search";
+    public string Query { get; set; } = "";
+    public string View { get; set; } = "all";
+    public string Root { get; set; } = "";
+    public string SortMode { get; set; } = "name";
+    public bool SortDescending { get; set; }
+    public string StatusFilter { get; set; } = "";
+    public string CollectionId { get; set; } = "";
+    public string LibraryId { get; set; } = "";
+    public override string ToString() => Name;
+}
+
+public sealed record MetadataSnapshot(string Path, string Description, string Keywords, string Category, string Subcategory, string CatId, string WorkflowStatus, bool Marked);

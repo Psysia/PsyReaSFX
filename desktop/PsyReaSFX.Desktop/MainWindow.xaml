@@ -3,14 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:PsyReaSFX.Desktop"
         xmlns:controls="clr-namespace:PsyReaSFX.Desktop.Controls"
-        Title="PsyReaSFX Desktop 0.7.23 Alpha 4 Light RC1" Width="1540" Height="940"
+        Title="PsyReaSFX Desktop 0.7.23 Alpha 7 Light Hotfix 2" Width="1540" Height="940"
         MinWidth="1050" MinHeight="680" WindowStartupLocation="CenterScreen"
         Icon="Assets/psyreasfx-icon.png" PreviewKeyDown="Window_KeyDown" Closing="Window_Closing"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
   <Window.Resources>
     <local:ArtworkConverter x:Key="ArtworkConverter" />
   </Window.Resources>
-  <Grid Background="{StaticResource BgBrush}">
+  <Grid Background="{DynamicResource BgBrush}">
     <Grid.RowDefinitions>
       <RowDefinition Height="58" />
       <RowDefinition Height="32" />
@@ -18,7 +18,7 @@
     </Grid.RowDefinitions>
 
     <!-- Brand/search command bar -->
-    <Border Grid.Row="0" Background="#0C0F14" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+    <Border Grid.Row="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
         <Grid Margin="10,6">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="202" />
@@ -31,7 +31,7 @@
         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
           <Image Source="Assets/psyreasfx-icon.png" Width="34" Height="34" Stretch="Uniform" />
           <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" FontFamily="./Assets/Fonts/#Orbitron" FontSize="18" FontWeight="SemiBold">
-            <Run Text="PsyRea" Foreground="#E8EDF2"/><Run Text="SFX" Foreground="{StaticResource AccentBrightBrush}" />
+            <Run Text="PsyRea" Foreground="#E8EDF2"/><Run Text="SFX" Foreground="{DynamicResource AccentBrightBrush}" />
           </TextBlock>
         </StackPanel>
         <controls:VectorIconButton x:Name="NavigationToggle" Grid.Column="1" Icon="panel_left" ToolTip="显示或隐藏导航 · F9" Click="NavigationToggle_Click" />
@@ -48,6 +48,8 @@
           <controls:VectorIconButton Icon="close" ToolTip="清空搜索" Click="ClearSearch_Click" />
           <controls:VectorIconButton x:Name="AutoPreviewButton" Icon="speaker" ToolTip="自动试听" Click="AutoPreview_Click" />
           <controls:VectorIconButton x:Name="RescanButton" Icon="refresh" ToolTip="增量扫描 · Ctrl+R" Click="Rescan_Click" />
+          <controls:VectorIconButton Icon="transfer" ToolTip="Transfer 导出 · Ctrl+T" Click="Transfer_Click" />
+          <controls:VectorIconButton Icon="history_reset" ToolTip="清除本次试听高亮" Click="ClearSessionPlayed_Click" />
           <controls:VectorIconButton Icon="help" ToolTip="使用说明" Click="Help_Click" />
           <controls:VectorIconButton Icon="settings" ToolTip="设置" Click="Settings_Click" />
         </StackPanel>
@@ -55,15 +57,15 @@
     </Border>
 
     <!-- Breadcrumb/sort strip -->
-    <Border Grid.Row="1" Background="#0A0D12" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+    <Border Grid.Row="1" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1">
       <Grid Margin="10,0">
         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <TextBlock x:Name="BreadcrumbText" Foreground="{StaticResource MutedBrush}" Text="Home  /  All sounds" />
-          <TextBlock x:Name="CountText" Margin="12,0,0,0" Foreground="{StaticResource MutedBrush}" />
+          <TextBlock x:Name="BreadcrumbText" Foreground="{DynamicResource MutedBrush}" Text="Home  /  All sounds" />
+          <TextBlock x:Name="CountText" Margin="12,0,0,0" Foreground="{DynamicResource MutedBrush}" />
         </StackPanel>
         <Button Grid.Column="1" x:Name="SortButton" Content="排序：名称" Margin="18,2,6,2" Padding="18,3" Click="Sort_Click" />
-        <TextBlock Grid.Column="2" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+        <TextBlock Grid.Column="2" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"
                    Text="右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看" />
       </Grid>
     </Border>
@@ -78,25 +80,34 @@
         <ColumnDefinition x:Name="InspectorColumn" Width="292" />
       </Grid.ColumnDefinitions>
 
-      <Border x:Name="NavigationPanel" Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+      <Border x:Name="NavigationPanel" Grid.Column="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
           <StackPanel Margin="9,7,8,12">
             <Button Content="隐藏导航  ‹" Style="{StaticResource NavButton}" HorizontalContentAlignment="Center" Click="NavigationToggle_Click" />
-            <Expander Header="SOUNDS" IsExpanded="True">
+            <Expander x:Name="SoundsSection" Header="SOUNDS" IsExpanded="True">
               <StackPanel>
-                <Button x:Name="AllSoundsButton" Style="{StaticResource ActiveNavButton}" Click="AllSounds_Click">
+                <Button x:Name="AllSoundsButton" Style="{StaticResource NavButton}" Click="AllSounds_Click">
                   <TextBlock><Run Text="全部素材  "/><Run x:Name="AllSoundsCount" Text="0" /></TextBlock>
                 </Button>
                 <Button x:Name="FavoritesButton" Style="{StaticResource NavButton}" Click="Favorites_Click">
                   <TextBlock><Run Text="收藏  "/><Run x:Name="FavoritesCount" Text="0" /></TextBlock>
                 </Button>
-                <Button Style="{StaticResource NavButton}" Content="最近插入" Click="RecentUsed_Click" />
-                <Button Style="{StaticResource NavButton}" Content="试听历史" Click="PreviewHistory_Click" />
+                <Button x:Name="RecentUsedButton" Style="{StaticResource NavButton}" Content="最近插入" Click="RecentUsed_Click" />
+                <Button x:Name="PreviewHistoryButton" Style="{StaticResource NavButton}" Click="PreviewHistory_Click">
+                  <TextBlock><Run Text="试听历史  "/><Run x:Name="PreviewHistoryCount" Text="0" /></TextBlock>
+                  <Button.ContextMenu>
+                    <ContextMenu>
+                      <MenuItem Header="恢复上次试听高亮" Click="RestoreSessionPlayed_Click" />
+                      <MenuItem Header="清除本次已试听高亮" Click="ClearSessionPlayed_Click" />
+                      <MenuItem Header="清除已保存试听高亮" Click="ClearSavedSessionPlayed_Click" />
+                    </ContextMenu>
+                  </Button.ContextMenu>
+                </Button>
               </StackPanel>
             </Expander>
 
-            <Border Height="1" Background="{StaticResource LineBrush}" Margin="4,7" />
-            <Expander Header="LIBRARIES" IsExpanded="True">
+            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,7" />
+            <Expander x:Name="LibrariesSection" Header="LIBRARIES" IsExpanded="True">
               <StackPanel>
                 <Button x:Name="AllLibrariesButton" Style="{StaticResource NavButton}" Content="全部音效库" Click="AllSounds_Click" />
                 <TreeView x:Name="LibraryTree" Margin="0,2,0,3" SelectedItemChanged="LibraryTree_SelectedItemChanged" />
@@ -105,8 +116,46 @@
               </StackPanel>
             </Expander>
 
-            <Border Height="1" Background="{StaticResource LineBrush}" Margin="4,7" />
-            <Expander Header="WORKFLOW" IsExpanded="False">
+            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,7" />
+            <Expander x:Name="CollectionsSection" Header="COLLECTIONS" IsExpanded="True">
+              <StackPanel>
+                <ListBox x:Name="CollectionList" MinHeight="28" MaxHeight="150" SelectionChanged="CollectionList_SelectionChanged"
+                         PreviewMouseRightButtonUp="CollectionList_RightClick" />
+                <UniformGrid Columns="2" Margin="0,3,0,0">
+                  <Button Content="＋ 播放列表" Click="NewPlaylist_Click" />
+                  <Button Content="＋ 项目素材箱" Click="NewProjectBin_Click" />
+                  <Button Content="加入已选" Click="AddToCollection_Click" />
+                  <Button Content="移出已选" Click="RemoveFromCollection_Click" />
+                </UniformGrid>
+              </StackPanel>
+            </Expander>
+
+            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,7" />
+            <Expander x:Name="SavedSearchesSection" Header="SAVED SEARCHES" IsExpanded="False">
+              <StackPanel>
+                <ListBox x:Name="SavedSearchList" MinHeight="28" MaxHeight="130" SelectionChanged="SavedSearchList_SelectionChanged" />
+                <UniformGrid Columns="2" Margin="0,3,0,0">
+                  <Button Content="＋ 保存当前" Click="SaveSearch_Click" />
+                  <Button Content="删除" Click="DeleteSavedSearch_Click" />
+                </UniformGrid>
+              </StackPanel>
+            </Expander>
+
+            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,7" />
+            <Expander x:Name="FacetsSection" Header="FACETS" IsExpanded="False">
+              <StackPanel>
+                <TextBlock Text="分类" Style="{StaticResource MetaLabel}" />
+                <ComboBox x:Name="CategoryFacet" SelectionChanged="Facet_SelectionChanged" />
+                <TextBlock Text="格式" Style="{StaticResource MetaLabel}" />
+                <ComboBox x:Name="FormatFacet" SelectionChanged="Facet_SelectionChanged" />
+                <TextBlock Text="声道" Style="{StaticResource MetaLabel}" />
+                <ComboBox x:Name="ChannelFacet" SelectionChanged="Facet_SelectionChanged" />
+                <Button Content="清除 Facet" Click="ClearFacets_Click" />
+              </StackPanel>
+            </Expander>
+
+            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,7" />
+            <Expander x:Name="WorkflowSection" Header="WORKFLOW" IsExpanded="False">
               <StackPanel>
                 <Button Style="{StaticResource NavButton}" Content="全部状态" Click="AllStatus_Click" />
                 <Button Style="{StaticResource NavButton}" Content="候选" Tag="candidate" Click="StatusFilter_Click" />
@@ -115,14 +164,17 @@
               </StackPanel>
             </Expander>
 
-            <Border Height="1" Background="{StaticResource LineBrush}" Margin="4,7" />
-            <Expander Header="ACTIVITY" IsExpanded="False">
-              <TextBlock x:Name="ActivityText" Margin="7,4" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+            <Border Height="1" Background="{DynamicResource LineBrush}" Margin="4,7" />
+            <Expander x:Name="ActivitySection" Header="ACTIVITY" IsExpanded="False">
+              <StackPanel>
+                <TextBlock x:Name="ActivityText" Margin="7,4" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
+                <Button Content="清除本次试听高亮" Click="ClearSessionPlayed_Click" />
+              </StackPanel>
             </Expander>
           </StackPanel>
         </ScrollViewer>
       </Border>
-      <GridSplitter x:Name="NavigationSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#151B22" />
+      <GridSplitter x:Name="NavigationSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource PanelRaisedBrush}" />
 
       <!-- The Lua workspace keeps both sidebars full-height. Only the center column is
            divided into results and preview. This also avoids relaying out the entire window
@@ -137,11 +189,12 @@
       <DataGrid x:Name="AssetGrid" Grid.Row="0" AutoGenerateColumns="False" IsReadOnly="True"
                 SelectionMode="Extended" SelectionUnit="FullRow" AlternationCount="2" RowHeight="36"
                 CanUserResizeColumns="True" CanUserReorderColumns="True" CanUserSortColumns="False"
-                ScrollViewer.IsDeferredScrollingEnabled="True"
+                ScrollViewer.IsDeferredScrollingEnabled="False"
                 EnableRowVirtualization="True" EnableColumnVirtualization="True"
                 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
                 VirtualizingPanel.CacheLength="0,0" VirtualizingPanel.CacheLengthUnit="Page"
                 SelectionChanged="AssetGrid_SelectionChanged" PreviewMouseMove="AssetGrid_PreviewMouseMove"
+                PreviewMouseWheel="AssetGrid_PreviewMouseWheel"
                 PreviewMouseRightButtonUp="AssetGrid_PreviewMouseRightButtonUp"
                 MouseDoubleClick="AssetGrid_MouseDoubleClick">
         <DataGrid.Columns>
@@ -151,6 +204,15 @@
                 <controls:WaveformControl FilePath="{Binding FilePath}"
                                           Resolution="{Binding InlineWaveformResolution, RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}"
                                           Playhead="{Binding PreviewPlayhead}"
+                                          WaveBrush="{DynamicResource WaveformBrush}"
+                                          SelectedWaveBrush="{DynamicResource SelectedWaveformBrush}"
+                                          PlayedWaveBrush="{DynamicResource PlayedWaveformBrush}"
+                                          MarkedWaveBrush="{DynamicResource MarkedWaveformBrush}"
+                                          BackgroundFill="{DynamicResource WaveformBackgroundBrush}"
+                                          PlayheadBrush="{DynamicResource WaveformPlayheadBrush}"
+                                          IsRowSelected="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGridRow}}}"
+                                          IsPlayed="{Binding IsSessionPlayed}"
+                                          IsMarked="{Binding Marked}"
                                           Height="30"
                                           SeekRequested="InlineWaveform_SeekRequested" />
               </DataTemplate>
@@ -173,79 +235,127 @@
         </DataGrid.Columns>
       </DataGrid>
 
-        <GridSplitter Grid.Row="1" Height="5" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Background="#151B22" />
-        <Border Grid.Row="2" Background="#090B0F" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
+        <GridSplitter Grid.Row="1" Height="5" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Background="{DynamicResource PanelRaisedBrush}" />
+        <Border Grid.Row="2" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
           <Grid Margin="0,6,0,4">
             <Grid.RowDefinitions><RowDefinition Height="34" /><RowDefinition Height="*" /><RowDefinition Height="28" /><RowDefinition Height="40" /></Grid.RowDefinitions>
-            <Border Grid.Row="0" Background="{StaticResource PanelRaisedBrush}" CornerRadius="4" Padding="9,0">
+            <Border Grid.Row="0" Background="{DynamicResource PanelRaisedBrush}" CornerRadius="4" Padding="9,0">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock x:Name="PreviewTitle" Text="选择一个素材查看波形并试听" VerticalAlignment="Center" />
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                  <TextBlock x:Name="PreviewTechnical" Foreground="{StaticResource MutedBrush}" Margin="0,0,16,0" />
-                  <TextBlock x:Name="PreviewLoudness" Foreground="{StaticResource AccentBrightBrush}" />
+                  <TextBlock x:Name="PreviewTechnical" Foreground="{DynamicResource MutedBrush}" Margin="0,0,16,0" />
+                  <TextBlock x:Name="PreviewLoudness" Foreground="{DynamicResource AccentBrightBrush}" />
                 </StackPanel>
               </Grid>
             </Border>
-            <Grid x:Name="DetailWaveformHost" Grid.Row="1" ClipToBounds="True">
+            <Grid x:Name="DetailWaveformHost" Grid.Row="1" ClipToBounds="True"
+                  SizeChanged="DetailWaveformHost_SizeChanged">
               <controls:WaveformControl x:Name="DetailWaveform" Resolution="2048"
                                         AllowSelection="True" AllowZoom="True" ShowChannelLabels="True"
+                                        WaveBrush="{DynamicResource WaveformBrush}"
+                                        SelectedWaveBrush="{DynamicResource SelectedWaveformBrush}"
+                                        PlayedWaveBrush="{DynamicResource PlayedWaveformBrush}"
+                                        MarkedWaveBrush="{DynamicResource MarkedWaveformBrush}"
+                                        BackgroundFill="{DynamicResource WaveformBackgroundBrush}"
+                                        SelectionFill="{DynamicResource WaveformSelectionBrush}"
+                                        PlayheadBrush="{DynamicResource WaveformPlayheadBrush}"
+                                        RegionBrush="{DynamicResource WaveformRegionBrush}"
                                         SeekRequested="DetailWaveform_SeekRequested"
+                                        ScrubRequested="DetailWaveform_ScrubRequested"
                                         SelectionChanged="DetailWaveform_SelectionChanged"
                                         ZoomChanged="DetailWaveform_ZoomChanged" />
+              <Canvas x:Name="SelectionDragOverlay" Panel.ZIndex="4">
+                <Border x:Name="SelectionDragCapsule" Visibility="Collapsed" Canvas.Top="8"
+                        Padding="13,5" CornerRadius="13" Background="{DynamicResource PanelRaisedBrush}"
+                        BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" Cursor="Hand"
+                        PreviewMouseLeftButtonDown="SelectionDragCapsule_MouseLeftButtonDown"
+                        PreviewMouseMove="SelectionDragCapsule_PreviewMouseMove"
+                        PreviewMouseLeftButtonUp="SelectionDragCapsule_MouseLeftButtonUp">
+                  <TextBlock x:Name="SelectionDragCapsuleText" Text="拖出选区" Foreground="{DynamicResource AccentBrightBrush}" />
+                </Border>
+              </Canvas>
             </Grid>
             <Grid Grid.Row="2">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <TextBlock VerticalAlignment="Center"><Run Text="Current  "/><Run x:Name="CurrentTimeText" Text="0.000" Foreground="{StaticResource SuccessBrush}" /></TextBlock>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <TextBlock VerticalAlignment="Center"><Run Text="Current  "/><Run x:Name="CurrentTimeText" Text="0.000" Foreground="{DynamicResource SuccessBrush}" /></TextBlock>
               <TextBlock Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"><Run Text="In  "/><Run x:Name="InTimeText" Text="0.000" /></TextBlock>
               <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"><Run Text="Out  "/><Run x:Name="OutTimeText" Text="0.000" /></TextBlock>
               <TextBlock Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Center"><Run Text="Duration  "/><Run x:Name="DurationTimeText" Text="0.000" /></TextBlock>
               <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center"><Run Text="Zoom  "/><Run x:Name="ZoomText" Text="×1.0" /></TextBlock>
-              <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <TextBlock x:Name="StatusText" Foreground="{StaticResource SuccessBrush}" Margin="0,0,12,0" TextTrimming="CharacterEllipsis" />
-                <TextBlock x:Name="PreviewTime" Foreground="{StaticResource MutedBrush}" />
+              <ComboBox x:Name="RegionSelector" Grid.Column="5" Width="178" Height="24" Margin="12,0,0,0"
+                        Visibility="Collapsed" DisplayMemberPath="Name" SelectionChanged="RegionSelector_SelectionChanged"
+                        ToolTip="已保存 Region" />
+              <StackPanel Grid.Column="6" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <TextBlock x:Name="StatusText" Foreground="{DynamicResource SuccessBrush}" Margin="0,0,12,0" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="PreviewTime" Foreground="{DynamicResource MutedBrush}" />
               </StackPanel>
             </Grid>
             <Grid Grid.Row="3">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="12" /><ColumnDefinition Width="148" /><ColumnDefinition Width="148" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="12" /><ColumnDefinition Width="132" /><ColumnDefinition Width="132" /><ColumnDefinition Width="132" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
               <controls:VectorIconButton x:Name="PlayButton" Grid.Column="0" Icon="play" Click="Play_Click" ToolTip="播放 / 暂停 · Space" />
               <controls:VectorIconButton Grid.Column="1" Icon="stop" Click="Stop_Click" ToolTip="停止" />
               <controls:VectorIconButton Grid.Column="2" Icon="star" Click="Favorite_Click" ToolTip="收藏 · F" />
               <controls:VectorIconButton Grid.Column="3" Icon="more" ToolTip="更多操作" Click="MoreActions_Click" />
-              <Grid Grid.Column="5" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                <TextBlock Text="Rate" Foreground="{StaticResource MutedBrush}"/><TextBlock x:Name="RateValue" HorizontalAlignment="Right" Text="1.00x"/>
-                <Slider x:Name="RateSlider" Grid.Row="1" Minimum="0.5" Maximum="2" Value="1" TickFrequency="0.01" ValueChanged="RateSlider_ValueChanged" />
+              <Grid Grid.Column="5" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Pitch" Tag="pitch" Foreground="{DynamicResource MutedBrush}" PreviewMouseLeftButtonDown="ParameterReset_DoubleClick" ToolTip="双击恢复默认"/>
+                <Grid Grid.Column="1" HorizontalAlignment="Right">
+                  <TextBlock x:Name="PitchValue" Tag="pitch" Text="+0.0 st" PreviewMouseLeftButtonDown="ParameterValue_DoubleClick" ToolTip="双击输入精确数值"/>
+                  <TextBox x:Name="PitchValueEditor" Tag="pitch" Visibility="Collapsed" Width="72" Padding="3,0" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"
+                           PreviewKeyDown="ParameterEditor_PreviewKeyDown" LostKeyboardFocus="ParameterEditor_LostKeyboardFocus" />
+                </Grid>
+                <Slider x:Name="PitchSlider" Tag="pitch" Grid.Row="1" Grid.ColumnSpan="2" Minimum="-24" Maximum="24" Value="0" TickFrequency="0.1"
+                        ValueChanged="PitchSlider_ValueChanged" PreviewMouseDoubleClick="ParameterReset_DoubleClick" PreviewMouseWheel="ParameterSlider_PreviewMouseWheel" />
               </Grid>
-              <Grid Grid.Column="6" Margin="8,2,4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                <TextBlock Text="Gain" Foreground="{StaticResource MutedBrush}"/><TextBlock x:Name="GainValue" HorizontalAlignment="Right" Text="+0.0 dB"/>
-                <Slider x:Name="GainSlider" Grid.Row="1" Minimum="-24" Maximum="12" Value="0" TickFrequency="0.1" ValueChanged="GainSlider_ValueChanged" />
+              <Grid Grid.Column="6" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Rate" Tag="rate" Foreground="{DynamicResource MutedBrush}" PreviewMouseLeftButtonDown="ParameterReset_DoubleClick" ToolTip="双击恢复默认"/>
+                <Grid Grid.Column="1" HorizontalAlignment="Right">
+                  <TextBlock x:Name="RateValue" Tag="rate" Text="1.00x" PreviewMouseLeftButtonDown="ParameterValue_DoubleClick" ToolTip="双击输入精确数值"/>
+                  <TextBox x:Name="RateValueEditor" Tag="rate" Visibility="Collapsed" Width="72" Padding="3,0" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"
+                           PreviewKeyDown="ParameterEditor_PreviewKeyDown" LostKeyboardFocus="ParameterEditor_LostKeyboardFocus" />
+                </Grid>
+                <Slider x:Name="RateSlider" Tag="rate" Grid.Row="1" Grid.ColumnSpan="2" Minimum="0.25" Maximum="4" Value="1" TickFrequency="0.01"
+                        ValueChanged="RateSlider_ValueChanged" PreviewMouseDoubleClick="ParameterReset_DoubleClick" PreviewMouseWheel="ParameterSlider_PreviewMouseWheel" />
               </Grid>
-              <controls:VectorIconButton x:Name="LoopButton" Grid.Column="7" Icon="loop" ToolTip="循环当前选区" Click="Loop_Click" />
-              <controls:VectorIconButton x:Name="ChannelModeButton" Grid.Column="8" Icon="channel_stereo" ToolTip="立体声监听：原始 / 左 / 右" Click="ChannelMode_Click" />
-              <controls:VectorIconButton Grid.Column="9" Icon="zoom_reset" ToolTip="清除选区并重置缩放" Click="ResetWaveform_Click" />
-              <TextBlock Grid.Column="10" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"
+              <Grid Grid.Column="7" Margin="8,2,4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Gain" Tag="gain" Foreground="{DynamicResource MutedBrush}" PreviewMouseLeftButtonDown="ParameterReset_DoubleClick" ToolTip="双击恢复默认"/>
+                <Grid Grid.Column="1" HorizontalAlignment="Right">
+                  <TextBlock x:Name="GainValue" Tag="gain" Text="+0.0 dB" PreviewMouseLeftButtonDown="ParameterValue_DoubleClick" ToolTip="双击输入精确数值"/>
+                  <TextBox x:Name="GainValueEditor" Tag="gain" Visibility="Collapsed" Width="72" Padding="3,0" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"
+                           PreviewKeyDown="ParameterEditor_PreviewKeyDown" LostKeyboardFocus="ParameterEditor_LostKeyboardFocus" />
+                </Grid>
+                <Slider x:Name="GainSlider" Tag="gain" Grid.Row="1" Grid.ColumnSpan="2" Minimum="-36" Maximum="18" Value="0" TickFrequency="0.1"
+                        ValueChanged="GainSlider_ValueChanged" PreviewMouseDoubleClick="ParameterReset_DoubleClick" PreviewMouseWheel="ParameterSlider_PreviewMouseWheel" />
+              </Grid>
+              <controls:VectorIconButton x:Name="LoopButton" Grid.Column="8" Icon="loop" ToolTip="循环当前选区 · L" Click="Loop_Click" />
+              <controls:VectorIconButton x:Name="ReverseButton" Grid.Column="9" Icon="reverse" ToolTip="反向试听 · R" Click="Reverse_Click" />
+              <controls:VectorIconButton x:Name="PreservePitchButton" Grid.Column="10" Icon="pitch_lock" ToolTip="改变速度时保持音高" Click="PreservePitch_Click" />
+              <controls:VectorIconButton x:Name="ChannelModeButton" Grid.Column="11" Icon="channel_stereo" ToolTip="声道监听" Click="ChannelMode_Click" />
+              <controls:VectorIconButton x:Name="LoudnessMatchButton" Grid.Column="12" Icon="loudness_match" ToolTip="响度匹配试听" Click="LoudnessMatch_Click" />
+              <controls:VectorIconButton Grid.Column="13" Icon="zoom_reset" ToolTip="清除选区并重置缩放" Click="ResetWaveform_Click" />
+              <TextBlock Grid.Column="14" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"
                          Text="滚轮缩放 · Shift+滚轮平移" />
             </Grid>
           </Grid>
         </Border>
       </Grid>
 
-      <GridSplitter x:Name="InspectorSplitter" Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="#151B22" />
-      <Border x:Name="InspectorPanel" Grid.Column="4" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1,0,0,0">
+      <GridSplitter x:Name="InspectorSplitter" Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource PanelRaisedBrush}" />
+      <Border x:Name="InspectorPanel" Grid.Column="4" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1,0,0,0">
         <Grid Margin="10,7,9,10">
           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
           <Button Grid.Row="0" Content="隐藏元数据  ›" Style="{StaticResource NavButton}" HorizontalContentAlignment="Center" Click="InspectorToggle_Click" />
-          <TextBlock Grid.Row="1" Margin="2,8,0,8"><Run Text="METADATA" FontWeight="SemiBold"/><Run Text="  "/><Run x:Name="InspectorSelectionCount" Text="0 selected" Foreground="{StaticResource MutedBrush}"/></TextBlock>
+          <TextBlock Grid.Row="1" Margin="2,8,0,8"><Run Text="METADATA" FontWeight="SemiBold"/><Run Text="  "/><Run x:Name="InspectorSelectionCount" Text="0 selected" Foreground="{DynamicResource MutedBrush}"/></TextBlock>
           <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="2,0,4,10">
-              <Border Height="220" Background="#0A0D11" CornerRadius="4">
-                <Grid><TextBlock x:Name="ArtworkPlaceholder" Text="暂无封面" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <Border Height="220" Background="{DynamicResource BgBrush}" CornerRadius="4">
+                <Grid><TextBlock x:Name="ArtworkPlaceholder" Text="暂无封面" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <controls:ArtworkImageControl x:Name="ArtworkImage" DecodePixelWidth="480" Stretch="Uniform" Margin="8" /></Grid>
               </Border>
               <TextBlock x:Name="InspectorName" Text="选择一个素材" TextWrapping="Wrap" FontSize="14" Margin="0,9,0,0" />
-              <TextBlock x:Name="InspectorLibrary" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" />
+              <TextBlock x:Name="InspectorLibrary" Margin="0,5,0,0" Foreground="{DynamicResource MutedBrush}" />
               <Button Content="选择封面" Click="ChooseArtwork_Click" />
               <Button Content="自动查找封面" Click="AutoArtwork_Click" />
-              <Border Height="1" Background="{StaticResource LineBrush}" Margin="0,8" />
+              <Border Height="1" Background="{DynamicResource LineBrush}" Margin="0,8" />
               <TextBlock Text="WORKFLOW STATUS" Style="{StaticResource SectionLabel}" Margin="0,0,0,4" />
               <UniformGrid Columns="2" Margin="0,0,0,4">
                 <Button x:Name="StatusNoneButton" Content="未标记" Tag="none" Click="WorkflowStatus_Click" />
@@ -261,10 +371,16 @@
               <TextBlock Text="SubCategory" Style="{StaticResource MetaLabel}" /><TextBox x:Name="InspectorSubcategory" />
               <TextBlock Text="CatID" Style="{StaticResource MetaLabel}" /><TextBox x:Name="InspectorCatId" />
               <Button x:Name="SaveMetadataButton" Content="保存元数据" Click="SaveMetadata_Click" Margin="0,7,0,2" />
+              <UniformGrid Columns="2" Margin="0,2,0,2">
+                <Button Content="撤销元数据" Click="UndoMetadata_Click" />
+                <Button Content="从文件名解析 UCS" Click="ParseUcs_Click" />
+                <Button Content="导入 CSV" Click="ImportCsv_Click" />
+                <Button Content="导出 CSV" Click="ExportCsv_Click" />
+              </UniformGrid>
               <TextBlock Text="Technical" Style="{StaticResource MetaLabel}" />
-              <TextBlock x:Name="InspectorTechnical" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+              <TextBlock x:Name="InspectorTechnical" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
               <TextBlock Text="Path" Style="{StaticResource MetaLabel}" />
-              <TextBlock x:Name="InspectorPath" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+              <TextBlock x:Name="InspectorPath" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
             </StackPanel>
           </ScrollViewer>
           <StackPanel Grid.Row="3">

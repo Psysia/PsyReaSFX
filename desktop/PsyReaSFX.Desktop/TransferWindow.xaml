@@ -1,0 +1,91 @@
+<Window x:Class="PsyReaSFX.Desktop.TransferWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PsyReaSFX Transfer" Width="980" Height="790" MinWidth="820" MinHeight="620"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip" Icon="Assets/psyreasfx-icon.png">
+  <Window.Resources>
+    <Style x:Key="Choice" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="{DynamicResource PanelRaisedBrush}"/>
+      <Setter Property="Padding" Value="15,7"/><Setter Property="Margin" Value="0,0,7,6"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
+        <Border x:Name="Card" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="5" Padding="{TemplateBinding Padding}">
+          <ContentPresenter HorizontalAlignment="Center"/>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource MutedBrush}"/></Trigger>
+          <Trigger Property="IsChecked" Value="True"><Setter TargetName="Card" Property="Background" Value="{DynamicResource HeaderBrush}"/><Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource AccentBrightBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrightBrush}"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="Section" TargetType="TextBlock"><Setter Property="FontSize" Value="16"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,6,0,8"/></Style>
+    <Style x:Key="Hint" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,3,0,8"/></Style>
+  </Window.Resources>
+  <Grid Background="{DynamicResource BgBrush}">
+    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="18,14,18,20">
+        <TextBlock Text="Transfer 导出" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock x:Name="AssetSummaryText" Style="{StaticResource Hint}"/>
+
+        <TextBlock Text="输出 / Output" Style="{StaticResource Section}"/>
+        <TextBlock Text="Transfer 使用独立目录且不会修改源素材。" Style="{StaticResource Hint}"/>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBox x:Name="OutputDirectoryText" VerticalContentAlignment="Center"/>
+          <Button Grid.Column="1" Content="更改…" Click="ChooseOutput_Click"/><Button Grid.Column="2" Content="打开目录" Click="OpenOutput_Click"/>
+        </Grid>
+        <TextBlock Text="命名模板" Margin="0,12,0,4"/><TextBlock Text="{}{name} {category} {subcategory} {library} {index} {date} {region} {pitch} {rate} {gain} {direction} {variant} {variant_index}" Style="{StaticResource Hint}"/>
+        <TextBox x:Name="NamingTemplateText"/><CheckBox x:Name="LowercaseCheck" Content="文件名转为小写 / Lowercase filename"/>
+
+        <Separator Margin="0,12"/>
+        <TextBlock Text="格式与范围 / Format and scope" Style="{StaticResource Section}"/>
+        <TextBlock Text="导出范围"/><WrapPanel><RadioButton x:Name="ScopeSelection" GroupName="Scope" Style="{StaticResource Choice}" Content="当前选区"/><RadioButton x:Name="ScopeFull" GroupName="Scope" Style="{StaticResource Choice}" Content="完整文件"/></WrapPanel>
+        <TextBlock Text="输出格式"/><WrapPanel><RadioButton x:Name="FormatWav16" GroupName="Format" Style="{StaticResource Choice}" Content="WAV · 16-bit"/><RadioButton x:Name="FormatWav24" GroupName="Format" Style="{StaticResource Choice}" Content="WAV · 24-bit"/><RadioButton x:Name="FormatWav32" GroupName="Format" Style="{StaticResource Choice}" Content="WAV · 32-bit PCM"/><RadioButton x:Name="FormatFlac" GroupName="Format" Style="{StaticResource Choice}" Content="FLAC"/></WrapPanel>
+        <TextBlock Text="采样率"/><WrapPanel><RadioButton x:Name="RateSource" GroupName="SampleRate" Style="{StaticResource Choice}" Content="跟随源文件"/><RadioButton x:Name="Rate44100" GroupName="SampleRate" Style="{StaticResource Choice}" Content="44.1 kHz"/><RadioButton x:Name="Rate48000" GroupName="SampleRate" Style="{StaticResource Choice}" Content="48 kHz"/><RadioButton x:Name="Rate96000" GroupName="SampleRate" Style="{StaticResource Choice}" Content="96 kHz"/><RadioButton x:Name="Rate192000" GroupName="SampleRate" Style="{StaticResource Choice}" Content="192 kHz"/></WrapPanel>
+        <TextBlock Text="声道"/><WrapPanel><RadioButton x:Name="ChannelsSource" GroupName="Channels" Style="{StaticResource Choice}" Content="跟随源声道"/><RadioButton x:Name="ChannelsMono" GroupName="Channels" Style="{StaticResource Choice}" Content="单声道"/><RadioButton x:Name="ChannelsStereo" GroupName="Channels" Style="{StaticResource Choice}" Content="立体声"/></WrapPanel>
+        <CheckBox x:Name="PreserveMetadataCheck" Content="尽可能保留源文件元数据和旁车文件"/>
+
+        <Separator Margin="0,12"/>
+        <TextBlock Text="处理 / Processing" Style="{StaticResource Section}"/>
+        <TextBlock Text="当前 Pitch、Rate、Gain、Reverse 与 Preserve Pitch 会写入导出文件。" Style="{StaticResource Hint}"/>
+        <UniformGrid Columns="3">
+          <StackPanel Margin="0,0,10,0"><TextBlock Text="淡入 (ms)"/><TextBox x:Name="FadeInText"/></StackPanel>
+          <StackPanel Margin="0,0,10,0"><TextBlock Text="淡出 (ms)"/><TextBox x:Name="FadeOutText"/></StackPanel>
+          <StackPanel><TextBlock Text="标准化目标"/><TextBox x:Name="NormalizeTargetText"/></StackPanel>
+        </UniformGrid>
+        <TextBlock Text="标准化" Margin="0,10,0,3"/><WrapPanel><RadioButton x:Name="NormalizeOff" GroupName="Normalize" Style="{StaticResource Choice}" Content="关闭"/><RadioButton x:Name="NormalizePeak" GroupName="Normalize" Style="{StaticResource Choice}" Content="Peak"/><RadioButton x:Name="NormalizeTruePeak" GroupName="Normalize" Style="{StaticResource Choice}" Content="True Peak"/><RadioButton x:Name="NormalizeRms" GroupName="Normalize" Style="{StaticResource Choice}" Content="RMS-I"/><RadioButton x:Name="NormalizeLufs" GroupName="Normalize" Style="{StaticResource Choice}" Content="LUFS-I"/></WrapPanel>
+        <WrapPanel><CheckBox x:Name="DitherCheck" Content="抖动 / Dither" Margin="0,5,24,5"/><CheckBox x:Name="NoiseShapingCheck" Content="噪声整形 / Noise shaping"/></WrapPanel>
+
+        <Expander Header="智能尾音 / Smart tail" Margin="0,8,0,0"><StackPanel Margin="14,5,0,5">
+          <CheckBox x:Name="SmartTailCheck" Content="选区后继续保留源文件中的衰减尾音"/>
+          <UniformGrid Columns="3"><StackPanel Margin="0,0,10,0"><TextBlock Text="阈值 (dBFS)"/><TextBox x:Name="TailThresholdText"/></StackPanel><StackPanel Margin="0,0,10,0"><TextBlock Text="最大尾音 (ms)"/><TextBox x:Name="TailMaximumText"/></StackPanel><StackPanel><TextBlock Text="静音保持 (ms)"/><TextBox x:Name="TailHoldText"/></StackPanel></UniformGrid>
+          <TextBlock Text="独立版只能延长源文件本身的选区，不包含 REAPER 工程发送轨或 Master FX。" Style="{StaticResource Hint}"/>
+        </StackPanel></Expander>
+
+        <Expander Header="批量变体 / Batch variants" Margin="0,8,0,0"><StackPanel Margin="14,5,0,5">
+          <CheckBox x:Name="VariantsCheck" Content="启用 Pitch × Rate × Gain 组合"/>
+          <UniformGrid Columns="3"><StackPanel Margin="0,0,10,0"><TextBlock Text="Pitch（逗号分隔）"/><TextBox x:Name="VariantPitchesText"/></StackPanel><StackPanel Margin="0,0,10,0"><TextBlock Text="Rate"/><TextBox x:Name="VariantRatesText"/></StackPanel><StackPanel><TextBlock Text="Gain (dB)"/><TextBox x:Name="VariantGainsText"/></StackPanel></UniformGrid>
+          <CheckBox x:Name="VariantReverseCheck" Content="同时生成 Reverse 版本"/>
+          <CheckBox x:Name="VariantAutoSuffixCheck" Content="模板未含变体字段时自动追加安全后缀"/>
+          <TextBlock Text="每项最多 16 个值、每个素材最多 128 个变体、单次最多 4096 个任务。" Style="{StaticResource Hint}"/>
+        </StackPanel></Expander>
+
+        <Separator Margin="0,12"/>
+        <TextBlock Text="完成行为 / Completion" Style="{StaticResource Section}"/>
+        <TextBlock Text="重名策略"/><WrapPanel><RadioButton x:Name="CollisionIncrement" GroupName="Collision" Style="{StaticResource Choice}" Content="自动递增"/><RadioButton x:Name="CollisionSkip" GroupName="Collision" Style="{StaticResource Choice}" Content="跳过已有文件"/><RadioButton x:Name="CollisionOverwrite" GroupName="Collision" Style="{StaticResource Choice}" Content="允许覆盖"/></WrapPanel>
+        <CheckBox x:Name="OpenFolderAfterCheck" Content="导出完成后打开输出目录"/>
+
+        <Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,14,0,0">
+          <StackPanel><ProgressBar x:Name="TransferProgress" Height="7" Minimum="0" Maximum="1"/><TextBlock x:Name="ProgressText" Margin="0,7,0,0" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap"/><TextBlock x:Name="ResultText" Margin="0,5,0,0" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Margin="0,7,0,0"><Button x:Name="OpenLastOutputButton" Content="定位最新输出" Click="OpenLastOutput_Click" IsEnabled="False"/><Button x:Name="OpenReportButton" Content="打开任务报告" Click="OpenReport_Click" IsEnabled="False"/></StackPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+    <Border Grid.Row="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+      <Grid Margin="14,9"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="CurrentProcessingText" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="CancelTransferButton" Content="取消任务" Click="CancelTransfer_Click" IsEnabled="False"/><Button x:Name="ExportCurrentButton" Content="导出当前素材" Click="ExportCurrent_Click"/><Button x:Name="ExportSelectedButton" Content="导出所选素材" Click="ExportSelected_Click"/><Button Content="关闭" Click="Close_Click"/></StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

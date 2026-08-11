@@ -7,9 +7,9 @@
     <Nullable>enable</Nullable>
     <AssemblyName>PsyReaSFX.Desktop</AssemblyName>
     <RootNamespace>PsyReaSFX.Desktop</RootNamespace>
-    <AssemblyVersion>0.7.23.9</AssemblyVersion>
-    <FileVersion>0.7.23.9</FileVersion>
-    <Version>0.7.23-desktop-alpha.4-light-rc.1</Version>
+    <AssemblyVersion>0.7.23.21</AssemblyVersion>
+    <FileVersion>0.7.23.21</FileVersion>
+    <Version>0.7.23-desktop-alpha.7-light-hotfix.2</Version>
     <Authors>Psysia</Authors>
     <Product>PsyReaSFX Desktop</Product>
     <Description>Standalone sound asset browser and REAPER delivery companion.</Description>
@@ -18,7 +18,9 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <ProjectReference Include="..\PsyReaSFX.Data\PsyReaSFX.Data.csproj" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
     <Resource Include="Assets\psyreasfx-icon.png" />
     <Resource Include="Assets\psyreasfx-hero.png" />
     <Resource Include="Assets\Fonts\Orbitron-VariableFont_wght.ttf" />

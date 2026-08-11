@@ -77,6 +77,7 @@ public static class AudioFileReader
         {
             var thumbnail = new[] { new float[buckets] };
             SampleThumbnail(path, info, frameCount, thumbnail);
+            LuaWaveCache.TryWrite(path, buckets, false, thumbnail);
             return thumbnail;
         }
 
@@ -93,6 +94,7 @@ public static class AudioFileReader
             var audio = new byte[(int)info.DataLength];
             stream.ReadExactly(audio);
             SampleBuffer(audio, info, frameCount, step, result);
+            LuaWaveCache.TryWrite(path, buckets, true, result);
             return result;
         }
 
@@ -118,6 +120,7 @@ public static class AudioFileReader
                 }
             }
         }
+        LuaWaveCache.TryWrite(path, buckets, true, result);
         return result;
     }
 

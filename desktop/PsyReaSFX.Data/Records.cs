@@ -48,6 +48,7 @@ public sealed record AssetRecord
 }
 
 public sealed record CollectionRecord(string Id, string Name, string Kind);
+public sealed record CollectionItemRecord(string CollectionId, string Path, int SortOrder);
 public sealed record SavedSearchRecord(
     string Id,
     string Name,
@@ -68,6 +69,10 @@ public sealed class CatalogSnapshot
     public List<SourceRecord> Sources { get; } = [];
     public List<AssetRecord> Assets { get; } = [];
     public HashSet<string> Favorites { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> SessionPlayed { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<CollectionRecord> Collections { get; } = [];
+    public List<CollectionItemRecord> CollectionItems { get; } = [];
+    public List<SavedSearchRecord> SavedSearches { get; } = [];
 }
 
 public sealed record MigrationSummary(

@@ -12,30 +12,32 @@ public sealed class WaveformSelectionChangedEventArgs(double start, double end) 
     public double End { get; } = end;
 }
 
+public sealed record WaveformRegion(double Start, double End, bool Automatic);
+
 public sealed class WaveformControl : FrameworkElement
 {
+    private long _lastScrubTick;
     private static readonly ConcurrentDictionary<string, Task<float[][]>> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentQueue<string> CacheOrder = new();
     private static readonly SemaphoreSlim DecodeSlots = new(1, 1);
     private const int MaxCachedWaveforms = 320;
-    private static readonly Brush BackgroundBrush = new SolidColorBrush(Color.FromRgb(5, 8, 12));
-    private static readonly Brush SelectionBrush = new SolidColorBrush(Color.FromArgb(78, 22, 132, 216));
     private static readonly Brush LabelBackground = new SolidColorBrush(Color.FromArgb(205, 12, 16, 21));
     private static readonly Pen BaselinePen = new(new SolidColorBrush(Color.FromRgb(54, 68, 80)), 1);
-    private static readonly Pen WavePen = new(new SolidColorBrush(Color.FromRgb(215, 224, 232)), 1);
     private static readonly Pen DividerPen = new(new SolidColorBrush(Color.FromRgb(24, 39, 50)), 1);
-    private static readonly Pen PlayheadPen = new(new SolidColorBrush(Color.FromRgb(25, 216, 255)), 1.5);
     private float[][] _data = [];
     private bool _loading;
     private bool _failed;
     private int _loadVersion;
     private bool _dragging;
     private bool _selectionMoved;
+    private bool _scrubbing;
     private Point _dragOrigin;
     private double _selectionAnchor;
     private double _viewStart;
     private double _zoom = 1;
     private DrawingGroup? _staticDrawing;
+    private Pen? _playheadPen;
+    private Brush? _playheadPenBrush;
     private Size _staticDrawingSize;
     internal int StaticDrawingBuildCount { get; private set; }
 
@@ -61,6 +63,32 @@ public sealed class WaveformControl : FrameworkElement
     public static readonly DependencyProperty ShowChannelLabelsProperty = DependencyProperty.Register(
         nameof(ShowChannelLabels), typeof(bool), typeof(WaveformControl),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty WaveBrushProperty = DependencyProperty.Register(nameof(WaveBrush), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.White, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty SelectedWaveBrushProperty = DependencyProperty.Register(nameof(SelectedWaveBrush), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.White, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty PlayedWaveBrushProperty = DependencyProperty.Register(nameof(PlayedWaveBrush), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.Gold, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty MarkedWaveBrushProperty = DependencyProperty.Register(nameof(MarkedWaveBrush), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.Cyan, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty BackgroundFillProperty = DependencyProperty.Register(nameof(BackgroundFill), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.Black, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty SelectionFillProperty = DependencyProperty.Register(nameof(SelectionFill), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.DodgerBlue, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty PlayheadBrushProperty = DependencyProperty.Register(nameof(PlayheadBrush), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.Cyan, FrameworkPropertyMetadataOptions.AffectsRender));
+    public static readonly DependencyProperty RegionBrushProperty = DependencyProperty.Register(nameof(RegionBrush), typeof(Brush), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Brushes.SteelBlue, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty RegionsProperty = DependencyProperty.Register(nameof(Regions), typeof(IReadOnlyList<WaveformRegion>), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Array.Empty<WaveformRegion>(), FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty IsRowSelectedProperty = DependencyProperty.Register(nameof(IsRowSelected), typeof(bool), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty IsPlayedProperty = DependencyProperty.Register(nameof(IsPlayed), typeof(bool), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty IsMarkedProperty = DependencyProperty.Register(nameof(IsMarked), typeof(bool), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
+    public static readonly DependencyProperty AuditionChannelsProperty = DependencyProperty.Register(nameof(AuditionChannels), typeof(IReadOnlyList<int>), typeof(WaveformControl),
+        new FrameworkPropertyMetadata(Array.Empty<int>(), FrameworkPropertyMetadataOptions.AffectsRender, OnStaticVisualChanged));
 
     public string FilePath { get => (string)GetValue(FilePathProperty); set => SetValue(FilePathProperty, value); }
     public int Resolution { get => (int)GetValue(ResolutionProperty); set => SetValue(ResolutionProperty, value); }
@@ -70,9 +98,32 @@ public sealed class WaveformControl : FrameworkElement
     public bool AllowSelection { get => (bool)GetValue(AllowSelectionProperty); set => SetValue(AllowSelectionProperty, value); }
     public bool AllowZoom { get => (bool)GetValue(AllowZoomProperty); set => SetValue(AllowZoomProperty, value); }
     public bool ShowChannelLabels { get => (bool)GetValue(ShowChannelLabelsProperty); set => SetValue(ShowChannelLabelsProperty, value); }
+    public Brush WaveBrush { get => (Brush)GetValue(WaveBrushProperty); set => SetValue(WaveBrushProperty, value); }
+    public Brush SelectedWaveBrush { get => (Brush)GetValue(SelectedWaveBrushProperty); set => SetValue(SelectedWaveBrushProperty, value); }
+    public Brush PlayedWaveBrush { get => (Brush)GetValue(PlayedWaveBrushProperty); set => SetValue(PlayedWaveBrushProperty, value); }
+    public Brush MarkedWaveBrush { get => (Brush)GetValue(MarkedWaveBrushProperty); set => SetValue(MarkedWaveBrushProperty, value); }
+    public Brush BackgroundFill { get => (Brush)GetValue(BackgroundFillProperty); set => SetValue(BackgroundFillProperty, value); }
+    public Brush SelectionFill { get => (Brush)GetValue(SelectionFillProperty); set => SetValue(SelectionFillProperty, value); }
+    public Brush PlayheadBrush { get => (Brush)GetValue(PlayheadBrushProperty); set => SetValue(PlayheadBrushProperty, value); }
+    public Brush RegionBrush { get => (Brush)GetValue(RegionBrushProperty); set => SetValue(RegionBrushProperty, value); }
+    public IReadOnlyList<WaveformRegion> Regions { get => (IReadOnlyList<WaveformRegion>)GetValue(RegionsProperty); set => SetValue(RegionsProperty, value); }
+    public bool IsRowSelected { get => (bool)GetValue(IsRowSelectedProperty); set => SetValue(IsRowSelectedProperty, value); }
+    public bool IsPlayed { get => (bool)GetValue(IsPlayedProperty); set => SetValue(IsPlayedProperty, value); }
+    public bool IsMarked { get => (bool)GetValue(IsMarkedProperty); set => SetValue(IsMarkedProperty, value); }
+    public IReadOnlyList<int> AuditionChannels { get => (IReadOnlyList<int>)GetValue(AuditionChannelsProperty); set => SetValue(AuditionChannelsProperty, value); }
     public double Zoom => _zoom;
 
+    public Rect GetSelectionDisplayBounds()
+    {
+        if (SelectionStart < 0 || SelectionEnd <= SelectionStart || ActualWidth <= 0 || ActualHeight <= 0)
+            return Rect.Empty;
+        var left = Math.Clamp(XAt(SelectionStart), 0, ActualWidth);
+        var right = Math.Clamp(XAt(SelectionEnd), 0, ActualWidth);
+        return right > left ? new Rect(left, 0, right - left, ActualHeight) : Rect.Empty;
+    }
+
     public event EventHandler<double>? SeekRequested;
+    public event EventHandler<double>? ScrubRequested;
     public event EventHandler<WaveformSelectionChangedEventArgs>? SelectionChanged;
     public event EventHandler<double>? ZoomChanged;
 
@@ -84,6 +135,14 @@ public sealed class WaveformControl : FrameworkElement
         MouseMove += OnMouseMove;
         MouseLeftButtonUp += OnMouseUp;
         MouseWheel += OnMouseWheel;
+        MouseRightButtonDown += OnScrubDown;
+        MouseRightButtonUp += OnScrubUp;
+    }
+
+    public static void ClearMemoryCache()
+    {
+        Cache.Clear();
+        while (CacheOrder.TryDequeue(out _)) { }
     }
 
     public void ClearSelection()
@@ -120,6 +179,17 @@ public sealed class WaveformControl : FrameworkElement
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
+        if (_scrubbing && e.RightButton == MouseButtonState.Pressed)
+        {
+            var now = Environment.TickCount64;
+            if (now - _lastScrubTick >= 75)
+            {
+                _lastScrubTick = now;
+                ScrubRequested?.Invoke(this, RatioAt(e.GetPosition(this).X));
+            }
+            e.Handled = true;
+            return;
+        }
         if (!_dragging || e.LeftButton != MouseButtonState.Pressed) return;
         var point = e.GetPosition(this);
         if (!_selectionMoved && Math.Abs(point.X - _dragOrigin.X) < 4) return;
@@ -128,6 +198,20 @@ public sealed class WaveformControl : FrameworkElement
         SelectionStart = Math.Min(_selectionAnchor, ratio);
         SelectionEnd = Math.Max(_selectionAnchor, ratio);
         SelectionChanged?.Invoke(this, new(SelectionStart, SelectionEnd));
+    }
+
+    private void OnScrubDown(object sender, MouseButtonEventArgs e)
+    {
+        _scrubbing = true; CaptureMouse();
+        _lastScrubTick = Environment.TickCount64;
+        ScrubRequested?.Invoke(this, RatioAt(e.GetPosition(this).X));
+        e.Handled = true;
+    }
+
+    private void OnScrubUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_scrubbing) ScrubRequested?.Invoke(this, RatioAt(e.GetPosition(this).X));
+        _scrubbing = false; if (IsMouseCaptured) ReleaseMouseCapture(); e.Handled = true;
     }
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
@@ -207,7 +291,12 @@ public sealed class WaveformControl : FrameworkElement
         if (Playhead >= _viewStart && Playhead <= _viewStart + span)
         {
             var x = XAt(Playhead);
-            dc.DrawLine(PlayheadPen, new Point(x, 0), new Point(x, ActualHeight));
+            if (!ReferenceEquals(_playheadPenBrush, PlayheadBrush))
+            {
+                _playheadPenBrush = PlayheadBrush;
+                _playheadPen = new Pen(PlayheadBrush, 1.5);
+            }
+            dc.DrawLine(_playheadPen, new Point(x, 0), new Point(x, ActualHeight));
         }
     }
 
@@ -216,7 +305,7 @@ public sealed class WaveformControl : FrameworkElement
         StaticDrawingBuildCount++;
         var group = new DrawingGroup();
         using var dc = group.Open();
-        dc.DrawRectangle(BackgroundBrush, null, new Rect(RenderSize));
+        dc.DrawRectangle(BackgroundFill, null, new Rect(RenderSize));
         if (_data.Length == 0)
         {
             dc.DrawLine(BaselinePen, new Point(0, ActualHeight / 2), new Point(ActualWidth, ActualHeight / 2));
@@ -226,19 +315,25 @@ public sealed class WaveformControl : FrameworkElement
             return;
         }
 
-        var laneHeight = ActualHeight / _data.Length;
+        var visibleChannels = AuditionChannels is { Count: > 0 }
+            ? AuditionChannels.Where(channel => channel >= 0 && channel < _data.Length).Distinct().ToArray()
+            : Enumerable.Range(0, _data.Length).ToArray();
+        if (visibleChannels.Length == 0) visibleChannels = Enumerable.Range(0, _data.Length).ToArray();
+        var laneHeight = ActualHeight / visibleChannels.Length;
         var span = 1 / _zoom;
-        for (var channel = 0; channel < _data.Length; channel++)
+        var waveformPen = new Pen(IsRowSelected ? SelectedWaveBrush : IsMarked ? MarkedWaveBrush : IsPlayed ? PlayedWaveBrush : WaveBrush, 1);
+        for (var lane = 0; lane < visibleChannels.Length; lane++)
         {
+            var channel = visibleChannels[lane];
             var samples = _data[channel];
-            var center = channel * laneHeight + laneHeight / 2;
-            if (channel > 0) dc.DrawLine(DividerPen, new Point(0, channel * laneHeight), new Point(ActualWidth, channel * laneHeight));
+            var center = lane * laneHeight + laneHeight / 2;
+            if (lane > 0) dc.DrawLine(DividerPen, new Point(0, lane * laneHeight), new Point(ActualWidth, lane * laneHeight));
             for (var x = 0; x < ActualWidth; x++)
             {
                 var ratio = _viewStart + x / Math.Max(1, ActualWidth) * span;
                 var index = Math.Min(samples.Length - 1, Math.Max(0, (int)(ratio * samples.Length)));
                 var h = samples[index] * laneHeight * .42;
-                dc.DrawLine(WavePen, new Point(x, center - h), new Point(x, center + h));
+                dc.DrawLine(waveformPen, new Point(x, center - h), new Point(x, center + h));
             }
 
             if (ShowChannelLabels && laneHeight >= 15)
@@ -253,11 +348,24 @@ public sealed class WaveformControl : FrameworkElement
             }
         }
 
+        if (Regions is { Count: > 0 })
+        {
+            foreach (var region in Regions)
+            {
+                var left = Math.Max(0, XAt(region.Start));
+                var right = Math.Min(ActualWidth, XAt(region.End));
+                if (right <= left) continue;
+                var pen = new Pen(RegionBrush, region.Automatic ? 1 : 1.5)
+                    { DashStyle = region.Automatic ? DashStyles.Dash : DashStyles.Solid };
+                dc.DrawRectangle(null, pen, new Rect(left, 1, Math.Max(1, right - left), Math.Max(1, ActualHeight - 2)));
+            }
+        }
+
         if (SelectionStart >= 0 && SelectionEnd > SelectionStart)
         {
             var left = Math.Max(0, XAt(SelectionStart));
             var right = Math.Min(ActualWidth, XAt(SelectionEnd));
-            if (right > left) dc.DrawRectangle(SelectionBrush, null, new Rect(left, 0, right - left, ActualHeight));
+            if (right > left) dc.DrawRectangle(SelectionFill, null, new Rect(left, 0, right - left, ActualHeight));
         }
         _staticDrawing = group;
         _staticDrawingSize = RenderSize;

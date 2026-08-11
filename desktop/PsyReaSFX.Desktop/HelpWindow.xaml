@@ -1,0 +1,197 @@
+<Window x:Class="PsyReaSFX.Desktop.HelpWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PsyReaSFX 帮助中心" Width="900" Height="680" MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResize"
+        Background="{DynamicResource BgBrush}" Icon="Assets/psyreasfx-icon.png"
+        PreviewKeyDown="Window_PreviewKeyDown">
+  <Window.Resources>
+    <Style x:Key="HelpNav" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="Margin" Value="0,2" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Surface" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="3"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border x:Name="Marker" Width="3" Background="Transparent" CornerRadius="2" />
+                <ContentPresenter Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" />
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource PanelHoverBrush}"/></Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource PanelRaisedBrush}"/>
+                <Setter TargetName="Marker" Property="Background" Value="{DynamicResource AccentBrightBrush}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="HelpCard" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+    <Style x:Key="KeyBadge" TargetType="Border">
+      <Setter Property="Background" Value="{DynamicResource HeaderBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="7,3" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </Window.Resources>
+
+  <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Background="{DynamicResource BgBrush}">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="54"/><RowDefinition Height="*"/><RowDefinition Height="54"/></Grid.RowDefinitions>
+
+      <Border Grid.Row="0" Background="{DynamicResource HeaderBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1"
+              MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+        <Grid Margin="14,0,8,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Image Source="Assets/psyreasfx-icon.png" Width="30" Height="30"/>
+            <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" FontFamily="./Assets/Fonts/#Orbitron" FontSize="16" FontWeight="SemiBold">
+              <Run Text="PsyRea"/><Run Text="SFX" Foreground="{DynamicResource AccentBrightBrush}"/>
+            </TextBlock>
+            <Border Margin="12,0,0,0" Padding="8,3" CornerRadius="4" Background="{DynamicResource PanelRaisedBrush}">
+              <TextBlock Text="帮助中心" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
+            </Border>
+          </StackPanel>
+          <Button Grid.Column="1" Content="×" Width="36" Height="34" Padding="0" Margin="0" FontSize="20"
+                  Background="Transparent" BorderBrush="Transparent" ToolTip="关闭" Click="Close_Click"/>
+        </Grid>
+      </Border>
+
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="210"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border Background="{DynamicResource PanelBrush}" Padding="12">
+          <StackPanel>
+            <TextBlock Text="快速使用说明" FontSize="16" FontWeight="SemiBold" Margin="8,6,8,2"/>
+            <TextBlock Text="Desktop 0.7.23 · Alpha 7 Light Hotfix 2" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="8,0,8,16"/>
+            <RadioButton x:Name="StartNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" IsChecked="True" Checked="Page_Checked">快速开始</RadioButton>
+            <RadioButton x:Name="SearchNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" Checked="Page_Checked">搜索与筛选</RadioButton>
+            <RadioButton x:Name="PreviewNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" Checked="Page_Checked">试听与波形</RadioButton>
+            <RadioButton x:Name="OrganizeNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" Checked="Page_Checked">选择与整理</RadioButton>
+            <RadioButton x:Name="ShortcutNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" Checked="Page_Checked">快捷键</RadioButton>
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="1" Background="{DynamicResource LineBrush}"/>
+
+        <ScrollViewer x:Name="HelpScroller" Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="24,20,24,28">
+            <StackPanel x:Name="StartPage">
+              <TextBlock Text="快速开始" FontSize="21" FontWeight="SemiBold"/>
+              <TextBlock Text="从音效库到工程的核心流程。" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,18"/>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="01  建立音效库" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}"/>
+                <TextBlock Text="在左侧新建逻辑音效库，再为它添加一个或多个实体文件夹。PsyReaSFX 会增量建立索引，并复用波形缓存。" TextWrapping="Wrap" Margin="0,7,0,0" Foreground="{DynamicResource MutedBrush}"/>
+              </StackPanel></Border>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="02  查找与试听" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}"/>
+                <TextBlock Text="输入关键词或字段筛选；单击列表波形可从对应位置试听，选中结果后可在大波形中精确定位和建立选区。" TextWrapping="Wrap" Margin="0,7,0,0" Foreground="{DynamicResource MutedBrush}"/>
+              </StackPanel></Border>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="03  整理与交付" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrightBrush}"/>
+                <TextBlock Text="使用收藏、工作流状态、播放列表和 Region 整理候选素材；拖动结果或选区即可交给 REAPER 与其他支持文件拖放的软件。" TextWrapping="Wrap" Margin="0,7,0,0" Foreground="{DynamicResource MutedBrush}"/>
+              </StackPanel></Border>
+            </StackPanel>
+
+            <StackPanel x:Name="SearchPage" Visibility="Collapsed">
+              <TextBlock Text="搜索与筛选" FontSize="21" FontWeight="SemiBold"/>
+              <TextBlock Text="普通关键词会匹配文件名、描述和关键词；字段语法可缩小范围。" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,18" TextWrapping="Wrap"/>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="常用字段" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <UniformGrid Columns="2">
+                  <StackPanel Margin="0,4,12,8"><TextBlock Text="library:name" Foreground="{DynamicResource AccentBrightBrush}"/><TextBlock Text="逻辑音效库" Foreground="{DynamicResource MutedBrush}"/></StackPanel>
+                  <StackPanel Margin="0,4,0,8"><TextBlock Text="category:impact" Foreground="{DynamicResource AccentBrightBrush}"/><TextBlock Text="分类" Foreground="{DynamicResource MutedBrush}"/></StackPanel>
+                  <StackPanel Margin="0,4,12,8"><TextBlock Text="status:candidate" Foreground="{DynamicResource AccentBrightBrush}"/><TextBlock Text="工作流状态" Foreground="{DynamicResource MutedBrush}"/></StackPanel>
+                  <StackPanel Margin="0,4,0,8"><TextBlock Text="path:weapons" Foreground="{DynamicResource AccentBrightBrush}"/><TextBlock Text="实体路径" Foreground="{DynamicResource MutedBrush}"/></StackPanel>
+                  <StackPanel Margin="0,4,12,4"><TextBlock Text="channels:6" Foreground="{DynamicResource AccentBrightBrush}"/><TextBlock Text="声道数" Foreground="{DynamicResource MutedBrush}"/></StackPanel>
+                  <StackPanel Margin="0,4,0,4"><TextBlock Text="-exclude" Foreground="{DynamicResource AccentBrightBrush}"/><TextBlock Text="排除关键词" Foreground="{DynamicResource MutedBrush}"/></StackPanel>
+                </UniformGrid>
+              </StackPanel></Border>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="组合示例" FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock Text="library:boom category:impact metal -long" FontFamily="Consolas" Foreground="{DynamicResource PlayedBrush}" Margin="0,9,0,5"/>
+                <TextBlock Text="查找 Boom 库中的金属 Impact，并排除包含 long 的结果。" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap"/>
+              </StackPanel></Border>
+            </StackPanel>
+
+            <StackPanel x:Name="PreviewPage" Visibility="Collapsed">
+              <TextBlock Text="试听与波形" FontSize="21" FontWeight="SemiBold"/>
+              <TextBlock Text="列表用于快速筛选，大波形用于精确试听、声道检查和选区操作。" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,18" TextWrapping="Wrap"/>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="基础操作" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <TextBlock Text="• 单击列表波形：从点击位置试听" Margin="0,3"/>
+                <TextBlock Text="• 单击大波形：定位播放头；拖动：建立选区" Margin="0,3"/>
+                <TextBlock Text="• 滚轮：缩放；Shift + 滚轮：水平平移" Margin="0,3"/>
+                <TextBlock Text="• 右键拖动：连续擦播" Margin="0,3"/>
+                <TextBlock Text="• 多声道素材：展开声道栏，单独监听 CH 1…CH N" Margin="0,3"/>
+              </StackPanel></Border>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="选区交付" FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock Text="建立有效选区后，波形内会出现“拖出选区”胶囊。按住它拖向 REAPER，即可交付精确选区，而不会修改源文件。" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+              </StackPanel></Border>
+            </StackPanel>
+
+            <StackPanel x:Name="OrganizePage" Visibility="Collapsed">
+              <TextBlock Text="选择与整理" FontSize="21" FontWeight="SemiBold"/>
+              <TextBlock Text="批量选择遵循 Windows 的标准交互。" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,18"/>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="结果选择" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                <TextBlock Text="Ctrl + 单击：追加或取消单个结果" Margin="0,3"/>
+                <TextBlock Text="Shift + 单击：连续范围选择" Margin="0,3"/>
+                <TextBlock Text="Ctrl + A：全选当前筛选结果" Margin="0,3"/>
+              </StackPanel></Border>
+              <Border Style="{StaticResource HelpCard}"><StackPanel>
+                <TextBlock Text="资料管理" FontSize="15" FontWeight="SemiBold"/>
+                <TextBlock Text="右键逻辑库可添加和管理实体路径；右键素材可设置工作流状态、标记、收藏或定位源文件。元数据编辑只写入 PsyReaSFX 数据库，不改写源音频。" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+              </StackPanel></Border>
+            </StackPanel>
+
+            <StackPanel x:Name="ShortcutPage" Visibility="Collapsed">
+              <TextBlock Text="快捷键" FontSize="21" FontWeight="SemiBold"/>
+              <TextBlock Text="高频命令在浏览时始终可用。" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,18"/>
+              <Border Style="{StaticResource HelpCard}">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <StackPanel Margin="0,0,18,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="Space"/></Border><TextBlock Text="播放 / 暂停" VerticalAlignment="Center"/></StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="Ctrl + F"/></Border><TextBlock Text="聚焦搜索" VerticalAlignment="Center"/></StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="Ctrl + R"/></Border><TextBlock Text="增量扫描" VerticalAlignment="Center"/></StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="Ctrl + T"/></Border><TextBlock Text="打开 Transfer" VerticalAlignment="Center"/></StackPanel>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1">
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="F9"/></Border><TextBlock Text="导航面板" VerticalAlignment="Center"/></StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="F10"/></Border><TextBlock Text="元数据面板" VerticalAlignment="Center"/></StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="F11"/></Border><TextBlock Text="专注模式" VerticalAlignment="Center"/></StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4"><Border Style="{StaticResource KeyBadge}"><TextBlock Text="Esc"/></Border><TextBlock Text="关闭帮助" VerticalAlignment="Center"/></StackPanel>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+
+      <Border Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,1,0,0">
+        <Grid Margin="16,0">
+          <TextBlock Text="提示：鼠标悬停主界面图标可查看具体功能。" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+          <Button Content="关闭" HorizontalAlignment="Right" VerticalAlignment="Center" MinWidth="92" Click="Close_Click"/>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</Window>
