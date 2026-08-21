@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:PsyReaSFX.Desktop"
         xmlns:controls="clr-namespace:PsyReaSFX.Desktop.Controls"
-        Title="PsyReaSFX Desktop 0.7.23 Alpha 7 Light Hotfix 2" Width="1540" Height="940"
+        Title="PsyReaSFX Desktop 0.7.23 Alpha 8 Light RC1" Width="1540" Height="940"
         MinWidth="1050" MinHeight="680" WindowStartupLocation="CenterScreen"
         Icon="Assets/psyreasfx-icon.png" PreviewKeyDown="Window_KeyDown" Closing="Window_Closing"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
@@ -49,6 +49,7 @@
           <controls:VectorIconButton x:Name="AutoPreviewButton" Icon="speaker" ToolTip="自动试听" Click="AutoPreview_Click" />
           <controls:VectorIconButton x:Name="RescanButton" Icon="refresh" ToolTip="增量扫描 · Ctrl+R" Click="Rescan_Click" />
           <controls:VectorIconButton Icon="transfer" ToolTip="Transfer 导出 · Ctrl+T" Click="Transfer_Click" />
+          <controls:VectorIconButton x:Name="BridgeButton" Icon="bridge" ToolTip="REAPER Bridge" Click="BridgeMenu_Click" />
           <controls:VectorIconButton Icon="history_reset" ToolTip="清除本次试听高亮" Click="ClearSessionPlayed_Click" />
           <controls:VectorIconButton Icon="help" ToolTip="使用说明" Click="Help_Click" />
           <controls:VectorIconButton Icon="settings" ToolTip="设置" Click="Settings_Click" />
@@ -168,6 +169,7 @@
             <Expander x:Name="ActivitySection" Header="ACTIVITY" IsExpanded="False">
               <StackPanel>
                 <TextBlock x:Name="ActivityText" Margin="7,4" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
+                <Button x:Name="ProjectUsageButton" Content="REAPER 工程使用记录" Click="ProjectUsage_Click" />
                 <Button Content="清除本次试听高亮" Click="ClearSessionPlayed_Click" />
               </StackPanel>
             </Expander>
@@ -291,12 +293,15 @@
               </StackPanel>
             </Grid>
             <Grid Grid.Row="3">
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="12" /><ColumnDefinition Width="132" /><ColumnDefinition Width="132" /><ColumnDefinition Width="132" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="12" /><ColumnDefinition Width="132" /><ColumnDefinition Width="132" /><ColumnDefinition Width="132" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
               <controls:VectorIconButton x:Name="PlayButton" Grid.Column="0" Icon="play" Click="Play_Click" ToolTip="播放 / 暂停 · Space" />
               <controls:VectorIconButton Grid.Column="1" Icon="stop" Click="Stop_Click" ToolTip="停止" />
               <controls:VectorIconButton Grid.Column="2" Icon="star" Click="Favorite_Click" ToolTip="收藏 · F" />
-              <controls:VectorIconButton Grid.Column="3" Icon="more" ToolTip="更多操作" Click="MoreActions_Click" />
-              <Grid Grid.Column="5" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <controls:VectorIconButton x:Name="InsertCurrentButton" Grid.Column="3" Icon="insert_current" ToolTip="送入 REAPER 当前轨" Click="InsertCurrent_Click" />
+              <controls:VectorIconButton x:Name="InsertNewButton" Grid.Column="4" Icon="insert_new" ToolTip="送入 REAPER 新轨" Click="InsertNew_Click" />
+              <controls:VectorIconButton x:Name="BwfSpotButton" Grid.Column="5" Icon="bwf_spot" ToolTip="按 BWF 时间戳送入 REAPER" Click="InsertBwf_Click" />
+              <controls:VectorIconButton Grid.Column="6" Icon="more" ToolTip="更多操作" Click="MoreActions_Click" />
+              <Grid Grid.Column="8" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Text="Pitch" Tag="pitch" Foreground="{DynamicResource MutedBrush}" PreviewMouseLeftButtonDown="ParameterReset_DoubleClick" ToolTip="双击恢复默认"/>
                 <Grid Grid.Column="1" HorizontalAlignment="Right">
                   <TextBlock x:Name="PitchValue" Tag="pitch" Text="+0.0 st" PreviewMouseLeftButtonDown="ParameterValue_DoubleClick" ToolTip="双击输入精确数值"/>
@@ -306,7 +311,7 @@
                 <Slider x:Name="PitchSlider" Tag="pitch" Grid.Row="1" Grid.ColumnSpan="2" Minimum="-24" Maximum="24" Value="0" TickFrequency="0.1"
                         ValueChanged="PitchSlider_ValueChanged" PreviewMouseDoubleClick="ParameterReset_DoubleClick" PreviewMouseWheel="ParameterSlider_PreviewMouseWheel" />
               </Grid>
-              <Grid Grid.Column="6" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <Grid Grid.Column="9" Margin="4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Text="Rate" Tag="rate" Foreground="{DynamicResource MutedBrush}" PreviewMouseLeftButtonDown="ParameterReset_DoubleClick" ToolTip="双击恢复默认"/>
                 <Grid Grid.Column="1" HorizontalAlignment="Right">
                   <TextBlock x:Name="RateValue" Tag="rate" Text="1.00x" PreviewMouseLeftButtonDown="ParameterValue_DoubleClick" ToolTip="双击输入精确数值"/>
@@ -316,7 +321,7 @@
                 <Slider x:Name="RateSlider" Tag="rate" Grid.Row="1" Grid.ColumnSpan="2" Minimum="0.25" Maximum="4" Value="1" TickFrequency="0.01"
                         ValueChanged="RateSlider_ValueChanged" PreviewMouseDoubleClick="ParameterReset_DoubleClick" PreviewMouseWheel="ParameterSlider_PreviewMouseWheel" />
               </Grid>
-              <Grid Grid.Column="7" Margin="8,2,4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <Grid Grid.Column="10" Margin="8,2,4,2"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Text="Gain" Tag="gain" Foreground="{DynamicResource MutedBrush}" PreviewMouseLeftButtonDown="ParameterReset_DoubleClick" ToolTip="双击恢复默认"/>
                 <Grid Grid.Column="1" HorizontalAlignment="Right">
                   <TextBlock x:Name="GainValue" Tag="gain" Text="+0.0 dB" PreviewMouseLeftButtonDown="ParameterValue_DoubleClick" ToolTip="双击输入精确数值"/>
@@ -326,13 +331,13 @@
                 <Slider x:Name="GainSlider" Tag="gain" Grid.Row="1" Grid.ColumnSpan="2" Minimum="-36" Maximum="18" Value="0" TickFrequency="0.1"
                         ValueChanged="GainSlider_ValueChanged" PreviewMouseDoubleClick="ParameterReset_DoubleClick" PreviewMouseWheel="ParameterSlider_PreviewMouseWheel" />
               </Grid>
-              <controls:VectorIconButton x:Name="LoopButton" Grid.Column="8" Icon="loop" ToolTip="循环当前选区 · L" Click="Loop_Click" />
-              <controls:VectorIconButton x:Name="ReverseButton" Grid.Column="9" Icon="reverse" ToolTip="反向试听 · R" Click="Reverse_Click" />
-              <controls:VectorIconButton x:Name="PreservePitchButton" Grid.Column="10" Icon="pitch_lock" ToolTip="改变速度时保持音高" Click="PreservePitch_Click" />
-              <controls:VectorIconButton x:Name="ChannelModeButton" Grid.Column="11" Icon="channel_stereo" ToolTip="声道监听" Click="ChannelMode_Click" />
-              <controls:VectorIconButton x:Name="LoudnessMatchButton" Grid.Column="12" Icon="loudness_match" ToolTip="响度匹配试听" Click="LoudnessMatch_Click" />
-              <controls:VectorIconButton Grid.Column="13" Icon="zoom_reset" ToolTip="清除选区并重置缩放" Click="ResetWaveform_Click" />
-              <TextBlock Grid.Column="14" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"
+              <controls:VectorIconButton x:Name="LoopButton" Grid.Column="11" Icon="loop" ToolTip="循环当前选区 · L" Click="Loop_Click" />
+              <controls:VectorIconButton x:Name="ReverseButton" Grid.Column="12" Icon="reverse" ToolTip="反向试听 · R" Click="Reverse_Click" />
+              <controls:VectorIconButton x:Name="PreservePitchButton" Grid.Column="13" Icon="pitch_lock" ToolTip="改变速度时保持音高" Click="PreservePitch_Click" />
+              <controls:VectorIconButton x:Name="ChannelModeButton" Grid.Column="14" Icon="channel_stereo" ToolTip="声道监听" Click="ChannelMode_Click" />
+              <controls:VectorIconButton x:Name="LoudnessMatchButton" Grid.Column="15" Icon="loudness_match" ToolTip="响度匹配试听" Click="LoudnessMatch_Click" />
+              <controls:VectorIconButton Grid.Column="16" Icon="zoom_reset" ToolTip="清除选区并重置缩放" Click="ResetWaveform_Click" />
+              <TextBlock Grid.Column="17" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{DynamicResource MutedBrush}"
                          Text="滚轮缩放 · Shift+滚轮平移" />
             </Grid>
           </Grid>

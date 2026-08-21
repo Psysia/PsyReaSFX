@@ -7,9 +7,9 @@
     <Nullable>enable</Nullable>
     <AssemblyName>PsyReaSFX.Desktop</AssemblyName>
     <RootNamespace>PsyReaSFX.Desktop</RootNamespace>
-    <AssemblyVersion>0.7.23.21</AssemblyVersion>
-    <FileVersion>0.7.23.21</FileVersion>
-    <Version>0.7.23-desktop-alpha.7-light-hotfix.2</Version>
+    <AssemblyVersion>0.7.23.22</AssemblyVersion>
+    <FileVersion>0.7.23.22</FileVersion>
+    <Version>0.7.23-desktop-alpha.8-light-rc.1</Version>
     <Authors>Psysia</Authors>
     <Product>PsyReaSFX Desktop</Product>
     <Description>Standalone sound asset browser and REAPER delivery companion.</Description>

@@ -67,6 +67,12 @@ public sealed class StateStore
     public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default) =>
         _database.UpsertLoudnessAsync(row, cancellationToken);
 
+    public Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default) =>
+        _database.AddProjectUsageAsync(row, cancellationToken);
+
+    public Task<IReadOnlyList<ProjectUsageRecord>> LoadProjectUsageAsync(int limit = 500, CancellationToken cancellationToken = default) =>
+        _database.LoadProjectUsageAsync(limit, cancellationToken);
+
     private static PersistedState FromSnapshot(CatalogSnapshot snapshot)
     {
         var state = new PersistedState { Favorites = new HashSet<string>(snapshot.Favorites, StringComparer.OrdinalIgnoreCase) };

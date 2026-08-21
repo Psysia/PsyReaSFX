@@ -79,7 +79,7 @@
         <Border Background="{DynamicResource PanelBrush}" Padding="12">
           <StackPanel>
             <TextBlock Text="快速使用说明" FontSize="16" FontWeight="SemiBold" Margin="8,6,8,2"/>
-            <TextBlock Text="Desktop 0.7.23 · Alpha 7 Light Hotfix 2" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="8,0,8,16"/>
+            <TextBlock Text="Desktop 0.7.23 · Alpha 8 Light RC1" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="8,0,8,16"/>
             <RadioButton x:Name="StartNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" IsChecked="True" Checked="Page_Checked">快速开始</RadioButton>
             <RadioButton x:Name="SearchNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" Checked="Page_Checked">搜索与筛选</RadioButton>
             <RadioButton x:Name="PreviewNav" GroupName="HelpPage" Style="{StaticResource HelpNav}" Checked="Page_Checked">试听与波形</RadioButton>

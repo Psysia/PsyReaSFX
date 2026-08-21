@@ -28,7 +28,7 @@ is inherently required, through the optional Bridge.
 | Transfer | Output path, naming templates, formats, rates and channels | Alpha 6 complete: dedicated persistent output path; Lua token set; WAV 16/24/32 PCM and FLAC; source/44.1/48/96/192 kHz; source/mono/stereo; WAV chunks and sidecars preserved when possible |
 | Transfer | Fades, normalization, smart tail, variants and reports | Alpha 6 complete: fades, Peak/True Peak/RMS-I/LUFS-I, dither/noise shaping, threshold/maximum/hold source tail, Lua-compatible Cartesian variants, collision policies, progress/cancel, latest-output reveal and TSV report |
 | REAPER | Drag files and selections into REAPER | Full-file and selected-range file drag available; temporary range WAVs never modify the source |
-| REAPER | Current track/new track/BWF insertion and project association | Bridge pending |
+| REAPER | Current track/new track/BWF insertion and project association | Alpha 8 complete through the optional bundled Bridge; successful deliveries persist project, track, position and source identity |
 | Reliability | Watch folders, interrupted scans, failure recovery | Alpha 7 complete with recursive monitoring, debounced incremental rebuilds, atomic checkpoints and persistent retryable failures |
 | Reliability | Catalog backup/restore and waveform-cache integrity | Alpha 7 complete: validated SQLite backups with retention and safe next-launch restore; damaged RWF caches can be checked, removed and rebuilt on demand |
 | Product | Chinese/English UI, themes, settings and diagnostics | Complete for the standalone scope: runtime localization, persistent Dark/Classic palettes, full shell/waveform color control, diagnostics and the Alpha 7 maintenance center. Low-level exception text may still originate from Windows/FFmpeg |
@@ -41,14 +41,12 @@ complete or explicitly documented as a Bridge-only operation.
 
 ## Overall Lua relationship
 
-Desktop has **not** surpassed Lua Stable as a whole. It is ahead in true
-arbitrary-channel isolation, SQLite reliability, Watch Folder recovery,
-validated backups and cache health; its platform-neutral browse, organization,
-waveform, audition and Transfer workflows are substantially aligned. It remains
-behind in REAPER-context operations: current/new-track and BWF spotting,
-project-use association, and processing through REAPER tracks, sends or Master
-FX. Those require the optional Bridge. The accurate status is therefore:
-**ahead in selected standalone areas, not yet ahead overall.**
+Alpha 8 aligns the Lua direct-delivery workflow through the optional bundled
+Bridge: current/new-track insertion, BWF spotting and project-use association
+are connected. Desktop remains ahead in arbitrary-channel isolation, SQLite
+reliability, Watch Folder recovery, validated backups and cache health.
+Processing or rendering through REAPER tracks, sends or Master FX is a future
+extension rather than part of the Lua direct-delivery parity path.
 
 ## Desktop Alpha visibility rule
 
