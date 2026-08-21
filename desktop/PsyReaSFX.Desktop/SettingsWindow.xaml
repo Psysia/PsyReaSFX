@@ -217,7 +217,7 @@
             <Image Source="Assets/psyreasfx-icon.png" Width="92" Height="92" Margin="0,18,0,12"/>
             <TextBlock TextAlignment="Center" FontFamily="./Assets/Fonts/#Orbitron" FontSize="26" FontWeight="SemiBold"><Run Text="PsyRea"/><Run Text="SFX" Foreground="{DynamicResource AccentBrightBrush}"/></TextBlock>
             <TextBlock Text="Sound assets organized" TextAlignment="Center" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,20"/>
-            <TextBlock Text="Desktop 0.7.23 · Alpha 7 Light Hotfix 2" TextAlignment="Center"/>
+            <TextBlock Text="Desktop 0.7.23 · Alpha 8 Light RC1" TextAlignment="Center"/>
             <TextBlock Text="Copyright © 2026 Psysia. All rights reserved." TextAlignment="Center" Foreground="{DynamicResource MutedBrush}" Margin="0,8"/>
           </StackPanel>
         </Grid>

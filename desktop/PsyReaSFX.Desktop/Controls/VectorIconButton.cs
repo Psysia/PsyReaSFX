@@ -158,6 +158,32 @@ public sealed class VectorIconButton : FrameworkElement
                 Line(left, bottom, right, bottom);
                 Line(right, bottom, right, bottom - s * .08);
                 break;
+            case "bridge":
+                dc.DrawRoundedRectangle(null, pen, new Rect(left, top + s * .04, right - left, bottom - top - s * .08), 2, 2);
+                Line(left + s * .11, cy, right - s * .11, cy);
+                dc.DrawEllipse(brush, null, new Point(left + s * .11, cy), s * .03, s * .03);
+                dc.DrawEllipse(brush, null, new Point(right - s * .11, cy), s * .03, s * .03);
+                Line(cx, top - s * .04, cx, top + s * .04);
+                Line(cx, bottom - s * .04, cx, bottom + s * .04);
+                break;
+            case "insert_current":
+                Line(left, top, left, bottom); Line(right, top, right, bottom);
+                Line(cx - s * .13, cy, cx + s * .08, cy);
+                Triangle(new Point(cx + s * .17, cy), new Point(cx + s * .05, cy - s * .09), new Point(cx + s * .05, cy + s * .09));
+                break;
+            case "insert_new":
+                Line(left, top, left, bottom); Line(right, top, right, bottom);
+                Line(cx - s * .15, cy, cx + s * .04, cy);
+                Triangle(new Point(cx + s * .13, cy), new Point(cx + s * .01, cy - s * .09), new Point(cx + s * .01, cy + s * .09));
+                Line(right - s * .055, top - s * .02, right - s * .055, top + s * .13);
+                Line(right - s * .13, top + s * .055, right + s * .02, top + s * .055);
+                break;
+            case "bwf_spot":
+                dc.DrawEllipse(null, pen, new Point(cx, cy), s * .21, s * .21);
+                Line(cx, cy - s * .12, cx, cy + s * .02);
+                Line(cx, cy + s * .02, cx + s * .1, cy + s * .075);
+                Line(left - s * .02, bottom + s * .02, right + s * .02, bottom + s * .02);
+                break;
             case "speaker":
                 dc.DrawRectangle(brush, null, new Rect(left, cy - s * .055, s * .08, s * .11));
                 Triangle(new Point(left + s * .06, cy - s * .07), new Point(cx, top + s * .02), new Point(cx, bottom - s * .02));

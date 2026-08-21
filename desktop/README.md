@@ -1,9 +1,22 @@
-# PsyReaSFX Desktop 0.7.23 Alpha 7 Light Hotfix 2
+# PsyReaSFX Desktop 0.7.23 Alpha 8 Light RC1
 
 PsyReaSFX Desktop is the standalone Windows migration of the PsyReaSFX
 0.7.23 Stable product model. During desktop development, only the **Light**
 edition is published. Portable and installer editions will be produced after
 the Desktop Stable feature set is frozen.
+
+Alpha 8 adds the optional **REAPER Bridge** without making REAPER a startup
+dependency. Keep the bundled `PsyReaSFX_REAPER_Bridge.lua` running in REAPER,
+then Desktop can send the full source or the current waveform selection to the
+current track, create a new track, or spot the original source using its BWF
+timestamp. Successful deliveries are recorded with project, track, position
+and source identity in a dedicated project-usage history.
+
+Bridge shortcuts are `Enter` for the current track, `Ctrl+Enter` for a new
+track, and `Shift+Enter` for BWF Spot. The bridge icon in the main toolbar
+shows connection state and provides connection testing and queue diagnostics.
+If the Bridge script is not running, every standalone browse, audition,
+organization and Transfer feature continues to work normally.
 
 Alpha 7 Hotfix 2 replaces the platform Help message box with a branded,
 modeless Help Center. Its navigation, cards, search syntax, waveform guidance
@@ -143,8 +156,9 @@ workspace.
   output directory.
 
 Transfer never changes source media. The standalone build processes source
-files directly; REAPER track sends, project FX, Master FX and post-export
-insertion require the future optional REAPER Bridge.
+files directly. Alpha 8 covers direct current-track/new-track/BWF delivery;
+rendering through project tracks, sends, project FX or Master FX remains a
+separate future bridge-rendering feature.
 
 ## Alpha 7 catalog reliability
 
@@ -273,9 +287,22 @@ migration is not repeated on every launch.
 2. Extract the **entire ZIP** to a normal folder.
 3. Run `PsyReaSFX.Desktop.exe` from the extracted folder.
 
-Do not move only the EXE out of the folder: the Light edition deliberately
-keeps its required DLL files beside the executable to remain small and start
-without self-extraction.
+Keep the release folder together so the Bridge script, checksum, feature matrix
+and diagnostics guide remain available beside the small framework-dependent
+executable.
+
+## Enable the optional REAPER Bridge
+
+1. In REAPER open **Actions → Show action list → ReaScript: Load**.
+2. Load the bundled `PsyReaSFX_REAPER_Bridge.lua`.
+3. Run it once and leave it active; its toolbar toggle remains lit.
+4. Return to Desktop. The Bridge icon changes from offline to the accent color.
+5. Use `Enter`, `Ctrl+Enter`, `Shift+Enter`, or the three delivery icons below
+   the waveform.
+
+The Bridge and Desktop exchange only short local request files under
+`%LOCALAPPDATA%\PsyReaSFX\bridge`. No network service, administrator permission
+or catalog rescan is required.
 
 If startup fails, attach the newest file from:
 
@@ -285,11 +312,13 @@ If startup fails, attach the newest file from:
 
 ## Current boundary
 
-Alpha 7 completes the standalone reliability stage. Browse, organization,
+Alpha 8 adds optional direct REAPER delivery to the completed standalone
+reliability stage. Browse, organization,
 preview, waveform Regions, transient suggestions, loudness analysis, selection
 drag-out, Transfer, Watch Folder recovery, catalog backup/restore and cache
-repair are connected and covered by the packaged self-test. REAPER-only
-spotting and project association remain tracked for the optional Bridge.
+repair, current/new-track delivery, BWF Spot and project-use association are
+connected and covered by the packaged self-test. Processing through REAPER
+track sends, project FX or Master FX remains a later extension.
 
 If a capability is not listed as complete in the matrix, it is pending rather
 than a hidden preference. The Light UI does not show placeholder controls for
@@ -297,8 +326,8 @@ pending capabilities.
 
 See the [English feature matrix](FEATURE_PARITY_0_7_23.md) or the
 [中文功能对照表](FEATURE_PARITY_0_7_23_zh-CN.md) for feature scope,
-[ALPHA7_RELIABILITY_AUDIT.md](ALPHA7_RELIABILITY_AUDIT.md) for the current
-migration audit,
+[ALPHA8_REAPER_BRIDGE_AUDIT.md](ALPHA8_REAPER_BRIDGE_AUDIT.md) for the current
+Bridge audit,
 and [UI_ACCEPTANCE_LUA_0_7_23.md](UI_ACCEPTANCE_LUA_0_7_23.md) for the visual
 and interaction acceptance contract.
 

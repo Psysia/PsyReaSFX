@@ -64,6 +64,15 @@ internal static class DesktopSelfTest
             var organizationPassed = organizationSnapshot.Collections.Count == 1 && organizationSnapshot.CollectionItems.Count == 1
                                      && organizationSnapshot.SavedSearches.Count == 1
                                      && organizationSnapshot.SessionPlayed.Contains(wavPath);
+            var usageRecord = new ProjectUsageRecord(
+                "usage-a8", wavPath, Path.Combine(working, "SelfTest.rpp"), "SelfTest", "insert_current",
+                wavPath, "SFX", 1, 1.25, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            await detailDatabase.AddProjectUsageAsync(usageRecord);
+            var usageRows = await detailDatabase.LoadProjectUsageAsync();
+            var projectUsagePassed = usageRows.Count == 1
+                                     && usageRows[0].AssetPath == wavPath
+                                     && usageRows[0].TrackName == "SFX"
+                                     && Math.Abs(usageRows[0].Position - 1.25) < .001;
 
             var region = new RegionRecord(wavPath, .1, .3, "Self-test selection", "manual", "desktop-self-test");
             await detailDatabase.UpsertRegionAsync(region);
@@ -95,6 +104,38 @@ internal static class DesktopSelfTest
             {
                 try { if (selectionFile != null) File.Delete(selectionFile); } catch { }
                 try { if (selection24File != null) File.Delete(selection24File); } catch { }
+            }
+
+            var bridgeRoot = Path.Combine(working, "bridge");
+            var bridge = new ReaperBridgeService(bridgeRoot);
+            Directory.CreateDirectory(bridgeRoot);
+            await File.WriteAllTextAsync(bridge.HeartbeatPath, "online=1\n");
+            var bridgeRequestTask = bridge.ExecuteAsync(new ReaperBridgeRequest(
+                "insert_current", wavPath, wavPath, "桥接自检"), TimeSpan.FromSeconds(3));
+            string? bridgeRequestPath = null;
+            for (var attempt = 0; attempt < 100 && bridgeRequestPath == null; attempt++)
+            {
+                bridgeRequestPath = Directory.EnumerateFiles(bridge.RequestsDirectory, "*.request").FirstOrDefault();
+                if (bridgeRequestPath == null) await Task.Delay(10);
+            }
+            var bridgeProtocolPassed = false;
+            if (bridgeRequestPath != null)
+            {
+                var values = ReaperBridgeService.Parse(await File.ReadAllTextAsync(bridgeRequestPath));
+                var id = values["id"];
+                var response = new Dictionary<string, string>
+                {
+                    ["id"] = id, ["success"] = "1", ["message"] = "ok", ["action"] = "insert_current",
+                    ["asset"] = wavPath, ["inserted"] = wavPath, ["project_path"] = Path.Combine(working, "SelfTest.rpp"),
+                    ["project_name"] = "SelfTest", ["track_name"] = "SFX", ["track_index"] = "1", ["position"] = "1.25"
+                };
+                await File.WriteAllTextAsync(Path.Combine(bridge.ResponsesDirectory, id + ".response"),
+                    ReaperBridgeService.Serialize(response));
+                var bridgeResult = await bridgeRequestTask;
+                bridgeProtocolPassed = bridge.IsOnline() && bridgeResult.Success
+                                       && bridgeResult.ProjectName == "SelfTest"
+                                       && bridgeResult.TrackIndex == 1
+                                       && Math.Abs(bridgeResult.Position - 1.25) < .001;
             }
 
             var loudness = await LoudnessAnalyzer.AnalyzeAsync(wavPath, new FileInfo(wavPath).Length);
@@ -524,8 +565,10 @@ internal static class DesktopSelfTest
                          && migrationPassed
                          && assetDetailsPassed
                          && organizationPassed
+                         && projectUsagePassed
                          && regionPersistencePassed
                          && selectionDragPassed
+                         && bridgeProtocolPassed
                          && loudnessAnalysisPassed
                          && transientDetectionPassed
                           && collectionBindingPassed
@@ -549,7 +592,7 @@ internal static class DesktopSelfTest
             TryWriteReport(reportPath, new
             {
                 passed,
-                version = "0.7.23-desktop-alpha.7-light-hotfix.2",
+                version = "0.7.23-desktop-alpha.8-light-rc.1",
                 audio = new { info.Duration, info.Channels, info.SampleRate, info.BitDepth },
                 waveformChannels = waveform.Length,
                 waveformBuckets = waveform.FirstOrDefault()?.Length ?? 0,
@@ -573,8 +616,10 @@ internal static class DesktopSelfTest
                 themeProbeColors,
                 assetDetailsPassed,
                 organizationPassed,
+                projectUsagePassed,
                 regionPersistencePassed,
                 selectionDragPassed,
+                bridgeProtocolPassed,
                 loudnessAnalysisPassed,
                 loudness = new { loudness.LufsI, loudness.LufsM, loudness.LufsS, loudness.TruePeak },
                 transientDetectionPassed,

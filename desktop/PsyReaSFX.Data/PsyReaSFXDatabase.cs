@@ -294,6 +294,45 @@ public sealed class PsyReaSFXDatabase
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT OR REPLACE INTO project_usage
+            (id,asset_path,project_path,project_name,action,inserted_path,track_name,track_index,position,created_utc)
+            VALUES($id,$asset,$project,$projectName,$action,$inserted,$track,$trackIndex,$position,$created)
+            """;
+        command.Parameters.AddWithValue("$id", row.Id);
+        command.Parameters.AddWithValue("$asset", row.AssetPath);
+        command.Parameters.AddWithValue("$project", row.ProjectPath);
+        command.Parameters.AddWithValue("$projectName", row.ProjectName);
+        command.Parameters.AddWithValue("$action", row.Action);
+        command.Parameters.AddWithValue("$inserted", row.InsertedPath);
+        command.Parameters.AddWithValue("$track", row.TrackName);
+        command.Parameters.AddWithValue("$trackIndex", row.TrackIndex);
+        command.Parameters.AddWithValue("$position", row.Position);
+        command.Parameters.AddWithValue("$created", row.CreatedUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProjectUsageRecord>> LoadProjectUsageAsync(int limit = 500, CancellationToken cancellationToken = default)
+    {
+        var rows = new List<ProjectUsageRecord>();
+        await using var connection = await OpenAsync(cancellationToken);
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id,asset_path,project_path,project_name,action,inserted_path,track_name,track_index,position,created_utc
+            FROM project_usage ORDER BY created_utc DESC LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 10000));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            rows.Add(new ProjectUsageRecord(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetInt32(7), reader.GetDouble(8), reader.GetInt64(9)));
+        return rows;
+    }
+
     private static async Task ReplaceOrganizationAsync(SqliteConnection connection, CatalogSnapshot snapshot, CancellationToken token)
     {
         await ExecuteAsync(connection, "DELETE FROM collection_items", token);
@@ -523,5 +562,8 @@ public sealed class PsyReaSFXDatabase
         CREATE TABLE IF NOT EXISTS session_played(path TEXT PRIMARY KEY COLLATE NOCASE);
         CREATE TABLE IF NOT EXISTS regions(asset_path TEXT NOT NULL COLLATE NOCASE,start REAL NOT NULL,finish REAL NOT NULL,name TEXT NOT NULL,source TEXT NOT NULL,batch_id TEXT NOT NULL,PRIMARY KEY(asset_path,start,finish,name));
         CREATE TABLE IF NOT EXISTS loudness(asset_path TEXT PRIMARY KEY COLLATE NOCASE,size INTEGER NOT NULL,lufs_i REAL,lufs_m REAL,lufs_s REAL,true_peak REAL);
+        CREATE TABLE IF NOT EXISTS project_usage(id TEXT PRIMARY KEY,asset_path TEXT NOT NULL COLLATE NOCASE,project_path TEXT NOT NULL DEFAULT '',project_name TEXT NOT NULL DEFAULT '',action TEXT NOT NULL,inserted_path TEXT NOT NULL DEFAULT '',track_name TEXT NOT NULL DEFAULT '',track_index INTEGER NOT NULL DEFAULT -1,position REAL NOT NULL DEFAULT 0,created_utc INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS project_usage_asset ON project_usage(asset_path);
+        CREATE INDEX IF NOT EXISTS project_usage_created ON project_usage(created_utc DESC);
         """;
 }

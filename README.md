@@ -49,11 +49,11 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 | PsyReaSFX for REAPER | PsyReaSFX Desktop Alpha |
 |---|---|
-| The complete 0.7 Stable workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. Install through ReaPack for automatic updates. | The standalone migration now shares the `0.7.23` product baseline. Alpha 7 Light Hotfix 2 adds a branded in-app Help Center, complete Lua 0.7.23 parity work through the Alpha 7 reliability cycle, persistent resizable columns, workflow organization, multichannel audition, waveform editing, and Transfer delivery on top of the SQLite catalog and Lua read-only migration. |
+| The complete 0.7 Stable workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. Install through ReaPack for automatic updates. | The standalone migration shares the `0.7.23` product baseline. Alpha 8 Light RC1 adds an optional REAPER Bridge for current-track, new-track and BWF delivery, plus persistent project-usage history, while retaining the Alpha 7 catalog, audition, organization, waveform, Transfer and reliability work. |
 
-[Install the REAPER edition](#install-with-reapack) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_7_Light_Hotfix_2.zip) · [Desktop Alpha notes](desktop/README.md)
+[Install the REAPER edition](#install-with-reapack) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip) · [Desktop Alpha notes](desktop/README.md)
 
-Desktop Alpha 7 Light Hotfix 2 is a development build, not the final Stable desktop release. It reads the existing Lua data directory without modifying it, keeps its own SQLite catalog, and includes a branded modeless Help Center alongside the current standalone parity and reliability work.
+Desktop Alpha 8 Light RC1 is a development build, not the final Stable desktop release. It reads the existing Lua data directory without modifying it, keeps its own SQLite catalog, and can optionally communicate with REAPER through the bundled bridge script. Standalone browsing, audition, organization and Transfer continue to work when REAPER is closed.
 
 ## One workspace for the sound-library loop
 

@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _autoPreviewTimer = new() { Interval = TimeSpan.FromMilliseconds(110) };
     private readonly DispatcherTimer _activitySaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
+    private readonly DispatcherTimer _bridgeTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly ReaperBridgeService _bridge = new();
     private readonly HashSet<string> _activityDirty = new(StringComparer.OrdinalIgnoreCase);
     private bool _activitySaveInFlight;
     private PersistedState _state = new();
@@ -102,6 +104,7 @@ public partial class MainWindow : Window
     private string _preparedSelectionDragKey = "";
     private bool _watchScanPending;
     private HelpWindow? _helpWindow;
+    private bool _bridgeBusy;
 
     public static readonly DependencyProperty InlineWaveformResolutionProperty = DependencyProperty.Register(
         nameof(InlineWaveformResolution), typeof(int), typeof(MainWindow), new PropertyMetadata(512));
@@ -163,11 +166,14 @@ public partial class MainWindow : Window
             _activitySaveTimer.Stop();
             await FlushPreviewActivityAsync();
         };
+        _bridgeTimer.Tick += (_, _) => UpdateBridgeState();
+        _bridgeTimer.Start();
 
         AutoPreviewButton.Foreground = _autoPreview
             ? (Brush)FindResource("AccentBrightBrush")
             : (Brush)FindResource("MutedBrush");
         AutoPreviewButton.IsActive = _autoPreview;
+        UpdateBridgeState();
         UpdateBrowseNavState();
         StatusText.Text = T("正在打开 PsyReaSFX 数据库…", "Opening the PsyReaSFX database…");
         UpdateCount();
@@ -2115,6 +2121,143 @@ public partial class MainWindow : Window
         ApplyPreferences(_preferences, false);
     }
 
+    private void UpdateBridgeState()
+    {
+        if (BridgeButton == null) return;
+        var online = _bridge.IsOnline();
+        BridgeButton.IsActive = online;
+        BridgeButton.Foreground = online
+            ? (Brush)FindResource("AccentBrightBrush")
+            : (Brush)FindResource("MutedBrush");
+        BridgeButton.ToolTip = online
+            ? T("REAPER Bridge 已连接", "REAPER Bridge connected")
+            : T("REAPER Bridge 未连接", "REAPER Bridge offline");
+        if (InsertCurrentButton != null)
+        {
+            InsertCurrentButton.ToolTip = T("送入 REAPER 当前轨（Enter）", "Send to current REAPER track (Enter)");
+            InsertNewButton.ToolTip = T("送入 REAPER 新轨（Ctrl+Enter）", "Send to a new REAPER track (Ctrl+Enter)");
+            BwfSpotButton.ToolTip = T("按 BWF 时间戳定位（Shift+Enter）", "Spot using BWF timestamp (Shift+Enter)");
+        }
+    }
+
+    private void BridgeMenu_Click(object sender, RoutedEventArgs e)
+    {
+        var online = _bridge.IsOnline();
+        var menu = new ContextMenu();
+        menu.Items.Add(new MenuItem
+        {
+            Header = online ? T("● REAPER Bridge 已连接", "● REAPER Bridge connected")
+                            : T("○ REAPER Bridge 未连接", "○ REAPER Bridge offline"),
+            IsEnabled = false
+        });
+        menu.Items.Add(new Separator());
+        var current = new MenuItem { Header = T("送入当前轨", "Send to current track"), IsEnabled = _selected != null };
+        current.Click += InsertCurrent_Click;
+        var newTrack = new MenuItem { Header = T("送入新轨", "Send to new track"), IsEnabled = _selected != null };
+        newTrack.Click += InsertNew_Click;
+        var bwf = new MenuItem { Header = T("按 BWF 时间戳定位", "Spot using BWF timestamp"), IsEnabled = _selected != null };
+        bwf.Click += InsertBwf_Click;
+        var ping = new MenuItem { Header = T("测试连接", "Test connection") };
+        ping.Click += async (_, _) =>
+        {
+            var result = await _bridge.PingAsync();
+            StatusText.Text = result.Success
+                ? T("REAPER Bridge 连接正常", "REAPER Bridge connection is healthy")
+                : T("REAPER Bridge 未响应；请在 REAPER 中运行随包附带的 Bridge 脚本", "REAPER Bridge did not respond; run the bundled Bridge script in REAPER");
+            UpdateBridgeState();
+        };
+        var open = new MenuItem { Header = T("打开 Bridge 数据目录", "Open Bridge data directory") };
+        open.Click += (_, _) => _bridge.OpenDirectory();
+        menu.Items.Add(current); menu.Items.Add(newTrack); menu.Items.Add(bwf); menu.Items.Add(new Separator());
+        menu.Items.Add(ping); menu.Items.Add(open);
+        menu.PlacementTarget = sender as FrameworkElement;
+        menu.IsOpen = true;
+    }
+
+    private void InsertCurrent_Click(object sender, RoutedEventArgs e) => _ = ExecuteBridgeInsertAsync("insert_current");
+    private void InsertNew_Click(object sender, RoutedEventArgs e) => _ = ExecuteBridgeInsertAsync("insert_new_track");
+    private void InsertBwf_Click(object sender, RoutedEventArgs e) => _ = ExecuteBridgeInsertAsync("insert_bwf");
+
+    private async Task ExecuteBridgeInsertAsync(string action)
+    {
+        if (_bridgeBusy || _selected == null || !File.Exists(_selected.FilePath)) return;
+        if (!_bridge.IsOnline())
+        {
+            StatusText.Text = T("REAPER Bridge 未连接；请先在 REAPER 中运行随包附带的 Bridge 脚本",
+                "REAPER Bridge is offline; first run the bundled Bridge script in REAPER");
+            BridgeMenu_Click(BridgeButton, new RoutedEventArgs());
+            return;
+        }
+
+        _bridgeBusy = true;
+        var asset = _selected;
+        var mediaPath = asset.FilePath;
+        var selectionStart = 0d;
+        var selectionEnd = 0d;
+        try
+        {
+            if (action != "insert_bwf" && HasValidSelection())
+            {
+                selectionStart = _selectionStartRatio * asset.DurationSeconds;
+                selectionEnd = _selectionEndRatio * asset.DurationSeconds;
+                StatusText.Text = T("正在准备选区交付…", "Preparing selection delivery…");
+                using var prepare = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                mediaPath = await SelectionDragExporter.ExportAsync(asset.FilePath, selectionStart, selectionEnd, prepare.Token);
+            }
+
+            StatusText.Text = T("正在送入 REAPER…", "Sending to REAPER…");
+            var result = await _bridge.ExecuteAsync(new ReaperBridgeRequest(
+                action, mediaPath, asset.FilePath, asset.FileName, selectionStart, selectionEnd));
+            if (!result.Success)
+            {
+                StatusText.Text = T($"REAPER 交付失败：{result.Message}", $"REAPER delivery failed: {result.Message}");
+                return;
+            }
+
+            asset.UsedCount++;
+            asset.LastUsed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+            _activityDirty.Add(asset.FilePath);
+            _activitySaveTimer.Stop();
+            _activitySaveTimer.Start();
+            await _store.AddProjectUsageAsync(new ProjectUsageRecord(
+                Guid.NewGuid().ToString("N"), asset.FilePath, result.ProjectPath, result.ProjectName,
+                action, result.InsertedPath, result.TrackName, result.TrackIndex, result.Position,
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+            UpdateCount();
+            StatusText.Text = T(
+                $"已送入 REAPER：{result.ProjectName} · {result.TrackName}",
+                $"Sent to REAPER: {result.ProjectName} · {result.TrackName}");
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = T("REAPER 交付已取消", "REAPER delivery cancelled");
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = T($"REAPER 交付失败：{exception.Message}", $"REAPER delivery failed: {exception.Message}");
+            AppDiagnostics.Write("REAPER Bridge delivery failed.", exception);
+        }
+        finally
+        {
+            _bridgeBusy = false;
+            UpdateBridgeState();
+        }
+    }
+
+    private async void ProjectUsage_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var rows = await _store.LoadProjectUsageAsync();
+            new ProjectUsageWindow(rows, UiLocalization.IsEnglish(_preferences.Language)) { Owner = this }.ShowDialog();
+        }
+        catch (Exception exception)
+        {
+            StatusText.Text = T($"无法打开工程使用记录：{exception.Message}", $"Could not open project usage history: {exception.Message}");
+            AppDiagnostics.Write("Project usage history failed.", exception);
+        }
+    }
+
     private void ApplyPreferences(DesktopPreferences preferences, bool refreshWaveforms)
     {
         ThemeManager.Apply(preferences);
@@ -2156,6 +2299,9 @@ public partial class MainWindow : Window
         SetNavigationVisible(preferences.NavigationVisible);
         SetInspectorVisible(preferences.InspectorVisible);
         UiLocalization.Apply(this, preferences.Language);
+        if (ProjectUsageButton != null)
+            ProjectUsageButton.Content = T("REAPER 工程使用记录", "REAPER project usage");
+        UpdateBridgeState();
         foreach (var asset in _assets) asset.UiLanguage = preferences.Language;
         if (_view != null) ApplySort();
         if (refreshWaveforms && _selected != null) DetailWaveform.FilePath = _selected.FilePath;
@@ -2357,6 +2503,13 @@ public partial class MainWindow : Window
         menu.Items.Add(reveal); menu.Items.Add(favorite); menu.Items.Add(new Separator());
         menu.Items.Add(saveRegion); menu.Items.Add(deleteRegion); menu.Items.Add(detectTransients); menu.Items.Add(undoTransients); menu.Items.Add(clearTransients);
         menu.Items.Add(reanalyzeLoudness); menu.Items.Add(new Separator());
+        var insertCurrent = new MenuItem { Header = T("送入 REAPER 当前轨", "Send to current REAPER track"), IsEnabled = _selected != null };
+        insertCurrent.Click += InsertCurrent_Click;
+        var insertNew = new MenuItem { Header = T("送入 REAPER 新轨", "Send to new REAPER track"), IsEnabled = _selected != null };
+        insertNew.Click += InsertNew_Click;
+        var insertBwf = new MenuItem { Header = T("按 BWF 时间戳定位", "Spot using BWF timestamp"), IsEnabled = _selected != null };
+        insertBwf.Click += InsertBwf_Click;
+        menu.Items.Add(insertCurrent); menu.Items.Add(insertNew); menu.Items.Add(insertBwf); menu.Items.Add(new Separator());
         menu.Items.Add(clearPlayed); menu.Items.Add(data);
         menu.PlacementTarget = sender as FrameworkElement; menu.IsOpen = true;
     }
@@ -2416,6 +2569,9 @@ public partial class MainWindow : Window
         else if (e.Key == Key.F11) { FocusToggle_Click(sender, e); e.Handled = true; }
         else if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
         else if (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control) { Rescan_Click(sender, e); e.Handled = true; }
+        else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control) { InsertNew_Click(sender, e); e.Handled = true; }
+        else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Shift) { InsertBwf_Click(sender, e); e.Handled = true; }
+        else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None) { InsertCurrent_Click(sender, e); e.Handled = true; }
         else if (e.Key == Key.F && !SearchBox.IsKeyboardFocusWithin) { Favorite_Click(sender, e); e.Handled = true; }
         else if (e.Key == Key.M && !SearchBox.IsKeyboardFocusWithin) { Mark_Click(sender, e); e.Handled = true; }
     }
@@ -2456,7 +2612,7 @@ public partial class MainWindow : Window
         CancelCancellation(ref _analysisCancellation);
         CancelCancellation(ref _selectionDragPreparation);
         CancelCancellation(ref _previewCancellation);
-        _scanCancellation?.Cancel(); _watchFolders.Dispose(); _autoPreviewTimer.Stop(); _activitySaveTimer.Stop(); _timer.Stop(); _previewEngine.Dispose();
+        _scanCancellation?.Cancel(); _watchFolders.Dispose(); _autoPreviewTimer.Stop(); _activitySaveTimer.Stop(); _bridgeTimer.Stop(); _timer.Stop(); _previewEngine.Dispose();
         _preferences.NavigationVisible = _navigationVisible;
         _preferences.InspectorVisible = _inspectorVisible;
         _preferences.AutoPreview = _autoPreview;

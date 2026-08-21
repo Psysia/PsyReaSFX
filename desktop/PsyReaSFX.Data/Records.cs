@@ -62,6 +62,17 @@ public sealed record SavedSearchRecord(
     string? LibraryId);
 public sealed record RegionRecord(string AssetPath, double Start, double Finish, string Name, string Source, string BatchId);
 public sealed record LoudnessRecord(string AssetPath, long Size, double? LufsI, double? LufsM, double? LufsS, double? TruePeak);
+public sealed record ProjectUsageRecord(
+    string Id,
+    string AssetPath,
+    string ProjectPath,
+    string ProjectName,
+    string Action,
+    string InsertedPath,
+    string TrackName,
+    int TrackIndex,
+    double Position,
+    long CreatedUtc);
 
 public sealed class CatalogSnapshot
 {
