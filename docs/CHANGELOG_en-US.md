@@ -1,5 +1,54 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.0 Beta 2
+
+### Quiet Watch Folder
+
+- Runs scheduled Watch Folder checks quietly by default instead of repeatedly
+  occupying the workspace with the full progress panel.
+- Uses a subtle breathing highlight and animated dot on the toolbar scan icon
+  while scanning or indexing newly discovered assets. Hovering exposes live
+  file, folder or indexing progress.
+- Leaves the status area untouched when nothing changed. A concise result is
+  shown only when assets were added, removed or failed.
+- Adds a General setting for quiet background checks. Turning it off restores
+  the full Watch Folder progress panel; first import, manual scans and
+  high-resolution precaching always retain detailed progress and cancellation.
+- Establishes the Release download policy: the current Lua Stable ZIP remains
+  permanently downloadable, while the current preview Release may bundle the
+  Lua beta and latest Desktop package for coordinated testing.
+
+## 0.8.0 Beta 1
+
+### Interrupted-work recovery and failed tasks
+
+- Writes a lightweight checkpoint during scans so an interrupted REAPER or
+  script session can rescan the unfinished sources on the next launch.
+- Persists completed index work periodically during import instead of waiting
+  for the entire batch to finish.
+- Records metadata and waveform failures in `failed_tasks_v1.tsv`; Maintenance
+  can inspect, retry or clear those records.
+- Retries only failed assets rather than reprocessing the whole library.
+
+### Data snapshots and cache health
+
+- Adds daily automatic data backup, manual backup, retention control and
+  restore-latest actions.
+- Backs up settings, library definitions, index data, collections, saved
+  searches, history, Regions and loudness data. Rebuildable waveform caches and
+  source audio are deliberately excluded.
+- Validates RWF1/RWF2/RWF3 headers and payload sizes, moving damaged entries to
+  `cache_quarantine/` instead of permanently deleting them.
+- Makes the Watch Folder interval configurable. Cache verification and other
+  background work continue to yield while the user is interacting.
+
+### Capability boundary
+
+- Lua retains independent waveform lanes for up to eight channels. The SWS
+  Preview API does not expose general routing for arbitrary source channels,
+  so CH 3+ remains a waveform-focus selection rather than pretending that the
+  audible source has been isolated. Original/L/R/mono audition is unchanged.
+
 ## 0.7.23 Stable
 
 ### Deliberate folder-browser entry
