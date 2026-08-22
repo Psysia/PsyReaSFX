@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.7.23
+-- @version 0.8.0-beta2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -135,6 +135,14 @@
 --   - 左键点击图标才打开第一层，避免鼠标经过工具栏时意外遮挡工作区
 --   - 菜单内部继续以悬停级联浏览逻辑库、来源与子目录
 --   - 选中目录后只保留紧凑 Pathname 条件条，不再常驻占用结果区高度
+--   - 0.8.0 Beta 1：回填桌面版的可靠性能力，增加中断扫描恢复
+--   - 元数据与波形失败任务单独记录，支持稍后批量重试
+--   - 新增每日/手动数据快照、保留数量管理与最近备份恢复
+--   - 新增 RWF1/RWF2/RWF3 波形缓存完整性检查与损坏文件隔离
+--   - Watch Folder 检查间隔可调，后台任务继续优先为鼠标交互让步
+--   - 0.8.0 Beta 2：Watch Folder 默认静默检查，不再弹出常驻进度面板
+--   - 后台扫描与增量波形建立统一使用工具栏动态扫描图标提示
+--   - 无变化时完全静默；仅在新增、移除或失败时显示简短结果
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -143,7 +151,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.7.23 Stable"
+local VERSION = "0.8.0 Beta 2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -268,6 +276,21 @@ local PROJECT_URL_FILE =
 
 local DATABASE_FILE =
   DATA_DIR .. SEP .. "index_v3.tsv"
+
+local SCAN_CHECKPOINT_FILE =
+  DATA_DIR .. SEP .. "scan_checkpoint_v1.tsv"
+
+local FAILED_TASKS_FILE =
+  DATA_DIR .. SEP .. "failed_tasks_v1.tsv"
+
+local BACKUP_STATE_FILE =
+  DATA_DIR .. SEP .. "backup_state_v1.tsv"
+
+local BACKUP_DIR =
+  DATA_DIR .. SEP .. "backups"
+
+local CACHE_QUARANTINE_DIR =
+  DATA_DIR .. SEP .. "cache_quarantine"
 
 local DEFAULT_WAVE_CACHE_DIR =
   DATA_DIR .. SEP .. "wave_cache_v3"
@@ -438,6 +461,9 @@ local META_INTERVAL = 0.075
 local WAVE_INTERVAL = 0.012
 local SAVE_INTERVAL = 8
 local WATCH_INTERVAL = 60
+local SCAN_CHECKPOINT_INTERVAL = 1.0
+local IMPORT_CHECKPOINT_INTERVAL = 10.0
+local CACHE_VERIFY_FILES_PER_FRAME = 12
 
 local MINI_WAVE_DEFAULT_POINTS = 256
 local MINI_WAVE_MAX_POINTS = 512
@@ -666,9 +692,23 @@ local state = {
 
   auto_preview = true,
   watch_enabled = true,
+  watch_interval = WATCH_INTERVAL,
+  watch_silent = true,
+  resume_scan_on_start = true,
   next_watch = reaper.time_precise() + WATCH_INTERVAL,
 
   scan = nil,
+  scan_checkpoint_last_at = 0,
+  import_checkpoint_last_at = 0,
+
+  -- 0.8：失败项、备份与缓存校验都独立持久化，不污染主索引。
+  failed_tasks = {},
+  failed_tasks_dirty = false,
+  auto_backup = true,
+  backup_keep_count = 7,
+  backup_last_date = "",
+  cache_verify_session = nil,
+  skip_persistence_on_cleanup = false,
 
   meta_queue = {},
   meta_queued = {},
@@ -1097,6 +1137,8 @@ I18N_EN = {
   ["关闭"] = "Close",
   ["添加根目录…"] = "Add root folder…",
   ["增量扫描"] = "Incremental scan",
+  ["静默后台检查（仅显示工具栏动态状态）"] =
+    "Silent background checks (toolbar activity only)",
   ["清空波形缓存"] = "Clear waveform cache",
   ["选择后自动试听"] = "Auto-preview on selection",
   ["循环"] = "Loop",
@@ -1282,6 +1324,31 @@ I18N_EN = {
   ["控制素材目录的定时增量检查。手动扫描仍可使用 Ctrl+R 或主界面刷新按钮。"] =
     "Control periodic incremental checks of source folders. Manual scans remain available with Ctrl+R or the main refresh button.",
   ["启用 Watch Folder"] = "Enable Watch Folder",
+  ["检查间隔"] = "Check interval",
+  ["启动时恢复中断的扫描"] = "Resume interrupted scan on startup",
+  ["可靠性与恢复"] = "Reliability and recovery",
+  ["失败任务、数据备份和缓存检查均不修改源音频。"] =
+    "Failed-task recovery, data backups, and cache verification never modify source audio.",
+  ["当前没有待处理的失败任务。"] = "There are no failed tasks to process.",
+  ["重试全部失败任务"] = "Retry all failed tasks",
+  ["清除失败记录"] = "Clear failure records",
+  ["失败任务记录已清除"] = "Failure records cleared",
+  ["每天自动备份一次数据"] = "Back up data once per day",
+  ["保留备份数量"] = "Backups to keep",
+  ["立即创建备份"] = "Create backup now",
+  ["打开备份目录"] = "Open backup folder",
+  ["恢复最近备份…"] = "Restore latest backup…",
+  ["检查波形缓存完整性"] = "Verify waveform cache",
+  ["损坏缓存会移入 cache_quarantine；需要时可从源音频重新生成。"] =
+    "Corrupt cache files are moved to cache_quarantine and can be rebuilt from source audio.",
+  ["请等待当前后台任务完成"] = "Wait for the current background task to finish",
+  ["波形缓存检查已经在运行"] = "Waveform cache verification is already running",
+  ["无法保存失败任务"] = "Unable to save failed tasks",
+  ["没有可重试的失败任务"] = "There are no failed tasks that can be retried",
+  ["无法创建数据备份目录"] = "Unable to create the data-backup folder",
+  ["没有可备份的数据文件"] = "There are no data files to back up",
+  ["没有可恢复的数据备份"] = "There is no data backup to restore",
+  ["备份中没有可恢复的数据"] = "The backup contains no restorable data",
   ["拖拽到 REAPER 编排区"] = "Drag to the REAPER arrange view",
   ["播放或停止"] = "Play or stop",
   ["收藏或取消收藏"] = "Toggle favorite",
@@ -1769,6 +1836,34 @@ I18N_PREFIX_EN = {
 }
 
 I18N_PATTERNS_EN = {
+  {
+    "^后台检查中：(%d+) 个音频 / (%d+) 个目录$",
+    "Background check: %1 files / %2 folders",
+  },
+  {
+    "^后台建立索引：(%d+) / (%d+)，失败 (%d+)$",
+    "Background indexing: %1 / %2, %3 failed",
+  },
+  {
+    "^后台更新：新增 (%d+) 个，移除 (%d+) 个，失败 (%d+) 个$",
+    "Background update: %1 added, %2 removed, %3 failed",
+  },
+  {
+    "^后台更新：移除 (%d+) 个离线素材$",
+    "Background update: %1 offline files removed",
+  },
+  { "^失败任务：(%d+)$", "Failed tasks: %1" },
+  { "^正在重试 (%d+) 个失败任务$", "Retrying %1 failed tasks" },
+  { "^开始检查 (%d+) 个波形缓存$", "Verifying %1 waveform cache files" },
+  {
+    "^缓存检查 (%d+) / (%d+) · 有效 (%d+) · 损坏 (%d+)$",
+    "Cache verification %1 / %2 · valid %3 · corrupt %4",
+  },
+  {
+    "^缓存检查完成：有效 (%d+)，隔离损坏 (%d+)，([%d%.]+) 秒$",
+    "Cache verification complete: %1 valid, %2 corrupt quarantined, %3 s",
+  },
+  { "^数据备份已创建：(.+)$", "Data backup created: %1" },
   { "^(%d+) 个来源路径 · (%d+) 个素材$", "%1 source folders · %2 files" },
   { "^(%d+) 个来源 · (%d+) 个素材$", "%1 sources · %2 files" },
   { "^已拖入 (%d+) 个文件夹$", "%1 folders dropped" },
@@ -3458,6 +3553,8 @@ end
 
 function ensure_dirs()
   reaper.RecursiveCreateDirectory(DATA_DIR, 0)
+  reaper.RecursiveCreateDirectory(BACKUP_DIR, 0)
+  reaper.RecursiveCreateDirectory(CACHE_QUARANTINE_DIR, 0)
   apply_wave_cache_directory(
     state.wave_cache_dir
       or DEFAULT_WAVE_CACHE_DIR
@@ -3712,6 +3809,425 @@ function copy_file_streaming(
   end
 
   return true
+end
+
+function persistent_data_files()
+  return {
+    CONFIG_FILE,
+    LIBRARIES_FILE,
+    DATABASE_FILE,
+    COLLECTIONS_FILE,
+    SAVED_SEARCHES_FILE,
+    HISTORY_FILE,
+    LAST_PLAYED_SESSION_FILE,
+    REGIONS_FILE,
+    LOUDNESS_FILE,
+    FAILED_TASKS_FILE,
+    BACKUP_STATE_FILE,
+    PROJECT_URL_FILE,
+  }
+end
+
+function remove_shallow_directory(path)
+  while true do
+    local filename = reaper.EnumerateFiles(path, 0)
+
+    if not filename then
+      break
+    end
+
+    os.remove(join_path(path, filename))
+  end
+
+  return os.remove(path)
+end
+
+function save_backup_state()
+  ensure_dirs()
+
+  local file = io.open(BACKUP_STATE_FILE, "wb")
+
+  if not file then
+    return false
+  end
+
+  file:write("last_date\t", escape_tsv(state.backup_last_date or ""), "\n")
+  file:close()
+  return true
+end
+
+function load_backup_state()
+  local file = io.open(BACKUP_STATE_FILE, "rb")
+
+  if not file then
+    return
+  end
+
+  for line in file:lines() do
+    local fields = split_tsv(line)
+
+    if fields[1] == "last_date" then
+      state.backup_last_date = fields[2] or ""
+    end
+  end
+
+  file:close()
+end
+
+function backup_directories()
+  local result = {}
+  local index = 0
+
+  while true do
+    local name = reaper.EnumerateSubdirectories(BACKUP_DIR, index)
+
+    if not name then
+      break
+    end
+
+    if name:match("^%d%d%d%d%d%d%d%d_%d%d%d%d%d%d") then
+      result[#result + 1] = name
+    end
+
+    index = index + 1
+  end
+
+  table.sort(result, function(a, b) return a > b end)
+  return result
+end
+
+function prune_data_backups()
+  local names = backup_directories()
+  local keep = clamp(math.floor(state.backup_keep_count or 7), 1, 30)
+
+  for index = keep + 1, #names do
+    remove_shallow_directory(join_path(BACKUP_DIR, names[index]))
+  end
+end
+
+function create_data_backup(reason, quiet)
+  ensure_dirs()
+
+  local date_key = os.date("%Y%m%d")
+  local directory_name = os.date("%Y%m%d_%H%M%S")
+    .. "_"
+    .. (reason == "auto" and "auto" or "manual")
+  local directory = join_path(BACKUP_DIR, directory_name)
+
+  local suffix = 2
+  while directory_exists(directory) do
+    directory_name = os.date("%Y%m%d_%H%M%S")
+      .. "_"
+      .. (reason == "auto" and "auto" or "manual")
+      .. "_"
+      .. tostring(suffix)
+    directory = join_path(BACKUP_DIR, directory_name)
+    suffix = suffix + 1
+  end
+
+  if reaper.RecursiveCreateDirectory(directory, 0) <= 0 then
+    if not quiet then
+      set_status("无法创建数据备份目录", true)
+    end
+    return false
+  end
+
+  local copied = 0
+
+  for _, source_path in ipairs(persistent_data_files()) do
+    if reaper.file_exists(source_path) then
+      if copy_file_streaming(
+        source_path,
+        join_path(directory, basename(source_path))
+      ) then
+        copied = copied + 1
+      end
+    end
+  end
+
+  local manifest = io.open(join_path(directory, "manifest.tsv"), "wb")
+
+  if manifest then
+    manifest:write("version\t", VERSION, "\n")
+    manifest:write("created\t", os.date("%Y-%m-%d %H:%M:%S"), "\n")
+    manifest:write("reason\t", reason or "manual", "\n")
+    manifest:write("files\t", tostring(copied), "\n")
+    manifest:close()
+  end
+
+  if copied <= 0 then
+    remove_shallow_directory(directory)
+    if not quiet then
+      set_status("没有可备份的数据文件", true)
+    end
+    return false
+  end
+
+  state.backup_last_date = date_key
+  save_backup_state()
+  prune_data_backups()
+
+  if not quiet then
+    set_status("数据备份已创建：" .. directory_name)
+  end
+
+  return true
+end
+
+function restore_latest_data_backup()
+  local names = backup_directories()
+  local name = names[1]
+
+  if not name then
+    set_status("没有可恢复的数据备份", true)
+    return
+  end
+
+  local answer = reaper.MB(
+    "将恢复最近的数据备份：\n\n"
+      .. name
+      .. "\n\n恢复后 PsyReaSFX 会关闭，请重新运行脚本。继续吗？",
+    SCRIPT_NAME,
+    4
+  )
+
+  if answer ~= 6 then
+    return
+  end
+
+  local directory = join_path(BACKUP_DIR, name)
+  local restored = 0
+
+  for _, target_path in ipairs(persistent_data_files()) do
+    local source_path = join_path(directory, basename(target_path))
+
+    if reaper.file_exists(source_path)
+      and copy_file_streaming(source_path, target_path) then
+      restored = restored + 1
+    end
+  end
+
+  if restored <= 0 then
+    set_status("备份中没有可恢复的数据", true)
+    return
+  end
+
+  state.skip_persistence_on_cleanup = true
+  state.open = false
+  reaper.MB(
+    "已恢复 " .. tostring(restored) .. " 个数据文件。\n\n请重新运行 PsyReaSFX。",
+    SCRIPT_NAME,
+    0
+  )
+end
+
+function write_scan_checkpoint(scan, phase)
+  if not scan then
+    return
+  end
+
+  ensure_dirs()
+  local temporary = SCAN_CHECKPOINT_FILE .. ".tmp"
+  local file = io.open(temporary, "wb")
+
+  if not file then
+    return
+  end
+
+  file:write("version\t1\n")
+  file:write("phase\t", escape_tsv(phase or "scan"), "\n")
+  file:write("reason\t", escape_tsv(scan.reason or "扫描"), "\n")
+  file:write("files\t", tostring(scan.files or 0), "\n")
+  file:write("directories\t", tostring(scan.directories or 0), "\n")
+
+  for _, root in ipairs(scan.roots or {}) do
+    file:write("root\t", escape_tsv(root), "\n")
+  end
+
+  file:close()
+  os.remove(SCAN_CHECKPOINT_FILE)
+  os.rename(temporary, SCAN_CHECKPOINT_FILE)
+end
+
+function clear_scan_checkpoint()
+  os.remove(SCAN_CHECKPOINT_FILE)
+end
+
+function load_scan_checkpoint()
+  local file = io.open(SCAN_CHECKPOINT_FILE, "rb")
+
+  if not file then
+    return nil
+  end
+
+  local checkpoint = { roots = {}, reason = "恢复中断扫描" }
+
+  for line in file:lines() do
+    local fields = split_tsv(line)
+
+    if fields[1] == "root" and fields[2] and fields[2] ~= "" then
+      checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
+    elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
+      checkpoint.reason = fields[2]
+    end
+  end
+
+  file:close()
+
+  if #checkpoint.roots == 0 then
+    clear_scan_checkpoint()
+    return nil
+  end
+
+  return checkpoint
+end
+
+function load_failed_tasks()
+  state.failed_tasks = {}
+  local file = io.open(FAILED_TASKS_FILE, "rb")
+
+  if not file then
+    return
+  end
+
+  for line in file:lines() do
+    local fields = split_tsv(line)
+    local path = fields[1] or ""
+
+    if path ~= "" then
+      state.failed_tasks[path_key(path)] = {
+        path = path,
+        stage = fields[2] or "unknown",
+        reason = fields[3] or "",
+        attempts = tonumber(fields[4]) or 1,
+        updated = tonumber(fields[5]) or 0,
+      }
+    end
+  end
+
+  file:close()
+end
+
+function save_failed_tasks()
+  ensure_dirs()
+  local temporary_path = FAILED_TASKS_FILE .. ".tmp"
+  local file = io.open(temporary_path, "wb")
+
+  if not file then
+    set_status("无法保存失败任务", true)
+    return false
+  end
+
+  local tasks = {}
+
+  for _, task in pairs(state.failed_tasks) do
+    tasks[#tasks + 1] = task
+  end
+
+  table.sort(tasks, function(a, b) return path_key(a.path) < path_key(b.path) end)
+
+  for _, task in ipairs(tasks) do
+    file:write(
+      escape_tsv(task.path), "\t",
+      escape_tsv(task.stage), "\t",
+      escape_tsv(task.reason), "\t",
+      tostring(task.attempts or 1), "\t",
+      tostring(task.updated or os.time()), "\n"
+    )
+  end
+
+  file:close()
+
+  os.remove(FAILED_TASKS_FILE)
+
+  if not os.rename(temporary_path, FAILED_TASKS_FILE) then
+    os.remove(temporary_path)
+    set_status("无法保存失败任务", true)
+    return false
+  end
+
+  state.failed_tasks_dirty = false
+  return true
+end
+
+function record_failed_task(asset, stage, reason)
+  if not asset or not asset.path then
+    return
+  end
+
+  local key = path_key(asset.path)
+  local previous = state.failed_tasks[key]
+
+  state.failed_tasks[key] = {
+    path = asset.path,
+    stage = stage or "unknown",
+    reason = tostring(reason or "未知错误"),
+    attempts = (previous and previous.attempts or 0) + 1,
+    updated = os.time(),
+  }
+  state.failed_tasks_dirty = true
+end
+
+function clear_failed_task(asset_or_path)
+  local path = type(asset_or_path) == "table"
+    and asset_or_path.path
+    or asset_or_path
+
+  if path and state.failed_tasks[path_key(path)] then
+    state.failed_tasks[path_key(path)] = nil
+    state.failed_tasks_dirty = true
+  end
+end
+
+function failed_task_count()
+  local count = 0
+  for _ in pairs(state.failed_tasks) do count = count + 1 end
+  return count
+end
+
+function retry_failed_tasks()
+  if state.scan or state.import_session or state.precache_session then
+    set_status("请等待当前后台任务完成", true)
+    return
+  end
+
+  local assets = {}
+
+  for key, task in pairs(state.failed_tasks) do
+    if reaper.file_exists(task.path) then
+      local asset = state.by_path[key]
+
+      if not asset then
+        local root = root_for_path(task.path)
+        asset = add_or_update_asset(make_placeholder(task.path, root or ""))
+      end
+
+      asset.indexed = false
+      asset.ready = false
+      asset.pending_batch = true
+      asset.wave_error = nil
+      assets[#assets + 1] = asset
+    end
+  end
+
+  if #assets == 0 then
+    set_status("没有可重试的失败任务", true)
+    return
+  end
+
+  state.import_session = {
+    label = "重试失败任务",
+    roots = {},
+    assets = assets,
+    total = #assets,
+    done = 0,
+    failed = 0,
+    current = nil,
+    started = reaper.time_precise(),
+    phase = "prepare",
+  }
+  state.import_cancel_requested = false
+  set_status(string.format("正在重试 %d 个失败任务", #assets))
 end
 
 function reset_wave_cache_runtime()
@@ -4376,6 +4892,16 @@ function load_config()
 
       if name == "watch" then
         state.watch_enabled = value == "1"
+      elseif name == "watch_interval" then
+        state.watch_interval = clamp(tonumber(value) or WATCH_INTERVAL, 15, 3600)
+      elseif name == "watch_silent" then
+        state.watch_silent = value ~= "0"
+      elseif name == "resume_scan_on_start" then
+        state.resume_scan_on_start = value ~= "0"
+      elseif name == "auto_backup" then
+        state.auto_backup = value ~= "0"
+      elseif name == "backup_keep_count" then
+        state.backup_keep_count = clamp(math.floor(tonumber(value) or 7), 1, 30)
       elseif name == "auto_preview" then
         state.auto_preview = value == "1"
       elseif name == "insert_lowercase" then
@@ -4737,6 +5263,36 @@ function save_config()
   file:write(
     "setting\twatch\t",
     state.watch_enabled and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\twatch_interval\t",
+    tostring(state.watch_interval or WATCH_INTERVAL),
+    "\n"
+  )
+
+  file:write(
+    "setting\twatch_silent\t",
+    state.watch_silent and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tresume_scan_on_start\t",
+    state.resume_scan_on_start and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tauto_backup\t",
+    state.auto_backup and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tbackup_keep_count\t",
+    tostring(state.backup_keep_count or 7),
     "\n"
   )
 
@@ -8638,8 +9194,11 @@ end
 -- Scan
 ----------------------------------------------------------------
 
-function start_scan(reason, roots_override)
+function start_scan(reason, roots_override, options)
   local requested = roots_override or state.roots
+  local silent =
+    type(options) == "table"
+    and options.silent == true
 
   if #requested == 0 then
     set_status("请先添加音效库根目录", true)
@@ -8659,6 +9218,7 @@ function start_scan(reason, roots_override)
     directories = 0,
     new_assets = {},
     started = reaper.time_precise(),
+    silent = silent,
   }
 
   for _, root in ipairs(requested) do
@@ -8681,14 +9241,18 @@ function start_scan(reason, roots_override)
   end
 
   state.scan = scan
+  state.scan_checkpoint_last_at = 0
+  write_scan_checkpoint(scan, "scan")
 
-  set_status(
-    string.format(
-      "%s：正在扫描 %d 个目录…",
-      scan.reason,
-      #scan.roots
+  if not scan.silent then
+    set_status(
+      string.format(
+        "%s：正在扫描 %d 个目录…",
+        scan.reason,
+        #scan.roots
+      )
     )
-  )
+  end
 end
 
 function finish_scan()
@@ -8699,6 +9263,8 @@ function finish_scan()
   end
 
   local removed = 0
+
+  clear_scan_checkpoint()
 
   for key, asset in pairs(state.by_path) do
     local belongs =
@@ -8744,19 +9310,32 @@ function finish_scan()
       current = nil,
       started = scan.started,
       phase = "prepare",
+      silent = scan.silent,
+      removed = removed,
     }
 
     state.import_cancel_requested = false
 
-    set_status(
-      string.format(
-        "%s：扫描完成，正在分析并建立 %d 个波形…",
-        scan.reason,
-        #pending
+    if not scan.silent then
+      set_status(
+        string.format(
+          "%s：扫描完成，正在分析并建立 %d 个波形…",
+          scan.reason,
+          #pending
+        )
       )
-    )
+    end
   else
-    if scan.ignored > 0 then
+    if scan.silent then
+      if removed > 0 then
+        set_status(
+          string.format(
+            "后台更新：移除 %d 个离线素材",
+            removed
+          )
+        )
+      end
+    elseif scan.ignored > 0 then
       set_status(
         string.format(
           "扫描完成：%d 个音频，移除 %d 个，忽略 %d 个系统文件，%.1f 秒",
@@ -8790,6 +9369,14 @@ function process_scan()
 
   local deadline =
     reaper.time_precise() + SCAN_BUDGET
+
+  local now = reaper.time_precise()
+
+  if now - (state.scan_checkpoint_last_at or 0)
+      >= SCAN_CHECKPOINT_INTERVAL then
+    write_scan_checkpoint(scan, "scan")
+    state.scan_checkpoint_last_at = now
+  end
 
   while reaper.time_precise() < deadline do
     local dir = scan.current
@@ -9674,6 +10261,7 @@ function process_wave_queue()
 
   if result == "done" then
     job.asset.wave_error = nil
+    clear_failed_task(job.asset)
     store_wave_memory(job.key, waveform)
     save_wave_to_disk(
       job.asset,
@@ -9687,6 +10275,7 @@ function process_wave_queue()
   elseif result == "failed" then
     destroy_wave_job(job)
     job.asset.wave_error = tostring(err or "波形建立失败")
+    record_failed_task(job.asset, "waveform", job.asset.wave_error)
     state.wave_queued[job.key] = nil
     state.wave_active = nil
     set_status(
@@ -9957,6 +10546,153 @@ function clear_wave_cache()
   set_status("已清空波形缓存")
 end
 
+function validate_wave_cache_file(path)
+  local file = io.open(path, "rb")
+
+  if not file then
+    return false, "无法打开"
+  end
+
+  local header = file:read("*l") or ""
+  local version, count_text, channels_text =
+    header:match("^(RWF3)%s+(%d+)%s+(%d+)$")
+  local expected
+
+  if version == "RWF3" then
+    local count = tonumber(count_text) or 0
+    local channels = tonumber(channels_text) or 0
+
+    if count < 1 or count > LARGE_WAVE_MAX_POINTS
+      or channels < 1 or channels > 8 then
+      file:close()
+      return false, "RWF3 头部无效"
+    end
+
+    expected = count * channels * 2
+  else
+    version, count_text = header:match("^(RWF2)%s+(%d+)$")
+
+    if version == "RWF2" then
+      local count = tonumber(count_text) or 0
+
+      if count < 1 or count > LARGE_WAVE_MAX_POINTS then
+        file:close()
+        return false, "RWF2 头部无效"
+      end
+
+      expected = count * 2
+    else
+      local count = tonumber(header)
+
+      if not count or count < 1 or count > LARGE_WAVE_MAX_POINTS then
+        file:close()
+        return false, "未知缓存格式"
+      end
+
+      expected = count
+    end
+  end
+
+  local data_start = file:seek() or 0
+  local total_size = file:seek("end") or 0
+  file:close()
+
+  if total_size - data_start ~= expected then
+    return false, "缓存长度不匹配"
+  end
+
+  return true
+end
+
+function start_wave_cache_verification()
+  if state.cache_verify_session then
+    set_status("波形缓存检查已经在运行", true)
+    return
+  end
+
+  if state.scan or state.import_session or state.precache_session then
+    set_status("请等待当前后台任务完成", true)
+    return
+  end
+
+  local files = {}
+  local index = 0
+
+  while true do
+    local filename = reaper.EnumerateFiles(WAVE_CACHE_DIR, index)
+
+    if not filename then
+      break
+    end
+
+    if safe_lower(extension(filename)) == "rwf" then
+      files[#files + 1] = filename
+    end
+
+    index = index + 1
+  end
+
+  state.cache_verify_session = {
+    files = files,
+    total = #files,
+    index = 1,
+    valid = 0,
+    invalid = 0,
+    started = reaper.time_precise(),
+  }
+
+  set_status(string.format("开始检查 %d 个波形缓存", #files))
+end
+
+function process_wave_cache_verification()
+  local session = state.cache_verify_session
+
+  if not session or not can_run_heavy_job() then
+    return
+  end
+
+  for _ = 1, CACHE_VERIFY_FILES_PER_FRAME do
+    local filename = session.files[session.index]
+
+    if not filename then
+      local elapsed = reaper.time_precise() - session.started
+      local invalid = session.invalid
+      state.cache_verify_session = nil
+      reset_wave_cache_runtime()
+      set_status(
+        string.format(
+          "缓存检查完成：有效 %d，隔离损坏 %d，%.1f 秒",
+          session.valid,
+          invalid,
+          elapsed
+        ),
+        invalid > 0
+      )
+      return
+    end
+
+    local path = join_path(WAVE_CACHE_DIR, filename)
+    local valid = validate_wave_cache_file(path)
+
+    if valid then
+      session.valid = session.valid + 1
+    else
+      local quarantine = join_path(
+        CACHE_QUARANTINE_DIR,
+        os.date("%Y%m%d_%H%M%S_") .. filename
+      )
+
+      if copy_file_streaming(path, quarantine) then
+        os.remove(path)
+      end
+
+      session.invalid = session.invalid + 1
+    end
+
+    session.index = session.index + 1
+  end
+end
+
 ----------------------------------------------------------------
 -- Import preparation pipeline
 ----------------------------------------------------------------
@@ -9981,16 +10717,30 @@ function finish_import_session()
   state.db_dirty = true
 
   save_database()
+  save_failed_tasks()
+  clear_scan_checkpoint()
 
-  set_status(
-    string.format(
-      "导入完成：%d 个可用，%d 个失败，%.1f 秒",
-      session.done - session.failed,
-      session.failed,
-      elapsed
-    ),
-    session.failed > 0
-  )
+  if session.silent then
+    set_status(
+      string.format(
+        "后台更新：新增 %d 个，移除 %d 个，失败 %d 个",
+        session.done - session.failed,
+        session.removed or 0,
+        session.failed
+      ),
+      session.failed > 0
+    )
+  else
+    set_status(
+      string.format(
+        "导入完成：%d 个可用，%d 个失败，%.1f 秒",
+        session.done - session.failed,
+        session.failed,
+        elapsed
+      ),
+      session.failed > 0
+    )
+  end
 end
 
 function cancel_import_session()
@@ -10026,6 +10776,15 @@ function process_import_session()
 
   if not session then
     return
+  end
+
+  local checkpoint_now = reaper.time_precise()
+
+  if checkpoint_now - (state.import_checkpoint_last_at or 0)
+      >= IMPORT_CHECKPOINT_INTERVAL then
+    save_database()
+    save_failed_tasks()
+    state.import_checkpoint_last_at = checkpoint_now
   end
 
   if state.import_cancel_requested then
@@ -10064,6 +10823,7 @@ function process_import_session()
 
       if not ok then
         asset.wave_error = "媒体文件无法读取"
+        record_failed_task(asset, "metadata", asset.wave_error)
         asset.ready = true
         session.failed = session.failed + 1
         session.done = session.done + 1
@@ -10090,6 +10850,7 @@ function process_import_session()
       store_wave_memory(key, cached)
       asset.ready = true
       asset.wave_error = nil
+      clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
       state.db_dirty = true
@@ -10129,6 +10890,7 @@ function process_import_session()
 
       asset.ready = true
       asset.wave_error = nil
+      clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
       state.db_dirty = true
@@ -10136,6 +10898,7 @@ function process_import_session()
       destroy_wave_job(current.wave_job)
       asset.ready = true
       asset.wave_error = tostring(err or "波形建立失败")
+      record_failed_task(asset, "waveform", asset.wave_error)
       session.failed = session.failed + 1
       session.done = session.done + 1
       session.current = nil
@@ -13266,6 +14029,12 @@ function reset_interface_settings()
   state.sort_mode = "name"
   state.sort_desc = false
   state.auto_preview = true
+  state.watch_enabled = true
+  state.watch_interval = WATCH_INTERVAL
+  state.watch_silent = true
+  state.resume_scan_on_start = true
+  state.auto_backup = true
+  state.backup_keep_count = 7
   state.pitch = 0
   state.rate = 1
   state.gain_db = 0
@@ -13447,6 +14216,10 @@ function reset_database_keep_roots()
   os.remove(DATABASE_FILE)
   os.remove(HISTORY_FILE)
   os.remove(LAST_PLAYED_SESSION_FILE)
+  os.remove(SCAN_CHECKPOINT_FILE)
+  os.remove(FAILED_TASKS_FILE)
+  state.failed_tasks = {}
+  state.failed_tasks_dirty = false
   state.history_dirty = false
   state.session_played = {}
   state.last_session_played = {}
@@ -13511,6 +14284,9 @@ function factory_reset()
   os.remove(LAST_PLAYED_SESSION_FILE)
   os.remove(REGIONS_FILE)
   os.remove(LOUDNESS_FILE)
+  os.remove(SCAN_CHECKPOINT_FILE)
+  os.remove(FAILED_TASKS_FILE)
+  os.remove(BACKUP_STATE_FILE)
   state.config_dirty = false
   state.libraries_dirty = false
   state.db_dirty = false
@@ -13520,6 +14296,8 @@ function factory_reset()
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
+  state.failed_tasks = {}
+  state.failed_tasks_dirty = false
 
   state.wave_cache_dir =
     DEFAULT_WAVE_CACHE_DIR
@@ -14353,7 +15131,7 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
   end
 end
 
-function icon_button(id, icon, tooltip_text, active, size)
+function icon_button(id, icon, tooltip_text, active, size, pulse)
   size = size or UI_METRIC.icon_button
 
   local x, y = ImGui.GetCursorScreenPos(ctx)
@@ -14374,8 +15152,18 @@ function icon_button(id, icon, tooltip_text, active, size)
   -- Studio-style controls stay visually quiet at rest. Hover and enabled
   -- states use a soft tint instead of permanent boxes and borders.
   if active or item_active or hovered then
+    local pulse_alpha =
+      pulse
+      and math.floor(
+        0x22
+        + 0x20 * (
+          0.5
+          + 0.5 * math.sin(reaper.time_precise() * 6.5)
+        )
+      )
+      or 0x32
     local background =
-      active and rgba_with_alpha(COLOR.accent, 0x32)
+      active and rgba_with_alpha(COLOR.accent, pulse_alpha)
       or item_active and rgba_with_alpha(COLOR.accent, 0x26)
       or rgba_with_alpha(COLOR.text, 0x14)
 
@@ -14402,6 +15190,24 @@ function icon_button(id, icon, tooltip_text, active, size)
       and COLOR.accent
       or COLOR.text
   )
+
+  if pulse then
+    local phase =
+      0.5
+      + 0.5 * math.sin(reaper.time_precise() * 6.5)
+    ImGui.DrawList_AddCircle(
+      draw_list,
+      x + size - math.max(5, size * 0.17),
+      y + math.max(5, size * 0.17),
+      math.max(2, size * (0.055 + phase * 0.025)),
+      rgba_with_alpha(
+        COLOR.accent,
+        math.floor(0x90 + phase * 0x6F)
+      ),
+      16,
+      1.5
+    )
+  end
 
   if tooltip_text then
     tooltip(tooltip_text)
@@ -17163,14 +17969,37 @@ function draw_toolbar()
 
   ImGui.SameLine(ctx)
 
+  local background_scan_active =
+    (state.scan and state.scan.silent)
+    or (state.import_session and state.import_session.silent)
+  local scan_tooltip = "增量扫描"
+
+  if state.scan then
+    scan_tooltip = string.format(
+      "后台检查中：%d 个音频 / %d 个目录",
+      state.scan.files,
+      state.scan.directories
+    )
+  elseif state.import_session and state.import_session.silent then
+    scan_tooltip = string.format(
+      "后台建立索引：%d / %d，失败 %d",
+      state.import_session.done,
+      state.import_session.total,
+      state.import_session.failed
+    )
+  end
+
   if icon_button(
     "scan",
     "refresh",
-    "增量扫描",
-    state.scan ~= nil,
-    control_size
+    scan_tooltip,
+    state.scan ~= nil or background_scan_active,
+    control_size,
+    background_scan_active
   ) then
-    start_scan("增量扫描")
+    if not state.scan and not state.import_session then
+      start_scan("增量扫描")
+    end
   end
 
   ImGui.SameLine(ctx)
@@ -17362,7 +18191,7 @@ function draw_sub_toolbar()
     "右键表头选择字段；拖动分隔线调整列宽；Shift+滚轮横向查看"
   )
 
-  if state.scan then
+  if state.scan and not state.scan.silent then
     ImGui.SameLine(ctx)
     ImGui.TextColored(
       ctx,
@@ -17377,8 +18206,14 @@ function draw_sub_toolbar()
 end
 
 function draw_import_progress()
-  if not state.scan
-    and not state.import_session
+  local visible_scan =
+    state.scan and not state.scan.silent
+  local visible_import =
+    state.import_session
+    and not state.import_session.silent
+
+  if not visible_scan
+    and not visible_import
     and not state.precache_session then
     return
   end
@@ -17449,7 +18284,7 @@ function draw_import_progress()
         ctx,
         compact(current_name, 80)
       )
-    elseif state.scan then
+    elseif visible_scan then
       local animated =
         (reaper.time_precise() * 0.28) % 1
 
@@ -17471,7 +18306,7 @@ function draw_import_progress()
         "扫描中"
       )
     else
-      local session = state.import_session
+      local session = visible_import
       local current_progress =
         session.current
         and session.current.progress
@@ -17523,7 +18358,7 @@ function draw_import_progress()
     if dark_button("取消", 72) then
       if state.precache_session then
         state.precache_cancel_requested = true
-      elseif state.scan then
+      elseif visible_scan then
         local scan = state.scan
 
         for _, asset in ipairs(scan.new_assets or {}) do
@@ -17533,6 +18368,7 @@ function draw_import_progress()
         end
 
         state.scan = nil
+        clear_scan_checkpoint()
         rebuild_assets()
         state.db_dirty = true
         set_status("已取消扫描")
@@ -21962,7 +22798,48 @@ function draw_settings_general()
 
   if watch_changed then
     state.next_watch =
-      reaper.time_precise() + WATCH_INTERVAL
+      reaper.time_precise() + state.watch_interval
+    state.config_dirty = true
+  end
+
+  ImGui.SetNextItemWidth(ctx, 220)
+  local interval_changed
+  interval_changed, state.watch_interval =
+    ImGui.SliderDouble(
+      ctx,
+      "检查间隔",
+      state.watch_interval,
+      15,
+      600,
+      "%.0f s"
+    )
+
+  if interval_changed then
+    state.next_watch = reaper.time_precise() + state.watch_interval
+    state.config_dirty = true
+  end
+
+  local silent_changed
+  silent_changed, state.watch_silent =
+    ImGui.Checkbox(
+      ctx,
+      "静默后台检查（仅显示工具栏动态状态）",
+      state.watch_silent
+    )
+
+  if silent_changed then
+    state.config_dirty = true
+  end
+
+  local resume_changed
+  resume_changed, state.resume_scan_on_start =
+    ImGui.Checkbox(
+      ctx,
+      "启动时恢复中断的扫描",
+      state.resume_scan_on_start
+    )
+
+  if resume_changed then
     state.config_dirty = true
   end
 
@@ -23997,6 +24874,132 @@ function draw_settings_maintenance()
   ImGui.Separator(ctx)
 
   settings_section_title(
+    "可靠性与恢复",
+    "失败任务、数据备份和缓存检查均不修改源音频。"
+  )
+
+  local failed_count = failed_task_count()
+  ImGui.Text(
+    ctx,
+    string.format("失败任务：%d", failed_count)
+  )
+
+  if failed_count > 0 then
+    local shown = 0
+
+    for _, task in pairs(state.failed_tasks) do
+      ImGui.TextDisabled(
+        ctx,
+        compact(
+          basename(task.path)
+            .. " · "
+            .. tostring(task.stage)
+            .. " · "
+            .. tostring(task.reason),
+          100
+        )
+      )
+      shown = shown + 1
+      if shown >= 5 then break end
+    end
+
+    if dark_button("重试全部失败任务", 170) then
+      retry_failed_tasks()
+    end
+
+    ImGui.SameLine(ctx)
+
+    if dark_button("清除失败记录", 140) then
+      state.failed_tasks = {}
+      state.failed_tasks_dirty = true
+      save_failed_tasks()
+      set_status("失败任务记录已清除")
+    end
+  else
+    ImGui.TextDisabled(ctx, "当前没有待处理的失败任务。")
+  end
+
+  ImGui.Spacing(ctx)
+
+  local auto_backup_changed
+  auto_backup_changed, state.auto_backup =
+    ImGui.Checkbox(ctx, "每天自动备份一次数据", state.auto_backup)
+
+  if auto_backup_changed then
+    state.config_dirty = true
+  end
+
+  ImGui.SetNextItemWidth(ctx, 220)
+  local keep_changed
+  keep_changed, state.backup_keep_count =
+    ImGui.SliderDouble(
+      ctx,
+      "保留备份数量",
+      state.backup_keep_count,
+      1,
+      30,
+      "%.0f"
+    )
+
+  if keep_changed then
+    state.backup_keep_count = math.floor(state.backup_keep_count + 0.5)
+    state.config_dirty = true
+  end
+
+  if dark_button("立即创建备份", 150) then
+    if state.config_dirty then save_config() end
+    if state.libraries_dirty then save_libraries() end
+    if state.db_dirty and not state.scan and not state.import_session then save_database() end
+    if state.collections_dirty then save_collections() end
+    if state.searches_dirty then save_saved_searches() end
+    if state.history_dirty then save_history() end
+    if state.regions_dirty then save_regions() end
+    if state.loudness_dirty then save_loudness_cache() end
+    if state.failed_tasks_dirty then save_failed_tasks() end
+    create_data_backup("manual", false)
+  end
+
+  ImGui.SameLine(ctx)
+
+  if dark_button("打开备份目录", 140) then
+    open_folder(BACKUP_DIR)
+  end
+
+  ImGui.SameLine(ctx)
+
+  if dark_button("恢复最近备份…", 150) then
+    restore_latest_data_backup()
+  end
+
+  ImGui.Spacing(ctx)
+
+  if state.cache_verify_session then
+    local session = state.cache_verify_session
+    local completed = math.min(session.index - 1, session.total)
+    local fraction = session.total > 0 and completed / session.total or 1
+    ImGui.Text(
+      ctx,
+      string.format(
+        "缓存检查 %d / %d · 有效 %d · 损坏 %d",
+        completed,
+        session.total,
+        session.valid,
+        session.invalid
+      )
+    )
+    ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
+  elseif dark_button("检查波形缓存完整性", 190) then
+    start_wave_cache_verification()
+  end
+
+  ImGui.TextDisabled(
+    ctx,
+    "损坏缓存会移入 cache_quarantine；需要时可从源音频重新生成。"
+  )
+
+  ImGui.Separator(ctx)
+
+  settings_section_title(
     "维护操作",
     "重建和重置不会删除硬盘中的源音频文件。"
   )
@@ -24910,6 +25913,10 @@ function autosave()
     save_loudness_cache()
   end
 
+  if state.failed_tasks_dirty then
+    save_failed_tasks()
+  end
+
   state.last_save = now
 end
 
@@ -24925,9 +25932,13 @@ function watch_folders()
   local now = reaper.time_precise()
 
   if now >= state.next_watch then
-    start_scan("Watch Folder")
+    start_scan(
+      "Watch Folder",
+      nil,
+      { silent = state.watch_silent }
+    )
     state.next_watch =
-      now + WATCH_INTERVAL
+      now + state.watch_interval
   end
 end
 
@@ -24935,6 +25946,11 @@ function cleanup()
   stop_preview()
   cleanup_retired_preview_sources(true)
   destroy_wave_job(state.wave_active)
+
+  if state.skip_persistence_on_cleanup then
+    destroy_loudness_job(state.loudness_active)
+    return
+  end
 
   if state.transfer_job then
     finish_transfer_job(state.transfer_job, true)
@@ -24995,6 +26011,10 @@ function cleanup()
     save_loudness_cache()
   end
 
+  if state.failed_tasks_dirty then
+    save_failed_tasks()
+  end
+
   destroy_loudness_job(state.loudness_active)
 end
 
@@ -25004,6 +26024,7 @@ ensure_dirs()
 migrate_legacy_data()
 load_or_migrate_project_url()
 load_config()
+state.next_watch = reaper.time_precise() + state.watch_interval
 load_or_migrate_libraries()
 apply_unified_interface(false, false)
 apply_wave_cache_directory(
@@ -25013,6 +26034,8 @@ apply_wave_cache_directory(
 install_i18n_wrappers()
 load_database()
 refresh_all_asset_library_bindings()
+load_failed_tasks()
+load_backup_state()
 
 if state.root_filter then
   local _, active_root_record =
@@ -25046,6 +26069,11 @@ apply_theme_palette()
 apply_waveform_palette()
 state.results_dirty = true
 
+if state.auto_backup
+  and state.backup_last_date ~= os.date("%Y%m%d") then
+  create_data_backup("auto", true)
+end
+
 local needs_import_recovery = false
 
 for _, asset in ipairs(state.assets) do
@@ -25055,7 +26083,13 @@ for _, asset in ipairs(state.assets) do
   end
 end
 
-if #state.roots > 0
+local interrupted_scan = state.resume_scan_on_start
+  and load_scan_checkpoint()
+  or nil
+
+if interrupted_scan then
+  start_scan("恢复中断扫描", interrupted_scan.roots)
+elseif #state.roots > 0
   and (#state.assets == 0 or needs_import_recovery) then
   start_scan(
     needs_import_recovery
@@ -25080,6 +26114,7 @@ function loop()
     process_metadata_queue()
     process_folder_navigation_build()
     process_artwork_queue()
+    process_wave_cache_verification()
     process_wave_precache()
     process_wave_queue()
     process_pending_transient_detection()

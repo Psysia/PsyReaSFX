@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.23 Stable  
+**Applies to:** PsyReaSFX 0.7.23 Stable / 0.8.0 Beta 2
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -71,6 +71,13 @@ Load the Lua file through the Action List. The interface safely falls back to RE
 6. Click a result waveform to audition from that position.
 
 The first visit to a folder may require waveform and metadata work. Later visits reuse the disk cache.
+
+Watch Folder checks run quietly in the background by default. Only the toolbar
+scan icon animates while work is active, and unchanged checks do not replace the
+current status message. A concise result appears when assets were added, removed
+or failed. Disable quiet mode under `Settings → General` to restore the full
+progress panel. First import, manual scans and high-resolution precaching are
+not affected by this option.
 
 ## 4. Workspace tour
 
@@ -515,8 +522,20 @@ Important data includes:
 | `last_played_session_v1.tsv` | restorable session highlight snapshot |
 | `regions_v1.tsv` | manual regions and transient suggestions |
 | `loudness_v1.tsv` | loudness analysis cache |
+| `failed_tasks_v1.tsv` | metadata/waveform failures and retry counts |
+| `scan_checkpoint_v1.tsv` | recovery entry for an interrupted scan |
+| `backups/` | automatic and manual data snapshots |
+| `cache_quarantine/` | damaged RWF files isolated by cache verification |
 
-Back up the entire data directory. The waveform cache can be moved in `Settings → Maintenance`; PsyReaSFX can move existing cache files or switch to an empty destination.
+Back up the entire data directory. Starting with 0.8, `Settings →
+Maintenance` can create one automatic snapshot per day, create a manual backup,
+set retention, or restore the newest backup. Waveform caches and source audio
+are deliberately excluded. PsyReaSFX closes after restoration; run the script
+again to load the restored state.
+
+The same page can move the waveform cache or switch to an empty destination.
+`Verify waveform cache` checks cached files in bounded batches and moves damaged
+entries into `cache_quarantine/`; it never modifies source audio.
 
 ## 19. Keyboard reference
 
@@ -539,7 +558,18 @@ Back up the entire data directory. The waveform cache can be moved in `Settings 
 
 ## 20. Maintenance and troubleshooting
 
-Open `Settings → Maintenance` to inspect the runtime, copy diagnostics, change the waveform cache path, clear caches, reset interface settings, rebuild the database while keeping library roots, or perform a factory reset.
+Open `Settings → Maintenance` to inspect the runtime, copy diagnostics,
+manage failed tasks, data backups and waveform-cache health, change the cache
+path, reset interface settings, rebuild the database while keeping library
+roots, or perform a factory reset.
+
+### A scan or import was interrupted
+
+- Keep `Resume interrupted scan on startup` enabled in General settings.
+- The next launch rescans the unfinished sources and reuses completed index
+  work.
+- If individual files failed, use `Retry all failed tasks` in Maintenance
+  instead of rebuilding the whole library.
 
 ### No waveform and no preview
 
@@ -566,8 +596,11 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 
 ## 21. Stable support
 
-PsyReaSFX 0.7.23 is the current stable release. Later 0.7 updates are limited
-to compatibility and blocking fixes; new product areas move to the 0.8 line.
+PsyReaSFX 0.7.23 remains the current stable release. ReaPack publishes it and
+PsyReaSFX 0.8.0 Beta 2 as versions of the same package. Normal synchronization
+stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
+pre-releases, then select the desired build from **Versions**. The permanently
+retained 0.7.23 Stable ZIP remains available from GitHub Releases.
 
 Project home: [github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
 
