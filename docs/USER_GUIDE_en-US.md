@@ -596,11 +596,11 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 
 ## 21. Stable support
 
-PsyReaSFX 0.7.23 remains the current stable release. ReaPack follows the latest
-public version, including PsyReaSFX 0.8.0 Beta 2, so updates can be tested
-without importing a second repository. Users who prefer a conservative build
-can always download the permanently retained 0.7.23 Stable ZIP from GitHub
-Releases.
+PsyReaSFX 0.7.23 remains the current stable release. ReaPack publishes it and
+PsyReaSFX 0.8.0 Beta 2 as versions of the same package. Normal synchronization
+stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
+pre-releases, then select the desired build from **Versions**. The permanently
+retained 0.7.23 Stable ZIP remains available from GitHub Releases.
 
 Project home: [github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
 

@@ -573,10 +573,10 @@ PsyReaSFX 内部统一使用 UTF-8。个别源文件元数据可能采用旧编�
 
 ## 21. 稳定版支持与问题反馈
 
-PsyReaSFX 0.7.23 仍是当前稳定版本。ReaPack 始终跟随最新公开版本，
-包括正在验证中断恢复、失败任务、数据备份、缓存健康检查与静默
-Watch Folder 的 0.8.0 Beta 2。偏好保守版本的用户可以随时从 GitHub
-Release 下载永久保留的 0.7.23 Stable ZIP。
+PsyReaSFX 0.7.23 仍是当前稳定版本。ReaPack 会把它与 0.8.0 Beta 2
+作为同一个包的不同版本发布。普通同步默认留在 Stable；需要测试新版时，
+右键 PsyReaSFX，启用单包预发布版本，然后从“Versions”选择目标版本。
+GitHub Release 仍永久保留 0.7.23 Stable ZIP。
 
 项目主页：[github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
 

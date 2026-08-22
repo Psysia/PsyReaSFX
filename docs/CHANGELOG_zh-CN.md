@@ -13,8 +13,8 @@
   首次导入、手动扫描和高精度预缓存始终保留详细进度与取消操作。
 - 明确 Release 下载规则：当前 Lua Stable ZIP 永久保留下载；当前测试版
   Release 可以同时提供 Lua Beta 与最新桌面版安装包，便于统一测试。
-- ReaPack 改为始终跟随最新公开版本，包括 Beta 和 RC；永久保留的 Stable ZIP
-  作为更保守的回退与手动安装通道。
+- ReaPack 在同一个包中同时发布 0.7.23 Stable 与 0.8.0 Beta 2。Stable 仍为
+  默认版本；用户可通过单包预发布开关加入测试通道，并从 Versions 菜单切换。
 
 ## 0.8.0 Beta 1
 

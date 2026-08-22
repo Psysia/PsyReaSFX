@@ -17,9 +17,9 @@
 > **Development preview:** PsyReaSFX 0.8.0 Beta 2 adds quiet Watch Folder
 > checks with a lightweight animated toolbar indicator, alongside interrupted-
 > scan recovery, failed-task retry, data snapshots and waveform-cache
-> verification. ReaPack follows the latest public build, including this Beta;
-> users who prefer the verified release can always download the retained
-> 0.7.23 Stable ZIP from GitHub Releases.
+> verification. ReaPack publishes both 0.7.23 Stable and this Beta under the
+> same package. Stable remains the default; enable per-package pre-releases to
+> follow Beta builds. The Stable ZIP is also retained on GitHub Releases.
 
 ### Release downloads
 
@@ -27,11 +27,12 @@
 - [Download PsyReaSFX 0.8.0 Beta 2 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.0-beta2)
 - [Download PsyReaSFX Desktop 0.7.23 Alpha 8 Light RC1](https://github.com/Psysia/PsyReaSFX/releases/download/desktop-v0.7.23-alpha8-light-rc1/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip)
 
-ReaPack follows the latest public version, including Beta and RC builds. The
-current Lua Stable ZIP is a permanent Release asset and remains available as
-the rollback/manual-install channel. Current preview releases may place the Lua
-beta and latest Desktop package together for easier testing. Historical release
-notes and tags remain available even when obsolete preview assets are retired.
+ReaPack publishes Stable and current Beta/RC versions together. Normal users
+stay on the newest Stable; users who enable **pre-releases (bleeding-edge)** for
+PsyReaSFX receive the newest preview and can switch versions from ReaPack's
+**Versions** menu. The current Lua Stable ZIP remains a permanent Release asset
+for manual installation and rollback. Historical release notes and tags remain
+available even when obsolete preview assets are retired.
 
 <details>
 <summary><strong>简体中文概览（点击展开，不离开当前页面）</strong></summary>
@@ -62,9 +63,10 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 同步仓库后搜索并安装 `PsyReaSFX`。完整说明请阅读[中文用户手册](docs/USER_GUIDE_zh-CN.md)，版本变化请查看[中文更新日志](docs/CHANGELOG_zh-CN.md)。
 
-ReaPack 始终跟随最新公开版本，包括 Beta 和 RC。Lua Stable 的 ZIP 会始终
-保留在对应 GitHub Release 中，作为稳定回退和手动安装通道。当前测试版
-Release 可同时提供 Lua Beta 与最新桌面版安装包；旧测试版本保留 Tag 和更新记录。
+ReaPack 会在同一个 PsyReaSFX 包中同时提供 Stable 与当前 Beta/RC。普通用户
+默认停留在最新 Stable；对该包启用“预发布版本（bleeding-edge）”后才会收到
+最新测试版，也可以通过“Versions”菜单主动切换。Lua Stable ZIP 仍永久保留在
+GitHub Release 中，作为手动安装和回退通道。
 
 </details>
 
@@ -72,7 +74,7 @@ Release 可同时提供 Lua Beta 与最新桌面版安装包；旧测试版本�
 
 | PsyReaSFX for REAPER | PsyReaSFX Desktop Alpha |
 |---|---|
-| The complete REAPER workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. ReaPack tracks the newest public version; use the retained Stable ZIP when a conservative build is preferred. | The standalone migration shares the `0.7.23` product baseline. Alpha 8 Light RC1 adds an optional REAPER Bridge for current-track, new-track and BWF delivery, plus persistent project-usage history, while retaining the Alpha 7 catalog, audition, organization, waveform, Transfer and reliability work. |
+| The complete REAPER workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. ReaPack offers Stable and opt-in preview versions together; the retained Stable ZIP remains available for manual rollback. | The standalone migration shares the `0.7.23` product baseline. Alpha 8 Light RC1 adds an optional REAPER Bridge for current-track, new-track and BWF delivery, plus persistent project-usage history, while retaining the Alpha 7 catalog, audition, organization, waveform, Transfer and reliability work. |
 
 [Install the REAPER edition](#install-with-reapack) · [Download Lua Stable](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/download/desktop-v0.7.23-alpha8-light-rc1/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip) · [Desktop Alpha notes](desktop/README.md)
 
