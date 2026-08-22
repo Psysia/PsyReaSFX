@@ -17,6 +17,8 @@
 - Establishes the Release download policy: the current Lua Stable ZIP remains
   permanently downloadable, while the current preview Release may bundle the
   Lua beta and latest Desktop package for coordinated testing.
+- Moves the ReaPack channel to the latest public version, including Beta and
+  RC builds. The retained Stable ZIP is the conservative rollback channel.
 
 ## 0.8.0 Beta 1
 
