@@ -14,17 +14,17 @@
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
 </p>
 
-> **Development preview:** PsyReaSFX 0.8.0 Beta 2 adds quiet Watch Folder
-> checks with a lightweight animated toolbar indicator, alongside interrupted-
-> scan recovery, failed-task retry, data snapshots and waveform-cache
-> verification. ReaPack publishes both 0.7.23 Stable and this Beta under the
-> same package. Stable remains the default; enable per-package pre-releases to
-> follow Beta builds. The Stable ZIP is also retained on GitHub Releases.
+> **Development preview:** PsyReaSFX 0.8.0 Beta 3 combines the former Beta
+> 3/4/5 reliability roadmap in one build: missing-file audit and source relink,
+> sampled duplicate detection for large libraries, and persistent REAPER
+> project-usage tracking with bound project bins. It also retains Beta 1/2
+> recovery, backups, cache verification and quiet Watch Folder checks. Stable
+> remains the default ReaPack version; previews are opt-in.
 
 ### Release downloads
 
 - [Download PsyReaSFX 0.7.23 Stable for REAPER](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip)
-- [Download PsyReaSFX 0.8.0 Beta 2 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.0-beta2)
+- [Download PsyReaSFX 0.8.0 Beta 3 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.0-beta3)
 - [Download PsyReaSFX Desktop 0.7.23 Alpha 8 Light RC1](https://github.com/Psysia/PsyReaSFX/releases/download/desktop-v0.7.23-alpha8-light-rc1/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip)
 
 ReaPack publishes Stable and current Beta/RC versions together. Normal users

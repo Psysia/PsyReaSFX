@@ -9,16 +9,17 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.8.0-beta2" author="Psysia" time="2026-08-22T01:54:41Z">
+      <version name="0.8.0-beta3" author="Psysia" time="2026-08-28T07:38:09Z">
         <changelog><![CDATA[
-- Runs scheduled Watch Folder checks quietly with a lightweight toolbar indicator.
-- Adds interrupted-scan recovery, failed-task retry and periodic index checkpoints.
-- Adds data snapshots and waveform-cache integrity verification.
+- Adds missing-file audit and safe physical-source relink.
+- Adds sampled duplicate detection designed for large libraries.
+- Tracks current REAPER project usage and binds project bins.
+- Retains quiet Watch Folder, interrupted recovery, backups and cache verification.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/fonts/OFL.txt</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/fonts/OFL.txt</source>
       </version>
       <version name="0.7.23" author="Psysia" time="2026-07-24T09:15:50Z">
         <changelog><![CDATA[

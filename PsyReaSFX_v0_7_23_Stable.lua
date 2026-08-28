@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.0-beta2
+-- @version 0.8.0-beta3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -143,6 +143,13 @@
 --   - 0.8.0 Beta 2：Watch Folder 默认静默检查，不再弹出常驻进度面板
 --   - 后台扫描与增量波形建立统一使用工具栏动态扫描图标提示
 --   - 无变化时完全静默；仅在新增、移除或失败时显示简短结果
+--   - 0.8.0 Beta 3：合并原 Beta 3/4/5 计划，集中完成可靠性阶段
+--   - 新增离线来源审计、整库缺失文件检查与来源根目录批量重定位
+--   - 重定位同步迁移收藏、集合、Region、响度、失败任务与会话路径引用
+--   - 新增同尺寸候选的分帧采样指纹检测与重复素材结果视图
+--   - 指纹写入主索引并按文件大小失效，避免大型库重复读取全部文件
+--   - 项目素材箱可绑定当前已保存的 RPP，插入素材时自动记录并收集
+--   - 项目使用记录独立持久化，可按工程查看素材、次数和最近使用时间
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -151,7 +158,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.0 Beta 2"
+local VERSION = "0.8.0 Beta 3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -306,6 +313,9 @@ local WAVE_CACHE_DIR =
 
 local COLLECTIONS_FILE =
   DATA_DIR .. SEP .. "collections_v1.tsv"
+
+local PROJECT_USAGE_FILE =
+  DATA_DIR .. SEP .. "project_usage_v1.tsv"
 
 local SAVED_SEARCHES_FILE =
   DATA_DIR .. SEP .. "saved_searches_v1.tsv"
@@ -671,7 +681,7 @@ local state = {
 
   results = {},
   search = "",
-  view = "all", -- all / favorites / recent
+  view = "all", -- all / favorites / recent / previewed / missing / duplicates / project_used
   root_filter = nil,
   sort_mode = "name",
   sort_desc = false,
@@ -709,6 +719,27 @@ local state = {
   backup_last_date = "",
   cache_verify_session = nil,
   skip_persistence_on_cleanup = false,
+
+  -- 0.8 Beta 3：可靠性审计均分帧执行，结果只保留轻量索引。
+  missing_audit = nil,
+  missing_assets = {},
+  missing_asset_count = 0,
+  offline_roots = {},
+  duplicate_scan = nil,
+  duplicate_groups = {},
+  duplicate_group_count = 0,
+  duplicate_asset_count = 0,
+  duplicate_lookup = {},
+
+  -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
+  project_usage = {},
+  project_usage_dirty = false,
+  current_project_path = "",
+  current_project_key = "",
+  current_project_name = "",
+  current_project_bin_id = nil,
+  auto_collect_project_usage = true,
+  next_project_refresh = 0,
 
   meta_queue = {},
   meta_queued = {},
@@ -896,6 +927,7 @@ local state = {
   ui_density = "compact",
   surface_style = "dark",
   settings_tab = "general",
+  settings_close_requested = false,
 
   waveform_hex = "#D7D8DA",
   waveform_selected_hex = "#EAF3FF",
@@ -1835,7 +1867,70 @@ I18N_PREFIX_EN = {
     "Drop folders; individual audio files are not imported as sources",
 }
 
+I18N_EN["路径与离线来源"] = "Paths and offline sources"
+I18N_EN["检查缺失文件，或在素材盘符和目录变化后重新定位来源；不会移动源文件。"] =
+  "Check for missing files or relink a source after a drive or folder change. Source files are never moved."
+I18N_EN["检查缺失文件"] = "Check missing files"
+I18N_EN["查看缺失素材"] = "Show missing assets"
+I18N_EN["重新定位来源路径…"] = "Relink source folder…"
+I18N_EN["重新定位…"] = "Relink…"
+I18N_EN["重复素材"] = "Duplicate assets"
+I18N_EN["仅对大小相同的候选文件读取头部、中部和尾部采样块；不会修改或删除源文件。"] =
+  "Only equal-size candidates are sampled at the beginning, middle and end. Source files are never changed or deleted."
+I18N_EN["检查重复素材"] = "Check duplicates"
+I18N_EN["查看重复素材"] = "Show duplicates"
+I18N_EN["当前 REAPER 工程"] = "Current REAPER project"
+I18N_EN["记录插入和 Transfer 后插入的素材，并可自动收集到绑定的项目素材箱。"] =
+  "Tracks inserted assets, including Transfer inserts, and can collect them in a bound project bin."
+I18N_EN["工程"] = "Project"
+I18N_EN["未保存工程"] = "Unsaved project"
+I18N_EN["自动将插入素材加入当前工程素材箱"] =
+  "Automatically add inserted assets to the current project bin"
+I18N_EN["请先保存当前 REAPER 工程，再建立绑定。"] =
+  "Save the current REAPER project before creating a binding."
+I18N_EN["创建并绑定当前工程素材箱"] = "Create and bind project bin"
+I18N_EN["查看当前工程已用素材"] = "Show assets used by current project"
+I18N_EN["绑定到当前 REAPER 工程"] = "Bind to current REAPER project"
+I18N_EN["缺失素材"] = "Missing assets"
+I18N_EN["当前工程已用"] = "Used by current project"
+I18N_EN["来源已重定位"] = "Source relinked"
+I18N_EN["请先保存当前 REAPER 工程，再绑定项目素材箱"] =
+  "Save the current REAPER project before binding a project bin"
+I18N_EN["无法保存工程使用记录"] = "Unable to save project usage history"
+
 I18N_PATTERNS_EN = {
+  {
+    "^缺失素材  (%d+)$",
+    "Missing assets  %1",
+  },
+  {
+    "^重复素材  (%d+)$",
+    "Duplicate assets  %1",
+  },
+  {
+    "^当前工程已用  (%d+)$",
+    "Used by current project  %1",
+  },
+  {
+    "^缺失检查完成：(%d+) 个离线来源，(%d+) 个缺失素材$",
+    "Missing-file check complete: %1 offline sources, %2 missing assets",
+  },
+  {
+    "^正在检查重复素材：(%d+) 个同尺寸候选$",
+    "Checking duplicates: %1 equal-size candidates",
+  },
+  {
+    "^重复检查完成：(%d+) 组，(%d+) 个素材$",
+    "Duplicate check complete: %1 groups, %2 assets",
+  },
+  {
+    "^来源已重定位：迁移 (%d+) 条路径，待重新扫描 (%d+) 条$",
+    "Source relinked: %1 paths migrated, %2 pending rescan",
+  },
+  {
+    "^已将项目素材箱绑定到：(.+)$",
+    "Project bin bound to: %1",
+  },
   {
     "^后台检查中：(%d+) 个音频 / (%d+) 个目录$",
     "Background check: %1 files / %2 folders",
@@ -3817,6 +3912,7 @@ function persistent_data_files()
     LIBRARIES_FILE,
     DATABASE_FILE,
     COLLECTIONS_FILE,
+    PROJECT_USAGE_FILE,
     SAVED_SEARCHES_FILE,
     HISTORY_FILE,
     LAST_PLAYED_SESSION_FILE,
@@ -4557,6 +4653,8 @@ function make_placeholder(path, known_root)
     ready = false,
     used_count = 0,
     last_used = 0,
+    fingerprint = "",
+    fingerprint_size = 0,
   }
 end
 
@@ -4696,6 +4794,8 @@ local DB_FIELDS = {
   "last_used",
   "root_id",
   "library_id",
+  "fingerprint",
+  "fingerprint_size",
 }
 
 function save_libraries()
@@ -4902,6 +5002,8 @@ function load_config()
         state.auto_backup = value ~= "0"
       elseif name == "backup_keep_count" then
         state.backup_keep_count = clamp(math.floor(tonumber(value) or 7), 1, 30)
+      elseif name == "auto_collect_project_usage" then
+        state.auto_collect_project_usage = value ~= "0"
       elseif name == "auto_preview" then
         state.auto_preview = value == "1"
       elseif name == "insert_lowercase" then
@@ -5293,6 +5395,12 @@ function save_config()
   file:write(
     "setting\tbackup_keep_count\t",
     tostring(state.backup_keep_count or 7),
+    "\n"
+  )
+
+  file:write(
+    "setting\tauto_collect_project_usage\t",
+    state.auto_collect_project_usage and "1" or "0",
     "\n"
   )
 
@@ -7053,6 +7161,8 @@ function load_database()
         or asset.ready == "true"
       asset.used_count = tonumber(asset.used_count) or 0
       asset.last_used = tonumber(asset.last_used) or 0
+      asset.fingerprint = tostring(asset.fingerprint or "")
+      asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
 
       add_or_update_asset(asset)
     elseif asset.path and asset.path ~= "" then
@@ -7180,6 +7290,247 @@ function collection_item_count(collection)
     or 0
 end
 
+function current_project_identity()
+  local ok, project, filename = pcall(reaper.EnumProjects, -1, "")
+
+  if not ok then
+    return PROJ, "", "", "未保存工程"
+  end
+
+  filename = normalize_slashes(trim(filename or ""))
+  local key = filename ~= "" and path_key(filename) or ""
+  local name = filename ~= ""
+    and strip_extension(basename(filename))
+    or "未保存工程"
+
+  return project or PROJ, filename, key, name
+end
+
+function refresh_current_project_binding()
+  local _, path, key, name = current_project_identity()
+  state.current_project_path = path
+  state.current_project_key = key
+  state.current_project_name = name
+  state.current_project_bin_id = nil
+
+  if key == "" then
+    return nil
+  end
+
+  for _, collection in ipairs(state.collections or {}) do
+    if collection.kind == "project"
+      and path_key(collection.project_path or "") == key then
+      state.current_project_bin_id = collection.id
+      return collection
+    end
+  end
+
+  return nil
+end
+
+function poll_current_project_binding()
+  local now = reaper.time_precise()
+
+  if now < (state.next_project_refresh or 0) then
+    return
+  end
+
+  state.next_project_refresh = now + 1.0
+  local previous_key = state.current_project_key
+  refresh_current_project_binding()
+
+  if previous_key ~= state.current_project_key
+    and state.view == "project_used" then
+    state.results_dirty = true
+  end
+end
+
+function project_usage_bucket(project_path, create)
+  local project_key = path_key(project_path or "")
+
+  if project_key == "" then
+    return nil
+  end
+
+  local bucket = state.project_usage[project_key]
+
+  if not bucket and create then
+    bucket = {
+      path = normalize_slashes(project_path),
+      assets = {},
+    }
+    state.project_usage[project_key] = bucket
+  end
+
+  return bucket
+end
+
+function load_project_usage()
+  state.project_usage = {}
+  local file = io.open(PROJECT_USAGE_FILE, "rb")
+
+  if not file then
+    return
+  end
+
+  for line in file:lines() do
+    local fields = split_tsv(line)
+
+    if fields[1] == "usage"
+      and fields[2] and fields[2] ~= ""
+      and fields[3] and fields[3] ~= "" then
+      local bucket = project_usage_bucket(fields[2], true)
+      local asset_path = normalize_slashes(fields[3])
+      bucket.assets[path_key(asset_path)] = {
+        path = asset_path,
+        count = tonumber(fields[4]) or 1,
+        last_used = tonumber(fields[5]) or 0,
+        action = fields[6] or "insert",
+      }
+    end
+  end
+
+  file:close()
+  state.project_usage_dirty = false
+end
+
+function save_project_usage()
+  ensure_dirs()
+  local temporary_path = PROJECT_USAGE_FILE .. ".tmp"
+  local file = io.open(temporary_path, "wb")
+
+  if not file then
+    set_status("无法保存工程使用记录", true)
+    return false
+  end
+
+  local project_keys = {}
+  for key in pairs(state.project_usage) do
+    project_keys[#project_keys + 1] = key
+  end
+  table.sort(project_keys)
+
+  for _, project_key in ipairs(project_keys) do
+    local bucket = state.project_usage[project_key]
+    local asset_keys = {}
+    for key in pairs(bucket.assets or {}) do
+      asset_keys[#asset_keys + 1] = key
+    end
+    table.sort(asset_keys)
+
+    for _, asset_key in ipairs(asset_keys) do
+      local entry = bucket.assets[asset_key]
+      file:write(
+        "usage\t",
+        escape_tsv(bucket.path or ""), "\t",
+        escape_tsv(entry.path or ""), "\t",
+        tostring(entry.count or 1), "\t",
+        tostring(entry.last_used or 0), "\t",
+        escape_tsv(entry.action or "insert"), "\n"
+      )
+    end
+  end
+
+  file:close()
+  os.remove(PROJECT_USAGE_FILE)
+
+  if not os.rename(temporary_path, PROJECT_USAGE_FILE) then
+    os.remove(temporary_path)
+    set_status("无法保存工程使用记录", true)
+    return false
+  end
+
+  state.project_usage_dirty = false
+  return true
+end
+
+function bind_project_bin(collection, project_path)
+  if not collection or collection.kind ~= "project" then
+    return false
+  end
+
+  project_path = normalize_slashes(trim(project_path or state.current_project_path))
+
+  if project_path == "" then
+    set_status("请先保存当前 REAPER 工程，再绑定项目素材箱", true)
+    return false
+  end
+
+  collection.project_path = project_path
+  state.collections_dirty = true
+  refresh_current_project_binding()
+  set_status("已将项目素材箱绑定到：" .. basename(project_path))
+  return true
+end
+
+function ensure_current_project_bin(create_if_missing)
+  local collection = refresh_current_project_binding()
+
+  if collection or not create_if_missing then
+    return collection
+  end
+
+  if state.current_project_key == "" then
+    return nil
+  end
+
+  collection = {
+    id = new_model_id("collection", state.current_project_path),
+    name = state.current_project_name,
+    kind = "project",
+    project_path = state.current_project_path,
+    items = {},
+    order = {},
+    count = 0,
+  }
+  state.collections[#state.collections + 1] = collection
+  state.collection_by_id[collection.id] = collection
+  state.current_project_bin_id = collection.id
+  state.collections_dirty = true
+  return collection
+end
+
+function record_project_usage(asset, action)
+  if not asset then
+    return
+  end
+
+  refresh_current_project_binding()
+
+  if state.current_project_key == "" then
+    return
+  end
+
+  local bucket = project_usage_bucket(state.current_project_path, true)
+  local asset_key = path_key(asset.path)
+  local entry = bucket.assets[asset_key]
+
+  if not entry then
+    entry = { path = asset.path, count = 0, last_used = 0, action = action or "insert" }
+    bucket.assets[asset_key] = entry
+  end
+
+  entry.path = asset.path
+  entry.count = (tonumber(entry.count) or 0) + 1
+  entry.last_used = os.time()
+  entry.action = action or "insert"
+  state.project_usage_dirty = true
+
+  if state.auto_collect_project_usage then
+    local collection = ensure_current_project_bin(true)
+    if collection and not collection.items[asset_key] then
+      collection.items[asset_key] = asset.path
+      collection.order[#collection.order + 1] = asset.path
+      collection.count = (collection.count or 0) + 1
+      state.collections_dirty = true
+    end
+  end
+
+  if state.view == "project_used" then
+    state.results_dirty = true
+  end
+end
+
 
 function load_collections()
   state.collections = {}
@@ -7206,6 +7557,7 @@ function load_collections()
           fields[4] == "project"
           and "project"
           or "playlist",
+        project_path = normalize_slashes(fields[5] or ""),
         items = {},
         order = {},
         count = 0,
@@ -7260,6 +7612,8 @@ function save_collections()
       escape_tsv(collection.name),
       "\t",
       escape_tsv(collection.kind or "playlist"),
+      "\t",
+      escape_tsv(collection.project_path or ""),
       "\n"
     )
 
@@ -7314,10 +7668,16 @@ function create_collection(kind)
     id = new_model_id("collection", name),
     name = name,
     kind = kind,
+    project_path = "",
     items = {},
     order = {},
     count = 0,
   }
+
+  if kind == "project" then
+    local _, project_path = current_project_identity()
+    collection.project_path = project_path or ""
+  end
 
   state.collections[#state.collections + 1] =
     collection
@@ -7339,6 +7699,7 @@ function create_collection(kind)
 
   state.collections_dirty = true
   state.config_dirty = true
+  refresh_current_project_binding()
 
   local type_label = translate_ui_text(
     kind == "project"
@@ -9540,6 +9901,26 @@ function field_value(asset, field)
   elseif field == "played"
     or field == "previewed" then
     return asset_is_played(asset) and "true" or "false"
+  elseif field == "missing"
+    or field == "offline" then
+    return state.missing_assets[path_key(asset.path)]
+      and "true"
+      or "false"
+  elseif field == "duplicate"
+    or field == "dupe" then
+    return state.duplicate_lookup[path_key(asset.path)]
+      and "true"
+      or "false"
+  elseif field == "project"
+    or field == "used" then
+    local bucket = project_usage_bucket(
+      state.current_project_path,
+      false
+    )
+    return bucket
+      and bucket.assets[path_key(asset.path)]
+      and "true"
+      or "false"
   end
 
   return ""
@@ -9600,6 +9981,21 @@ function asset_in_view(asset)
   elseif state.view == "previewed"
     and (asset.last_previewed or 0) <= 0 then
     return false
+  elseif state.view == "missing"
+    and not state.missing_assets[path_key(asset.path)] then
+    return false
+  elseif state.view == "duplicates"
+    and not state.duplicate_lookup[path_key(asset.path)] then
+    return false
+  elseif state.view == "project_used" then
+    local bucket = project_usage_bucket(
+      state.current_project_path,
+      false
+    )
+    if not bucket
+      or not bucket.assets[path_key(asset.path)] then
+      return false
+    end
   end
 
   if state.active_collection_id then
@@ -9655,7 +10051,10 @@ function rebuild_results()
       local av
       local bv
 
-      if state.sort_mode == "duration" then
+      if state.view == "duplicates" then
+        av = state.duplicate_lookup[path_key(a.path)] or ""
+        bv = state.duplicate_lookup[path_key(b.path)] or ""
+      elseif state.sort_mode == "duration" then
         av = tonumber(a.duration) or 0
         bv = tonumber(b.duration) or 0
       elseif state.sort_mode == "library" then
@@ -11686,7 +12085,7 @@ function toggle_favorite(asset)
   end
 end
 
-function push_recent(asset)
+function push_recent(asset, project_action)
   local key = path_key(asset.path)
   local updated = { asset.path }
 
@@ -11704,6 +12103,10 @@ function push_recent(asset)
 
   state.config_dirty = true
   state.db_dirty = true
+
+  if project_action then
+    record_project_usage(asset, project_action)
+  end
 
   if state.view == "recent"
     or state.sort_mode == "used" then
@@ -11841,7 +12244,7 @@ function insert_asset(asset, new_track, bwf)
 
   if result >= 0 then
     apply_insert_settings(asset)
-    push_recent(asset)
+    push_recent(asset, "insert")
     reaper.UpdateArrange()
     set_status("已插入：" .. asset.name)
   else
@@ -12941,7 +13344,12 @@ function render_transfer_asset(task)
       false
   end
 
-  push_recent(asset)
+  push_recent(
+    asset,
+    state.transfer_insert_after
+      and "transfer_insert"
+      or nil
+  )
 
   if state.transfer_insert_after then
     reaper.InsertMedia(output_path, 1)
@@ -13348,7 +13756,7 @@ function insert_asset_at(
 
   if result >= 0 then
     apply_insert_settings(asset)
-    push_recent(asset)
+    push_recent(asset, "insert")
     return true
   end
 
@@ -13966,6 +14374,450 @@ function remove_root(root)
   set_status("已移除来源路径：" .. basename(root))
 end
 
+function relative_path_from_root(path, root)
+  local normalized_path = normalize_slashes(path or "")
+  local normalized_root = canonical_source_path(root or "")
+
+  if not path_is_inside(normalized_path, normalized_root) then
+    return nil
+  end
+
+  if path_key(normalized_path) == path_key(normalized_root) then
+    return ""
+  end
+
+  local offset = #normalized_root + 1
+  if normalized_path:sub(offset, offset) == SEP then
+    offset = offset + 1
+  end
+  return normalized_path:sub(offset)
+end
+
+function replace_path_in_order(order, old_key, new_path)
+  for index, path in ipairs(order or {}) do
+    if path_key(path) == old_key then
+      order[index] = new_path
+    end
+  end
+end
+
+function migrate_path_references(old_path, new_path)
+  local old_key = path_key(old_path)
+  local new_key = path_key(new_path)
+
+  if old_key == new_key then
+    return
+  end
+
+  if state.favorites[old_key] then
+    state.favorites[old_key] = nil
+    state.favorites[new_key] = true
+    state.config_dirty = true
+  end
+
+  if state.session_played[old_key] then
+    state.session_played[old_key] = nil
+    state.session_played[new_key] = true
+    state.session_played_dirty = true
+  end
+
+  if state.last_session_played[old_key] then
+    state.last_session_played[old_key] = nil
+    state.last_session_played[new_key] = true
+  end
+
+  replace_path_in_order(state.recent, old_key, new_path)
+
+  if state.selected_path and path_key(state.selected_path) == old_key then
+    state.selected_path = new_path
+  end
+  if state.selected_set[old_key] then
+    state.selected_set[old_key] = nil
+    state.selected_set[new_key] = true
+  end
+
+  for _, collection in ipairs(state.collections or {}) do
+    if collection.items and collection.items[old_key] then
+      collection.items[old_key] = nil
+      collection.items[new_key] = new_path
+      replace_path_in_order(collection.order, old_key, new_path)
+      state.collections_dirty = true
+    end
+  end
+
+  local regions = state.regions_by_path[old_key]
+  if regions then
+    state.regions_by_path[old_key] = nil
+    for _, region in ipairs(regions) do
+      region.path = new_path
+    end
+    state.regions_by_path[new_key] = regions
+    state.regions_dirty = true
+  end
+
+  local loudness = state.loudness_cache[old_key]
+  if loudness then
+    state.loudness_cache[old_key] = nil
+    loudness.path = new_path
+    state.loudness_cache[new_key] = loudness
+    state.loudness_dirty = true
+  end
+
+  local failed = state.failed_tasks[old_key]
+  if failed then
+    state.failed_tasks[old_key] = nil
+    failed.path = new_path
+    state.failed_tasks[new_key] = failed
+    state.failed_tasks_dirty = true
+  end
+
+  for _, bucket in pairs(state.project_usage or {}) do
+    local entry = bucket.assets and bucket.assets[old_key]
+    if entry then
+      bucket.assets[old_key] = nil
+      entry.path = new_path
+      bucket.assets[new_key] = entry
+      state.project_usage_dirty = true
+    end
+  end
+end
+
+function migrate_asset_path(asset, new_path, record)
+  local old_path = asset.path
+  local old_key = path_key(old_path)
+  local new_key = path_key(new_path)
+
+  if old_key == new_key then
+    return false
+  end
+
+  local conflict = state.by_path[new_key]
+  if conflict and conflict ~= asset then
+    return false
+  end
+
+  state.by_path[old_key] = nil
+  migrate_path_references(old_path, new_path)
+  asset.path = normalize_slashes(new_path)
+  asset.name = basename(asset.path)
+  asset.folder = dirname(asset.path)
+  asset.root = record.path
+  asset.root_id = record.id
+  asset.library_id = record.library_id
+  local library = state.library_by_id[record.library_id]
+  asset.library = library and library.name or asset.library
+  asset.missing = not reaper.file_exists(asset.path)
+  asset._search_blob = nil
+  asset.artwork_checked = false
+
+  local current_size = asset.missing and 0 or file_size(asset.path)
+  if current_size ~= (tonumber(asset.fingerprint_size) or 0) then
+    asset.fingerprint = ""
+    asset.fingerprint_size = 0
+  end
+
+  state.by_path[new_key] = asset
+  return true
+end
+
+function validate_relinked_root(record, new_root)
+  for _, other in ipairs(state.root_records) do
+    if other.id ~= record.id then
+      if path_key(other.path) == path_key(new_root)
+        or path_is_inside(new_root, other.path)
+        or path_is_inside(other.path, new_root) then
+        return false, other
+      end
+    end
+  end
+  return true
+end
+
+function relink_root(record, supplied_path)
+  if not record then
+    return false
+  end
+
+  local new_root = supplied_path
+    or choose_folder("重新定位来源路径", record.path)
+
+  if not new_root or trim(new_root) == "" then
+    return false
+  end
+
+  new_root = canonical_source_path(new_root)
+  if not directory_exists(new_root) then
+    set_status("新来源目录不存在或无法访问：" .. new_root, true)
+    return false
+  end
+
+  local valid, conflict = validate_relinked_root(record, new_root)
+  if not valid then
+    set_status("新来源目录与现有来源重叠：" .. conflict.path, true)
+    return false
+  end
+
+  stop_preview()
+  local old_root = record.path
+  local root_artwork_relative = relative_path_from_root(
+    record.artwork_path or "",
+    old_root
+  )
+  local candidates = {}
+
+  for _, asset in ipairs(state.assets) do
+    if tostring(asset.root_id or "") == tostring(record.id)
+      or path_is_inside(asset.path, old_root) then
+      candidates[#candidates + 1] = asset
+    end
+  end
+
+  record.path = new_root
+  if root_artwork_relative then
+    record.artwork_path = root_artwork_relative == ""
+      and new_root
+      or join_path(new_root, root_artwork_relative)
+  end
+  record.artwork_checked = false
+  record.artwork_scan_version = 0
+  rebuild_library_indexes()
+
+  local moved = 0
+  local unresolved = 0
+  for _, asset in ipairs(candidates) do
+    local relative = relative_path_from_root(asset.path, old_root)
+    if relative then
+      local target = relative == "" and new_root or join_path(new_root, relative)
+      local artwork_relative = relative_path_from_root(
+        asset.artwork_path or "",
+        old_root
+      )
+      if migrate_asset_path(asset, target, record) then
+        if artwork_relative then
+          asset.artwork_path = artwork_relative == ""
+            and new_root
+            or join_path(new_root, artwork_relative)
+        end
+        moved = moved + 1
+        if not reaper.file_exists(target) then
+          unresolved = unresolved + 1
+        end
+      end
+    end
+  end
+
+  if state.root_filter and path_is_inside(state.root_filter, old_root) then
+    local relative = relative_path_from_root(state.root_filter, old_root) or ""
+    state.root_filter = relative == "" and new_root or join_path(new_root, relative)
+  end
+
+  state.libraries_dirty = true
+  state.db_dirty = true
+  state.results_dirty = true
+  state.library_counts_dirty = true
+  invalidate_folder_navigation()
+  state.missing_assets = {}
+  state.missing_asset_count = 0
+  save_libraries()
+  save_database()
+  set_status(string.format("来源已重定位：迁移 %d 条路径，待重新扫描 %d 条", moved, unresolved))
+  start_scan("重定位后增量扫描", { new_root }, { silent = unresolved == 0 })
+  return true
+end
+
+function start_missing_audit()
+  if state.missing_audit then
+    return
+  end
+
+  local offline = {}
+  state.offline_roots = {}
+  for _, record in ipairs(state.root_records) do
+    if record.enabled and not directory_exists(record.path) then
+      offline[record.id] = true
+      state.offline_roots[#state.offline_roots + 1] = record
+    end
+  end
+
+  state.missing_assets = {}
+  state.missing_asset_count = 0
+  state.missing_audit = {
+    index = 1,
+    total = #state.assets,
+    missing = 0,
+    checked = 0,
+    offline = offline,
+  }
+  set_status("正在检查缺失文件…")
+end
+
+function process_missing_audit()
+  local session = state.missing_audit
+  if not session or not can_run_heavy_job() then
+    return
+  end
+
+  local budget = 36
+  while budget > 0 and session.index <= session.total do
+    local asset = state.assets[session.index]
+    session.index = session.index + 1
+    session.checked = session.checked + 1
+    budget = budget - 1
+
+    local missing = session.offline[tostring(asset.root_id or "")]
+      or not reaper.file_exists(asset.path)
+    asset.missing = missing == true
+    if asset.missing then
+      local key = path_key(asset.path)
+      state.missing_assets[key] = asset
+      session.missing = session.missing + 1
+    end
+  end
+
+  if session.index > session.total then
+    state.missing_asset_count = session.missing
+    state.missing_audit = nil
+    state.results_dirty = true
+    set_status(string.format("缺失检查完成：%d 个离线来源，%d 个缺失素材", #state.offline_roots, state.missing_asset_count), state.missing_asset_count > 0)
+  end
+end
+
+function sampled_file_fingerprint(path, known_size)
+  local file = io.open(path, "rb")
+  if not file then
+    return nil
+  end
+
+  local size = tonumber(known_size) or file:seek("end") or 0
+  local chunk_size = 65536
+  local positions = { 0, math.max(0, math.floor(size / 2 - chunk_size / 2)), math.max(0, size - chunk_size) }
+  local chunks = {}
+
+  for _, position in ipairs(positions) do
+    file:seek("set", position)
+    chunks[#chunks + 1] = file:read(chunk_size) or ""
+  end
+  file:close()
+
+  local payload = tostring(size) .. "|" .. table.concat(chunks, "|")
+  local reverse_payload = tostring(size) .. "|" .. chunks[3] .. "|" .. chunks[2] .. "|" .. chunks[1]
+  return fnv1a(payload) .. fnv1a(reverse_payload)
+end
+
+function start_duplicate_scan()
+  if state.duplicate_scan then
+    return
+  end
+
+  local size_groups = {}
+  for _, asset in ipairs(state.assets) do
+    local size = tonumber(asset.size) or 0
+    if asset.ready and size > 0 then
+      local group = size_groups[size]
+      if not group then
+        group = {}
+        size_groups[size] = group
+      end
+      group[#group + 1] = asset
+    end
+  end
+
+  local candidates = {}
+  for _, group in pairs(size_groups) do
+    if #group > 1 then
+      for _, asset in ipairs(group) do
+        candidates[#candidates + 1] = asset
+      end
+    end
+  end
+
+  state.duplicate_groups = {}
+  state.duplicate_lookup = {}
+  state.duplicate_group_count = 0
+  state.duplicate_asset_count = 0
+  state.duplicate_scan = {
+    candidates = candidates,
+    index = 1,
+    total = #candidates,
+    failed = 0,
+  }
+  set_status(string.format("正在检查重复素材：%d 个同尺寸候选", #candidates))
+end
+
+function finish_duplicate_scan(session)
+  local groups = {}
+  for _, asset in ipairs(session.candidates) do
+    local fingerprint = tostring(asset.fingerprint or "")
+    if fingerprint ~= "" then
+      local group = groups[fingerprint]
+      if not group then
+        group = {}
+        groups[fingerprint] = group
+      end
+      group[#group + 1] = asset
+    end
+  end
+
+  local duplicates = {}
+  local lookup = {}
+  local asset_count = 0
+  for fingerprint, group in pairs(groups) do
+    if #group > 1 then
+      table.sort(group, function(a, b) return path_key(a.path) < path_key(b.path) end)
+      duplicates[#duplicates + 1] = { fingerprint = fingerprint, assets = group, count = #group }
+      asset_count = asset_count + #group
+      for _, asset in ipairs(group) do
+        lookup[path_key(asset.path)] = fingerprint
+      end
+    end
+  end
+  table.sort(duplicates, function(a, b)
+    if a.count == b.count then return a.fingerprint < b.fingerprint end
+    return a.count > b.count
+  end)
+
+  state.duplicate_groups = duplicates
+  state.duplicate_lookup = lookup
+  state.duplicate_group_count = #duplicates
+  state.duplicate_asset_count = asset_count
+  state.duplicate_scan = nil
+  state.results_dirty = true
+  state.db_dirty = true
+  set_status(string.format("重复检查完成：%d 组，%d 个素材", #duplicates, asset_count))
+end
+
+function process_duplicate_scan()
+  local session = state.duplicate_scan
+  if not session or not can_run_heavy_job() then
+    return
+  end
+
+  local asset = session.candidates[session.index]
+  if not asset then
+    finish_duplicate_scan(session)
+    return
+  end
+
+  session.index = session.index + 1
+  local size = tonumber(asset.size) or file_size(asset.path)
+  local cached = tostring(asset.fingerprint or "") ~= ""
+    and tonumber(asset.fingerprint_size) == size
+
+  if not cached then
+    local fingerprint = sampled_file_fingerprint(asset.path, size)
+    if fingerprint then
+      asset.fingerprint = fingerprint
+      asset.fingerprint_size = size
+    else
+      session.failed = session.failed + 1
+    end
+  end
+
+  if session.index > session.total then
+    finish_duplicate_scan(session)
+  end
+end
+
 function remove_library(library_id)
   local library = state.library_by_id[library_id]
 
@@ -14220,6 +15072,13 @@ function reset_database_keep_roots()
   os.remove(FAILED_TASKS_FILE)
   state.failed_tasks = {}
   state.failed_tasks_dirty = false
+  state.missing_assets = {}
+  state.missing_asset_count = 0
+  state.offline_roots = {}
+  state.duplicate_groups = {}
+  state.duplicate_lookup = {}
+  state.duplicate_group_count = 0
+  state.duplicate_asset_count = 0
   state.history_dirty = false
   state.session_played = {}
   state.last_session_played = {}
@@ -14287,6 +15146,7 @@ function factory_reset()
   os.remove(SCAN_CHECKPOINT_FILE)
   os.remove(FAILED_TASKS_FILE)
   os.remove(BACKUP_STATE_FILE)
+  os.remove(PROJECT_USAGE_FILE)
   state.config_dirty = false
   state.libraries_dirty = false
   state.db_dirty = false
@@ -14298,6 +15158,16 @@ function factory_reset()
   state.session_played_dirty = false
   state.failed_tasks = {}
   state.failed_tasks_dirty = false
+  state.project_usage = {}
+  state.project_usage_dirty = false
+  state.current_project_bin_id = nil
+  state.missing_assets = {}
+  state.missing_asset_count = 0
+  state.offline_roots = {}
+  state.duplicate_groups = {}
+  state.duplicate_lookup = {}
+  state.duplicate_group_count = 0
+  state.duplicate_asset_count = 0
 
   state.wave_cache_dir =
     DEFAULT_WAVE_CACHE_DIR
@@ -17353,6 +18223,64 @@ function draw_sidebar()
     end
   )
 
+  if state.missing_asset_count > 0 then
+    sidebar_item(
+      string.format("缺失素材  %d", state.missing_asset_count),
+      state.view == "missing"
+        and not state.active_collection_id,
+      function()
+        state.view = "missing"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.config_dirty = true
+      end
+    )
+  end
+
+  if state.duplicate_asset_count > 0 then
+    sidebar_item(
+      string.format("重复素材  %d", state.duplicate_asset_count),
+      state.view == "duplicates"
+        and not state.active_collection_id,
+      function()
+        state.view = "duplicates"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.config_dirty = true
+      end
+    )
+  end
+
+  local current_usage = project_usage_bucket(
+    state.current_project_path,
+    false
+  )
+  if current_usage then
+    local usage_count = 0
+    for _ in pairs(current_usage.assets or {}) do
+      usage_count = usage_count + 1
+    end
+    if usage_count > 0 then
+      sidebar_item(
+        string.format("当前工程已用  %d", usage_count),
+        state.view == "project_used"
+          and not state.active_collection_id,
+        function()
+          state.view = "project_used"
+          state.active_collection_id = nil
+          state.root_filter = nil
+          state.library_filter_id = nil
+          state.results_dirty = true
+          state.config_dirty = true
+        end
+      )
+    end
+  end
+
   end
 
   if sidebar_section_header(
@@ -17546,6 +18474,12 @@ function draw_sidebar()
 
           ImGui.Separator(ctx)
 
+          if ImGui.MenuItem(ctx, "重新定位来源路径…") then
+            relink_root(record)
+          end
+
+          ImGui.Separator(ctx)
+
           if ImGui.MenuItem(ctx, "移除来源路径") then
             remove_root(record)
           end
@@ -17652,6 +18586,21 @@ function draw_sidebar()
 
       if ImGui.MenuItem(ctx, "重命名") then
         rename_collection(collection)
+      end
+
+      if collection.kind == "project" then
+        if ImGui.MenuItem(ctx, "绑定到当前 REAPER 工程") then
+          bind_project_bin(collection, state.current_project_path)
+        end
+
+        if state.current_project_bin_id == collection.id
+          and ImGui.MenuItem(ctx, "查看当前工程已用素材") then
+          state.active_collection_id = nil
+          state.view = "project_used"
+          state.root_filter = nil
+          state.library_filter_id = nil
+          state.results_dirty = true
+        end
       end
 
       if ImGui.MenuItem(ctx, "删除") then
@@ -23163,6 +24112,13 @@ function build_diagnostics_text()
       "Libraries: " .. tostring(#state.libraries),
       "Source folders: " .. tostring(#state.root_records),
       "Assets: " .. tostring(#state.assets),
+      "Missing assets: " .. tostring(state.missing_asset_count),
+      "Duplicate groups/assets: "
+        .. tostring(state.duplicate_group_count)
+        .. "/"
+        .. tostring(state.duplicate_asset_count),
+      "Current project: "
+        .. tostring(state.current_project_path ~= "" and state.current_project_path or "Unsaved"),
       "Current played highlights: "
         .. tostring(session_played_count()),
       "Previous-session highlights: "
@@ -24874,6 +25830,163 @@ function draw_settings_maintenance()
   ImGui.Separator(ctx)
 
   settings_section_title(
+    "路径与离线来源",
+    "检查缺失文件，或在素材盘符和目录变化后重新定位来源；不会移动源文件。"
+  )
+
+  if state.missing_audit then
+    local session = state.missing_audit
+    local completed = math.min(session.checked or 0, session.total or 0)
+    local fraction = session.total > 0 and completed / session.total or 1
+    ImGui.Text(
+      ctx,
+      string.format(
+        "缺失检查 %d / %d · 已发现 %d",
+        completed,
+        session.total or 0,
+        session.missing or 0
+      )
+    )
+    ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
+  else
+    ImGui.TextDisabled(
+      ctx,
+      string.format(
+        "离线来源 %d · 缺失素材 %d",
+        #state.offline_roots,
+        state.missing_asset_count
+      )
+    )
+
+    if dark_button("检查缺失文件", 150) then
+      start_missing_audit()
+    end
+
+    if state.missing_asset_count > 0 then
+      ImGui.SameLine(ctx)
+      if dark_button("查看缺失素材", 150) then
+        state.view = "missing"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.settings_close_requested = true
+      end
+    end
+  end
+
+  for _, record in ipairs(state.offline_roots) do
+    ImGui.PushID(ctx, "offline_root_" .. tostring(record.id))
+    ImGui.TextDisabled(
+      ctx,
+      compact((record.alias ~= "" and record.alias or basename(record.path)) .. " · " .. record.path, 112)
+    )
+    ImGui.SameLine(ctx)
+    if dark_button("重新定位…", 112) then
+      relink_root(record)
+    end
+    ImGui.PopID(ctx)
+  end
+
+  ImGui.Separator(ctx)
+
+  settings_section_title(
+    "重复素材",
+    "仅对大小相同的候选文件读取头部、中部和尾部采样块；不会修改或删除源文件。"
+  )
+
+  if state.duplicate_scan then
+    local session = state.duplicate_scan
+    local completed = math.min((session.index or 1) - 1, session.total or 0)
+    local fraction = session.total > 0 and completed / session.total or 1
+    ImGui.Text(
+      ctx,
+      string.format(
+        "重复检查 %d / %d · 失败 %d",
+        completed,
+        session.total or 0,
+        session.failed or 0
+      )
+    )
+    ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
+  else
+    ImGui.TextDisabled(
+      ctx,
+      string.format(
+        "重复组 %d · 涉及素材 %d",
+        state.duplicate_group_count,
+        state.duplicate_asset_count
+      )
+    )
+    if dark_button("检查重复素材", 150) then
+      start_duplicate_scan()
+    end
+    if state.duplicate_asset_count > 0 then
+      ImGui.SameLine(ctx)
+      if dark_button("查看重复素材", 150) then
+        state.view = "duplicates"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.settings_close_requested = true
+      end
+    end
+  end
+
+  ImGui.Separator(ctx)
+
+  refresh_current_project_binding()
+  settings_section_title(
+    "当前 REAPER 工程",
+    "记录插入和 Transfer 后插入的素材，并可自动收集到绑定的项目素材箱。"
+  )
+  about_info_row("工程", state.current_project_name or "未保存工程")
+  if state.current_project_path ~= "" then
+    ImGui.TextDisabled(ctx, compact(state.current_project_path, 112))
+  end
+
+  local collect_changed
+  collect_changed, state.auto_collect_project_usage =
+    ImGui.Checkbox(
+      ctx,
+      "自动将插入素材加入当前工程素材箱",
+      state.auto_collect_project_usage
+    )
+  if collect_changed then
+    state.config_dirty = true
+  end
+
+  if state.current_project_path == "" then
+    ImGui.TextDisabled(ctx, "请先保存当前 REAPER 工程，再建立绑定。")
+  elseif not state.current_project_bin_id then
+    if dark_button("创建并绑定当前工程素材箱", 230) then
+      ensure_current_project_bin(true)
+    end
+  else
+    local project_bin = state.collection_by_id[state.current_project_bin_id]
+    ImGui.TextDisabled(
+      ctx,
+      "已绑定：" .. (project_bin and project_bin.name or state.current_project_name)
+    )
+  end
+
+  local usage_bucket = project_usage_bucket(state.current_project_path, false)
+  if usage_bucket then
+    ImGui.SameLine(ctx)
+    if dark_button("查看当前工程已用素材", 190) then
+      state.view = "project_used"
+      state.active_collection_id = nil
+      state.root_filter = nil
+      state.library_filter_id = nil
+      state.results_dirty = true
+      state.settings_close_requested = true
+    end
+  end
+
+  ImGui.Separator(ctx)
+
+  settings_section_title(
     "可靠性与恢复",
     "失败任务、数据备份和缓存检查均不修改源音频。"
   )
@@ -24956,6 +26069,7 @@ function draw_settings_maintenance()
     if state.regions_dirty then save_regions() end
     if state.loudness_dirty then save_loudness_cache() end
     if state.failed_tasks_dirty then save_failed_tasks() end
+    if state.project_usage_dirty then save_project_usage() end
     create_data_backup("manual", false)
   end
 
@@ -25237,6 +26351,11 @@ function draw_settings_popup()
   if dark_button("保存并关闭", button_width) then
     save_config()
     save_database()
+    ImGui.CloseCurrentPopup(ctx)
+  end
+
+  if state.settings_close_requested then
+    state.settings_close_requested = false
     ImGui.CloseCurrentPopup(ctx)
   end
 
@@ -25917,6 +27036,10 @@ function autosave()
     save_failed_tasks()
   end
 
+  if state.project_usage_dirty then
+    save_project_usage()
+  end
+
   state.last_save = now
 end
 
@@ -26015,6 +27138,10 @@ function cleanup()
     save_failed_tasks()
   end
 
+  if state.project_usage_dirty then
+    save_project_usage()
+  end
+
   destroy_loudness_job(state.loudness_active)
 end
 
@@ -26054,6 +27181,8 @@ if state.folder_browser_open then
 end
 
 load_collections()
+load_project_usage()
+refresh_current_project_binding()
 load_saved_searches()
 load_history()
 load_last_played_session()
@@ -26115,6 +27244,8 @@ function loop()
     process_folder_navigation_build()
     process_artwork_queue()
     process_wave_cache_verification()
+    process_missing_audit()
+    process_duplicate_scan()
     process_wave_precache()
     process_wave_queue()
     process_pending_transient_detection()
@@ -26122,6 +27253,7 @@ function loop()
   end
   cleanup_retired_preview_sources(false)
   poll_preview()
+  poll_current_project_binding()
   watch_folders()
   autosave()
 
