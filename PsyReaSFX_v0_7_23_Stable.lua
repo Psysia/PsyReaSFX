@@ -293,6 +293,9 @@ local FAILED_TASKS_FILE =
 local BACKUP_STATE_FILE =
   DATA_DIR .. SEP .. "backup_state_v1.tsv"
 
+local MIGRATION_LOG_FILE =
+  DATA_DIR .. SEP .. "migration_log_v1.tsv"
+
 local BACKUP_DIR =
   DATA_DIR .. SEP .. "backups"
 
@@ -630,6 +633,14 @@ local APPEARANCE_PRESETS = {
 
 local state = {
   open = true,
+
+  -- Persistence is preflighted before any user data is loaded. Unknown or
+  -- future schemas keep the application usable for browsing, but every
+  -- writer is disabled so a newer catalog cannot be silently downgraded.
+  persistence_read_only = false,
+  persistence_read_only_reason = "",
+  persistence_schema_versions = {},
+  persistence_schema_legacy = {},
 
   roots = {},
   legacy_roots = {},
@@ -2752,9 +2763,8 @@ function save_last_played_session()
   ensure_dirs()
 
   local file =
-    io.open(
-      LAST_PLAYED_SESSION_FILE,
-      "wb"
+    atomic_file_writer(
+      LAST_PLAYED_SESSION_FILE
     )
 
   if not file then
@@ -2765,6 +2775,8 @@ function save_last_played_session()
     return false
   end
 
+  write_persistence_schema(file, LAST_PLAYED_SESSION_FILE)
+
   for key in pairs(state.session_played) do
     file:write(
       "played\t",
@@ -2773,7 +2785,10 @@ function save_last_played_session()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存上次浏览高亮", true)
+    return false
+  end
 
   state.last_session_played =
     copy_path_set(
@@ -2782,6 +2797,30 @@ function save_last_played_session()
 
   state.session_played_dirty = false
   return true
+end
+
+function migrate_last_played_session_schema()
+  ensure_dirs()
+
+  local file = atomic_file_writer(
+    LAST_PLAYED_SESSION_FILE
+  )
+
+  if not file then
+    return false
+  end
+
+  write_persistence_schema(file, LAST_PLAYED_SESSION_FILE)
+
+  for key in pairs(state.last_session_played) do
+    file:write(
+      "played\t",
+      escape_tsv(key),
+      "\n"
+    )
+  end
+
+  return file:close()
 end
 
 function restore_last_session_played_highlights(silent)
@@ -3684,9 +3723,8 @@ function write_project_url_file(url)
   )
 
   local file =
-    io.open(
-      PROJECT_URL_FILE,
-      "wb"
+    atomic_file_writer(
+      PROJECT_URL_FILE
     )
 
   if not file then
@@ -3694,8 +3732,7 @@ function write_project_url_file(url)
   end
 
   file:write(url, "\n")
-  file:close()
-  return true
+  return file:close()
 end
 
 function extract_project_url_from_text(content)
@@ -3920,8 +3957,430 @@ function persistent_data_files()
     LOUDNESS_FILE,
     FAILED_TASKS_FILE,
     BACKUP_STATE_FILE,
+    MIGRATION_LOG_FILE,
     PROJECT_URL_FILE,
   }
+end
+
+local PERSISTENCE_SCHEMA_MAGIC = "psyreasfx_schema"
+local PERSISTENCE_SCHEMAS = {
+  [CONFIG_FILE] = {
+    kind = "config",
+    version = 1,
+    dirty_flag = "config_dirty",
+  },
+  [LIBRARIES_FILE] = {
+    kind = "libraries",
+    version = 1,
+    dirty_flag = "libraries_dirty",
+  },
+  [DATABASE_FILE] = {
+    kind = "database",
+    version = 1,
+    dirty_flag = "db_dirty",
+  },
+  [COLLECTIONS_FILE] = {
+    kind = "collections",
+    version = 1,
+    dirty_flag = "collections_dirty",
+  },
+  [PROJECT_USAGE_FILE] = {
+    kind = "project_usage",
+    version = 1,
+    dirty_flag = "project_usage_dirty",
+  },
+  [SAVED_SEARCHES_FILE] = {
+    kind = "saved_searches",
+    version = 1,
+    dirty_flag = "searches_dirty",
+  },
+  [HISTORY_FILE] = {
+    kind = "history",
+    version = 1,
+    dirty_flag = "history_dirty",
+  },
+  [LAST_PLAYED_SESSION_FILE] = {
+    kind = "last_played",
+    version = 1,
+  },
+  [REGIONS_FILE] = {
+    kind = "regions",
+    version = 1,
+    dirty_flag = "regions_dirty",
+  },
+  [LOUDNESS_FILE] = {
+    kind = "loudness",
+    version = 1,
+    dirty_flag = "loudness_dirty",
+  },
+  [FAILED_TASKS_FILE] = {
+    kind = "failed_tasks",
+    version = 1,
+    dirty_flag = "failed_tasks_dirty",
+  },
+  [BACKUP_STATE_FILE] = {
+    kind = "backup_state",
+    version = 1,
+  },
+  [MIGRATION_LOG_FILE] = {
+    kind = "migration_log",
+    version = 1,
+  },
+}
+
+function persistence_schema_header(kind, version)
+  return table.concat(
+    {
+      PERSISTENCE_SCHEMA_MAGIC,
+      kind,
+      tostring(version),
+    },
+    "\t"
+  ) .. "\n"
+end
+
+function write_persistence_schema(file, target_path)
+  local schema = PERSISTENCE_SCHEMAS[target_path]
+
+  if not schema then
+    return true
+  end
+
+  return file:write(
+    persistence_schema_header(
+      schema.kind,
+      schema.version
+    )
+  ) ~= nil
+end
+
+function is_persistence_schema_fields(fields)
+  return fields
+    and fields[1] == PERSISTENCE_SCHEMA_MAGIC
+end
+
+function preflight_persistence_schemas()
+  state.persistence_read_only = false
+  state.persistence_read_only_reason = ""
+  state.persistence_schema_versions = {}
+  state.persistence_schema_legacy = {}
+
+  local problems = {}
+
+  for target_path, schema in pairs(PERSISTENCE_SCHEMAS) do
+    local file = io.open(target_path, "rb")
+
+    if file then
+      local first_line = file:read("*l") or ""
+      file:close()
+
+      local fields = split_tsv(first_line)
+
+      if is_persistence_schema_fields(fields) then
+        local kind = fields[2] or ""
+        local version = tonumber(fields[3])
+
+        if kind ~= schema.kind then
+          problems[#problems + 1] = string.format(
+            "%s 的数据类型为 %s，预期为 %s",
+            basename(target_path),
+            kind ~= "" and kind or "未知",
+            schema.kind
+          )
+        elseif not version
+          or version < 1
+          or version % 1 ~= 0 then
+          problems[#problems + 1] = string.format(
+            "%s 的格式版本无效",
+            basename(target_path)
+          )
+        elseif version > schema.version then
+          problems[#problems + 1] = string.format(
+            "%s 使用未来格式 v%d（当前支持 v%d）",
+            basename(target_path),
+            version,
+            schema.version
+          )
+        else
+          state.persistence_schema_versions[target_path] =
+            version
+        end
+      else
+        -- All formats published before the hardening branch are schema 0.
+        -- They remain readable and are rewritten atomically after startup.
+        state.persistence_schema_versions[target_path] = 0
+        state.persistence_schema_legacy[target_path] = true
+      end
+    end
+  end
+
+  if #problems > 0 then
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      table.concat(problems, "；")
+    set_status(
+      "检测到不兼容的数据格式，已进入只读保护："
+        .. state.persistence_read_only_reason,
+      true
+    )
+    return false
+  end
+
+  return true
+end
+
+function schedule_legacy_schema_migrations()
+  if state.persistence_read_only then
+    return false
+  end
+
+  local pending = {}
+
+  for target_path in pairs(state.persistence_schema_legacy) do
+    if target_path ~= MIGRATION_LOG_FILE then
+      pending[#pending + 1] = target_path
+    end
+  end
+
+  if #pending == 0 then
+    return true
+  end
+
+  table.sort(pending)
+
+  if not create_data_backup("schema_migration", true) then
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      "旧数据迁移前无法创建安全快照"
+    set_status(
+      "无法创建迁移快照，已进入只读保护",
+      true
+    )
+    return false
+  end
+
+  local savers = {
+    [CONFIG_FILE] = save_config,
+    [LIBRARIES_FILE] = save_libraries,
+    [DATABASE_FILE] = save_database,
+    [COLLECTIONS_FILE] = save_collections,
+    [PROJECT_USAGE_FILE] = save_project_usage,
+    [SAVED_SEARCHES_FILE] = save_saved_searches,
+    [HISTORY_FILE] = save_history,
+    [LAST_PLAYED_SESSION_FILE] =
+      migrate_last_played_session_schema,
+    [REGIONS_FILE] = save_regions,
+    [LOUDNESS_FILE] = save_loudness_cache,
+    [FAILED_TASKS_FILE] = save_failed_tasks,
+    [BACKUP_STATE_FILE] = save_backup_state,
+  }
+
+  for _, target_path in ipairs(pending) do
+    local schema = PERSISTENCE_SCHEMAS[target_path]
+    local saver = savers[target_path]
+    local ok = true
+
+    if schema and schema.dirty_flag then
+      state[schema.dirty_flag] = true
+    end
+
+    if saver then
+      ok = saver() ~= false
+    end
+
+    local logged = append_schema_migration_log(
+      schema and schema.kind or basename(target_path),
+      0,
+      schema and schema.version or 0,
+      ok and "completed" or "failed"
+    )
+
+    if not logged then
+      ok = false
+    end
+
+    if not ok then
+      state.persistence_read_only = true
+      state.persistence_read_only_reason =
+        "数据格式迁移失败：" .. basename(target_path)
+      set_status(
+        state.persistence_read_only_reason
+          .. "；已停止后续写入",
+        true
+      )
+      return false
+    end
+
+    state.persistence_schema_legacy[target_path] = nil
+    state.persistence_schema_versions[target_path] =
+      schema and schema.version or 0
+  end
+
+
+  return true
+end
+
+function append_schema_migration_log(
+  kind,
+  from_version,
+  to_version,
+  result
+)
+  if state.persistence_read_only then
+    return false
+  end
+
+  local existed = reaper.file_exists(MIGRATION_LOG_FILE)
+  local file = io.open(MIGRATION_LOG_FILE, "ab")
+
+  if not file then
+    return false
+  end
+
+  if not existed then
+    file:write(
+      persistence_schema_header("migration_log", 1)
+    )
+  end
+
+  file:write(
+    "migration\t",
+    escape_tsv(os.date("%Y-%m-%d %H:%M:%S")),
+    "\t",
+    escape_tsv(kind or "unknown"),
+    "\t",
+    tostring(from_version or 0),
+    "\t",
+    tostring(to_version or 0),
+    "\t",
+    escape_tsv(result or "unknown"),
+    "\n"
+  )
+  file:flush()
+  file:close()
+  return true
+end
+
+-- Persistent TSV/config files used to be written directly to their final
+-- path. A REAPER crash or power loss during file:write() could therefore
+-- replace valid data with a truncated file. Keep the previous generation as
+-- a short-lived rollback and only expose a fully closed temporary file.
+function atomic_file_writer(target_path)
+  if state.persistence_read_only then
+    return nil,
+      state.persistence_read_only_reason ~= ""
+        and state.persistence_read_only_reason
+        or "persistence is read-only"
+  end
+
+  local temporary_path = target_path .. ".tmp"
+  local backup_path = target_path .. ".bak"
+  os.remove(temporary_path)
+
+  local raw, open_error = io.open(temporary_path, "wb")
+  if not raw then
+    return nil, open_error
+  end
+
+  local writer = {
+    raw = raw,
+    target_path = target_path,
+    temporary_path = temporary_path,
+    backup_path = backup_path,
+    failed = false,
+    failure = nil,
+    closed = false,
+  }
+
+  function writer:write(...)
+    if self.closed or self.failed then
+      return nil, self.failure or "writer is closed"
+    end
+
+    if state.persistence_fault_injection == "write" then
+      self.failed = true
+      self.failure = "injected write failure"
+      return nil, self.failure
+    end
+
+    local ok, message = self.raw:write(...)
+    if not ok then
+      self.failed = true
+      self.failure = message or "write failed"
+      return nil, self.failure
+    end
+    return self
+  end
+
+  function writer:close()
+    if self.closed then
+      return not self.failed, self.failure
+    end
+    self.closed = true
+
+    local flushed, flush_error = self.raw:flush()
+    local closed, close_error = self.raw:close()
+    if self.failed or not flushed or not closed then
+      os.remove(self.temporary_path)
+      self.failure = self.failure or flush_error or close_error
+        or "could not finish temporary file"
+      return false, self.failure
+    end
+
+    if state.persistence_fault_injection == "after_close" then
+      os.remove(self.temporary_path)
+      return false, "injected failure after temporary close"
+    end
+
+    local had_original = reaper.file_exists(self.target_path)
+    os.remove(self.backup_path)
+    if had_original
+      and not os.rename(self.target_path, self.backup_path) then
+      os.remove(self.temporary_path)
+      return false, "could not preserve previous file"
+    end
+
+    if state.persistence_fault_injection == "after_backup" then
+      if had_original then
+        os.rename(self.backup_path, self.target_path)
+      end
+      os.remove(self.temporary_path)
+      return false, "injected failure after backup"
+    end
+
+    if not os.rename(self.temporary_path, self.target_path) then
+      if had_original then
+        os.rename(self.backup_path, self.target_path)
+      end
+      os.remove(self.temporary_path)
+      return false, "could not install completed file"
+    end
+
+    os.remove(self.backup_path)
+    return true
+  end
+
+  return writer
+end
+
+function recover_atomic_data_files()
+  local files = persistent_data_files()
+  files[#files + 1] = SCAN_CHECKPOINT_FILE
+  for _, target_path in ipairs(files) do
+    local backup_path = target_path .. ".bak"
+    local temporary_path = target_path .. ".tmp"
+
+    if not reaper.file_exists(target_path)
+      and reaper.file_exists(backup_path) then
+      os.rename(backup_path, target_path)
+    elseif reaper.file_exists(target_path) then
+      os.remove(backup_path)
+    end
+
+    -- A .tmp without a rollback may have been interrupted while writing and
+    -- is never trusted as user data.
+    os.remove(temporary_path)
+  end
 end
 
 function remove_shallow_directory(path)
@@ -3941,15 +4400,15 @@ end
 function save_backup_state()
   ensure_dirs()
 
-  local file = io.open(BACKUP_STATE_FILE, "wb")
+  local file = atomic_file_writer(BACKUP_STATE_FILE)
 
   if not file then
     return false
   end
 
+  write_persistence_schema(file, BACKUP_STATE_FILE)
   file:write("last_date\t", escape_tsv(state.backup_last_date or ""), "\n")
-  file:close()
-  return true
+  return file:close()
 end
 
 function load_backup_state()
@@ -4123,8 +4582,7 @@ function write_scan_checkpoint(scan, phase)
   end
 
   ensure_dirs()
-  local temporary = SCAN_CHECKPOINT_FILE .. ".tmp"
-  local file = io.open(temporary, "wb")
+  local file = atomic_file_writer(SCAN_CHECKPOINT_FILE)
 
   if not file then
     return
@@ -4141,8 +4599,6 @@ function write_scan_checkpoint(scan, phase)
   end
 
   file:close()
-  os.remove(SCAN_CHECKPOINT_FILE)
-  os.rename(temporary, SCAN_CHECKPOINT_FILE)
 end
 
 function clear_scan_checkpoint()
@@ -4188,7 +4644,9 @@ function load_failed_tasks()
 
   for line in file:lines() do
     local fields = split_tsv(line)
-    local path = fields[1] or ""
+    local path = is_persistence_schema_fields(fields)
+      and ""
+      or fields[1] or ""
 
     if path ~= "" then
       state.failed_tasks[path_key(path)] = {
@@ -4206,13 +4664,14 @@ end
 
 function save_failed_tasks()
   ensure_dirs()
-  local temporary_path = FAILED_TASKS_FILE .. ".tmp"
-  local file = io.open(temporary_path, "wb")
+  local file = atomic_file_writer(FAILED_TASKS_FILE)
 
   if not file then
     set_status("无法保存失败任务", true)
     return false
   end
+
+  write_persistence_schema(file, FAILED_TASKS_FILE)
 
   local tasks = {}
 
@@ -4232,12 +4691,7 @@ function save_failed_tasks()
     )
   end
 
-  file:close()
-
-  os.remove(FAILED_TASKS_FILE)
-
-  if not os.rename(temporary_path, FAILED_TASKS_FILE) then
-    os.remove(temporary_path)
+  if not file:close() then
     set_status("无法保存失败任务", true)
     return false
   end
@@ -4801,13 +5255,14 @@ local DB_FIELDS = {
 function save_libraries()
   ensure_dirs()
 
-  local file = io.open(LIBRARIES_FILE, "wb")
+  local file = atomic_file_writer(LIBRARIES_FILE)
 
   if not file then
     set_status("无法保存音效库结构", true)
     return false
   end
 
+  write_persistence_schema(file, LIBRARIES_FILE)
   file:write("version\t3\n")
 
   for _, library in ipairs(state.libraries) do
@@ -4847,7 +5302,10 @@ function save_libraries()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存音效库结构", true)
+    return false
+  end
   state.libraries_dirty = false
   return true
 end
@@ -5319,13 +5777,14 @@ end
 function save_config()
   ensure_dirs()
 
-  local file = io.open(CONFIG_FILE, "wb")
+  local file = atomic_file_writer(CONFIG_FILE)
 
   if not file then
     set_status("无法保存配置", true)
     return
   end
 
+  write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
 
   for path in pairs(state.favorites) do
@@ -5927,8 +6386,12 @@ function save_config()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存配置", true)
+    return false
+  end
   state.config_dirty = false
+  return true
 end
 
 function asset_regions(asset)
@@ -5972,6 +6435,10 @@ function load_regions()
   for line in file:lines() do
     local fields = split_tsv(line)
     local path = fields[1]
+
+    if is_persistence_schema_fields(fields) then
+      path = ""
+    end
     local start_value = tonumber(fields[2])
     local finish_value = tonumber(fields[3])
     local name = fields[4] or ""
@@ -6025,12 +6492,14 @@ end
 function save_regions()
   ensure_dirs()
 
-  local file = io.open(REGIONS_FILE, "wb")
+  local file = atomic_file_writer(REGIONS_FILE)
 
   if not file then
     set_status("无法保存 Region 数据", true)
     return
   end
+
+  write_persistence_schema(file, REGIONS_FILE)
 
   for _, regions in pairs(state.regions_by_path) do
     for _, region in ipairs(regions) do
@@ -6051,8 +6520,12 @@ function save_regions()
     end
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存 Region 数据", true)
+    return false
+  end
   state.regions_dirty = false
+  return true
 end
 
 function add_saved_region(
@@ -6312,6 +6785,10 @@ function load_loudness_cache()
   for line in file:lines() do
     local fields = split_tsv(line)
     local path = fields[1]
+
+    if is_persistence_schema_fields(fields) then
+      path = ""
+    end
     local size = tonumber(fields[2]) or 0
 
     if path and path ~= "" then
@@ -6332,12 +6809,14 @@ end
 function save_loudness_cache()
   ensure_dirs()
 
-  local file = io.open(LOUDNESS_FILE, "wb")
+  local file = atomic_file_writer(LOUDNESS_FILE)
 
   if not file then
     set_status("无法保存响度缓存", true)
     return
   end
+
+  write_persistence_schema(file, LOUDNESS_FILE)
 
   for _, entry in pairs(state.loudness_cache) do
     file:write(
@@ -6356,8 +6835,12 @@ function save_loudness_cache()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存响度缓存", true)
+    return false
+  end
   state.loudness_dirty = false
+  return true
 end
 
 function valid_loudness_entry(asset)
@@ -7124,6 +7607,17 @@ function load_database()
 
   local headers = split_tsv(header_line)
 
+  if is_persistence_schema_fields(headers) then
+    header_line = file:read("*l")
+
+    if not header_line then
+      file:close()
+      return
+    end
+
+    headers = split_tsv(header_line)
+  end
+
   local ignored = 0
 
   for line in file:lines() do
@@ -7186,13 +7680,14 @@ end
 function save_database()
   ensure_dirs()
 
-  local file = io.open(DATABASE_FILE, "wb")
+  local file = atomic_file_writer(DATABASE_FILE)
 
   if not file then
     set_status("无法保存索引", true)
     return
   end
 
+  write_persistence_schema(file, DATABASE_FILE)
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
   local ordered = {}
@@ -7233,8 +7728,12 @@ function save_database()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存索引", true)
+    return false
+  end
   state.db_dirty = false
+  return true
 end
 
 
@@ -7396,13 +7895,14 @@ end
 
 function save_project_usage()
   ensure_dirs()
-  local temporary_path = PROJECT_USAGE_FILE .. ".tmp"
-  local file = io.open(temporary_path, "wb")
+  local file = atomic_file_writer(PROJECT_USAGE_FILE)
 
   if not file then
     set_status("无法保存工程使用记录", true)
     return false
   end
+
+  write_persistence_schema(file, PROJECT_USAGE_FILE)
 
   local project_keys = {}
   for key in pairs(state.project_usage) do
@@ -7431,11 +7931,7 @@ function save_project_usage()
     end
   end
 
-  file:close()
-  os.remove(PROJECT_USAGE_FILE)
-
-  if not os.rename(temporary_path, PROJECT_USAGE_FILE) then
-    os.remove(temporary_path)
+  if not file:close() then
     set_status("无法保存工程使用记录", true)
     return false
   end
@@ -7597,12 +8093,14 @@ end
 function save_collections()
   ensure_dirs()
 
-  local file = io.open(COLLECTIONS_FILE, "wb")
+  local file = atomic_file_writer(COLLECTIONS_FILE)
 
   if not file then
     set_status("无法保存播放列表", true)
     return
   end
+
+  write_persistence_schema(file, COLLECTIONS_FILE)
 
   for _, collection in ipairs(state.collections) do
     file:write(
@@ -7630,8 +8128,12 @@ function save_collections()
     end
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存播放列表", true)
+    return false
+  end
   state.collections_dirty = false
+  return true
 end
 
 function create_collection(kind)
@@ -7931,12 +8433,14 @@ end
 function save_saved_searches()
   ensure_dirs()
 
-  local file = io.open(SAVED_SEARCHES_FILE, "wb")
+  local file = atomic_file_writer(SAVED_SEARCHES_FILE)
 
   if not file then
     set_status("无法保存搜索条件", true)
     return
   end
+
+  write_persistence_schema(file, SAVED_SEARCHES_FILE)
 
   for _, saved in ipairs(state.saved_searches) do
     file:write(
@@ -7964,8 +8468,12 @@ function save_saved_searches()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存搜索条件", true)
+    return false
+  end
   state.searches_dirty = false
+  return true
 end
 
 function save_current_search()
@@ -8112,12 +8620,14 @@ end
 function save_history()
   ensure_dirs()
 
-  local file = io.open(HISTORY_FILE, "wb")
+  local file = atomic_file_writer(HISTORY_FILE)
 
   if not file then
     set_status("无法保存试听历史", true)
     return
   end
+
+  write_persistence_schema(file, HISTORY_FILE)
 
   for _, asset in ipairs(state.assets) do
     if (tonumber(asset.last_previewed) or 0) > 0 then
@@ -8133,8 +8643,12 @@ function save_history()
     end
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存试听历史", true)
+    return false
+  end
   state.history_dirty = false
+  return true
 end
 
 function workflow_label(status)
@@ -14394,11 +14908,33 @@ function relative_path_from_root(path, root)
 end
 
 function replace_path_in_order(order, old_key, new_path)
-  for index, path in ipairs(order or {}) do
-    if path_key(path) == old_key then
+  local changed = 0
+  local new_key = path_key(new_path)
+  local seen_new = false
+  local index = 1
+
+  while index <= #(order or {}) do
+    local key = path_key(order[index])
+    if key == old_key then
       order[index] = new_path
+      key = new_key
+      changed = changed + 1
+    end
+
+    if key == new_key then
+      if seen_new then
+        table.remove(order, index)
+        changed = changed + 1
+      else
+        seen_new = true
+        index = index + 1
+      end
+    else
+      index = index + 1
     end
   end
+
+  return changed
 end
 
 function migrate_path_references(old_path, new_path)
@@ -14426,7 +14962,9 @@ function migrate_path_references(old_path, new_path)
     state.last_session_played[new_key] = true
   end
 
-  replace_path_in_order(state.recent, old_key, new_path)
+  if replace_path_in_order(state.recent, old_key, new_path) > 0 then
+    state.config_dirty = true
+  end
 
   if state.selected_path and path_key(state.selected_path) == old_key then
     state.selected_path = new_path
@@ -14438,9 +14976,13 @@ function migrate_path_references(old_path, new_path)
 
   for _, collection in ipairs(state.collections or {}) do
     if collection.items and collection.items[old_key] then
+      local target_existed = collection.items[new_key] ~= nil
       collection.items[old_key] = nil
       collection.items[new_key] = new_path
       replace_path_in_order(collection.order, old_key, new_path)
+      if target_existed then
+        collection.count = math.max(0, (collection.count or 1) - 1)
+      end
       state.collections_dirty = true
     end
   end
@@ -14475,8 +15017,21 @@ function migrate_path_references(old_path, new_path)
     local entry = bucket.assets and bucket.assets[old_key]
     if entry then
       bucket.assets[old_key] = nil
-      entry.path = new_path
-      bucket.assets[new_key] = entry
+      local existing = bucket.assets[new_key]
+      if existing and existing ~= entry then
+        local entry_last = tonumber(entry.last_used) or 0
+        local existing_last = tonumber(existing.last_used) or 0
+        existing.count = (tonumber(existing.count) or 0)
+          + (tonumber(entry.count) or 0)
+        if entry_last >= existing_last then
+          existing.last_used = entry_last
+          existing.action = entry.action
+        end
+        existing.path = new_path
+      else
+        entry.path = new_path
+        bucket.assets[new_key] = entry
+      end
       state.project_usage_dirty = true
     end
   end
@@ -14535,6 +15090,12 @@ end
 
 function relink_root(record, supplied_path)
   if not record then
+    return false
+  end
+
+  if state.scan or state.import_session or state.precache_session
+    or state.duplicate_scan or state.missing_audit then
+    set_status("请等待当前后台任务完成后再重新定位来源", true)
     return false
   end
 
@@ -14630,6 +15191,12 @@ function start_missing_audit()
     return
   end
 
+  if state.scan or state.import_session or state.precache_session
+    or state.duplicate_scan then
+    set_status("请等待当前后台任务完成", true)
+    return
+  end
+
   local offline = {}
   state.offline_roots = {}
   for _, record in ipairs(state.root_records) do
@@ -14653,7 +15220,8 @@ end
 
 function process_missing_audit()
   local session = state.missing_audit
-  if not session or not can_run_heavy_job() then
+  if not session or state.scan or state.import_session
+    or state.precache_session or not can_run_heavy_job() then
     return
   end
 
@@ -14709,10 +15277,22 @@ function start_duplicate_scan()
     return
   end
 
+  if state.scan or state.import_session or state.precache_session
+    or state.missing_audit then
+    set_status("请等待当前后台任务完成", true)
+    return
+  end
+
   local size_groups = {}
   for _, asset in ipairs(state.assets) do
-    local size = tonumber(asset.size) or 0
-    if asset.ready and size > 0 then
+    local size = asset.ready and file_size(asset.path) or 0
+    if size > 0 then
+      if size ~= (tonumber(asset.size) or 0) then
+        asset.size = size
+        asset.fingerprint = ""
+        asset.fingerprint_size = 0
+        state.db_dirty = true
+      end
       local group = size_groups[size]
       if not group then
         group = {}
@@ -14788,7 +15368,8 @@ end
 
 function process_duplicate_scan()
   local session = state.duplicate_scan
-  if not session or not can_run_heavy_job() then
+  if not session or state.scan or state.import_session
+    or state.precache_session or not can_run_heavy_job() then
     return
   end
 
@@ -14799,7 +15380,14 @@ function process_duplicate_scan()
   end
 
   session.index = session.index + 1
-  local size = tonumber(asset.size) or file_size(asset.path)
+  local size = file_size(asset.path)
+  if size <= 0 then
+    asset.fingerprint = ""
+    asset.fingerprint_size = 0
+    session.failed = session.failed + 1
+    if session.index > session.total then finish_duplicate_scan(session) end
+    return
+  end
   local cached = tostring(asset.fingerprint or "") ~= ""
     and tonumber(asset.fingerprint_size) == size
 
@@ -26987,6 +27575,10 @@ end
 ----------------------------------------------------------------
 
 function autosave()
+  if state.persistence_read_only then
+    return
+  end
+
   local now = reaper.time_precise()
 
   if now - state.last_save
@@ -27044,7 +27636,8 @@ function autosave()
 end
 
 function watch_folders()
-  if not state.watch_enabled
+  if state.persistence_read_only
+    or not state.watch_enabled
     or state.scan
     or state.import_session
     or state.precache_session
@@ -27098,6 +27691,11 @@ function cleanup()
     )
   end
 
+  if state.persistence_read_only then
+    destroy_loudness_job(state.loudness_active)
+    return
+  end
+
   if state.config_dirty then
     save_config()
   end
@@ -27148,7 +27746,11 @@ end
 reaper.atexit(cleanup)
 
 ensure_dirs()
-migrate_legacy_data()
+recover_atomic_data_files()
+preflight_persistence_schemas()
+if not state.persistence_read_only then
+  migrate_legacy_data()
+end
 load_or_migrate_project_url()
 load_config()
 state.next_watch = reaper.time_precise() + state.watch_interval
@@ -27193,12 +27795,14 @@ end
 
 load_regions()
 load_loudness_cache()
+schedule_legacy_schema_migrations()
 apply_surface_style()
 apply_theme_palette()
 apply_waveform_palette()
 state.results_dirty = true
 
-if state.auto_backup
+if not state.persistence_read_only
+  and state.auto_backup
   and state.backup_last_date ~= os.date("%Y%m%d") then
   create_data_backup("auto", true)
 end
@@ -27216,7 +27820,12 @@ local interrupted_scan = state.resume_scan_on_start
   and load_scan_checkpoint()
   or nil
 
-if interrupted_scan then
+if state.persistence_read_only then
+  set_status(
+    "数据格式只读保护已启用；浏览可用，扫描与保存已暂停",
+    true
+  )
+elseif interrupted_scan then
   start_scan("恢复中断扫描", interrupted_scan.roots)
 elseif #state.roots > 0
   and (#state.assets == 0 or needs_import_recovery) then

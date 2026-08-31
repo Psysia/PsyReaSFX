@@ -9,6 +9,7 @@ public sealed class StateStore
     public string DatabasePath => _database.DatabasePath;
     public MigrationSummary? LastMigration { get; private set; }
     public Exception? LastError { get; private set; }
+    public bool CanWrite => LastError is null;
 
     public async Task<PersistedState> LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -19,6 +20,7 @@ public sealed class StateStore
             LastMigration = await _database.ImportLuaIfNeededAsync(cancellationToken: cancellationToken);
             var snapshot = await _database.LoadSnapshotAsync(cancellationToken);
             var state = FromSnapshot(snapshot);
+            LastError = null;
             AppDiagnostics.Write($"Catalog opened: {state.Libraries.Count} libraries, {state.Index.Count} assets.");
             return state;
         }
@@ -34,44 +36,95 @@ public sealed class StateStore
 
     public void Save(PersistedState state)
     {
+        EnsureWritable();
         _database.SaveDesktopSnapshotAsync(ToSnapshot(state)).GetAwaiter().GetResult();
     }
 
-    public void SaveWorkspace(PersistedState state) =>
+    public Task SaveAsync(PersistedState state, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        // Capture mutable UI collections before the first await. The database
+        // can then write in the background without enumerating live WPF state.
+        var snapshot = ToSnapshot(state);
+        return _database.SaveDesktopSnapshotAsync(snapshot, cancellationToken);
+    }
+
+    public void SaveWorkspace(PersistedState state)
+    {
+        EnsureWritable();
         _database.SaveWorkspaceAsync(ToSnapshot(state)).GetAwaiter().GetResult();
+    }
 
-    public void SaveActivities(IEnumerable<AudioAsset> assets) =>
+    public Task SaveWorkspaceAsync(PersistedState state, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        var snapshot = ToSnapshot(state);
+        return _database.SaveWorkspaceAsync(snapshot, cancellationToken);
+    }
+
+    public void SaveActivities(IEnumerable<AudioAsset> assets)
+    {
+        EnsureWritable();
         _database.SaveAssetActivityAsync(assets.Select(ToAsset)).GetAwaiter().GetResult();
+    }
 
-    public Task SaveActivitiesAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default) =>
-        _database.SaveAssetActivityAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+    public Task SaveActivitiesAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.SaveAssetActivityAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+    }
 
-    public Task SaveAssetDetailsAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default) =>
-        _database.SaveAssetDetailsAsync(assets.Select(ToAsset), cancellationToken);
+    public Task SaveAssetDetailsAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.SaveAssetDetailsAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+    }
 
-    public void SaveSessionPlayed(IEnumerable<string> paths) =>
+    public void SaveSessionPlayed(IEnumerable<string> paths)
+    {
+        EnsureWritable();
         _database.ReplaceSessionPlayedAsync(paths).GetAwaiter().GetResult();
+    }
 
     public Task<IReadOnlyList<RegionRecord>> LoadRegionsAsync(string assetPath, CancellationToken cancellationToken = default) =>
         _database.LoadRegionsAsync(assetPath, cancellationToken);
 
-    public Task SaveRegionAsync(RegionRecord region, CancellationToken cancellationToken = default) =>
-        _database.UpsertRegionAsync(region, cancellationToken);
+    public Task SaveRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.UpsertRegionAsync(region, cancellationToken);
+    }
 
-    public Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default) =>
-        _database.DeleteRegionAsync(region, cancellationToken);
+    public Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.DeleteRegionAsync(region, cancellationToken);
+    }
 
     public Task<LoudnessRecord?> LoadLoudnessAsync(string assetPath, CancellationToken cancellationToken = default) =>
         _database.LoadLoudnessAsync(assetPath, cancellationToken);
 
-    public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default) =>
-        _database.UpsertLoudnessAsync(row, cancellationToken);
+    public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.UpsertLoudnessAsync(row, cancellationToken);
+    }
 
-    public Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default) =>
-        _database.AddProjectUsageAsync(row, cancellationToken);
+    public Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.AddProjectUsageAsync(row, cancellationToken);
+    }
 
     public Task<IReadOnlyList<ProjectUsageRecord>> LoadProjectUsageAsync(int limit = 500, CancellationToken cancellationToken = default) =>
         _database.LoadProjectUsageAsync(limit, cancellationToken);
+
+    private void EnsureWritable()
+    {
+        if (LastError is not null)
+            throw new InvalidOperationException(
+                "Catalog writes are disabled because the database did not open successfully.", LastError);
+    }
 
     private static PersistedState FromSnapshot(CatalogSnapshot snapshot)
     {

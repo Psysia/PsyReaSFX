@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Microsoft.Data.Sqlite;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using PsyReaSFX.Desktop.Controls;
@@ -34,6 +35,63 @@ internal static class DesktopSelfTest
 
             var database = new PsyReaSFXDatabase(Path.Combine(working, "database"));
             await database.InitializeAsync();
+            var schemaMigrationPassed = await database.GetSchemaVersionAsync()
+                                        == PsyReaSFXDatabase.SupportedSchemaVersion;
+
+            var futureDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-future"));
+            await futureDatabase.InitializeAsync();
+            await using (var futureConnection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = futureDatabase.DatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false
+            }.ToString()))
+            {
+                await futureConnection.OpenAsync();
+                var futureMarker = futureConnection.CreateCommand();
+                futureMarker.CommandText = "DELETE FROM schema_info; INSERT INTO schema_info(version) VALUES(999)";
+                await futureMarker.ExecuteNonQueryAsync();
+            }
+            var futureSchemaRejected = false;
+            try { await new PsyReaSFXDatabase(futureDatabase.DataDirectory).InitializeAsync(); }
+            catch (InvalidDataException) { futureSchemaRejected = true; }
+            schemaMigrationPassed = schemaMigrationPassed
+                                    && futureSchemaRejected
+                                    && await futureDatabase.GetSchemaVersionAsync() == 999;
+
+            var luaSchemaDirectory = Path.Combine(working, "lua-schema-v1");
+            Directory.CreateDirectory(luaSchemaDirectory);
+            await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "libraries_v2.tsv"),
+                "psyreasfx_schema\tlibraries\t1\nversion\t3\nlibrary\tlib-self\tSchema library\t\t1\n" +
+                $"root\troot-self\tlib-self\t{working}\t\t1\t\t0\t0\n");
+            const string luaAssetHeader = "path\tname\tfolder\troot\tlibrary\tduration\tchannels\tsample_rate\tbit_depth\tsource_type\tsize\tdescription\tkeywords\tcatid\tcategory\tsubcategory\tartwork_path\tworkflow_status\tmarked\tpreview_count\tlast_previewed\tindexed\tready\tused_count\tlast_used\troot_id\tlibrary_id";
+            var luaAssetValues = string.Join('\t', new[]
+            {
+                wavPath, Path.GetFileName(wavPath), working, working, "Schema library", "0.5", "2", "48000", "16",
+                "WAVE", new FileInfo(wavPath).Length.ToString(), "schema fixture", "test", "", "TEST", "FIXTURE", "",
+                "none", "0", "0", "0", "1", "1", "0", "0", "root-self", "lib-self"
+            });
+            await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "index_v3.tsv"),
+                $"psyreasfx_schema\tdatabase\t1\n{luaAssetHeader}\n{luaAssetValues}\n");
+            await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "config.tsv"),
+                "psyreasfx_schema\tconfig\t1\nversion\t0.8\nsetting\tlanguage\tzh\n");
+            var luaSchemaDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-lua-schema"));
+            await luaSchemaDatabase.InitializeAsync();
+            var luaSchemaMigration = await luaSchemaDatabase.ImportLuaIfNeededAsync(luaSchemaDirectory);
+            var luaSchemaSnapshot = await luaSchemaDatabase.LoadSnapshotAsync();
+
+            var futureLuaDirectory = Path.Combine(working, "lua-schema-future");
+            Directory.CreateDirectory(futureLuaDirectory);
+            await File.WriteAllTextAsync(Path.Combine(futureLuaDirectory, "config.tsv"),
+                "psyreasfx_schema\tconfig\t999\n");
+            var futureLuaRejected = false;
+            try { await luaSchemaDatabase.ImportLuaIfNeededAsync(futureLuaDirectory); }
+            catch (InvalidDataException) { futureLuaRejected = true; }
+            var luaSchemaImportPassed = luaSchemaMigration.Imported
+                                        && luaSchemaSnapshot.Libraries.Count == 1
+                                        && luaSchemaSnapshot.Assets.Count == 1
+                                        && futureLuaRejected;
+
             var luaDirectory = LuaDataLocator.Find();
             var migration = await database.ImportLuaIfNeededAsync(luaDirectory);
             var catalog = await database.LoadSnapshotAsync();
@@ -563,6 +621,8 @@ internal static class DesktopSelfTest
                          && indexed.Count == 1
                          && indexed[0].DurationSeconds > .45
                          && migrationPassed
+                         && schemaMigrationPassed
+                         && luaSchemaImportPassed
                          && assetDetailsPassed
                          && organizationPassed
                          && projectUsagePassed
@@ -615,6 +675,8 @@ internal static class DesktopSelfTest
                 themeSwitchPassed,
                 themeProbeColors,
                 assetDetailsPassed,
+                schemaMigrationPassed,
+                luaSchemaImportPassed,
                 organizationPassed,
                 projectUsagePassed,
                 regionPersistencePassed,

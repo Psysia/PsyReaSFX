@@ -174,6 +174,7 @@ public sealed class DesktopPreferences
 
 public sealed class DesktopPreferencesStore
 {
+    private static readonly object SaveGate = new();
     public string DirectoryPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PsyReaSFX", "Desktop");
     public string FilePath => Path.Combine(DirectoryPath, "settings-v1.json");
@@ -243,13 +244,50 @@ public sealed class DesktopPreferencesStore
         catch (Exception exception)
         {
             AppDiagnostics.Write("Desktop preferences could not be loaded; defaults were used.", exception);
+            PreserveUnreadableSettings();
             return new DesktopPreferences();
+        }
+    }
+
+    private void PreserveUnreadableSettings()
+    {
+        try
+        {
+            if (!File.Exists(FilePath)) return;
+            var destination = Path.Combine(DirectoryPath,
+                $"settings-v1.corrupt-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json");
+            File.Copy(FilePath, destination, false);
+            AppDiagnostics.Write($"Unreadable preferences were preserved: {destination}");
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.Write("Unreadable preferences could not be preserved.", exception);
         }
     }
 
     public void Save(DesktopPreferences preferences)
     {
-        Directory.CreateDirectory(DirectoryPath);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(preferences, new JsonSerializerOptions { WriteIndented = true }));
+        lock (SaveGate)
+        {
+            Directory.CreateDirectory(DirectoryPath);
+            var temporary = FilePath + ".tmp";
+            var json = JsonSerializer.Serialize(preferences, new JsonSerializerOptions { WriteIndented = true });
+            try
+            {
+                using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new StreamWriter(stream))
+                {
+                    writer.Write(json);
+                    writer.Flush();
+                    stream.Flush(true);
+                }
+                File.Move(temporary, FilePath, true);
+            }
+            catch
+            {
+                try { if (File.Exists(temporary)) File.Delete(temporary); } catch { }
+                throw;
+            }
+        }
     }
 }

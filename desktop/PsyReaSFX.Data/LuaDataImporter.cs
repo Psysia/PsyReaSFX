@@ -17,6 +17,21 @@ internal sealed class LuaImportBundle
 
 internal static class LuaDataImporter
 {
+    private const string SchemaMagic = "psyreasfx_schema";
+    private static readonly IReadOnlyDictionary<string, (string Kind, int Version)> SupportedSchemas =
+        new Dictionary<string, (string Kind, int Version)>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["config.tsv"] = ("config", 1),
+            ["libraries_v2.tsv"] = ("libraries", 1),
+            ["index_v3.tsv"] = ("database", 1),
+            ["collections_v1.tsv"] = ("collections", 1),
+            ["saved_searches_v1.tsv"] = ("saved_searches", 1),
+            ["history_v1.tsv"] = ("history", 1),
+            ["last_played_session_v1.tsv"] = ("last_played", 1),
+            ["regions_v1.tsv"] = ("regions", 1),
+            ["loudness_v1.tsv"] = ("loudness", 1)
+        };
+
     private static readonly string[] DatabaseFields =
     [
         "path", "name", "folder", "root", "library", "duration", "channels", "sample_rate", "bit_depth",
@@ -27,6 +42,7 @@ internal static class LuaDataImporter
 
     public static async Task<LuaImportBundle> ReadAsync(string directory, CancellationToken cancellationToken)
     {
+        await ValidateSchemasAsync(directory, cancellationToken);
         var result = new LuaImportBundle();
         await ReadLibrariesAsync(Path.Combine(directory, "libraries_v2.tsv"), result, cancellationToken);
         await ReadAssetsAsync(Path.Combine(directory, "index_v3.tsv"), result, cancellationToken);
@@ -58,6 +74,12 @@ internal static class LuaDataImporter
         var headerLine = await reader.ReadLineAsync(token);
         if (headerLine is null) return;
         var headers = LuaTsv.Split(headerLine);
+        if (IsSchemaHeader(headers))
+        {
+            headerLine = await reader.ReadLineAsync(token);
+            if (headerLine is null) return;
+            headers = LuaTsv.Split(headerLine);
+        }
         var known = headers.Select((field, index) => (field, index)).ToDictionary(x => x.field, x => x.index, StringComparer.OrdinalIgnoreCase);
         if (!DatabaseFields.All(known.ContainsKey)) return;
 
@@ -139,7 +161,38 @@ internal static class LuaDataImporter
         while (await reader.ReadLineAsync(token) is { } line)
         {
             token.ThrowIfCancellationRequested();
-            if (line.Length > 0) yield return LuaTsv.Split(line);
+            if (line.Length > 0)
+            {
+                var fields = LuaTsv.Split(line);
+                if (!IsSchemaHeader(fields)) yield return fields;
+            }
+        }
+    }
+
+    private static bool IsSchemaHeader(IReadOnlyList<string> fields) =>
+        fields.Count > 0 && fields[0].Equals(SchemaMagic, StringComparison.Ordinal);
+
+    private static async Task ValidateSchemasAsync(string directory, CancellationToken token)
+    {
+        foreach (var pair in SupportedSchemas)
+        {
+            var path = Path.Combine(directory, pair.Key);
+            if (!File.Exists(path)) continue;
+
+            using var reader = new StreamReader(path, detectEncodingFromByteOrderMarks: true);
+            var firstLine = await reader.ReadLineAsync(token);
+            if (string.IsNullOrEmpty(firstLine)) continue;
+
+            var fields = LuaTsv.Split(firstLine);
+            if (!IsSchemaHeader(fields)) continue; // Published pre-hardening schema 0.
+
+            var kind = Field(fields, 1);
+            var version = LuaTsv.Integer(Field(fields, 2));
+            if (!kind.Equals(pair.Value.Kind, StringComparison.Ordinal) || version < 1)
+                throw new InvalidDataException($"Lua data file {pair.Key} has an invalid schema marker.");
+            if (version > pair.Value.Version)
+                throw new InvalidDataException(
+                    $"Lua data file {pair.Key} uses schema {version}; this importer supports {pair.Value.Version}.");
         }
     }
 

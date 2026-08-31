@@ -4,6 +4,7 @@ namespace PsyReaSFX.Data;
 
 public sealed class PsyReaSFXDatabase
 {
+    public const int SupportedSchemaVersion = 2;
     private readonly string _connectionString;
     public string DataDirectory { get; }
     public string DatabasePath { get; }
@@ -25,10 +26,31 @@ public sealed class PsyReaSFXDatabase
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(DataDirectory);
+
+        // Check an existing catalog through a genuinely read-only connection
+        // before executing even idempotent DDL. This is the fail-closed gate
+        // that prevents an older executable from touching a future schema.
+        if (File.Exists(DatabasePath) && new FileInfo(DatabasePath).Length > 0)
+        {
+            var existingVersion = await ReadExistingSchemaVersionAsync(cancellationToken);
+            if (existingVersion > SupportedSchemaVersion)
+                throw new InvalidDataException(
+                    $"Catalog schema {existingVersion} is newer than this application supports ({SupportedSchemaVersion}).");
+        }
+
         await using var connection = await OpenAsync(cancellationToken);
         var command = connection.CreateCommand();
-        command.CommandText = Schema;
+        command.CommandText = BaseSchema;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await ApplyMigrationsAsync(connection, cancellationToken);
+        await ValidateSchemaVersionAsync(connection, cancellationToken);
+    }
+
+    public async Task<int> GetSchemaVersionAsync(CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(DatabasePath) || new FileInfo(DatabasePath).Length == 0)
+            return 0;
+        return await ReadExistingSchemaVersionAsync(cancellationToken);
     }
 
     public async Task BackupAsync(string destinationPath, CancellationToken cancellationToken = default)
@@ -418,6 +440,92 @@ public sealed class PsyReaSFXDatabase
         return connection;
     }
 
+    private async Task<int> ReadExistingSchemaVersionAsync(CancellationToken token)
+    {
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = DatabasePath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString());
+        await connection.OpenAsync(token);
+
+        var tableCheck = connection.CreateCommand();
+        tableCheck.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_info'";
+        if (Convert.ToInt64(await tableCheck.ExecuteScalarAsync(token)) == 0)
+            throw new InvalidDataException("The catalog has no schema_info table and will not be modified.");
+
+        return await ReadSchemaVersionAsync(connection, token);
+    }
+
+    private static async Task<int> ReadSchemaVersionAsync(SqliteConnection connection, CancellationToken token)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT MAX(version) FROM schema_info";
+        var value = await command.ExecuteScalarAsync(token);
+        var version = value is null or DBNull ? 0 : Convert.ToInt32(value);
+        if (version < 1)
+            throw new InvalidDataException("The catalog schema has no valid version marker.");
+        return version;
+    }
+
+    private static async Task ValidateSchemaVersionAsync(SqliteConnection connection, CancellationToken token)
+    {
+        var version = await ReadSchemaVersionAsync(connection, token);
+        if (version > SupportedSchemaVersion)
+            throw new InvalidDataException(
+                $"Catalog schema {version} is newer than this application supports ({SupportedSchemaVersion}).");
+        if (version != SupportedSchemaVersion)
+            throw new InvalidDataException(
+                $"Catalog schema migration stopped at {version}; expected {SupportedSchemaVersion}.");
+    }
+
+    private static async Task ApplyMigrationsAsync(SqliteConnection connection, CancellationToken token)
+    {
+        var version = await ReadSchemaVersionAsync(connection, token);
+        if (version > SupportedSchemaVersion)
+            throw new InvalidDataException(
+                $"Catalog schema {version} is newer than this application supports ({SupportedSchemaVersion}).");
+
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(token);
+        try
+        {
+            while (version < SupportedSchemaVersion)
+            {
+                var targetVersion = version + 1;
+                if (!SchemaMigrations.TryGetValue(targetVersion, out var sql))
+                    throw new InvalidDataException(
+                        $"No catalog migration is registered for schema {version} -> {targetVersion}.");
+
+                var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = sql;
+                await command.ExecuteNonQueryAsync(token);
+
+                var record = connection.CreateCommand();
+                record.Transaction = transaction;
+                record.CommandText = "INSERT OR REPLACE INTO schema_history(version,applied_utc) VALUES($version,$utc)";
+                record.Parameters.AddWithValue("$version", targetVersion);
+                record.Parameters.AddWithValue("$utc", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                await record.ExecuteNonQueryAsync(token);
+
+                var marker = connection.CreateCommand();
+                marker.Transaction = transaction;
+                marker.CommandText = "DELETE FROM schema_info; INSERT INTO schema_info(version) VALUES($version)";
+                marker.Parameters.AddWithValue("$version", targetVersion);
+                await marker.ExecuteNonQueryAsync(token);
+                version = targetVersion;
+            }
+
+            await transaction.CommitAsync(token);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
     private static async Task ImportBundleAsync(SqliteConnection connection, LuaImportBundle bundle, CancellationToken token)
     {
         for (var i = 0; i < bundle.Libraries.Count; i++) await UpsertLibraryAsync(connection, bundle.Libraries[i], i, token);
@@ -539,7 +647,18 @@ public sealed class PsyReaSFXDatabase
         var command = connection.CreateCommand(); command.CommandText = sql; await command.ExecuteNonQueryAsync(token);
     }
 
-    private const string Schema = """
+    private static readonly IReadOnlyDictionary<int, string> SchemaMigrations =
+        new Dictionary<int, string>
+        {
+            [2] = """
+                CREATE TABLE IF NOT EXISTS catalog_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+                INSERT OR REPLACE INTO catalog_meta(key,value) VALUES('format','PsyReaSFX Desktop Catalog');
+                INSERT OR REPLACE INTO catalog_meta(key,value) VALUES('minimum_reader_schema','1');
+                CREATE TABLE IF NOT EXISTS schema_history(version INTEGER PRIMARY KEY,applied_utc INTEGER NOT NULL);
+                """
+        };
+
+    private const string BaseSchema = """
         CREATE TABLE IF NOT EXISTS schema_info(version INTEGER NOT NULL);
         INSERT INTO schema_info(version) SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM schema_info);
         CREATE TABLE IF NOT EXISTS migrations(migration_key TEXT PRIMARY KEY,source_path TEXT NOT NULL,imported_utc INTEGER NOT NULL);

@@ -1,0 +1,71 @@
+name: Code quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Parse Lua 5.3 source
+        shell: pwsh
+        run: |
+          npm install --no-save --ignore-scripts luaparse@0.3.1
+          node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync('PsyReaSFX_v0_7_23_Stable.lua','utf8'),{luaVersion:'5.3'}); console.log('Lua parse OK');"
+
+      - name: Build Desktop Release
+        run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
+
+      - name: Audit NuGet dependencies
+        shell: pwsh
+        run: |
+          $output = dotnet list desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj package --vulnerable --include-transitive
+          $output
+          if ($output -match 'has the following vulnerable packages') {
+            throw 'NuGet vulnerability audit found a vulnerable dependency.'
+          }
+
+      - name: Run Desktop self-test
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Desktop-self-test.json'
+          $exe = 'desktop/PsyReaSFX.Desktop/bin/Release/net8.0-windows/PsyReaSFX.Desktop.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--self-test', $report -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
+            throw "Desktop self-test failed with exit code $($process.ExitCode)."
+          }
+          Get-Content -LiteralPath $report
+
+      - name: Run disposable catalog benchmark
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-hardening-1k'
+          $report = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-hardening-benchmark.json'
+          python tools/generate_hardening_library.py $fixture --count 1000
+          $exe = 'desktop/PsyReaSFX.Desktop/bin/Release/net8.0-windows/PsyReaSFX.Desktop.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--hardening-benchmark', $fixture, $report -Wait -PassThru -WindowStyle Hidden
+          Get-Content -LiteralPath $report
+          if ($process.ExitCode -ne 0) {
+            throw "Hardening benchmark failed with exit code $($process.ExitCode)."
+          }
