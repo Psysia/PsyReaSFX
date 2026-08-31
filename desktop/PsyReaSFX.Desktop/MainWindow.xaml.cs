@@ -40,12 +40,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _activitySaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _bridgeTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly ReaperBridgeService _bridge = new();
+    private readonly BackgroundJobCoordinator _jobs = new();
     private readonly HashSet<string> _activityDirty = new(StringComparer.OrdinalIgnoreCase);
     private bool _activitySaveInFlight;
     private PersistedState _state = new();
     private DesktopPreferences _preferences = new();
     private ICollectionView _view;
-    private CancellationTokenSource? _scanCancellation;
     private AudioAsset? _selected;
     private AudioAsset? _previewing;
     private string _libraryIdFilter = "";
@@ -62,7 +62,6 @@ public partial class MainWindow : Window
     private bool _inspectorVisible = true;
     private bool _suppressSelectionPreview;
     private double _pendingSeekRatio;
-    private CancellationTokenSource? _previewCancellation;
     private long _lastTimeTextUpdateTick;
     private long _playbackClockAnchorTicks;
     private double _playbackClockAnchorSeconds;
@@ -97,14 +96,14 @@ public partial class MainWindow : Window
     private bool _loadingPreviewRegions;
     private Point _selectionDragStart;
     private bool _selectionDragArmed;
-    private CancellationTokenSource? _selectionDragPreparation;
-    private CancellationTokenSource? _analysisCancellation;
     private LoudnessRecord? _currentLoudness;
     private string? _preparedSelectionDragPath;
     private string _preparedSelectionDragKey = "";
     private bool _watchScanPending;
     private HelpWindow? _helpWindow;
     private bool _bridgeBusy;
+    private bool _shutdownStarted;
+    private bool _shutdownCommitted;
 
     public static readonly DependencyProperty InlineWaveformResolutionProperty = DependencyProperty.Register(
         nameof(InlineWaveformResolution), typeof(int), typeof(MainWindow), new PropertyMetadata(512));
@@ -374,19 +373,25 @@ public partial class MainWindow : Window
     private async void Rescan_Click(object sender, RoutedEventArgs e) => await RescanAsync(true);
     private async Task RescanAsync(bool announce)
     {
-        if (_scanCancellation != null) return;
-        _scanCancellation = new CancellationTokenSource();
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.CatalogScan,
+            BackgroundJobResource.CatalogWriter,
+            false,
+            BackgroundJobPriority.UserInitiated);
+        if (job == null) return;
         RescanButton.IsEnabled = false;
         StatusText.Text = T("正在增量扫描音效库…", "Scanning libraries incrementally…");
         _reliability.BeginScan();
         try
         {
+            var librarySnapshot = SnapshotLibraries(_state.Libraries);
+            var previousSnapshot = _assets.ToArray();
             var progress = new Progress<(int Count, string File)>(p =>
             {
                 StatusText.Text = T($"正在索引 {p.Count:N0} · {Path.GetFileName(p.File)}", $"Indexing {p.Count:N0} · {Path.GetFileName(p.File)}");
                 _reliability.UpdateScan(p.Count, p.File);
             });
-            var indexed = await _indexer.BuildAsync(_state.Libraries, _assets, progress, _scanCancellation.Token);
+            var indexed = await _indexer.BuildAsync(librarySnapshot, previousSnapshot, progress, job.Token);
             foreach (var asset in indexed) asset.IsFavorite = _state.Favorites.Contains(asset.FilePath);
             _assets = new ObservableCollection<AudioAsset>(indexed);
             foreach (var asset in _assets) asset.UiLanguage = _preferences.Language;
@@ -394,7 +399,7 @@ public partial class MainWindow : Window
             _view.Filter = FilterAsset;
             AssetGrid.ItemsSource = _view;
             _state.Index = indexed;
-            await _store.SaveAsync(_state, _scanCancellation.Token);
+            await _store.SaveAsync(_state, job.Token);
             ApplySort();
             RebuildLibraryTree();
             RebuildFacets();
@@ -411,10 +416,10 @@ public partial class MainWindow : Window
             if (announce && indexed.Count == 0) MessageBox.Show("没有找到受支持的音频文件。", "PsyReaSFX Desktop");
         }
         catch (OperationCanceledException) { StatusText.Text = T("扫描已取消", "Scan cancelled"); }
-        catch (Exception ex) { StatusText.Text = T("扫描失败", "Scan failed"); AppDiagnostics.Write("Library scan failed.", ex); MessageBox.Show(ex.Message, T("扫描失败", "Scan failed")); }
+        catch (Exception ex) { job.MarkFailed(ex); StatusText.Text = T("扫描失败", "Scan failed"); AppDiagnostics.Write("Library scan failed.", ex); MessageBox.Show(ex.Message, T("扫描失败", "Scan failed")); }
         finally
         {
-            _scanCancellation.Dispose(); _scanCancellation = null; RescanButton.IsEnabled = true;
+            RescanButton.IsEnabled = true;
             if (_watchScanPending)
             {
                 _watchScanPending = false;
@@ -433,7 +438,7 @@ public partial class MainWindow : Window
     private void WatchFolders_ChangeDetected(object? sender, EventArgs e) => Dispatcher.BeginInvoke(async () =>
     {
         if (!_initialized || !_preferences.WatchFoldersEnabled) return;
-        if (_scanCancellation != null) { _watchScanPending = true; return; }
+        if (_jobs.IsActive(BackgroundJobKind.CatalogScan)) { _watchScanPending = true; return; }
         StatusText.Text = T("检测到音效库变化，准备增量更新…", "Library changes detected; preparing an incremental update…");
         await RescanAsync(false);
     });
@@ -532,6 +537,25 @@ public partial class MainWindow : Window
         foreach (var asset in _assets.Where(asset => asset.LibraryId.Equals(library.Id, StringComparison.OrdinalIgnoreCase) || asset.LibraryName.Equals(old, StringComparison.OrdinalIgnoreCase))) asset.LibraryName = name;
         await _store.SaveAsync(_state); RebuildLibraryTree(); RefreshView();
     }
+
+    private static LibraryDefinition[] SnapshotLibraries(IEnumerable<LibraryDefinition> libraries) =>
+        libraries.Select(library => new LibraryDefinition
+        {
+            Id = library.Id,
+            Name = library.Name,
+            ArtworkPath = library.ArtworkPath,
+            IsExpanded = library.IsExpanded,
+            Sources = new ObservableCollection<LibrarySource>(library.Sources.Select(source => new LibrarySource
+            {
+                Id = source.Id,
+                Path = source.Path,
+                Alias = source.Alias,
+                Enabled = source.Enabled,
+                ArtworkPath = source.ArtworkPath,
+                ArtworkChecked = source.ArtworkChecked,
+                ArtworkScanVersion = source.ArtworkScanVersion
+            }))
+        }).ToArray();
 
     private async Task RemoveLibraryAsync(LibraryDefinition library)
     {
@@ -866,7 +890,7 @@ public partial class MainWindow : Window
         DetailWaveform.ClearSelection();
         _selectionStartRatio = _selectionEndRatio = -1;
         CancelPreparedSelectionDrag();
-        CancelCancellation(ref _analysisCancellation);
+        _jobs.Cancel(BackgroundJobKind.LoudnessAnalysis);
         SelectionDragCapsule.Visibility = Visibility.Collapsed;
         SetDetailPlayhead(0, false);
         InspectorName.Text = _selected.FileName;
@@ -1135,8 +1159,12 @@ public partial class MainWindow : Window
     private async Task AnalyzeLoudnessAsync(AudioAsset asset, bool force)
     {
         if (!_preferences.ShowLoudnessMetrics && !_preferences.LoudnessMatchAudition && !force) return;
-        var cancellation = ReplaceCancellation(ref _analysisCancellation);
-        var token = cancellation.Token;
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.LoudnessAnalysis,
+            BackgroundJobResource.AudioAnalysis,
+            true);
+        if (job == null) return;
+        var token = job.Token;
         if (ReferenceEquals(_selected, asset)) PreviewLoudness.Text = T("分析响度…", "Analyzing loudness…");
         try
         {
@@ -1152,13 +1180,9 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
+            job.MarkFailed(exception);
             if (ReferenceEquals(_selected, asset)) PreviewLoudness.Text = T("响度不可用", "Loudness unavailable");
             AppDiagnostics.Write("Loudness analysis failed.", exception);
-        }
-        finally
-        {
-            if (ReferenceEquals(_analysisCancellation, cancellation)) _analysisCancellation = null;
-            cancellation.Dispose();
         }
     }
 
@@ -1329,7 +1353,7 @@ public partial class MainWindow : Window
 
     private void CancelPreparedSelectionDrag()
     {
-        CancelCancellation(ref _selectionDragPreparation);
+        _jobs.Cancel(BackgroundJobKind.SelectionDrag);
         _preparedSelectionDragPath = null;
         _preparedSelectionDragKey = "";
         if (SelectionDragCapsuleText != null) SelectionDragCapsuleText.Text = T("拖出选区", "Drag selection");
@@ -1340,8 +1364,12 @@ public partial class MainWindow : Window
         if (_selected == null || !HasValidSelection()) { CancelPreparedSelectionDrag(); return; }
         var key = CurrentSelectionDragKey();
         if (key == _preparedSelectionDragKey && !string.IsNullOrWhiteSpace(_preparedSelectionDragPath) && File.Exists(_preparedSelectionDragPath)) return;
-        var cancellation = ReplaceCancellation(ref _selectionDragPreparation);
-        var token = cancellation.Token;
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.SelectionDrag,
+            BackgroundJobResource.DragExport,
+            true);
+        if (job == null) return;
+        var token = job.Token;
         var asset = _selected;
         var start = _selectionStartRatio * asset.DurationSeconds;
         var finish = _selectionEndRatio * asset.DurationSeconds;
@@ -1361,15 +1389,11 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             if (token.IsCancellationRequested) return;
+            job.MarkFailed(exception);
             SelectionDragCapsuleText.Text = T("选区不可拖出", "Drag unavailable");
             SelectionDragCapsule.Opacity = .65;
             StatusText.Text = T($"无法准备选区拖放：{exception.Message}", $"Could not prepare selection drag: {exception.Message}");
             AppDiagnostics.Write("Waveform selection pre-export failed.", exception);
-        }
-        finally
-        {
-            if (ReferenceEquals(_selectionDragPreparation, cancellation)) _selectionDragPreparation = null;
-            cancellation.Dispose();
         }
     }
 
@@ -1377,12 +1401,16 @@ public partial class MainWindow : Window
     {
         if (_selected == null || !File.Exists(_selected.FilePath)) return;
         var asset = _selected;
-        CancellationTokenSource? cancellation = null;
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.Preview,
+            BackgroundJobResource.PreviewEngine,
+            true,
+            BackgroundJobPriority.Realtime);
+        if (job == null) return;
         try
         {
             _autoPreviewTimer.Stop();
-            cancellation = ReplaceCancellation(ref _previewCancellation);
-            var token = cancellation.Token;
+            var token = job.Token;
             if (_previewing != null && !ReferenceEquals(_previewing, asset)) _previewing.PreviewPlayhead = -1;
             _previewing = asset;
             _pendingSeekRatio = Math.Clamp(ratio, 0, 1);
@@ -1406,14 +1434,11 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
+            job.MarkFailed(exception);
             _isPlaying = false;
             PlayButton.Icon = "play";
             StatusText.Text = T($"无法试听：{exception.Message}", $"Preview failed: {exception.Message}");
             AppDiagnostics.Write("Preview start failed.", exception);
-        }
-        finally
-        {
-            if (cancellation != null) CompleteCancellation(ref _previewCancellation, cancellation);
         }
     }
 
@@ -1729,11 +1754,11 @@ public partial class MainWindow : Window
         if (_selected == null) return;
         var channels = CurrentAuditionChannels();
         UpdateChannelModePresentation();
-        var cancellation = ReplaceCancellation(ref _previewCancellation);
-        try { await _previewEngine.ReconfigureAsync(_reverseAudition, channels, cancellation.Token); }
+        using var job = _jobs.TryStart(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine, true);
+        if (job == null) return;
+        try { await _previewEngine.ReconfigureAsync(_reverseAudition, channels, job.Token); }
         catch (OperationCanceledException) { return; }
-        catch (Exception exception) { AppDiagnostics.Write("Channel audition reconfiguration failed.", exception); }
-        finally { CompleteCancellation(ref _previewCancellation, cancellation); }
+        catch (Exception exception) { job.MarkFailed(exception); AppDiagnostics.Write("Channel audition reconfiguration failed.", exception); }
     }
 
     private int[] CurrentAuditionChannels() => _channelMode == 0 ? [] : [_channelMode - 1];
@@ -1766,11 +1791,11 @@ public partial class MainWindow : Window
         _reverseAudition = !_reverseAudition;
         ReverseButton.IsActive = _reverseAudition;
         ReverseButton.Foreground = _reverseAudition ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("MutedBrush");
-        var cancellation = ReplaceCancellation(ref _previewCancellation);
-        try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], cancellation.Token); }
+        using var job = _jobs.TryStart(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine, true);
+        if (job == null) return;
+        try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], job.Token); }
         catch (OperationCanceledException) { }
-        catch (Exception exception) { StatusText.Text = exception.Message; AppDiagnostics.Write("Reverse audition failed.", exception); }
-        finally { CompleteCancellation(ref _previewCancellation, cancellation); }
+        catch (Exception exception) { job.MarkFailed(exception); StatusText.Text = exception.Message; AppDiagnostics.Write("Reverse audition failed.", exception); }
     }
 
     private async void PreservePitch_Click(object sender, RoutedEventArgs e)
@@ -1782,11 +1807,11 @@ public partial class MainWindow : Window
         StatusText.Text = _preservePitch ? T("变速时保持音高", "Pitch is preserved while changing speed") : T("变速会同步改变音高", "Pitch follows playback speed");
         if (_previewEngine.IsOpen)
         {
-            var cancellation = ReplaceCancellation(ref _previewCancellation);
-            try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], cancellation.Token); }
+            using var job = _jobs.TryStart(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine, true);
+            if (job == null) return;
+            try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], job.Token); }
             catch (OperationCanceledException) { }
-            catch (Exception exception) { AppDiagnostics.Write("Preserve-pitch pipeline rebuild failed.", exception); }
-            finally { CompleteCancellation(ref _previewCancellation, cancellation); }
+            catch (Exception exception) { job.MarkFailed(exception); AppDiagnostics.Write("Preserve-pitch pipeline rebuild failed.", exception); }
         }
     }
 
@@ -1807,31 +1832,6 @@ public partial class MainWindow : Window
 
     private static string FormatTime(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"hh\:mm\:ss\.fff" : @"mm\:ss\.fff");
     private static string FormatTimeCompact(double seconds) => Math.Max(0, seconds).ToString("0.000");
-
-    private static CancellationTokenSource ReplaceCancellation(ref CancellationTokenSource? source)
-    {
-        CancelCancellation(ref source);
-        source = new CancellationTokenSource();
-        return source;
-    }
-
-    private static void CancelCancellation(ref CancellationTokenSource? source)
-    {
-        var previous = source;
-        source = null;
-        if (previous == null) return;
-        try { previous.Cancel(); }
-        catch (ObjectDisposedException) { }
-        // The asynchronous operation that owns this source disposes it in its
-        // own finally block. Disposing here races with token registrations that
-        // are still unwinding when the user changes selection rapidly.
-    }
-
-    private static void CompleteCancellation(ref CancellationTokenSource? source, CancellationTokenSource completed)
-    {
-        if (ReferenceEquals(source, completed)) source = null;
-        completed.Dispose();
-    }
 
     private AudioAsset[] SelectedAssets() => AssetGrid.SelectedItems.Cast<AudioAsset>().ToArray();
 
@@ -2620,14 +2620,22 @@ public partial class MainWindow : Window
         PreviewHistoryCount.Text = _assets.Count(asset => asset.PreviewCount > 0).ToString("N0");
     }
 
-    private void Window_Closing(object? sender, CancelEventArgs e)
+    private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (_shutdownCommitted) return;
+        e.Cancel = true;
+        if (_shutdownStarted) return;
+        _shutdownStarted = true;
+
+        try
+        {
         CompositionTarget.Rendering -= PlaybackRendering;
         CancelPreparedSelectionDrag();
-        CancelCancellation(ref _analysisCancellation);
-        CancelCancellation(ref _selectionDragPreparation);
-        CancelCancellation(ref _previewCancellation);
-        _scanCancellation?.Cancel(); _watchFolders.Dispose(); _autoPreviewTimer.Stop(); _activitySaveTimer.Stop(); _bridgeTimer.Stop(); _timer.Stop(); _previewEngine.Dispose();
+        _watchFolders.Dispose(); _autoPreviewTimer.Stop(); _activitySaveTimer.Stop(); _bridgeTimer.Stop(); _timer.Stop();
+        await _jobs.StopAcceptingAndCancelAsync(TimeSpan.FromSeconds(5));
+        if (_jobs.Snapshot().Any(job => job.FinishedUtc == null))
+            AppDiagnostics.Write("Background job shutdown reached its five-second timeout.");
+        _previewEngine.Dispose();
         _preferences.NavigationVisible = _navigationVisible;
         _preferences.InspectorVisible = _inspectorVisible;
         _preferences.AutoPreview = _autoPreview;
@@ -2650,14 +2658,24 @@ public partial class MainWindow : Window
                 {
                     _savedSessionPlayed = _assets.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath)
                         .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    _store.SaveSessionPlayed(_savedSessionPlayed);
+                    await _store.SaveSessionPlayedAsync(_savedSessionPlayed);
                 }
-                _store.SaveWorkspace(_state);
+                await _store.SaveWorkspaceAsync(_state);
                 if (_activityDirty.Count > 0)
-                    _store.SaveActivities(_assets.Where(asset => _activityDirty.Contains(asset.FilePath)));
+                    await _store.SaveActivitiesAsync(_assets.Where(asset => _activityDirty.Contains(asset.FilePath)).ToArray());
             }
             catch (Exception exception) { AppDiagnostics.Write("Catalog save during shutdown failed.", exception); }
         }
-        AppDiagnostics.Write("Desktop shutdown completed.");
+            AppDiagnostics.Write("Desktop shutdown completed.");
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.Write("Desktop shutdown encountered an error; the remaining cleanup path was released.", exception);
+        }
+        finally
+        {
+            _shutdownCommitted = true;
+            Close();
+        }
     }
 }

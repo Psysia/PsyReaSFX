@@ -28,6 +28,7 @@ internal static class DesktopSelfTest
             AppendWaveChunk(wavPath, "iXML", Encoding.UTF8.GetBytes("<BWFXML><PROJECT>PsyReaSFX self test</PROJECT></BWFXML>"));
             var info = PsyAudioFileReader.ReadInfo(wavPath);
             var waveform = PsyAudioFileReader.ReadWaveform(wavPath, 256);
+            var jobCoordinatorPassed = await VerifyJobCoordinatorAsync();
             var library = new LibraryDefinition { Name = "Self Test" };
             library.Sources.Add(new LibrarySource { Path = working });
             var indexed = await new LibraryIndexer().BuildAsync(
@@ -618,6 +619,7 @@ internal static class DesktopSelfTest
                          && info.SampleRate == 48000
                          && waveform.Length == 1
                          && waveform.All(channel => channel.Length == 256 && channel.Max() > .1f)
+                         && jobCoordinatorPassed
                          && indexed.Count == 1
                          && indexed[0].DurationSeconds > .45
                          && migrationPassed
@@ -656,6 +658,7 @@ internal static class DesktopSelfTest
                 audio = new { info.Duration, info.Channels, info.SampleRate, info.BitDepth },
                 waveformChannels = waveform.Length,
                 waveformBuckets = waveform.FirstOrDefault()?.Length ?? 0,
+                jobCoordinatorPassed,
                 indexedAssets = indexed.Count,
                 uiSmokePassed,
                 panelCollapsePassed,
@@ -749,6 +752,48 @@ internal static class DesktopSelfTest
         finally
         {
             try { Directory.Delete(working, true); } catch { }
+        }
+    }
+
+    private static async Task<bool> VerifyJobCoordinatorAsync()
+    {
+        var jobs = new BackgroundJobCoordinator();
+        var leases = new List<BackgroundJobLease>();
+        try
+        {
+            var first = jobs.StartReplacing(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine);
+            leases.Add(first);
+            var firstToken = first.Token;
+            var second = jobs.StartReplacing(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine);
+            leases.Add(second);
+            if (!firstToken.IsCancellationRequested || first.IsCurrent || !second.IsCurrent) return false;
+
+            var scan = jobs.TryStart(BackgroundJobKind.CatalogScan, BackgroundJobResource.CatalogWriter, false);
+            if (scan == null) return false;
+            leases.Add(scan);
+            if (jobs.TryStart(BackgroundJobKind.CatalogScan, BackgroundJobResource.CatalogWriter, false) != null) return false;
+            if (jobs.TryStart(BackgroundJobKind.Maintenance, BackgroundJobResource.CatalogWriter, false) != null) return false;
+
+            for (var index = 0; index < 250; index++)
+                leases.Add(jobs.StartReplacing(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine));
+
+            var stop = jobs.StopAcceptingAndCancelAsync(TimeSpan.FromSeconds(2));
+            if (jobs.TryStart(BackgroundJobKind.Maintenance, BackgroundJobResource.Maintenance, false) != null) return false;
+            if (leases.Any(lease => !lease.Token.IsCancellationRequested)) return false;
+            if (stop.IsCompleted) return false;
+
+            for (var index = leases.Count - 1; index >= 0; index--) leases[index].Dispose();
+            leases.Clear();
+            await stop;
+
+            var snapshots = jobs.Snapshot();
+            return snapshots.Count > 0
+                   && snapshots.All(snapshot => snapshot.State is BackgroundJobState.Cancelled or BackgroundJobState.Completed)
+                   && snapshots.Select(snapshot => snapshot.Generation).Distinct().Count() == snapshots.Count;
+        }
+        finally
+        {
+            foreach (var lease in leases) lease.Dispose();
         }
     }
 

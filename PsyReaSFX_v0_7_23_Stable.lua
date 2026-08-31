@@ -3735,6 +3735,117 @@ function write_project_url_file(url)
   return file:close()
 end
 
+-- One owner for background generations and exclusive resources. Operations
+-- keep their token until all per-frame work has unwound; cancellation only
+-- flips the token and never releases a newer generation by mistake.
+Jobs = {
+  generation = 0,
+  accepting = true,
+  active = {},
+  history = {},
+}
+
+function Jobs.begin(
+  kind,
+  resource,
+  replace_same_kind,
+  priority
+)
+  if not Jobs.accepting then
+    return nil, "shutting_down"
+  end
+
+  local previous = Jobs.active[kind]
+
+  if previous then
+    if not replace_same_kind then
+      return nil, "already_running"
+    end
+
+    previous.cancel_requested = true
+    previous.state = "canceling"
+  end
+
+  for active_kind, token in pairs(Jobs.active) do
+    if active_kind ~= kind
+      and token.state ~= "completed"
+      and token.state ~= "failed"
+      and token.resource == resource then
+      return nil, "resource_busy"
+    end
+  end
+
+  Jobs.generation = Jobs.generation + 1
+
+  local token = {
+    kind = kind,
+    resource = resource,
+    generation = Jobs.generation,
+    priority = tonumber(priority) or 50,
+    state = "running",
+    cancel_requested = false,
+    started = reaper.time_precise(),
+  }
+
+  Jobs.active[kind] = token
+  return token
+end
+
+function Jobs.is_current(token)
+  return token
+    and Jobs.active[token.kind] == token
+    and not token.cancel_requested
+end
+
+function Jobs.cancel(token_or_kind)
+  local token = type(token_or_kind) == "table"
+    and token_or_kind
+    or Jobs.active[token_or_kind]
+
+  if not token or token.finished then
+    return false
+  end
+
+  token.cancel_requested = true
+  token.state = "canceling"
+  return true
+end
+
+function Jobs.finish(token, success, message)
+  if not token or token.finished then
+    return
+  end
+
+  token.finished = reaper.time_precise()
+  token.message = tostring(message or "")
+  token.state = token.cancel_requested
+    and "canceled"
+    or success == false and "failed"
+    or "completed"
+
+  if Jobs.active[token.kind] == token then
+    Jobs.active[token.kind] = nil
+  end
+
+  Jobs.history[#Jobs.history + 1] = token
+
+  while #Jobs.history > 64 do
+    table.remove(Jobs.history, 1)
+  end
+end
+
+function Jobs.active_kind(kind)
+  return Jobs.active[kind] ~= nil
+end
+
+function Jobs.stop_accepting()
+  Jobs.accepting = false
+
+  for _, token in pairs(Jobs.active) do
+    Jobs.cancel(token)
+  end
+end
+
 function extract_project_url_from_text(content)
   content = tostring(content or "")
 
@@ -4765,6 +4876,18 @@ function retry_failed_tasks()
     return
   end
 
+  local job_token =
+    Jobs.begin(
+      "catalog_pipeline",
+      "catalog_exclusive",
+      false
+    )
+
+  if not job_token then
+    set_status("另一个目录写任务正在运行", true)
+    return
+  end
+
   state.import_session = {
     label = "重试失败任务",
     roots = {},
@@ -4775,12 +4898,24 @@ function retry_failed_tasks()
     current = nil,
     started = reaper.time_precise(),
     phase = "prepare",
+    job_token = job_token,
   }
   state.import_cancel_requested = false
   set_status(string.format("正在重试 %d 个失败任务", #assets))
 end
 
 function reset_wave_cache_runtime()
+  local precache = state.precache_session
+  if state.wave_active
+    and state.wave_active.job_token then
+    Jobs.cancel(state.wave_active.job_token)
+    Jobs.finish(
+      state.wave_active.job_token,
+      true,
+      "cache reset"
+    )
+    state.wave_active.job_token = nil
+  end
   destroy_wave_job(state.wave_active)
   state.wave_active = nil
 
@@ -4798,6 +4933,15 @@ function reset_wave_cache_runtime()
   state.wave_checked = {}
   state.wave_queue = {}
   state.wave_queued = {}
+
+  if precache and precache.job_token then
+    Jobs.cancel(precache.job_token)
+    Jobs.finish(
+      precache.job_token,
+      true,
+      "cache reset"
+    )
+  end
 end
 
 function move_wave_cache_files(
@@ -6958,10 +7102,22 @@ function request_loudness_analysis(asset, force)
   }
 end
 
-function destroy_loudness_job(job)
+function destroy_loudness_job(job, completed)
   if job and job.source then
     reaper.PCM_Source_Destroy(job.source)
     job.source = nil
+  end
+
+  if job and job.job_token then
+    if not completed then
+      Jobs.cancel(job.job_token)
+    end
+    Jobs.finish(
+      job.job_token,
+      true,
+      completed and "" or "canceled"
+    )
+    job.job_token = nil
   end
 end
 
@@ -7029,6 +7185,12 @@ function process_loudness_queue()
       entry = entry,
       metrics = pending,
       index = 1,
+      job_token =
+        Jobs.begin(
+          "loudness",
+          "audio_analysis",
+          true
+        ),
     }
   end
 
@@ -7038,7 +7200,7 @@ function process_loudness_queue()
   if not metric then
     state.loudness_cache[job.key] = job.entry
     state.loudness_dirty = true
-    destroy_loudness_job(job)
+    destroy_loudness_job(job, true)
     state.loudness_active = nil
     return
   end
@@ -9510,6 +9672,14 @@ function process_artwork_queue()
     return
   end
 
+  local job_token =
+    Jobs.begin("artwork", "artwork_reader", false)
+
+  if not job_token then
+    table.insert(state.artwork_queue, 1, job)
+    return
+  end
+
   state.artwork_queued[job.key] = nil
 
   local asset = job.asset
@@ -9535,6 +9705,7 @@ function process_artwork_queue()
   end
 
   state.artwork_next_job = now + 0.025
+  Jobs.finish(job_token, true)
 end
 
 function release_artwork_image(key)
@@ -10115,6 +10286,25 @@ function start_scan(reason, roots_override, options)
     return
   end
 
+  local job_token, job_error =
+    Jobs.begin(
+      "catalog_pipeline",
+      "catalog_exclusive",
+      false
+    )
+
+  if not job_token then
+    set_status(
+      job_error == "resource_busy"
+        and "另一个目录写任务正在运行"
+        or "扫描任务已经在运行",
+      true
+    )
+    return
+  end
+
+  scan.job_token = job_token
+
   state.scan = scan
   state.scan_checkpoint_last_at = 0
   write_scan_checkpoint(scan, "scan")
@@ -10128,6 +10318,7 @@ function start_scan(reason, roots_override, options)
       )
     )
   end
+
 end
 
 function finish_scan()
@@ -10187,6 +10378,7 @@ function finish_scan()
       phase = "prepare",
       silent = scan.silent,
       removed = removed,
+      job_token = scan.job_token,
     }
 
     state.import_cancel_requested = false
@@ -10201,6 +10393,7 @@ function finish_scan()
       )
     end
   else
+    Jobs.finish(scan.job_token, true)
     if scan.silent then
       if removed > 0 then
         set_status(
@@ -10239,6 +10432,14 @@ function process_scan()
   local scan = state.scan
 
   if not scan then
+    return
+  end
+
+  if scan.job_token
+    and scan.job_token.cancel_requested then
+    clear_scan_checkpoint()
+    state.scan = nil
+    Jobs.finish(scan.job_token, true, "canceled")
     return
   end
 
@@ -11166,6 +11367,12 @@ function process_wave_queue()
     end
 
     state.wave_active = job
+    job.job_token =
+      Jobs.begin(
+        "waveform",
+        "waveform_reader",
+        true
+      )
   end
 
   local job = state.wave_active
@@ -11185,12 +11392,14 @@ function process_wave_queue()
 
     state.wave_queued[job.key] = nil
     state.wave_active = nil
+    Jobs.finish(job.job_token, true)
   elseif result == "failed" then
     destroy_wave_job(job)
     job.asset.wave_error = tostring(err or "波形建立失败")
     record_failed_task(job.asset, "waveform", job.asset.wave_error)
     state.wave_queued[job.key] = nil
     state.wave_active = nil
+    Jobs.finish(job.job_token, false, err)
     set_status(
       "波形建立失败："
         .. basename(job.asset.path)
@@ -11269,6 +11478,14 @@ function start_wave_precache(points, scope)
     return
   end
 
+  local job_token =
+    Jobs.begin("wave_precache", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
+  end
+
   state.precache_cancel_requested = false
   state.precache_session = {
     assets = assets,
@@ -11282,6 +11499,7 @@ function start_wave_precache(points, scope)
     scope = scope or "all",
     current = nil,
     started = reaper.time_precise(),
+    job_token = job_token,
   }
 
   set_status(
@@ -11316,6 +11534,7 @@ function finish_wave_precache()
 
   state.precache_session = nil
   state.precache_cancel_requested = false
+  Jobs.finish(session.job_token, true)
 end
 
 function cancel_wave_precache()
@@ -11331,6 +11550,8 @@ function cancel_wave_precache()
 
   state.precache_session = nil
   state.precache_cancel_requested = false
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, "canceled")
   set_status("已取消高精度波形预缓存")
 end
 
@@ -11342,6 +11563,12 @@ function process_wave_precache()
   end
 
   if state.precache_cancel_requested then
+    cancel_wave_precache()
+    return
+  end
+
+  if session.job_token
+    and session.job_token.cancel_requested then
     cancel_wave_precache()
     return
   end
@@ -11434,13 +11661,7 @@ function process_wave_precache()
 end
 
 function clear_wave_cache()
-  destroy_wave_job(state.wave_active)
-  state.wave_active = nil
-  state.wave_cache = {}
-  state.wave_cache_count = 0
-  state.wave_checked = {}
-  state.wave_queue = {}
-  state.wave_queued = {}
+  reset_wave_cache_runtime()
 
   while true do
     local file =
@@ -11528,6 +11749,14 @@ function start_wave_cache_verification()
     return
   end
 
+  local job_token =
+    Jobs.begin("cache_verify", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
+  end
+
   local files = {}
   local index = 0
 
@@ -11552,6 +11781,7 @@ function start_wave_cache_verification()
     valid = 0,
     invalid = 0,
     started = reaper.time_precise(),
+    job_token = job_token,
   }
 
   set_status(string.format("开始检查 %d 个波形缓存", #files))
@@ -11564,6 +11794,13 @@ function process_wave_cache_verification()
     return
   end
 
+  if session.job_token
+    and session.job_token.cancel_requested then
+    state.cache_verify_session = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    return
+  end
+
   for _ = 1, CACHE_VERIFY_FILES_PER_FRAME do
     local filename = session.files[session.index]
 
@@ -11571,6 +11808,7 @@ function process_wave_cache_verification()
       local elapsed = reaper.time_precise() - session.started
       local invalid = session.invalid
       state.cache_verify_session = nil
+      Jobs.finish(session.job_token, true)
       reset_wave_cache_runtime()
       set_status(
         string.format(
@@ -11632,6 +11870,7 @@ function finish_import_session()
   save_database()
   save_failed_tasks()
   clear_scan_checkpoint()
+  Jobs.finish(session.job_token, true)
 
   if session.silent then
     set_status(
@@ -11681,6 +11920,8 @@ function cancel_import_session()
   state.import_cancel_requested = false
   state.db_dirty = true
   save_database()
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, "canceled")
   set_status("已取消导入；已完成的素材保留")
 end
 
@@ -11688,6 +11929,12 @@ function process_import_session()
   local session = state.import_session
 
   if not session then
+    return
+  end
+
+  if session.job_token
+    and session.job_token.cancel_requested then
+    cancel_import_session()
     return
   end
 
@@ -11881,6 +12128,9 @@ function destroy_preview_sources(after_fade)
 end
 
 function stop_preview()
+  local preview_job_token = state.preview_job_token
+  state.preview_job_token = nil
+
   if state.preview_companion
     and type(reaper.CF_Preview_Stop) == "function" then
     pcall(
@@ -11907,6 +12157,11 @@ function stop_preview()
   state.preview_map_reverse = false
   state.preview_percent = 0
   destroy_preview_sources(true)
+
+  if preview_job_token then
+    Jobs.cancel(preview_job_token)
+    Jobs.finish(preview_job_token, true, "stopped")
+  end
 end
 
 function request_preview_stop()
@@ -12287,6 +12542,13 @@ function play_preview(
   state.preview_companion = companion
   state.preview_sources = sources
   state.preview_path = asset.path
+  state.preview_job_token =
+    Jobs.begin(
+      "preview",
+      "preview_engine",
+      true,
+      200
+    )
   record_preview_history(asset)
 
   if selection then
@@ -12413,6 +12675,8 @@ function poll_preview()
     state.preview_companion = nil
     state.preview_source = nil
     state.preview_path = nil
+    Jobs.finish(state.preview_job_token, true)
+    state.preview_job_token = nil
     destroy_preview_sources()
     return
   end
@@ -13924,6 +14188,11 @@ function finish_transfer_job(job, canceled)
 
   write_transfer_report(job, canceled)
 
+  if canceled then
+    Jobs.cancel(job.job_token)
+  end
+  Jobs.finish(job.job_token, true, canceled and "canceled" or "")
+
   state.transfer_running = false
   state.transfer_job = nil
   state.transfer_cancel_requested = false
@@ -13987,7 +14256,9 @@ function process_transfer_job()
     return
   end
 
-  if state.transfer_cancel_requested then
+  if state.transfer_cancel_requested
+    or (job.job_token
+      and job.job_token.cancel_requested) then
     finish_transfer_job(job, true)
     return
   end
@@ -14178,6 +14449,19 @@ function run_transfer(assets, batch_mode)
     end
   end
 
+  local job_token =
+    Jobs.begin("transfer", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status(
+      translate_ui_text(
+        "请等待当前扫描或维护任务完成"
+      ),
+      true
+    )
+    return
+  end
+
   stop_preview()
   state.transfer_running = true
   state.transfer_cancel_requested = false
@@ -14195,6 +14479,7 @@ function run_transfer(assets, batch_mode)
     records = {},
     started_at = reaper.time_precise(),
     output_directory = state.transfer_dir,
+    job_token = job_token,
   }
   set_status(
     string.format(
@@ -14829,6 +15114,12 @@ function remove_root(root)
         )
       end
 
+      Jobs.cancel(state.import_session.job_token)
+      Jobs.finish(
+        state.import_session.job_token,
+        true,
+        "source removed"
+      )
       state.import_session = nil
     end
   end
@@ -14836,6 +15127,12 @@ function remove_root(root)
   if state.scan then
     for _, scan_root in ipairs(state.scan.roots or {}) do
       if path_key(scan_root) == path_key(root) then
+        Jobs.cancel(state.scan.job_token)
+        Jobs.finish(
+          state.scan.job_token,
+          true,
+          "source removed"
+        )
         state.scan = nil
         break
       end
@@ -15197,6 +15494,14 @@ function start_missing_audit()
     return
   end
 
+  local job_token =
+    Jobs.begin("missing_audit", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
+  end
+
   local offline = {}
   state.offline_roots = {}
   for _, record in ipairs(state.root_records) do
@@ -15214,6 +15519,7 @@ function start_missing_audit()
     missing = 0,
     checked = 0,
     offline = offline,
+    job_token = job_token,
   }
   set_status("正在检查缺失文件…")
 end
@@ -15222,6 +15528,13 @@ function process_missing_audit()
   local session = state.missing_audit
   if not session or state.scan or state.import_session
     or state.precache_session or not can_run_heavy_job() then
+    return
+  end
+
+  if session.job_token
+    and session.job_token.cancel_requested then
+    state.missing_audit = nil
+    Jobs.finish(session.job_token, true, "canceled")
     return
   end
 
@@ -15245,6 +15558,7 @@ function process_missing_audit()
   if session.index > session.total then
     state.missing_asset_count = session.missing
     state.missing_audit = nil
+    Jobs.finish(session.job_token, true)
     state.results_dirty = true
     set_status(string.format("缺失检查完成：%d 个离线来源，%d 个缺失素材", #state.offline_roots, state.missing_asset_count), state.missing_asset_count > 0)
   end
@@ -15280,6 +15594,14 @@ function start_duplicate_scan()
   if state.scan or state.import_session or state.precache_session
     or state.missing_audit then
     set_status("请等待当前后台任务完成", true)
+    return
+  end
+
+  local job_token =
+    Jobs.begin("duplicate_scan", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
     return
   end
 
@@ -15320,6 +15642,7 @@ function start_duplicate_scan()
     index = 1,
     total = #candidates,
     failed = 0,
+    job_token = job_token,
   }
   set_status(string.format("正在检查重复素材：%d 个同尺寸候选", #candidates))
 end
@@ -15361,6 +15684,7 @@ function finish_duplicate_scan(session)
   state.duplicate_group_count = #duplicates
   state.duplicate_asset_count = asset_count
   state.duplicate_scan = nil
+  Jobs.finish(session.job_token, true)
   state.results_dirty = true
   state.db_dirty = true
   set_status(string.format("重复检查完成：%d 组，%d 个素材", #duplicates, asset_count))
@@ -15370,6 +15694,13 @@ function process_duplicate_scan()
   local session = state.duplicate_scan
   if not session or state.scan or state.import_session
     or state.precache_session or not can_run_heavy_job() then
+    return
+  end
+
+  if session.job_token
+    and session.job_token.cancel_requested then
+    state.duplicate_scan = nil
+    Jobs.finish(session.job_token, true, "canceled")
     return
   end
 
@@ -15514,8 +15845,6 @@ function reset_interface_settings()
   state.transfer_variant_gains = ""
   state.transfer_variant_include_reverse = false
   state.transfer_variant_auto_suffix = true
-  state.transfer_job = nil
-  state.transfer_cancel_requested = false
   state.transfer_last_output = ""
   state.transfer_last_outputs = {}
   state.transfer_last_error = ""
@@ -15619,6 +15948,50 @@ function reset_interface_settings()
   set_status("已重置界面与试听设置")
 end
 
+function cancel_catalog_jobs(reason)
+  reason = tostring(reason or "canceled")
+
+  if state.transfer_job then
+    finish_transfer_job(state.transfer_job, true)
+  end
+
+  if state.import_session
+    and state.import_session.current
+    and state.import_session.current.wave_job then
+    destroy_wave_job(
+      state.import_session.current.wave_job
+    )
+  end
+
+  local catalog_job = state.import_session
+      and state.import_session.job_token
+    or state.scan
+      and state.scan.job_token
+
+  Jobs.cancel(catalog_job)
+  Jobs.finish(catalog_job, true, reason)
+  state.scan = nil
+  state.import_session = nil
+  state.import_cancel_requested = false
+
+  local maintenance_fields = {
+    "cache_verify_session",
+    "missing_audit",
+    "duplicate_scan",
+  }
+
+  for _, field in ipairs(maintenance_fields) do
+    local session = state[field]
+
+    if session and session.job_token then
+      Jobs.cancel(session.job_token)
+      Jobs.finish(session.job_token, true, reason)
+    end
+
+    state[field] = nil
+  end
+end
+
 function reset_database_keep_roots()
   local answer = reaper.MB(
     "将清空 PsyReaSFX 数据库和波形缓存，"
@@ -15632,18 +16005,7 @@ function reset_database_keep_roots()
   end
 
   stop_preview()
-
-  if state.import_session
-    and state.import_session.current
-    and state.import_session.current.wave_job then
-    destroy_wave_job(
-      state.import_session.current.wave_job
-    )
-  end
-
-  state.scan = nil
-  state.import_session = nil
-  state.import_cancel_requested = false
+  cancel_catalog_jobs("database reset")
   state.assets = {}
   state.by_path = {}
   state.results = {}
@@ -15695,9 +16057,7 @@ function factory_reset()
   end
 
   stop_preview()
-  state.scan = nil
-  state.import_session = nil
-  state.import_cancel_requested = false
+  cancel_catalog_jobs("factory reset")
   state.roots = {}
   state.libraries = {}
   state.library_by_id = {}
@@ -19905,6 +20265,8 @@ function draw_import_progress()
         end
 
         state.scan = nil
+        Jobs.cancel(scan.job_token)
+        Jobs.finish(scan.job_token, true, "user canceled")
         clear_scan_checkpoint()
         rebuild_assets()
         state.db_dirty = true
@@ -27659,14 +28021,20 @@ function watch_folders()
 end
 
 function cleanup()
+  Jobs.stop_accepting()
   stop_preview()
   cleanup_retired_preview_sources(true)
-  destroy_wave_job(state.wave_active)
-
-  if state.skip_persistence_on_cleanup then
-    destroy_loudness_job(state.loudness_active)
-    return
+  if state.wave_active
+    and state.wave_active.job_token then
+    Jobs.cancel(state.wave_active.job_token)
+    Jobs.finish(
+      state.wave_active.job_token,
+      true,
+      "shutdown"
+    )
+    state.wave_active.job_token = nil
   end
+  destroy_wave_job(state.wave_active)
 
   if state.transfer_job then
     finish_transfer_job(state.transfer_job, true)
@@ -27683,6 +28051,15 @@ function cleanup()
     )
   end
 
+  if state.precache_session then
+    Jobs.cancel(state.precache_session.job_token)
+    Jobs.finish(
+      state.precache_session.job_token,
+      true,
+      "shutdown"
+    )
+  end
+
   if state.import_session
     and state.import_session.current
     and state.import_session.current.wave_job then
@@ -27691,8 +28068,43 @@ function cleanup()
     )
   end
 
-  if state.persistence_read_only then
-    destroy_loudness_job(state.loudness_active)
+  if state.import_session then
+    Jobs.cancel(state.import_session.job_token)
+    Jobs.finish(
+      state.import_session.job_token,
+      true,
+      "shutdown"
+    )
+  elseif state.scan then
+    Jobs.cancel(state.scan.job_token)
+    Jobs.finish(
+      state.scan.job_token,
+      true,
+      "shutdown"
+    )
+  end
+
+  local maintenance_sessions = {
+    state.cache_verify_session,
+    state.missing_audit,
+    state.duplicate_scan,
+  }
+
+  for _, session in pairs(maintenance_sessions) do
+    if session and session.job_token then
+      Jobs.cancel(session.job_token)
+      Jobs.finish(
+        session.job_token,
+        true,
+        "shutdown"
+      )
+    end
+  end
+
+  destroy_loudness_job(state.loudness_active)
+
+  if state.skip_persistence_on_cleanup
+    or state.persistence_read_only then
     return
   end
 
@@ -27740,7 +28152,6 @@ function cleanup()
     save_project_usage()
   end
 
-  destroy_loudness_job(state.loudness_active)
 end
 
 reaper.atexit(cleanup)

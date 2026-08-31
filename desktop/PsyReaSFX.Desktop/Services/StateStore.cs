@@ -86,6 +86,12 @@ public sealed class StateStore
         _database.ReplaceSessionPlayedAsync(paths).GetAwaiter().GetResult();
     }
 
+    public Task SaveSessionPlayedAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return _database.ReplaceSessionPlayedAsync(paths.ToArray(), cancellationToken);
+    }
+
     public Task<IReadOnlyList<RegionRecord>> LoadRegionsAsync(string assetPath, CancellationToken cancellationToken = default) =>
         _database.LoadRegionsAsync(assetPath, cancellationToken);
 
