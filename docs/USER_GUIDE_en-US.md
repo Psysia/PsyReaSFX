@@ -524,6 +524,7 @@ Important data includes:
 | `loudness_v1.tsv` | loudness analysis cache |
 | `failed_tasks_v1.tsv` | metadata/waveform failures and retry counts |
 | `scan_checkpoint_v1.tsv` | recovery entry for an interrupted scan |
+| `project_usage_v1.tsv` | per-REAPER-project insert and Transfer-insert usage |
 | `backups/` | automatic and manual data snapshots |
 | `cache_quarantine/` | damaged RWF files isolated by cache verification |
 
@@ -562,6 +563,28 @@ Open `Settings → Maintenance` to inspect the runtime, copy diagnostics,
 manage failed tasks, data backups and waveform-cache health, change the cache
 path, reset interface settings, rebuild the database while keeping library
 roots, or perform a factory reset.
+
+### Missing files and source relink
+
+`Check missing files` audits the index in bounded background batches and then
+exposes a Missing assets view. If an entire physical source moved to another
+drive or folder, expand its logical library, right-click that source and choose
+`Relink source folder…`. PsyReaSFX updates the index and related records without
+moving media, then incrementally scans the new location.
+
+### Duplicate review
+
+`Check duplicates` first groups by file size, then samples equal-size candidates.
+The Duplicate assets view keeps matching groups together. PsyReaSFX never
+deletes duplicates automatically; review licensing, naming and path intent
+before changing source media.
+
+### Current-project usage
+
+PsyReaSFX records assets inserted into the current saved `.rpp`, including
+Transfer-then-insert actions. A project bin can be bound to the current project
+and can collect later insertions automatically. Maintenance and the `Used by
+current project` view expose that history. Unsaved projects are not bound.
 
 ### A scan or import was interrupted
 
