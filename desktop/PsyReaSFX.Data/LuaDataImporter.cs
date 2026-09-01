@@ -22,8 +22,8 @@ internal static class LuaDataImporter
         new Dictionary<string, (string Kind, int Version)>(StringComparer.OrdinalIgnoreCase)
         {
             ["config.tsv"] = ("config", 1),
-            ["libraries_v2.tsv"] = ("libraries", 1),
-            ["index_v3.tsv"] = ("database", 1),
+            ["libraries_v2.tsv"] = ("libraries", 2),
+            ["index_v3.tsv"] = ("database", 2),
             ["collections_v1.tsv"] = ("collections", 1),
             ["saved_searches_v1.tsv"] = ("saved_searches", 1),
             ["history_v1.tsv"] = ("history", 1),
@@ -63,7 +63,9 @@ internal static class LuaDataImporter
             if (fields.Length >= 3 && fields[0] == "library")
                 result.Libraries.Add(new LibraryRecord(fields[1], fields[2], Field(fields, 3), Field(fields, 4) != "0"));
             else if (fields.Length >= 4 && fields[0] == "root")
-                result.Sources.Add(new SourceRecord(fields[1], fields[2], fields[3], Field(fields, 4), Field(fields, 5) != "0", Field(fields, 6), LuaTsv.Boolean(Field(fields, 7)), LuaTsv.Integer(Field(fields, 8))));
+                result.Sources.Add(new SourceRecord(fields[1], fields[2], fields[3], Field(fields, 4), Field(fields, 5) != "0",
+                    Field(fields, 6), LuaTsv.Boolean(Field(fields, 7)), LuaTsv.Integer(Field(fields, 8)),
+                    Field(fields, 9), Field(fields, 10), Field(fields, 11), LuaTsv.Long(Field(fields, 12))));
         }
     }
 
@@ -92,13 +94,13 @@ internal static class LuaDataImporter
             if (string.IsNullOrWhiteSpace(assetPath)) continue;
             result.Assets.Add(new AssetRecord
             {
-                Path = assetPath, Name = V("name"), Folder = V("folder"), Root = V("root"), Library = V("library"),
+                AssetId = V("asset_id"), Path = assetPath, RelativePath = V("relative_path"), Name = V("name"), Folder = V("folder"), Root = V("root"), Library = V("library"),
                 Duration = LuaTsv.Number(V("duration")), Channels = LuaTsv.Integer(V("channels")), SampleRate = LuaTsv.Integer(V("sample_rate")),
                 BitDepth = LuaTsv.Integer(V("bit_depth")), SourceType = V("source_type"), Size = LuaTsv.Long(V("size")),
                 Description = V("description"), Keywords = V("keywords"), CatId = V("catid"), Category = V("category"), Subcategory = V("subcategory"), ArtworkPath = V("artwork_path"),
                 WorkflowStatus = string.IsNullOrWhiteSpace(V("workflow_status")) ? "none" : V("workflow_status"), Marked = LuaTsv.Boolean(V("marked")),
                 PreviewCount = LuaTsv.Integer(V("preview_count")), LastPreviewed = LuaTsv.Number(V("last_previewed")), Indexed = LuaTsv.Boolean(V("indexed")) || LuaTsv.Number(V("duration")) > 0,
-                Ready = LuaTsv.Boolean(V("ready")), UsedCount = LuaTsv.Integer(V("used_count")), LastUsed = LuaTsv.Number(V("last_used")), RootId = V("root_id"), LibraryId = V("library_id")
+                Ready = LuaTsv.Boolean(V("ready")), UsedCount = LuaTsv.Integer(V("used_count")), LastUsed = LuaTsv.Number(V("last_used")), RootId = V("root_id"), LibraryId = V("library_id"), LastSeenUtc = LuaTsv.Long(V("last_seen"))
             });
         }
     }

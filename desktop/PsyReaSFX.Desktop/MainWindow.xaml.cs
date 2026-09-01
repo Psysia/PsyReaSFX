@@ -371,19 +371,24 @@ public partial class MainWindow : Window
     }
 
     private async void Rescan_Click(object sender, RoutedEventArgs e) => await RescanAsync(true);
-    private async Task RescanAsync(bool announce)
+    private async Task<bool> RescanAsync(bool announce)
     {
         using var job = _jobs.TryStart(
             BackgroundJobKind.CatalogScan,
             BackgroundJobResource.CatalogWriter,
             false,
             BackgroundJobPriority.UserInitiated);
-        if (job == null) return;
+        if (job == null) return false;
+        var succeeded = false;
+        var originalAssets = _assets;
+        var originalIndex = _state.Index;
+        PathReferenceSnapshot? referenceSnapshot = null;
         RescanButton.IsEnabled = false;
         StatusText.Text = T("正在增量扫描音效库…", "Scanning libraries incrementally…");
         _reliability.BeginScan();
         try
         {
+            RefreshSourceIdentities();
             var librarySnapshot = SnapshotLibraries(_state.Libraries);
             var previousSnapshot = _assets.ToArray();
             var progress = new Progress<(int Count, string File)>(p =>
@@ -392,6 +397,8 @@ public partial class MainWindow : Window
                 _reliability.UpdateScan(p.Count, p.File);
             });
             var indexed = await _indexer.BuildAsync(librarySnapshot, previousSnapshot, progress, job.Token);
+            referenceSnapshot = CapturePathReferences();
+            ApplyPathIdentityRelocations(previousSnapshot, indexed);
             foreach (var asset in indexed) asset.IsFavorite = _state.Favorites.Contains(asset.FilePath);
             _assets = new ObservableCollection<AudioAsset>(indexed);
             foreach (var asset in _assets) asset.UiLanguage = _preferences.Language;
@@ -413,10 +420,19 @@ public partial class MainWindow : Window
                 ? T($"扫描完成：{indexed.Count:N0} 个素材", $"Scan complete: {indexed.Count:N0} assets")
                 : T($"扫描完成：{indexed.Count:N0} 个素材 · {_indexer.LastFailures.Count:N0} 个失败任务可重试",
                     $"Scan complete: {indexed.Count:N0} assets · {_indexer.LastFailures.Count:N0} failed tasks can be retried");
+            succeeded = true;
             if (announce && indexed.Count == 0) MessageBox.Show("没有找到受支持的音频文件。", "PsyReaSFX Desktop");
         }
-        catch (OperationCanceledException) { StatusText.Text = T("扫描已取消", "Scan cancelled"); }
-        catch (Exception ex) { job.MarkFailed(ex); StatusText.Text = T("扫描失败", "Scan failed"); AppDiagnostics.Write("Library scan failed.", ex); MessageBox.Show(ex.Message, T("扫描失败", "Scan failed")); }
+        catch (OperationCanceledException)
+        {
+            RestoreScanState(originalAssets, originalIndex, referenceSnapshot);
+            StatusText.Text = T("扫描已取消", "Scan cancelled");
+        }
+        catch (Exception ex)
+        {
+            RestoreScanState(originalAssets, originalIndex, referenceSnapshot);
+            job.MarkFailed(ex); StatusText.Text = T("扫描失败", "Scan failed"); AppDiagnostics.Write("Library scan failed.", ex); MessageBox.Show(ex.Message, T("扫描失败", "Scan failed"));
+        }
         finally
         {
             RescanButton.IsEnabled = true;
@@ -426,6 +442,7 @@ public partial class MainWindow : Window
                 _ = Dispatcher.BeginInvoke(async () => await RescanAsync(false), DispatcherPriority.Background);
             }
         }
+        return succeeded;
     }
 
     private void ConfigureWatchFolders()
@@ -465,7 +482,16 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         if (library.Sources.Any(s => s.Path.Equals(dialog.FolderName, StringComparison.OrdinalIgnoreCase))) return;
         var artwork = ArtworkFinder.FindForSource(dialog.FolderName);
-        library.Sources.Add(new LibrarySource { Path = dialog.FolderName, ArtworkPath = artwork });
+        var identity = PathIdentity.CaptureSource(dialog.FolderName);
+        library.Sources.Add(new LibrarySource
+        {
+            Path = identity.DisplayPath,
+            ArtworkPath = artwork,
+            CanonicalPath = identity.CanonicalPath,
+            VolumeLabel = identity.VolumeLabel,
+            VolumeSerial = identity.VolumeSerial,
+            LastSeenUtc = identity.LastSeenUtc
+        });
         await _store.SaveWorkspaceAsync(_state);
         RebuildLibraryTree();
         await RescanAsync(false);
@@ -516,10 +542,11 @@ public partial class MainWindow : Window
     {
         var menu = new ContextMenu();
         var reveal = new MenuItem { Header = "打开文件夹" }; reveal.Click += (_, _) => OpenFolder(source.Path);
+        var relocate = new MenuItem { Header = "重新定位来源…" }; relocate.Click += async (_, _) => await RelocateSourceAsync(library, source);
         var chooseArtwork = new MenuItem { Header = "为此路径指定封面…" }; chooseArtwork.Click += (_, _) => ChooseArtworkForSource(library, source);
         var detectArtwork = new MenuItem { Header = "重新自动查找封面" }; detectArtwork.Click += async (_, _) => await DetectArtworkForSourceAsync(source, true);
         var remove = new MenuItem { Header = "从逻辑库移除" }; remove.Click += async (_, _) => await RemoveSourceAsync(library, source);
-        menu.Items.Add(reveal); menu.Items.Add(new Separator()); menu.Items.Add(chooseArtwork); menu.Items.Add(detectArtwork);
+        menu.Items.Add(reveal); menu.Items.Add(relocate); menu.Items.Add(new Separator()); menu.Items.Add(chooseArtwork); menu.Items.Add(detectArtwork);
         menu.Items.Add(new Separator()); menu.Items.Add(remove); return menu;
     }
 
@@ -553,9 +580,97 @@ public partial class MainWindow : Window
                 Enabled = source.Enabled,
                 ArtworkPath = source.ArtworkPath,
                 ArtworkChecked = source.ArtworkChecked,
-                ArtworkScanVersion = source.ArtworkScanVersion
+                ArtworkScanVersion = source.ArtworkScanVersion,
+                CanonicalPath = source.CanonicalPath,
+                VolumeLabel = source.VolumeLabel,
+                VolumeSerial = source.VolumeSerial,
+                LastSeenUtc = source.LastSeenUtc
             }))
         }).ToArray();
+
+    private void RefreshSourceIdentities()
+    {
+        foreach (var source in _state.Libraries.SelectMany(library => library.Sources))
+        {
+            var identity = PathIdentity.CaptureSource(source.Path);
+            source.Path = identity.DisplayPath;
+            if (!string.IsNullOrWhiteSpace(identity.CanonicalPath)) source.CanonicalPath = identity.CanonicalPath;
+            if (!string.IsNullOrWhiteSpace(identity.VolumeLabel)) source.VolumeLabel = identity.VolumeLabel;
+            if (!string.IsNullOrWhiteSpace(identity.VolumeSerial)) source.VolumeSerial = identity.VolumeSerial;
+            if (identity.LastSeenUtc > 0) source.LastSeenUtc = identity.LastSeenUtc;
+        }
+    }
+
+    private void ApplyPathIdentityRelocations(IEnumerable<AudioAsset> previous, IEnumerable<AudioAsset> current)
+    {
+        var previousById = previous.Where(asset => !string.IsNullOrWhiteSpace(asset.AssetId))
+            .GroupBy(asset => asset.AssetId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().FilePath, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var asset in current)
+        {
+            if (string.IsNullOrWhiteSpace(asset.AssetId)
+                || !previousById.TryGetValue(asset.AssetId, out var oldPath)
+                || oldPath.Equals(asset.FilePath, StringComparison.OrdinalIgnoreCase)) continue;
+            RemapPathReference(oldPath, asset.FilePath);
+        }
+    }
+
+    private void RemapPathReference(string oldPath, string newPath)
+    {
+        if (_state.Favorites.Remove(oldPath)) _state.Favorites.Add(newPath);
+        if (_savedSessionPlayed.Remove(oldPath)) _savedSessionPlayed.Add(newPath);
+        if (_activityDirty.Remove(oldPath)) _activityDirty.Add(newPath);
+
+        foreach (var collection in _state.Collections)
+        {
+            var alreadyPresent = collection.Items.Any(path => path.Equals(newPath, StringComparison.OrdinalIgnoreCase));
+            for (var index = collection.Items.Count - 1; index >= 0; index--)
+            {
+                if (!collection.Items[index].Equals(oldPath, StringComparison.OrdinalIgnoreCase)) continue;
+                if (alreadyPresent) collection.Items.RemoveAt(index);
+                else { collection.Items[index] = newPath; alreadyPresent = true; }
+            }
+        }
+    }
+
+    private PathReferenceSnapshot CapturePathReferences() => new(
+        new HashSet<string>(_state.Favorites, StringComparer.OrdinalIgnoreCase),
+        new HashSet<string>(_savedSessionPlayed, StringComparer.OrdinalIgnoreCase),
+        new HashSet<string>(_activityDirty, StringComparer.OrdinalIgnoreCase),
+        _state.Collections.ToDictionary(collection => collection.Id, collection => collection.Items.ToArray(), StringComparer.OrdinalIgnoreCase));
+
+    private void RestoreScanState(
+        ObservableCollection<AudioAsset> assets,
+        List<AudioAsset> index,
+        PathReferenceSnapshot? references)
+    {
+        _assets = assets;
+        _state.Index = index;
+        if (references != null)
+        {
+            _state.Favorites = new HashSet<string>(references.Favorites, StringComparer.OrdinalIgnoreCase);
+            _savedSessionPlayed = new HashSet<string>(references.SessionPlayed, StringComparer.OrdinalIgnoreCase);
+            _activityDirty.Clear();
+            _activityDirty.UnionWith(references.ActivityDirty);
+            foreach (var collection in _state.Collections)
+                if (references.CollectionItems.TryGetValue(collection.Id, out var items))
+                    collection.Items = new ObservableCollection<string>(items);
+        }
+        _view = CollectionViewSource.GetDefaultView(_assets);
+        _view.Filter = FilterAsset;
+        AssetGrid.ItemsSource = _view;
+        ApplySort();
+        RebuildLibraryTree();
+        RebuildFacets();
+        RefreshView();
+    }
+
+    private sealed record PathReferenceSnapshot(
+        HashSet<string> Favorites,
+        HashSet<string> SessionPlayed,
+        HashSet<string> ActivityDirty,
+        Dictionary<string, string[]> CollectionItems);
 
     private async Task RemoveLibraryAsync(LibraryDefinition library)
     {
@@ -575,6 +690,101 @@ public partial class MainWindow : Window
         foreach (var asset in _assets.Where(asset => asset.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)).ToList()) _assets.Remove(asset);
         _state.Index = _assets.ToList(); _sourceFilter = "";
         await _store.SaveAsync(_state); RebuildLibraryTree(); RefreshView();
+    }
+
+    private async Task RelocateSourceAsync(LibraryDefinition library, LibrarySource source)
+    {
+        var dialog = new OpenFolderDialog { Title = $"重新定位 {source.DisplayName}", Multiselect = false };
+        if (dialog.ShowDialog(this) != true) return;
+
+        var newIdentity = PathIdentity.CaptureSource(dialog.FolderName);
+        if (!Directory.Exists(newIdentity.DisplayPath)) return;
+
+        var overlaps = _state.Libraries.SelectMany(item => item.Sources)
+            .Where(item => !ReferenceEquals(item, source))
+            .Select(item => PathIdentity.CaptureSource(item.Path))
+            .Any(item => PathsOverlap(item.CanonicalPath, newIdentity.CanonicalPath));
+        if (overlaps)
+        {
+            MessageBox.Show(T("新目录与现有来源重叠，未执行重定位。", "The new folder overlaps an existing source; relocation was not applied."),
+                T("来源重定位", "Source relocation"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var candidates = _assets.Where(asset => asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var occupied = _assets.Where(asset => !asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase))
+            .Select(asset => PathIdentity.Normalize(asset.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var missing = 0;
+        var conflicts = new List<string>();
+        var externalArtwork = 0;
+
+        foreach (var asset in candidates)
+        {
+            var relative = string.IsNullOrWhiteSpace(asset.RelativePath)
+                ? PathIdentity.RelativeTo(source.Path, asset.FilePath)
+                : asset.RelativePath;
+            var target = PathIdentity.Normalize(Path.Combine(newIdentity.DisplayPath, relative));
+            if (!targets.Add(target) || occupied.Contains(target)) conflicts.Add(target);
+            else if (!File.Exists(target)) missing++;
+            if (!string.IsNullOrWhiteSpace(asset.ArtworkPath) && !PathIsInside(asset.ArtworkPath, source.Path)) externalArtwork++;
+        }
+
+        var preview = T(
+            $"重定位预览\n\n逻辑库：{library.Name}\n来源：{source.Path}\n目标：{newIdentity.DisplayPath}\n迁移：{candidates.Length - missing - conflicts.Count:N0}\n缺失：{missing:N0}\n冲突：{conflicts.Count:N0}\n外部封面：{externalArtwork:N0}\n\n确认后将以一次数据库事务迁移所有引用。",
+            $"Relocation preview\n\nLibrary: {library.Name}\nSource: {source.Path}\nTarget: {newIdentity.DisplayPath}\nMove: {candidates.Length - missing - conflicts.Count:N0}\nMissing: {missing:N0}\nConflicts: {conflicts.Count:N0}\nExternal artwork: {externalArtwork:N0}\n\nAll references will be moved in one database transaction after confirmation.");
+        if (conflicts.Count > 0)
+        {
+            MessageBox.Show(preview + "\n\n" + string.Join("\n", conflicts.Take(8)),
+                T("重定位存在冲突", "Relocation conflicts"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (MessageBox.Show(preview, T("确认来源重定位", "Confirm source relocation"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        var oldPath = source.Path;
+        var oldCanonical = source.CanonicalPath;
+        var oldLabel = source.VolumeLabel;
+        var oldSerial = source.VolumeSerial;
+        var oldLastSeen = source.LastSeenUtc;
+        var oldArtwork = source.ArtworkPath;
+        source.Path = newIdentity.DisplayPath;
+        source.CanonicalPath = newIdentity.CanonicalPath;
+        source.VolumeLabel = newIdentity.VolumeLabel;
+        source.VolumeSerial = newIdentity.VolumeSerial;
+        source.LastSeenUtc = newIdentity.LastSeenUtc;
+        if (PathIsInside(oldArtwork, oldPath))
+            source.ArtworkPath = Path.Combine(newIdentity.DisplayPath, PathIdentity.RelativeTo(oldPath, oldArtwork));
+
+        if (await RescanAsync(false))
+        {
+            StatusText.Text = T($"来源已重定位：{candidates.Length:N0} 条身份已保留，{missing:N0} 条待恢复",
+                $"Source relocated: {candidates.Length:N0} identities preserved, {missing:N0} awaiting recovery");
+            return;
+        }
+
+        source.Path = oldPath;
+        source.CanonicalPath = oldCanonical;
+        source.VolumeLabel = oldLabel;
+        source.VolumeSerial = oldSerial;
+        source.LastSeenUtc = oldLastSeen;
+        source.ArtworkPath = oldArtwork;
+        StatusText.Text = T("重定位未提交，已恢复原来源。", "Relocation was not committed; the original source was restored.");
+    }
+
+    private static bool PathsOverlap(string first, string second) =>
+        PathIsInside(first, second) || PathIsInside(second, first);
+
+    private static bool PathIsInside(string candidate, string root)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(root)) return false;
+        try
+        {
+            var relative = Path.GetRelativePath(PathIdentity.Normalize(root), PathIdentity.Normalize(candidate));
+            return relative == "." || (!relative.Equals("..", StringComparison.Ordinal)
+                && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal));
+        }
+        catch { return false; }
     }
 
     private void ManageLibraries_Click(object sender, RoutedEventArgs e)

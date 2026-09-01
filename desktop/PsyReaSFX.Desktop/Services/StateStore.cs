@@ -145,7 +145,9 @@ public sealed class StateStore
             if (byId.TryGetValue(row.LibraryId, out var library)) library.Sources.Add(new LibrarySource
             {
                 Id = row.Id, Path = row.Path, Alias = row.Alias, Enabled = row.Enabled, ArtworkPath = row.ArtworkPath,
-                ArtworkChecked = row.ArtworkChecked, ArtworkScanVersion = row.ArtworkScanVersion
+                ArtworkChecked = row.ArtworkChecked, ArtworkScanVersion = row.ArtworkScanVersion,
+                CanonicalPath = row.CanonicalPath, VolumeLabel = row.VolumeLabel,
+                VolumeSerial = row.VolumeSerial, LastSeenUtc = row.LastSeenUtc
             });
         state.Index = snapshot.Assets.Select(FromAsset).ToList();
         foreach (var asset in state.Index)
@@ -169,7 +171,9 @@ public sealed class StateStore
         {
             snapshot.Libraries.Add(new LibraryRecord(library.Id, library.Name, library.ArtworkPath, library.IsExpanded));
             foreach (var source in library.Sources)
-                snapshot.Sources.Add(new SourceRecord(source.Id, library.Id, source.Path, source.Alias, source.Enabled, source.ArtworkPath, source.ArtworkChecked, source.ArtworkScanVersion));
+                snapshot.Sources.Add(new SourceRecord(source.Id, library.Id, source.Path, source.Alias, source.Enabled,
+                    source.ArtworkPath, source.ArtworkChecked, source.ArtworkScanVersion, source.CanonicalPath,
+                    source.VolumeLabel, source.VolumeSerial, source.LastSeenUtc));
         }
         snapshot.Assets.AddRange(state.Index.Select(ToAsset));
         snapshot.Favorites.UnionWith(state.Favorites);
@@ -188,23 +192,25 @@ public sealed class StateStore
 
     private static AudioAsset FromAsset(AssetRecord row) => new()
     {
-        FilePath = row.Path, FileName = row.Name, RelativeFolder = row.Folder, SourcePath = row.Root, LibraryName = row.Library,
+        AssetId = row.AssetId, FilePath = row.Path, RelativePath = row.RelativePath,
+        FileName = row.Name, RelativeFolder = row.Folder, SourcePath = row.Root, LibraryName = row.Library,
         DurationSeconds = row.Duration, Channels = row.Channels, SampleRate = row.SampleRate, BitDepth = row.BitDepth,
         Format = row.SourceType, FileSize = row.Size, ArtworkPath = row.ArtworkPath, Description = row.Description,
         Keywords = row.Keywords, CatId = row.CatId, Category = row.Category, Subcategory = row.Subcategory,
         WorkflowStatus = row.WorkflowStatus, Marked = row.Marked, PreviewCount = row.PreviewCount,
         LastPreviewed = row.LastPreviewed, Indexed = row.Indexed, Ready = row.Ready, UsedCount = row.UsedCount,
-        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId
+        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId, LastSeenUtc = row.LastSeenUtc
     };
 
     private static AssetRecord ToAsset(AudioAsset row) => new()
     {
-        Path = row.FilePath, Name = row.FileName, Folder = row.RelativeFolder, Root = row.SourcePath, Library = row.LibraryName,
+        AssetId = row.AssetId, Path = row.FilePath, RelativePath = row.RelativePath,
+        Name = row.FileName, Folder = row.RelativeFolder, Root = row.SourcePath, Library = row.LibraryName,
         Duration = row.DurationSeconds, Channels = row.Channels, SampleRate = row.SampleRate, BitDepth = row.BitDepth,
         SourceType = row.Format, Size = row.FileSize, ArtworkPath = row.ArtworkPath, Description = row.Description,
         Keywords = row.Keywords, CatId = row.CatId, Category = row.Category, Subcategory = row.Subcategory,
         WorkflowStatus = row.WorkflowStatus, Marked = row.Marked, PreviewCount = row.PreviewCount,
         LastPreviewed = row.LastPreviewed, Indexed = row.Indexed, Ready = row.Ready, UsedCount = row.UsedCount,
-        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId
+        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId, LastSeenUtc = row.LastSeenUtc
     };
 }

@@ -3295,6 +3295,48 @@ function unique_library_name(base)
   return base .. " " .. tostring(number)
 end
 
+function refresh_source_identity(record)
+  if not record then
+    return
+  end
+
+  record.path = canonical_source_path(record.path)
+  record.canonical_path = canonical_source_path(
+    tostring(record.canonical_path or "") ~= ""
+      and record.canonical_path
+      or record.path
+  )
+  record.volume_label = tostring(record.volume_label or "")
+  record.volume_serial = tostring(record.volume_serial or "")
+  record.last_seen = tonumber(record.last_seen) or 0
+
+  if not directory_exists(record.path) then
+    return
+  end
+
+  record.canonical_path = record.path
+  record.last_seen = os.time()
+
+  if reaper.GetOS():match("Win") then
+    local drive = record.path:match("^([A-Za-z]:)")
+
+    if drive and type(reaper.ExecProcess) == "function" then
+      local ok, output = pcall(
+        reaper.ExecProcess,
+        "cmd.exe /d /c vol " .. drive,
+        1000
+      )
+
+      if ok and type(output) == "string" then
+        local serial = output:match("(%x%x%x%x%-%x%x%x%x)")
+        if serial then
+          record.volume_serial = serial:upper()
+        end
+      end
+    end
+  end
+end
+
 function rebuild_library_indexes()
   state.library_by_id = {}
   state.root_by_id = {}
@@ -3311,7 +3353,7 @@ function rebuild_library_indexes()
   end
 
   for _, record in ipairs(state.root_records) do
-    record.path = canonical_source_path(record.path)
+    refresh_source_identity(record)
     record.enabled = record.enabled ~= false
     record.artwork_path =
       tostring(record.artwork_path or "")
@@ -4082,12 +4124,12 @@ local PERSISTENCE_SCHEMAS = {
   },
   [LIBRARIES_FILE] = {
     kind = "libraries",
-    version = 1,
+    version = 2,
     dirty_flag = "libraries_dirty",
   },
   [DATABASE_FILE] = {
     kind = "database",
-    version = 1,
+    version = 2,
     dirty_flag = "db_dirty",
   },
   [COLLECTIONS_FILE] = {
@@ -4247,9 +4289,16 @@ function schedule_legacy_schema_migrations()
 
   local pending = {}
 
-  for target_path in pairs(state.persistence_schema_legacy) do
-    if target_path ~= MIGRATION_LOG_FILE then
-      pending[#pending + 1] = target_path
+  for target_path, schema in pairs(PERSISTENCE_SCHEMAS) do
+    local current = state.persistence_schema_versions[target_path]
+
+    if current ~= nil
+      and current < schema.version
+      and target_path ~= MIGRATION_LOG_FILE then
+      pending[#pending + 1] = {
+        path = target_path,
+        from = current,
+      }
     end
   end
 
@@ -4257,7 +4306,9 @@ function schedule_legacy_schema_migrations()
     return true
   end
 
-  table.sort(pending)
+  table.sort(pending, function(a, b)
+    return a.path < b.path
+  end)
 
   if not create_data_backup("schema_migration", true) then
     state.persistence_read_only = true
@@ -4286,7 +4337,8 @@ function schedule_legacy_schema_migrations()
     [BACKUP_STATE_FILE] = save_backup_state,
   }
 
-  for _, target_path in ipairs(pending) do
+  for _, migration in ipairs(pending) do
+    local target_path = migration.path
     local schema = PERSISTENCE_SCHEMAS[target_path]
     local saver = savers[target_path]
     local ok = true
@@ -4301,7 +4353,7 @@ function schedule_legacy_schema_migrations()
 
     local logged = append_schema_migration_log(
       schema and schema.kind or basename(target_path),
-      0,
+      migration.from,
       schema and schema.version or 0,
       ok and "completed" or "failed"
     )
@@ -5203,6 +5255,51 @@ function parse_ucs_filename(filename)
   return result
 end
 
+function asset_relative_path(path, root)
+  path = canonical_source_path(path)
+  root = canonical_source_path(root)
+
+  if root == "" or not path_is_inside(path, root) then
+    return basename(path)
+  end
+
+  if path_key(path) == path_key(root) then
+    return ""
+  end
+
+  return normalize_slashes(path:sub(#root + 2))
+end
+
+function ensure_asset_identity(asset)
+  if not asset then
+    return
+  end
+
+  asset.relative_path = tostring(asset.relative_path or "")
+
+  if asset.relative_path == "" then
+    asset.relative_path = asset_relative_path(
+      asset.path or "",
+      asset.root or ""
+    )
+  end
+
+  if tostring(asset.asset_id or "") == "" then
+    asset.asset_id = stable_id(
+      "asset",
+      tostring(asset.root_id or "")
+        .. "|"
+        .. path_key(asset.relative_path)
+    )
+  end
+
+  if reaper.file_exists(asset.path or "") then
+    asset.last_seen = os.time()
+  else
+    asset.last_seen = tonumber(asset.last_seen) or 0
+  end
+end
+
 function make_placeholder(path, known_root)
   local name = basename(path)
   local ucs = parse_ucs_filename(name)
@@ -5217,7 +5314,7 @@ function make_placeholder(path, known_root)
 
   local library = library_for_root_record(root_record)
 
-  return {
+  local asset = {
     path = normalize_slashes(path),
     name = name,
     folder = dirname(path),
@@ -5254,9 +5351,13 @@ function make_placeholder(path, known_root)
     fingerprint = "",
     fingerprint_size = 0,
   }
+
+  ensure_asset_identity(asset)
+  return asset
 end
 
 function add_or_update_asset(asset)
+  ensure_asset_identity(asset)
   local key = path_key(asset.path)
   local existing = state.by_path[key]
 
@@ -5274,6 +5375,7 @@ function add_or_update_asset(asset)
       existing.last_previewed or 0
     local artwork_path =
       existing.artwork_path or ""
+    local asset_id = tostring(existing.asset_id or "")
 
     for field, value in pairs(asset) do
       existing[field] = value
@@ -5300,6 +5402,10 @@ function add_or_update_asset(asset)
 
     if (existing.artwork_path or "") == "" then
       existing.artwork_path = artwork_path
+    end
+
+    if asset_id ~= "" then
+      existing.asset_id = asset_id
     end
 
     existing.artwork_checked =
@@ -5365,7 +5471,9 @@ end
 ----------------------------------------------------------------
 
 local DB_FIELDS = {
+  "asset_id",
   "path",
+  "relative_path",
   "name",
   "folder",
   "root",
@@ -5394,6 +5502,7 @@ local DB_FIELDS = {
   "library_id",
   "fingerprint",
   "fingerprint_size",
+  "last_seen",
 }
 
 function save_libraries()
@@ -5425,6 +5534,7 @@ function save_libraries()
   end
 
   for _, record in ipairs(state.root_records) do
+    refresh_source_identity(record)
     file:write(
       "root\t",
       escape_tsv(record.id),
@@ -5442,6 +5552,14 @@ function save_libraries()
       record.artwork_checked == true and "1" or "0",
       "\t",
       tostring(record.artwork_scan_version or 0),
+      "\t",
+      escape_tsv(record.canonical_path or ""),
+      "\t",
+      escape_tsv(record.volume_label or ""),
+      "\t",
+      escape_tsv(record.volume_serial or ""),
+      "\t",
+      tostring(record.last_seen or 0),
       "\n"
     )
   end
@@ -5490,6 +5608,10 @@ function load_or_migrate_libraries()
           artwork_path = fields[7] or "",
           artwork_checked = fields[8] == "1",
           artwork_scan_version = tonumber(fields[9]) or 0,
+          canonical_path = fields[10] or "",
+          volume_label = fields[11] or "",
+          volume_serial = fields[12] or "",
+          last_seen = tonumber(fields[13]) or 0,
         }
       end
     end
@@ -7819,6 +7941,8 @@ function load_database()
       asset.last_used = tonumber(asset.last_used) or 0
       asset.fingerprint = tostring(asset.fingerprint or "")
       asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
+      asset.last_seen = tonumber(asset.last_seen) or 0
+      ensure_asset_identity(asset)
 
       add_or_update_asset(asset)
     elseif asset.path and asset.path ~= "" then
@@ -15356,6 +15480,11 @@ function migrate_asset_path(asset, new_path, record)
   asset.root = record.path
   asset.root_id = record.id
   asset.library_id = record.library_id
+  asset.relative_path = asset_relative_path(
+    asset.path,
+    record.path
+  )
+  ensure_asset_identity(asset)
   local library = state.library_by_id[record.library_id]
   asset.library = library and library.name or asset.library
   asset.missing = not reaper.file_exists(asset.path)
@@ -15383,6 +15512,96 @@ function validate_relinked_root(record, new_root)
     end
   end
   return true
+end
+
+function build_relink_plan(record, new_root)
+  local plan = {
+    record = record,
+    old_root = record.path,
+    new_root = new_root,
+    entries = {},
+    targets = {},
+    conflicts = {},
+    missing = 0,
+    external_artwork = 0,
+  }
+
+  for _, asset in ipairs(state.assets) do
+    if tostring(asset.root_id or "") == tostring(record.id)
+      or path_is_inside(asset.path, record.path) then
+      local relative = tostring(asset.relative_path or "")
+      if relative == "" then
+        relative = asset_relative_path(asset.path, record.path)
+      end
+      local target = relative == ""
+        and new_root
+        or join_path(new_root, relative)
+      local target_key = path_key(target)
+      local conflict = state.by_path[target_key]
+      local duplicate_target = plan.targets[target_key]
+
+      if (conflict and conflict ~= asset) or duplicate_target then
+        plan.conflicts[#plan.conflicts + 1] = target
+      else
+        plan.targets[target_key] = asset
+      end
+
+      if not reaper.file_exists(target) then
+        plan.missing = plan.missing + 1
+      end
+
+      local artwork_relative = relative_path_from_root(
+        asset.artwork_path or "",
+        record.path
+      )
+      if tostring(asset.artwork_path or "") ~= ""
+        and not artwork_relative then
+        plan.external_artwork = plan.external_artwork + 1
+      end
+
+      plan.entries[#plan.entries + 1] = {
+        asset = asset,
+        old_path = asset.path,
+        target = target,
+        old_artwork = asset.artwork_path or "",
+        artwork_relative = artwork_relative,
+      }
+    end
+  end
+
+  return plan
+end
+
+function confirm_relink_plan(plan)
+  local message = string.format(
+    "来源重定位预览\n\n%s\n→ %s\n\n迁移：%d\n缺失：%d\n冲突：%d\n外部封面：%d",
+    plan.old_root,
+    plan.new_root,
+    math.max(0, #plan.entries - plan.missing - #plan.conflicts),
+    plan.missing,
+    #plan.conflicts,
+    plan.external_artwork
+  )
+
+  if #plan.conflicts > 0 then
+    local preview = {}
+    for index = 1, math.min(8, #plan.conflicts) do
+      preview[#preview + 1] = plan.conflicts[index]
+    end
+    reaper.MB(
+      message .. "\n\n冲突路径：\n" .. table.concat(preview, "\n"),
+      "来源重定位冲突",
+      0
+    )
+    return false
+  end
+
+  return reaper.MB(
+    message
+      .. "\n\n确认后将先创建恢复快照，再一次性迁移全部引用。是否继续？",
+    "确认来源重定位",
+    4
+  ) == 6
 end
 
 function relink_root(record, supplied_path)
@@ -15415,21 +15634,28 @@ function relink_root(record, supplied_path)
     return false
   end
 
+  local plan = build_relink_plan(record, new_root)
+  if not confirm_relink_plan(plan) then
+    return false
+  end
+
+  if not create_data_backup("source_relink", true) then
+    set_status("无法创建重定位恢复快照，未修改任何路径", true)
+    return false
+  end
+
   stop_preview()
   local old_root = record.path
+  local old_root_filter = state.root_filter
+  local old_record_artwork = record.artwork_path or ""
+  local old_canonical_path = record.canonical_path or ""
+  local old_volume_label = record.volume_label or ""
+  local old_volume_serial = record.volume_serial or ""
+  local old_last_seen = record.last_seen or 0
   local root_artwork_relative = relative_path_from_root(
     record.artwork_path or "",
     old_root
   )
-  local candidates = {}
-
-  for _, asset in ipairs(state.assets) do
-    if tostring(asset.root_id or "") == tostring(record.id)
-      or path_is_inside(asset.path, old_root) then
-      candidates[#candidates + 1] = asset
-    end
-  end
-
   record.path = new_root
   if root_artwork_relative then
     record.artwork_path = root_artwork_relative == ""
@@ -15442,25 +15668,20 @@ function relink_root(record, supplied_path)
 
   local moved = 0
   local unresolved = 0
-  for _, asset in ipairs(candidates) do
-    local relative = relative_path_from_root(asset.path, old_root)
-    if relative then
-      local target = relative == "" and new_root or join_path(new_root, relative)
-      local artwork_relative = relative_path_from_root(
-        asset.artwork_path or "",
-        old_root
-      )
-      if migrate_asset_path(asset, target, record) then
-        if artwork_relative then
-          asset.artwork_path = artwork_relative == ""
+  local moved_entries = {}
+  for _, entry in ipairs(plan.entries) do
+    local asset = entry.asset
+    if migrate_asset_path(asset, entry.target, record) then
+        if entry.artwork_relative then
+          asset.artwork_path = entry.artwork_relative == ""
             and new_root
-            or join_path(new_root, artwork_relative)
+            or join_path(new_root, entry.artwork_relative)
         end
         moved = moved + 1
-        if not reaper.file_exists(target) then
+        moved_entries[#moved_entries + 1] = entry
+        if not reaper.file_exists(entry.target) then
           unresolved = unresolved + 1
         end
-      end
     end
   end
 
@@ -15476,8 +15697,30 @@ function relink_root(record, supplied_path)
   invalidate_folder_navigation()
   state.missing_assets = {}
   state.missing_asset_count = 0
-  save_libraries()
-  save_database()
+  local libraries_saved = save_libraries()
+  local database_saved = libraries_saved and save_database()
+
+  if not libraries_saved or not database_saved then
+    record.path = old_root
+    record.artwork_path = old_record_artwork
+    record.canonical_path = old_canonical_path
+    record.volume_label = old_volume_label
+    record.volume_serial = old_volume_serial
+    record.last_seen = old_last_seen
+    rebuild_library_indexes()
+    for index = #moved_entries, 1, -1 do
+      local entry = moved_entries[index]
+      migrate_asset_path(entry.asset, entry.old_path, record)
+      entry.asset.artwork_path = entry.old_artwork
+    end
+    state.root_filter = old_root_filter
+    state.libraries_dirty = true
+    state.db_dirty = true
+    save_libraries()
+    save_database()
+    set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    return false
+  end
   set_status(string.format("来源已重定位：迁移 %d 条路径，待重新扫描 %d 条", moved, unresolved))
   start_scan("重定位后增量扫描", { new_root }, { silent = unresolved == 0 })
   return true
