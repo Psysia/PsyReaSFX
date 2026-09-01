@@ -35,7 +35,9 @@ internal static class HardeningBenchmark
             snapshot.Sources.Add(new SourceRecord(library.Sources[0].Id, library.Id, sourceRoot, "", true, "", false, 0));
             snapshot.Assets.AddRange(assets.Select(asset => new AssetRecord
             {
+                AssetId = asset.AssetId,
                 Path = asset.FilePath,
+                RelativePath = asset.RelativePath,
                 Name = asset.FileName,
                 Folder = asset.RelativeFolder,
                 Root = asset.SourcePath,
@@ -58,6 +60,14 @@ internal static class HardeningBenchmark
             var saveTimer = Stopwatch.StartNew();
             await database.SaveDesktopSnapshotAsync(snapshot);
             saveTimer.Stop();
+            var initialWriteStats = database.LastSnapshotWriteStats;
+            var initialWriteTimings = database.LastSnapshotWriteTimings;
+
+            var unchangedSaveTimer = Stopwatch.StartNew();
+            await database.SaveDesktopSnapshotAsync(snapshot);
+            unchangedSaveTimer.Stop();
+            var unchangedWriteStats = database.LastSnapshotWriteStats;
+            var unchangedWriteTimings = database.LastSnapshotWriteTimings;
 
             var loadTimer = Stopwatch.StartNew();
             var loaded = await database.LoadSnapshotAsync();
@@ -89,9 +99,12 @@ internal static class HardeningBenchmark
                 {
                     index = indexTimer.Elapsed.TotalMilliseconds,
                     save = saveTimer.Elapsed.TotalMilliseconds,
+                    unchangedSave = unchangedSaveTimer.Elapsed.TotalMilliseconds,
                     load = loadTimer.Elapsed.TotalMilliseconds,
                     search = searchTimer.Elapsed.TotalMilliseconds
                 },
+                writes = new { initialWriteStats, unchangedWriteStats },
+                writeTimings = new { initialWriteTimings, unchangedWriteTimings },
                 managedMemoryBytes = new { before = memoryBefore, after = memoryAfter, delta = memoryAfter - memoryBefore },
                 machine = new { Environment.ProcessorCount, framework = Environment.Version.ToString(), os = Environment.OSVersion.ToString() },
                 timestampUtc = DateTimeOffset.UtcNow

@@ -4,6 +4,8 @@ namespace PsyReaSFX.Data;
 
 public sealed class PsyReaSFXDatabase
 {
+    public SnapshotWriteStats LastSnapshotWriteStats { get; private set; } = new(0, 0, 0);
+    public SnapshotWriteTimings LastSnapshotWriteTimings { get; private set; } = new(0, 0, 0, 0, 0, 0);
     public const int SupportedSchemaVersion = 3;
     private readonly string _connectionString;
     public string DataDirectory { get; }
@@ -181,16 +183,49 @@ public sealed class PsyReaSFXDatabase
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await RelocateSnapshotReferencesAsync(connection, snapshot.Assets, cancellationToken);
+        var phase = System.Diagnostics.Stopwatch.StartNew();
+        var existingAssets = await LoadExistingAssetsAsync(connection, cancellationToken);
+        var existingLoadMs = phase.Elapsed.TotalMilliseconds;
+        phase.Restart();
+        await RelocateSnapshotReferencesAsync(connection, snapshot.Assets, existingAssets, cancellationToken);
+        var relocationMs = phase.Elapsed.TotalMilliseconds;
+        phase.Restart();
         await ExecuteAsync(connection, "DELETE FROM libraries", cancellationToken);
         await ExecuteAsync(connection, "DELETE FROM sources", cancellationToken);
-        await ExecuteAsync(connection, "DELETE FROM assets", cancellationToken);
 
         for (var i = 0; i < snapshot.Libraries.Count; i++)
             await UpsertLibraryAsync(connection, snapshot.Libraries[i], i, cancellationToken);
         for (var i = 0; i < snapshot.Sources.Count; i++)
             await UpsertSourceAsync(connection, snapshot.Sources[i], i, cancellationToken);
-        foreach (var asset in snapshot.Assets) await UpsertAssetAsync(connection, asset, cancellationToken);
+        var workspaceMs = phase.Elapsed.TotalMilliseconds;
+        phase.Restart();
+        var incomingAssetIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var changedAssets = 0;
+        var unchangedAssets = 0;
+        foreach (var asset in snapshot.Assets)
+        {
+            var relativePath = EffectiveRelativePath(asset);
+            var assetId = EffectiveAssetId(asset, relativePath);
+            incomingAssetIds.Add(assetId);
+            if (!existingAssets.TryGetValue(assetId, out var existing)
+                || !AssetRecordsEquivalent(existing, asset, assetId, relativePath))
+            {
+                await UpsertAssetAsync(connection, asset, cancellationToken, assetId, relativePath);
+                changedAssets++;
+            }
+            else unchangedAssets++;
+        }
+        var removedAssets = 0;
+        foreach (var removedAssetId in existingAssets.Keys.Where(id => !incomingAssetIds.Contains(id)))
+        {
+            await using var delete = connection.CreateCommand();
+            delete.CommandText = "DELETE FROM assets WHERE asset_id=$id";
+            delete.Parameters.AddWithValue("$id", removedAssetId);
+            await delete.ExecuteNonQueryAsync(cancellationToken);
+            removedAssets++;
+        }
+        var assetsMs = phase.Elapsed.TotalMilliseconds;
+        phase.Restart();
 
         await ExecuteAsync(connection, "DELETE FROM favorites", cancellationToken);
         foreach (var path in snapshot.Favorites)
@@ -209,30 +244,88 @@ public sealed class PsyReaSFXDatabase
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
         await ReplaceOrganizationAsync(connection, snapshot, cancellationToken);
+        var organizationMs = phase.Elapsed.TotalMilliseconds;
+        phase.Restart();
         await transaction.CommitAsync(cancellationToken);
+        var commitMs = phase.Elapsed.TotalMilliseconds;
+        LastSnapshotWriteStats = new SnapshotWriteStats(changedAssets, unchangedAssets, removedAssets);
+        LastSnapshotWriteTimings = new SnapshotWriteTimings(
+            existingLoadMs, relocationMs, workspaceMs, assetsMs, organizationMs, commitMs);
     }
 
     private static async Task RelocateSnapshotReferencesAsync(
         SqliteConnection connection,
         IEnumerable<AssetRecord> assets,
+        IReadOnlyDictionary<string, AssetRecord> existingAssets,
         CancellationToken token)
     {
-        var existingPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        await using (var findAll = connection.CreateCommand())
+        var unambiguousAssets = assets
+            .Where(asset => !string.IsNullOrWhiteSpace(asset.AssetId))
+            .GroupBy(asset => asset.AssetId, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() == 1)
+            .Select(group => group.Single());
+        foreach (var asset in unambiguousAssets)
         {
-            findAll.CommandText = "SELECT asset_id,path FROM assets WHERE asset_id<>''";
-            await using var reader = await findAll.ExecuteReaderAsync(token);
-            while (await reader.ReadAsync(token))
-                existingPaths[reader.GetString(0)] = reader.GetString(1);
-        }
-
-        foreach (var asset in assets.Where(asset => !string.IsNullOrWhiteSpace(asset.AssetId)))
-        {
-            if (!existingPaths.TryGetValue(asset.AssetId, out var oldPath)
-                || oldPath.Equals(asset.Path, StringComparison.OrdinalIgnoreCase)) continue;
-            await RelocatePathReferencesAsync(connection, oldPath, asset.Path, token);
+            if (!existingAssets.TryGetValue(asset.AssetId, out var existing)
+                || existing.Path.Equals(asset.Path, StringComparison.OrdinalIgnoreCase)) continue;
+            await RelocatePathReferencesAsync(connection, existing.Path, asset.Path, token);
+            await using var moveAsset = connection.CreateCommand();
+            moveAsset.CommandText = "UPDATE assets SET path=$new WHERE asset_id=$id";
+            moveAsset.Parameters.AddWithValue("$new", asset.Path);
+            moveAsset.Parameters.AddWithValue("$id", asset.AssetId);
+            await moveAsset.ExecuteNonQueryAsync(token);
         }
     }
+
+    private static async Task<Dictionary<string, AssetRecord>> LoadExistingAssetsAsync(
+        SqliteConnection connection,
+        CancellationToken token)
+    {
+        var rows = new Dictionary<string, AssetRecord>(StringComparer.OrdinalIgnoreCase);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT asset_id,path,relative_path,name,folder,root,library,duration,channels,sample_rate,bit_depth,source_type,size,
+                   description,keywords,catid,category,subcategory,artwork_path,workflow_status,marked,preview_count,last_previewed,
+                   indexed,ready,used_count,last_used,root_id,library_id,last_seen_utc
+            FROM assets WHERE asset_id<>''
+            """;
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+        {
+            var row = ReadAsset(reader);
+            rows[row.AssetId] = row;
+        }
+        return rows;
+    }
+
+    private static string EffectiveAssetId(AssetRecord row, string? relativePath = null)
+    {
+        if (!string.IsNullOrWhiteSpace(row.AssetId)) return row.AssetId;
+        return PathIdentity.CreateAssetId(row.RootId, relativePath ?? EffectiveRelativePath(row));
+    }
+
+    private static string EffectiveRelativePath(AssetRecord row) =>
+        string.IsNullOrWhiteSpace(row.RelativePath)
+            ? PathIdentity.RelativeTo(row.Root, row.Path)
+            : PathIdentity.NormalizeRelative(row.RelativePath);
+
+    private static bool AssetRecordsEquivalent(
+        AssetRecord left,
+        AssetRecord right,
+        string effectiveAssetId,
+        string effectiveRelativePath) =>
+        left.AssetId.Equals(effectiveAssetId, StringComparison.OrdinalIgnoreCase)
+        && left.Path.Equals(right.Path, StringComparison.OrdinalIgnoreCase)
+        && left.RelativePath.Equals(effectiveRelativePath, StringComparison.OrdinalIgnoreCase)
+        && left.Name == right.Name && left.Folder == right.Folder && left.Root == right.Root && left.Library == right.Library
+        && left.Duration.Equals(right.Duration) && left.Channels == right.Channels && left.SampleRate == right.SampleRate
+        && left.BitDepth == right.BitDepth && left.SourceType == right.SourceType && left.Size == right.Size
+        && left.Description == right.Description && left.Keywords == right.Keywords && left.CatId == right.CatId
+        && left.Category == right.Category && left.Subcategory == right.Subcategory && left.ArtworkPath == right.ArtworkPath
+        && left.WorkflowStatus == right.WorkflowStatus && left.Marked == right.Marked && left.PreviewCount == right.PreviewCount
+        && left.LastPreviewed.Equals(right.LastPreviewed) && left.Indexed == right.Indexed && left.Ready == right.Ready
+        && left.UsedCount == right.UsedCount && left.LastUsed.Equals(right.LastUsed) && left.RootId == right.RootId
+        && left.LibraryId == right.LibraryId && left.LastSeenUtc == right.LastSeenUtc;
 
     private static async Task RelocatePathReferencesAsync(
         SqliteConnection connection,
@@ -702,14 +795,15 @@ public sealed class PsyReaSFXDatabase
         await command.ExecuteNonQueryAsync(token);
     }
 
-    private static async Task UpsertAssetAsync(SqliteConnection connection, AssetRecord row, CancellationToken token)
+    private static async Task UpsertAssetAsync(
+        SqliteConnection connection,
+        AssetRecord row,
+        CancellationToken token,
+        string? effectiveAssetId = null,
+        string? effectiveRelativePath = null)
     {
-        var relativePath = string.IsNullOrWhiteSpace(row.RelativePath)
-            ? PathIdentity.RelativeTo(row.Root, row.Path)
-            : PathIdentity.NormalizeRelative(row.RelativePath);
-        var assetId = string.IsNullOrWhiteSpace(row.AssetId)
-            ? PathIdentity.CreateAssetId(row.RootId, relativePath)
-            : row.AssetId;
+        var relativePath = effectiveRelativePath ?? EffectiveRelativePath(row);
+        var assetId = effectiveAssetId ?? EffectiveAssetId(row, relativePath);
         var command = connection.CreateCommand(); command.CommandText = """
             INSERT INTO assets(asset_id,path,relative_path,name,folder,root,library,duration,channels,sample_rate,bit_depth,source_type,size,description,keywords,catid,category,subcategory,artwork_path,workflow_status,marked,preview_count,last_previewed,indexed,ready,used_count,last_used,root_id,library_id,last_seen_utc)
             VALUES($asset_id,$path,$relative_path,$name,$folder,$root,$library,$duration,$channels,$rate,$depth,$type,$size,$description,$keywords,$catid,$category,$subcategory,$artwork,$status,$marked,$preview_count,$last_previewed,$indexed,$ready,$used_count,$last_used,$root_id,$library_id,$last_seen)

@@ -948,6 +948,9 @@ internal static class DesktopSelfTest
         await identityDatabase.InitializeAsync();
         var initial = IdentitySnapshot(oldLibrary, firstAsset, oldPath);
         await identityDatabase.SaveDesktopSnapshotAsync(initial);
+        await identityDatabase.SaveDesktopSnapshotAsync(initial);
+        var unchangedWriteSkipped = identityDatabase.LastSnapshotWriteStats is
+            { ChangedAssets: 0, UnchangedAssets: 1, RemovedAssets: 0 };
         await identityDatabase.UpsertRegionAsync(new RegionRecord(oldPath, .1, .2, "identity", "manual", "identity"));
         await identityDatabase.UpsertLoudnessAsync(new LoudnessRecord(oldPath, firstAsset.FileSize, -20, -18, -19, -2));
         await identityDatabase.AddProjectUsageAsync(new ProjectUsageRecord(
@@ -977,6 +980,7 @@ internal static class DesktopSelfTest
         var trailingIdentity = PathIdentity.CaptureSource(newRoot + Path.DirectorySeparatorChar);
 
         return firstAsset.AssetId.Length == 32
+               && unchangedWriteSkipped
                && movedAsset.AssetId == firstAsset.AssetId
                && movedAsset.FilePath.Equals(newPath, StringComparison.OrdinalIgnoreCase)
                && movedAsset.Description == "identity metadata"

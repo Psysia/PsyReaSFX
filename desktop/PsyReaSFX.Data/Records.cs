@@ -81,6 +81,16 @@ public sealed record ProjectUsageRecord(
     double Position,
     long CreatedUtc);
 
+public sealed record SnapshotWriteStats(int ChangedAssets, int UnchangedAssets, int RemovedAssets);
+
+public sealed record SnapshotWriteTimings(
+    double ExistingLoadMs,
+    double RelocationMs,
+    double WorkspaceMs,
+    double AssetsMs,
+    double OrganizationMs,
+    double CommitMs);
+
 public sealed class CatalogSnapshot
 {
     public List<LibraryRecord> Libraries { get; } = [];
