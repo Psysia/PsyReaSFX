@@ -33,6 +33,18 @@ jobs:
           npm install --no-save --ignore-scripts luaparse@0.3.1
           node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync('PsyReaSFX_v0_7_23_Stable.lua','utf8'),{luaVersion:'5.3'}); console.log('Lua parse OK');"
 
+      - name: Verify modular Lua release
+        shell: pwsh
+        run: |
+          $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
+          ./tools/Build-LuaRelease.ps1 -Version 0.8.0-beta3 -OutputPath $built
+          $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
+          $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
+          if ($tracked -cne $generated) {
+            throw 'Tracked ReaPack script is stale. Rebuild it from src/lua before committing.'
+          }
+          node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync(process.argv[1],'utf8'),{luaVersion:'5.3'}); console.log('Generated Lua parse OK');" $built
+
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
 
