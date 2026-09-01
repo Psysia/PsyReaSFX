@@ -217,13 +217,18 @@ public sealed class PsyReaSFXDatabase
         IEnumerable<AssetRecord> assets,
         CancellationToken token)
     {
+        var existingPaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        await using (var findAll = connection.CreateCommand())
+        {
+            findAll.CommandText = "SELECT asset_id,path FROM assets WHERE asset_id<>''";
+            await using var reader = await findAll.ExecuteReaderAsync(token);
+            while (await reader.ReadAsync(token))
+                existingPaths[reader.GetString(0)] = reader.GetString(1);
+        }
+
         foreach (var asset in assets.Where(asset => !string.IsNullOrWhiteSpace(asset.AssetId)))
         {
-            var find = connection.CreateCommand();
-            find.CommandText = "SELECT path FROM assets WHERE asset_id=$id LIMIT 1";
-            find.Parameters.AddWithValue("$id", asset.AssetId);
-            var oldPath = Convert.ToString(await find.ExecuteScalarAsync(token));
-            if (string.IsNullOrWhiteSpace(oldPath)
+            if (!existingPaths.TryGetValue(asset.AssetId, out var oldPath)
                 || oldPath.Equals(asset.Path, StringComparison.OrdinalIgnoreCase)) continue;
             await RelocatePathReferencesAsync(connection, oldPath, asset.Path, token);
         }
