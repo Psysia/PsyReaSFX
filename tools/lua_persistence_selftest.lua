@@ -165,4 +165,18 @@ assert(create_data_backup("manual", true), "complete backup was rejected")
 assert(read_all(path_join(last_created_directory, basename(first))) == "backup-config")
 assert(read_all(path_join(last_created_directory, basename(second))) == "backup-libraries")
 
+local externally_locked_target = arg[3]
+local externally_locked_source = arg[4]
+if externally_locked_target and externally_locked_source then
+  state.persistence_fault_injection = nil
+  assert(
+    not copy_file_streaming(externally_locked_source, externally_locked_target),
+    "externally locked target unexpectedly accepted replacement"
+  )
+  assert(
+    read_all(externally_locked_target) == "locked-old-generation",
+    "external file lock damaged the prior target"
+  )
+end
+
 print("Lua persistence self-test OK")

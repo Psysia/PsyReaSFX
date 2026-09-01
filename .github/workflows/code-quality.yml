@@ -65,7 +65,18 @@ jobs:
           $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Lua-persistence'
           New-Item -ItemType Directory -Path $fixture | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $fixture 'backup') | Out-Null
-          lua tools/lua_persistence_selftest.lua $fixture (Resolve-Path 'src/lua/20_jobs_storage.lua')
+          $lockedTarget = Join-Path $fixture 'externally-locked-target.bin'
+          $lockedSource = Join-Path $fixture 'externally-locked-source.bin'
+          [IO.File]::WriteAllText($lockedTarget, 'locked-old-generation')
+          [IO.File]::WriteAllText($lockedSource, 'locked-new-generation')
+          $lock = [IO.File]::Open($lockedTarget, 'Open', 'Read', 'Read')
+          try {
+            lua tools/lua_persistence_selftest.lua $fixture (Resolve-Path 'src/lua/20_jobs_storage.lua') $lockedTarget $lockedSource
+            if ($LASTEXITCODE -ne 0) { throw "Lua persistence test failed: $LASTEXITCODE" }
+          }
+          finally {
+            $lock.Dispose()
+          }
 
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
