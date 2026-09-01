@@ -413,7 +413,8 @@ public partial class MainWindow : Window
                 : T($"扫描完成：{indexed.Count:N0} 个素材 · {_indexer.LastFailures.Count:N0} 个失败任务可重试",
                     $"Scan complete: {indexed.Count:N0} assets · {_indexer.LastFailures.Count:N0} failed tasks can be retried");
             succeeded = true;
-            if (announce && indexed.Count == 0) MessageBox.Show("没有找到受支持的音频文件。", "PsyReaSFX Desktop");
+            if (announce && indexed.Count == 0)
+                MessageBox.Show(T("没有找到受支持的音频文件。", "No supported audio files were found."), "PsyReaSFX Desktop");
         }
         catch (OperationCanceledException)
         {
@@ -454,23 +455,24 @@ public partial class MainWindow : Window
 
     private async void NewLibrary_Click(object sender, RoutedEventArgs e)
     {
-        var name = Interaction.InputBox("为逻辑音效库命名：", "新建逻辑音效库", "New Library").Trim();
+        var name = Interaction.InputBox(T("为逻辑音效库命名：", "Name the logical library:"),
+            T("新建逻辑音效库", "New logical library"), "New Library").Trim();
         if (string.IsNullOrWhiteSpace(name)) return;
         if (_state.Libraries.Any(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-        { MessageBox.Show("已经存在同名逻辑音效库。", "PsyReaSFX Desktop"); return; }
+        { MessageBox.Show(T("已经存在同名逻辑音效库。", "A logical library with that name already exists."), "PsyReaSFX Desktop"); return; }
         var library = new LibraryDefinition { Name = name };
         _state.Libraries.Add(library);
         await _store.SaveWorkspaceAsync(_state);
         RebuildLibraryTree();
         SelectLibrary(library);
-        StatusText.Text = $"已建立逻辑音效库：{name}";
+        StatusText.Text = T($"已建立逻辑音效库：{name}", $"Created logical library: {name}");
     }
 
     private async void AddSource_Click(object? sender, RoutedEventArgs? e)
     {
         var library = SelectedLibrary();
-        if (library == null) { MessageBox.Show("请先在左侧选择一个逻辑音效库。", "PsyReaSFX Desktop"); return; }
-        var dialog = new OpenFolderDialog { Title = $"向 {library.Name} 添加素材文件夹", Multiselect = false };
+        if (library == null) { MessageBox.Show(T("请先在左侧选择一个逻辑音效库。", "Select a logical library in the navigation panel first."), "PsyReaSFX Desktop"); return; }
+        var dialog = new OpenFolderDialog { Title = T($"向 {library.Name} 添加素材文件夹", $"Add a source folder to {library.Name}"), Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
         if (library.Sources.Any(s => s.Path.Equals(dialog.FolderName, StringComparison.OrdinalIgnoreCase))) return;
         var artwork = _artwork.FindForSource(dialog.FolderName);
@@ -523,9 +525,9 @@ public partial class MainWindow : Window
     private ContextMenu BuildLibraryMenu(LibraryDefinition library)
     {
         var menu = new ContextMenu();
-        var add = new MenuItem { Header = "添加实体文件夹…" }; add.Click += (_, _) => { SelectLibrary(library); AddSource_Click(null, null); };
-        var rename = new MenuItem { Header = "重命名逻辑库…" }; rename.Click += async (_, _) => await RenameLibraryAsync(library);
-        var remove = new MenuItem { Header = "移除逻辑库" }; remove.Click += async (_, _) => await RemoveLibraryAsync(library);
+        var add = new MenuItem { Header = T("添加实体文件夹…", "Add source folder…") }; add.Click += (_, _) => { SelectLibrary(library); AddSource_Click(null, null); };
+        var rename = new MenuItem { Header = T("重命名逻辑库…", "Rename logical library…") }; rename.Click += async (_, _) => await RenameLibraryAsync(library);
+        var remove = new MenuItem { Header = T("移除逻辑库", "Remove logical library") }; remove.Click += async (_, _) => await RemoveLibraryAsync(library);
         menu.Items.Add(add); menu.Items.Add(rename); menu.Items.Add(new Separator()); menu.Items.Add(remove);
         return menu;
     }
@@ -533,11 +535,11 @@ public partial class MainWindow : Window
     private ContextMenu BuildSourceMenu(LibraryDefinition library, LibrarySource source)
     {
         var menu = new ContextMenu();
-        var reveal = new MenuItem { Header = "打开文件夹" }; reveal.Click += (_, _) => OpenFolder(source.Path);
-        var relocate = new MenuItem { Header = "重新定位来源…" }; relocate.Click += async (_, _) => await RelocateSourceAsync(library, source);
-        var chooseArtwork = new MenuItem { Header = "为此路径指定封面…" }; chooseArtwork.Click += (_, _) => ChooseArtworkForSource(library, source);
-        var detectArtwork = new MenuItem { Header = "重新自动查找封面" }; detectArtwork.Click += async (_, _) => await DetectArtworkForSourceAsync(source, true);
-        var remove = new MenuItem { Header = "从逻辑库移除" }; remove.Click += async (_, _) => await RemoveSourceAsync(library, source);
+        var reveal = new MenuItem { Header = T("打开文件夹", "Open folder") }; reveal.Click += (_, _) => OpenFolder(source.Path);
+        var relocate = new MenuItem { Header = T("重新定位来源…", "Relocate source…") }; relocate.Click += async (_, _) => await RelocateSourceAsync(library, source);
+        var chooseArtwork = new MenuItem { Header = T("为此路径指定封面…", "Choose artwork for this source…") }; chooseArtwork.Click += (_, _) => ChooseArtworkForSource(library, source);
+        var detectArtwork = new MenuItem { Header = T("重新自动查找封面", "Detect artwork again") }; detectArtwork.Click += async (_, _) => await DetectArtworkForSourceAsync(source, true);
+        var remove = new MenuItem { Header = T("从逻辑库移除", "Remove from logical library") }; remove.Click += async (_, _) => await RemoveSourceAsync(library, source);
         menu.Items.Add(reveal); menu.Items.Add(relocate); menu.Items.Add(new Separator()); menu.Items.Add(chooseArtwork); menu.Items.Add(detectArtwork);
         menu.Items.Add(new Separator()); menu.Items.Add(remove); return menu;
     }
@@ -550,7 +552,7 @@ public partial class MainWindow : Window
 
     private async Task RenameLibraryAsync(LibraryDefinition library)
     {
-        var name = Interaction.InputBox("输入新的逻辑库名称：", "重命名", library.Name).Trim();
+        var name = Interaction.InputBox(T("输入新的逻辑库名称：", "Enter a new logical library name:"), T("重命名", "Rename"), library.Name).Trim();
         if (name.Length == 0 || _state.Libraries.Any(item => !ReferenceEquals(item, library) && item.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
         var old = library.Name; library.Name = name;
         foreach (var asset in _assets.Where(asset => asset.LibraryId.Equals(library.Id, StringComparison.OrdinalIgnoreCase) || asset.LibraryName.Equals(old, StringComparison.OrdinalIgnoreCase))) asset.LibraryName = name;
@@ -665,7 +667,9 @@ public partial class MainWindow : Window
 
     private async Task RemoveLibraryAsync(LibraryDefinition library)
     {
-        if (MessageBox.Show($"从 PsyReaSFX 移除逻辑库“{library.Name}”？\n\n不会删除硬盘中的源文件。", "移除逻辑库", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show(T($"从 PsyReaSFX 移除逻辑库“{library.Name}”？\n\n不会删除硬盘中的源文件。",
+                $"Remove logical library “{library.Name}” from PsyReaSFX?\n\nSource files on disk will not be deleted."),
+                T("移除逻辑库", "Remove logical library"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         _state.Libraries.Remove(library);
         var removed = _assets.Where(asset => asset.LibraryId.Equals(library.Id, StringComparison.OrdinalIgnoreCase) || asset.LibraryName.Equals(library.Name, StringComparison.OrdinalIgnoreCase)).ToList();
         foreach (var asset in removed) _assets.Remove(asset);
@@ -676,7 +680,9 @@ public partial class MainWindow : Window
 
     private async Task RemoveSourceAsync(LibraryDefinition library, LibrarySource source)
     {
-        if (MessageBox.Show($"从“{library.Name}”移除路径？\n{source.Path}\n\n不会删除硬盘文件。", "移除实体路径", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show(T($"从“{library.Name}”移除路径？\n{source.Path}\n\n不会删除硬盘文件。",
+                $"Remove this source from “{library.Name}”?\n{source.Path}\n\nFiles on disk will not be deleted."),
+                T("移除实体路径", "Remove source"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         library.Sources.Remove(source);
         foreach (var asset in _assets.Where(asset => asset.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)).ToList()) _assets.Remove(asset);
         _state.Index = _assets.ToList(); _sourceFilter = "";
@@ -685,7 +691,7 @@ public partial class MainWindow : Window
 
     private async Task RelocateSourceAsync(LibraryDefinition library, LibrarySource source)
     {
-        var dialog = new OpenFolderDialog { Title = $"重新定位 {source.DisplayName}", Multiselect = false };
+        var dialog = new OpenFolderDialog { Title = T($"重新定位 {source.DisplayName}", $"Relocate {source.DisplayName}"), Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
 
         var newIdentity = _paths.CaptureSource(dialog.FolderName);
@@ -781,7 +787,8 @@ public partial class MainWindow : Window
     private void ManageLibraries_Click(object sender, RoutedEventArgs e)
     {
         foreach (TreeViewItem item in LibraryTree.Items) item.IsExpanded = true;
-        StatusText.Text = "右键逻辑库可添加路径、重命名或移除；右键实体路径可打开或移除。";
+        StatusText.Text = T("右键逻辑库可添加路径、重命名或移除；右键实体路径可打开或移除。",
+            "Right-click a logical library to add, rename or remove it; right-click a source to open or remove it.");
     }
 
     private void LibraryTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
@@ -1013,7 +1020,8 @@ public partial class MainWindow : Window
 
     private void SaveSearch_Click(object sender, RoutedEventArgs e)
     {
-        var name = Interaction.InputBox("保存当前查询与筛选条件：", "保存搜索", SearchBox.Text.Length > 0 ? SearchBox.Text : "Saved search").Trim();
+        var name = Interaction.InputBox(T("保存当前查询与筛选条件：", "Save the current query and filters:"),
+            T("保存搜索", "Save search"), SearchBox.Text.Length > 0 ? SearchBox.Text : "Saved search").Trim();
         if (name.Length == 0) return;
         var saved = _organization.CreateSavedSearch(
             name, BuildSavedQuery(), _browseMode.ToString(), _libraryIdFilter,
@@ -2021,7 +2029,8 @@ public partial class MainWindow : Window
             _metadataBaseline[key] = value;
             box.Text = value;
             box.ToolTip = selectedAssets.Count > 1 && selectedAssets.Any(item => !string.Equals(value, selector(item), StringComparison.Ordinal))
-                ? "所选素材包含多个不同值；输入新内容后将批量替换，保持空白则不修改。"
+                ? T("所选素材包含多个不同值；输入新内容后将批量替换，保持空白则不修改。",
+                    "The selected assets contain mixed values. Enter text to replace them in bulk; leave blank to keep existing values.")
                 : null;
         }
 
@@ -2030,7 +2039,9 @@ public partial class MainWindow : Window
         Set(InspectorCategory, "category", item => item.Category);
         Set(InspectorSubcategory, "subcategory", item => item.Subcategory);
         Set(InspectorCatId, "catid", item => item.CatId);
-        SaveMetadataButton.Content = selectedAssets.Count > 1 ? $"批量保存元数据（{selectedAssets.Count}）" : "保存元数据";
+        SaveMetadataButton.Content = selectedAssets.Count > 1
+            ? T($"批量保存元数据（{selectedAssets.Count}）", $"Save metadata for {selectedAssets.Count} assets")
+            : T("保存元数据", "Save metadata");
     }
 
     private void UpdateWorkflowControls(IReadOnlyList<AudioAsset> selectedAssets)
@@ -2044,7 +2055,7 @@ public partial class MainWindow : Window
             button.BorderBrush = active ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("LineBrush");
         }
         var allMarked = selectedAssets.Count > 0 && selectedAssets.All(item => item.Marked);
-        MarkButton.Content = allMarked ? "取消标记 · M" : "标记素材 · M";
+        MarkButton.Content = allMarked ? T("取消标记 · M", "Unmark assets · M") : T("标记素材 · M", "Mark assets · M");
         MarkButton.Background = allMarked ? (Brush)FindResource("AccentBrush") : (Brush)FindResource("PanelRaisedBrush");
     }
 
@@ -2055,7 +2066,8 @@ public partial class MainWindow : Window
         var selectedAssets = SelectedAssets();
         if (selectedAssets.Length == 0) return;
         foreach (var asset in selectedAssets) asset.WorkflowStatus = status;
-        await SaveAssetDetailsAsync(selectedAssets, $"已更新 {selectedAssets.Length:N0} 个素材的工作流状态");
+        await SaveAssetDetailsAsync(selectedAssets,
+            T($"已更新 {selectedAssets.Length:N0} 个素材的工作流状态", $"Updated workflow status for {selectedAssets.Length:N0} assets"));
         UpdateWorkflowControls(selectedAssets);
         RefreshView();
     }
@@ -2067,8 +2079,8 @@ public partial class MainWindow : Window
         var newValue = !selectedAssets.All(item => item.Marked);
         foreach (var asset in selectedAssets) asset.Marked = newValue;
         await SaveAssetDetailsAsync(selectedAssets, newValue
-            ? $"已标记 {selectedAssets.Length:N0} 个素材"
-            : $"已取消标记 {selectedAssets.Length:N0} 个素材");
+            ? T($"已标记 {selectedAssets.Length:N0} 个素材", $"Marked {selectedAssets.Length:N0} assets")
+            : T($"已取消标记 {selectedAssets.Length:N0} 个素材", $"Unmarked {selectedAssets.Length:N0} assets"));
         UpdateWorkflowControls(selectedAssets);
     }
 
@@ -2085,10 +2097,11 @@ public partial class MainWindow : Window
         changes += ApplyMetadataChange(selectedAssets, "catid", InspectorCatId.Text, (asset, value) => asset.CatId = value);
         if (changes == 0)
         {
-            StatusText.Text = "元数据没有变化";
+            StatusText.Text = T("元数据没有变化", "Metadata was not changed");
             return;
         }
-        await SaveAssetDetailsAsync(selectedAssets, $"已保存 {selectedAssets.Length:N0} 个素材的元数据");
+        await SaveAssetDetailsAsync(selectedAssets,
+            T($"已保存 {selectedAssets.Length:N0} 个素材的元数据", $"Saved metadata for {selectedAssets.Length:N0} assets"));
         LoadMetadataEditor(selectedAssets);
         RefreshView();
     }
@@ -2106,7 +2119,7 @@ public partial class MainWindow : Window
 
     private async void UndoMetadata_Click(object sender, RoutedEventArgs e)
     {
-        if (_metadataUndo.Count == 0) { StatusText.Text = "没有可撤销的元数据修改"; return; }
+        if (_metadataUndo.Count == 0) { StatusText.Text = T("没有可撤销的元数据修改", "There are no metadata changes to undo"); return; }
         var snapshots = _metadataUndo.Pop();
         var byPath = _assets.ToDictionary(asset => asset.FilePath, StringComparer.OrdinalIgnoreCase);
         var changed = new List<AudioAsset>();
@@ -2117,7 +2130,8 @@ public partial class MainWindow : Window
             asset.Subcategory = snapshot.Subcategory; asset.CatId = snapshot.CatId; asset.WorkflowStatus = snapshot.WorkflowStatus; asset.Marked = snapshot.Marked;
             changed.Add(asset);
         }
-        await SaveAssetDetailsAsync(changed, $"已撤销 {changed.Count:N0} 个素材的元数据修改");
+        await SaveAssetDetailsAsync(changed,
+            T($"已撤销 {changed.Count:N0} 个素材的元数据修改", $"Undid metadata changes for {changed.Count:N0} assets"));
         LoadMetadataEditor(SelectedAssets()); RefreshView();
     }
 
@@ -2141,7 +2155,8 @@ public partial class MainWindow : Window
                 if (parts.Length > 1) asset.Subcategory = parts[1];
             }
         }
-        await SaveAssetDetailsAsync(assets, $"已从文件名解析 {assets.Length:N0} 个素材");
+        await SaveAssetDetailsAsync(assets,
+            T($"已从文件名解析 {assets.Length:N0} 个素材", $"Parsed {assets.Length:N0} assets from filenames"));
         LoadMetadataEditor(assets); RebuildFacets(); RefreshView();
     }
 
@@ -2150,18 +2165,20 @@ public partial class MainWindow : Window
         var assets = SelectedAssets();
         if (assets.Length == 0) assets = _view.Cast<AudioAsset>().ToArray();
         if (assets.Length == 0) return;
-        var dialog = new SaveFileDialog { Title = "导出 PsyReaSFX 元数据", Filter = "CSV 文件|*.csv", FileName = "PsyReaSFX_metadata.csv" };
+        var dialog = new SaveFileDialog { Title = T("导出 PsyReaSFX 元数据", "Export PsyReaSFX metadata"),
+            Filter = T("CSV 文件|*.csv", "CSV files|*.csv"), FileName = "PsyReaSFX_metadata.csv" };
         if (dialog.ShowDialog(this) != true) return;
         var lines = new List<string> { "Path,FileName,Description,Keywords,CatID,Category,SubCategory,Library,Status,Marked" };
         lines.AddRange(assets.Select(asset => string.Join(',', new[] { asset.FilePath, asset.FileName, asset.Description, asset.Keywords,
             asset.CatId, asset.Category, asset.Subcategory, asset.LibraryName, asset.WorkflowStatus, asset.Marked ? "true" : "false" }.Select(CsvEscape))));
         File.WriteAllLines(dialog.FileName, lines, new UTF8Encoding(true));
-        StatusText.Text = $"已导出 {assets.Length:N0} 条元数据";
+        StatusText.Text = T($"已导出 {assets.Length:N0} 条元数据", $"Exported {assets.Length:N0} metadata rows");
     }
 
     private async void ImportCsv_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog { Title = "导入 PsyReaSFX 元数据", Filter = "CSV 文件|*.csv", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = T("导入 PsyReaSFX 元数据", "Import PsyReaSFX metadata"),
+            Filter = T("CSV 文件|*.csv", "CSV files|*.csv"), CheckFileExists = true };
         if (dialog.ShowDialog(this) != true) return;
         try
         {
@@ -2182,10 +2199,11 @@ public partial class MainWindow : Window
                 if (Get("Status").Length > 0) asset.WorkflowStatus = Get("Status");
                 if (bool.TryParse(Get("Marked"), out var marked)) asset.Marked = marked;
             }
-            await SaveAssetDetailsAsync(changed, $"已导入 {changed.Count:N0} 条元数据");
+            await SaveAssetDetailsAsync(changed,
+                T($"已导入 {changed.Count:N0} 条元数据", $"Imported {changed.Count:N0} metadata rows"));
             RebuildFacets(); LoadMetadataEditor(SelectedAssets()); RefreshView();
         }
-        catch (Exception exception) { AppDiagnostics.Write("CSV import failed.", exception); MessageBox.Show(exception.Message, "CSV 导入失败"); }
+        catch (Exception exception) { AppDiagnostics.Write("CSV import failed.", exception); MessageBox.Show(exception.Message, T("CSV 导入失败", "CSV import failed")); }
     }
 
     private static string CsvEscape(string? value)
@@ -2230,7 +2248,8 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = "保存素材信息失败；关闭软件前请勿继续修改";
+            StatusText.Text = T("保存素材信息失败；关闭软件前请勿继续修改",
+                "Saving asset information failed; do not make further changes before closing the application");
             AppDiagnostics.Write("Asset details could not be saved.", exception);
         }
     }
@@ -2558,7 +2577,7 @@ public partial class MainWindow : Window
             {
                 _state.Index = _assets.ToList();
                 await _store.SaveAsync(_state);
-                StatusText.Text = "已补全可识别的音效库封面";
+                StatusText.Text = T("已补全可识别的音效库封面", "Detected and applied available library artwork");
             }
         }
         catch (Exception exception) { AppDiagnostics.Write("Background artwork discovery failed.", exception); }
@@ -2586,21 +2605,22 @@ public partial class MainWindow : Window
         var artwork = await _artwork.FindForSourceAsync(source.Path);
         if (string.IsNullOrWhiteSpace(artwork))
         {
-            if (announce) MessageBox.Show("没有在该实体路径或其 Artwork/Cover 子目录中找到合适图片。", "PsyReaSFX Desktop");
+            if (announce) MessageBox.Show(T("没有在该实体路径或其 Artwork/Cover 子目录中找到合适图片。",
+                "No suitable image was found in this source or its Artwork/Cover subfolders."), "PsyReaSFX Desktop");
             return;
         }
         ApplySourceArtwork(source, artwork);
         _state.Index = _assets.ToList();
         await _store.SaveAsync(_state);
-        if (announce) StatusText.Text = $"已应用封面：{Path.GetFileName(artwork)}";
+        if (announce) StatusText.Text = T($"已应用封面：{Path.GetFileName(artwork)}", $"Applied artwork: {Path.GetFileName(artwork)}");
     }
 
     private void ChooseArtworkForSource(LibraryDefinition library, LibrarySource source)
     {
         var dialog = new OpenFileDialog
         {
-            Title = $"为 {library.Name} / {source.DisplayName} 指定封面",
-            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.webp|所有文件|*.*",
+            Title = T($"为 {library.Name} / {source.DisplayName} 指定封面", $"Choose artwork for {library.Name} / {source.DisplayName}"),
+            Filter = T("图片文件|*.png;*.jpg;*.jpeg;*.webp|所有文件|*.*", "Image files|*.png;*.jpg;*.jpeg;*.webp|All files|*.*"),
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != true) return;
