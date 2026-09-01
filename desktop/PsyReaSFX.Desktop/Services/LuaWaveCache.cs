@@ -6,9 +6,12 @@ namespace PsyReaSFX.Desktop.Services;
 
 internal static class LuaWaveCache
 {
+    internal const long MaximumDiskBytes = 8L * 1024 * 1024 * 1024;
     private static readonly Lazy<(string Directory, int MiniPoints)> Settings = new(FindSettings);
     private static readonly object ConfigurationGate = new();
+    private static readonly SemaphoreSlim TrimGate = new(1, 1);
     private static string? _configuredDirectory;
+    private static int _writesSinceTrim;
 
     public static string DefaultCacheDirectory
     {
@@ -36,6 +39,7 @@ internal static class LuaWaveCache
         var resolved = string.IsNullOrWhiteSpace(directory) ? DefaultCacheDirectory : Path.GetFullPath(directory.Trim());
         lock (ConfigurationGate) _configuredDirectory = resolved;
         Directory.CreateDirectory(resolved);
+        _ = Task.Run(() => TrimToSizeAsync(resolved, MaximumDiskBytes));
     }
 
     public static bool ValidateFile(string path) => TryReadFile(path, out _);
@@ -99,10 +103,63 @@ internal static class LuaWaveCache
                     stream.Write(bytes);
                 }
                 File.Move(temporary, target, true);
+                if (Interlocked.Increment(ref _writesSinceTrim) >= 256)
+                {
+                    Interlocked.Exchange(ref _writesSinceTrim, 0);
+                    _ = Task.Run(() => TrimToSizeAsync(directory, MaximumDiskBytes));
+                }
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         catch { }
+    }
+
+    internal static async Task<WaveCacheTrimReport> TrimToSizeAsync(
+        string directory,
+        long maximumBytes,
+        CancellationToken cancellationToken = default)
+    {
+        maximumBytes = Math.Max(0, maximumBytes);
+        if (!Directory.Exists(directory)) return new WaveCacheTrimReport(0, 0, 0, 0);
+        await TrimGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var files = Directory.EnumerateFiles(directory, "*.rwf", SearchOption.TopDirectoryOnly)
+                .Select(path =>
+                {
+                    try
+                    {
+                        var info = new FileInfo(path);
+                        return new WaveCacheFile(path, info.Length, info.LastWriteTimeUtc);
+                    }
+                    catch { return null; }
+                })
+                .Where(file => file is not null)
+                .Cast<WaveCacheFile>()
+                .OrderBy(file => file.LastWriteUtc)
+                .ThenBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var bytesBefore = files.Sum(file => file.Size);
+            var bytesAfter = bytesBefore;
+            var removed = 0;
+            var failed = 0;
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (bytesAfter <= maximumBytes) break;
+                try
+                {
+                    File.Delete(file.Path);
+                    bytesAfter -= file.Size;
+                    removed++;
+                }
+                catch { failed++; }
+            }
+            return new WaveCacheTrimReport(bytesBefore, Math.Max(0, bytesAfter), removed, failed);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return new WaveCacheTrimReport(0, 0, 0, 1); }
+        finally { TrimGate.Release(); }
     }
 
     public static async Task<(int Copied, int Failed)> MigrateAsync(string sourceDirectory, string destinationDirectory,
@@ -224,4 +281,8 @@ internal static class LuaWaveCache
         foreach (var valueByte in Encoding.UTF8.GetBytes(value)) hash = (hash ^ valueByte) * 16777619;
         return hash.ToString("x8", CultureInfo.InvariantCulture);
     }
+
+    private sealed record WaveCacheFile(string Path, long Size, DateTime LastWriteUtc);
 }
+
+internal sealed record WaveCacheTrimReport(long BytesBefore, long BytesAfter, int Removed, int Failed);

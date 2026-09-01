@@ -589,6 +589,34 @@ internal static class DesktopSelfTest
             await File.WriteAllBytesAsync(rwfValidPath, Encoding.ASCII.GetBytes("RWF2 2\n\0\0\xff\xff"));
             var cacheValidationPassed = LuaWaveCache.ValidateFile(rwfValidPath)
                                         && !LuaWaveCache.ValidateFile(Path.Combine(working, "missing.rwf"));
+            var cacheTrimDirectory = Path.Combine(working, "wave-cache-trim");
+            Directory.CreateDirectory(cacheTrimDirectory);
+            for (var index = 0; index < 3; index++)
+            {
+                var path = Path.Combine(cacheTrimDirectory, $"cache-{index}.rwf");
+                await File.WriteAllBytesAsync(path, new byte[128]);
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(index - 10));
+            }
+            var cacheSentinel = Path.Combine(cacheTrimDirectory, "keep.txt");
+            await File.WriteAllTextAsync(cacheSentinel, "not a waveform cache");
+            var cacheTrim = await LuaWaveCache.TrimToSizeAsync(cacheTrimDirectory, 150);
+            var cacheLimitPassed = cacheTrim.BytesBefore == 384
+                                   && cacheTrim.BytesAfter <= 150
+                                   && cacheTrim.Removed == 2
+                                   && cacheTrim.Failed == 0
+                                   && File.Exists(cacheSentinel);
+
+            var loudnessPruneDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-loudness-prune"));
+            await loudnessPruneDatabase.InitializeAsync();
+            var loudnessPruneSnapshot = new CatalogSnapshot();
+            loudnessPruneSnapshot.Assets.Add(new AssetRecord
+            {
+                Path = wavPath, Name = Path.GetFileName(wavPath), Root = working, RootId = "prune-root", Ready = true
+            });
+            await loudnessPruneDatabase.SaveDesktopSnapshotAsync(loudnessPruneSnapshot);
+            await loudnessPruneDatabase.UpsertLoudnessAsync(new LoudnessRecord(wavPath, new FileInfo(wavPath).Length, -20, -18, -19, -2));
+            await loudnessPruneDatabase.SaveDesktopSnapshotAsync(new CatalogSnapshot());
+            var loudnessCachePrunePassed = await loudnessPruneDatabase.LoadLoudnessAsync(wavPath) is null;
             var channelSource = new FiniteChannelProvider(48000, 4,
                 [.1f, .2f, .3f, .4f, .15f, .25f, .35f, .45f]);
             var isolatedChannel = new AuditionChannelSampleProvider(channelSource, [2]);
@@ -657,6 +685,8 @@ internal static class DesktopSelfTest
                            && backupPassed
                            && restoreStagingPassed
                            && cacheValidationPassed
+                           && cacheLimitPassed
+                           && loudnessCachePrunePassed
                            && channelIsolationPassed
                            && channelWaveformStatePassed
                            && customCachePassed
@@ -721,6 +751,9 @@ internal static class DesktopSelfTest
                     backupPassed,
                     restoreStagingPassed,
                     cacheValidationPassed,
+                    cacheLimitPassed,
+                    cacheTrim,
+                    loudnessCachePrunePassed,
                     channelIsolationPassed,
                     channelWaveformStatePassed,
                     customCachePassed

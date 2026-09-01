@@ -224,6 +224,10 @@ public sealed class PsyReaSFXDatabase
             await delete.ExecuteNonQueryAsync(cancellationToken);
             removedAssets++;
         }
+        if (removedAssets > 0)
+            await ExecuteAsync(connection,
+                "DELETE FROM loudness WHERE NOT EXISTS(SELECT 1 FROM assets WHERE assets.path=loudness.asset_path)",
+                cancellationToken);
         var assetsMs = phase.Elapsed.TotalMilliseconds;
         phase.Restart();
 
