@@ -5641,6 +5641,9 @@ function make_placeholder(path, known_root)
     last_used = 0,
     fingerprint = "",
     fingerprint_size = 0,
+    fingerprint_version = "",
+    fingerprint_modified = "",
+    fingerprint_stat_source = "",
   }
 
   ensure_asset_identity(asset)
@@ -5793,6 +5796,9 @@ local DB_FIELDS = {
   "library_id",
   "fingerprint",
   "fingerprint_size",
+  "fingerprint_version",
+  "fingerprint_modified",
+  "fingerprint_stat_source",
   "last_seen",
 }
 
@@ -8167,6 +8173,71 @@ function process_pending_transient_detection()
 end
 
 local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024
+local DUPLICATE_FINGERPRINT_VERSION = "sample-fnv1a-head-mid-tail-v1"
+
+function duplicate_file_stat(path, fallback_size)
+  local result = {
+    size = tonumber(fallback_size) or 0,
+    modified = "",
+    source = "unavailable",
+  }
+  if not reaper or type(reaper.JS_File_Stat) ~= "function" then
+    return result
+  end
+  local values = { pcall(reaper.JS_File_Stat, path) }
+  if not values[1] or tonumber(values[2]) ~= 0 then
+    return result
+  end
+  result.size = tonumber(values[3]) or result.size
+  result.modified = tostring(values[5] or "")
+  result.source = result.modified ~= "" and "js_file_stat" or "unavailable"
+  return result
+end
+
+function clear_asset_fingerprint(asset)
+  asset.fingerprint = ""
+  asset.fingerprint_size = 0
+  asset.fingerprint_version = ""
+  asset.fingerprint_modified = ""
+  asset.fingerprint_stat_source = ""
+end
+
+function fingerprint_metadata_is_compatible(asset)
+  return tostring(asset.fingerprint or "") ~= ""
+    and tostring(asset.fingerprint_version or "")
+      == DUPLICATE_FINGERPRINT_VERSION
+    and (tonumber(asset.fingerprint_size) or 0) > 0
+    and tostring(asset.fingerprint_stat_source or "") == "js_file_stat"
+    and tostring(asset.fingerprint_modified or "") ~= ""
+end
+
+function fingerprint_metadata_is_current(asset, stat)
+  return fingerprint_metadata_is_compatible(asset)
+    and tonumber(asset.fingerprint_size) == tonumber(stat.size)
+    and stat.source == "js_file_stat"
+    and stat.modified ~= ""
+    and tostring(asset.fingerprint_modified or "") == stat.modified
+end
+
+function record_asset_fingerprint(asset, fingerprint, stat)
+  asset.fingerprint = tostring(fingerprint or "")
+  asset.fingerprint_size = tonumber(stat.size) or 0
+  asset.fingerprint_version = DUPLICATE_FINGERPRINT_VERSION
+  asset.fingerprint_modified = tostring(stat.modified or "")
+  asset.fingerprint_stat_source = tostring(stat.source or "unavailable")
+end
+
+function duplicate_file_stats_match(left, right)
+  return left.source == "js_file_stat"
+    and right.source == "js_file_stat"
+    and left.size == right.size
+    and left.modified == right.modified
+end
+
+function duplicate_file_changed_since(before, after)
+  return before.source == "js_file_stat"
+    and not duplicate_file_stats_match(before, after)
+end
 
 function close_duplicate_comparison(comparison)
   if not comparison or comparison.closed then
@@ -8209,6 +8280,8 @@ function begin_duplicate_comparison(left_path, right_path)
     right = right,
     left_path = left_path,
     right_path = right_path,
+    left_stat = duplicate_file_stat(left_path, left_size),
+    right_stat = duplicate_file_stat(right_path, right_size),
     bytes_compared = 0,
     total_bytes = math.max(left_size, right_size),
     closed = false,
@@ -8243,7 +8316,15 @@ function step_duplicate_comparison(comparison, chunk_size)
   elseif left_chunk ~= right_chunk then
     comparison.result = "different"
   elseif not left_chunk then
-    comparison.result = "equal"
+    local left_changed = duplicate_file_changed_since(
+      comparison.left_stat,
+      duplicate_file_stat(comparison.left_path, comparison.bytes_compared)
+    )
+    local right_changed = duplicate_file_changed_since(
+      comparison.right_stat,
+      duplicate_file_stat(comparison.right_path, comparison.bytes_compared)
+    )
+    comparison.result = (left_changed or right_changed) and "failed" or "equal"
   else
     comparison.bytes_compared = comparison.bytes_compared + #left_chunk
     return "pending"
@@ -8319,6 +8400,14 @@ function load_database()
       asset.last_used = tonumber(asset.last_used) or 0
       asset.fingerprint = tostring(asset.fingerprint or "")
       asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
+      asset.fingerprint_version = tostring(asset.fingerprint_version or "")
+      asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
+      asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+      if asset.fingerprint ~= ""
+        and not fingerprint_metadata_is_compatible(asset) then
+        clear_asset_fingerprint(asset)
+        state.db_dirty = true
+      end
       asset.last_seen = tonumber(asset.last_seen) or 0
       ensure_asset_identity(asset)
 
@@ -15878,11 +15967,9 @@ function migrate_asset_path(asset, new_path, record)
   asset._search_blob = nil
   asset.artwork_checked = false
 
-  local current_size = asset.missing and 0 or file_size(asset.path)
-  if current_size ~= (tonumber(asset.fingerprint_size) or 0) then
-    asset.fingerprint = ""
-    asset.fingerprint_size = 0
-  end
+  -- A relink changes the physical identity even when the target happens to
+  -- have the same byte length. Never carry a sampled result across paths.
+  clear_asset_fingerprint(asset)
 
   state.by_path[new_key] = asset
   return true
@@ -16242,8 +16329,7 @@ function start_duplicate_scan()
     if size > 0 then
       if size ~= (tonumber(asset.size) or 0) then
         asset.size = size
-        asset.fingerprint = ""
-        asset.fingerprint_size = 0
+        clear_asset_fingerprint(asset)
         state.db_dirty = true
       end
       local group = size_groups[size]
@@ -16524,19 +16610,21 @@ function process_duplicate_scan()
   session.index = session.index + 1
   local size = file_size(asset.path)
   if size <= 0 then
-    asset.fingerprint = ""
-    asset.fingerprint_size = 0
+    clear_asset_fingerprint(asset)
     session.failed = session.failed + 1
     if session.index > session.total then finish_duplicate_scan(session) end
     return
   end
   -- A size-only cache cannot detect an external replacement with identical
   -- length. An explicit audit therefore resamples every candidate.
+  local before = duplicate_file_stat(asset.path, size)
   local fingerprint = sampled_file_fingerprint(asset.path, size)
-  if fingerprint then
-    asset.fingerprint = fingerprint
-    asset.fingerprint_size = size
+  local after = duplicate_file_stat(asset.path, size)
+  local changed_during_read = duplicate_file_changed_since(before, after)
+  if fingerprint and not changed_during_read then
+    record_asset_fingerprint(asset, fingerprint, after)
   else
+    clear_asset_fingerprint(asset)
     session.failed = session.failed + 1
   end
 

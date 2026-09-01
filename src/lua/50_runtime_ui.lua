@@ -64,6 +64,14 @@ function load_database()
       asset.last_used = tonumber(asset.last_used) or 0
       asset.fingerprint = tostring(asset.fingerprint or "")
       asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
+      asset.fingerprint_version = tostring(asset.fingerprint_version or "")
+      asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
+      asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+      if asset.fingerprint ~= ""
+        and not fingerprint_metadata_is_compatible(asset) then
+        clear_asset_fingerprint(asset)
+        state.db_dirty = true
+      end
       asset.last_seen = tonumber(asset.last_seen) or 0
       ensure_asset_identity(asset)
 
@@ -7623,11 +7631,9 @@ function migrate_asset_path(asset, new_path, record)
   asset._search_blob = nil
   asset.artwork_checked = false
 
-  local current_size = asset.missing and 0 or file_size(asset.path)
-  if current_size ~= (tonumber(asset.fingerprint_size) or 0) then
-    asset.fingerprint = ""
-    asset.fingerprint_size = 0
-  end
+  -- A relink changes the physical identity even when the target happens to
+  -- have the same byte length. Never carry a sampled result across paths.
+  clear_asset_fingerprint(asset)
 
   state.by_path[new_key] = asset
   return true
@@ -7987,8 +7993,7 @@ function start_duplicate_scan()
     if size > 0 then
       if size ~= (tonumber(asset.size) or 0) then
         asset.size = size
-        asset.fingerprint = ""
-        asset.fingerprint_size = 0
+        clear_asset_fingerprint(asset)
         state.db_dirty = true
       end
       local group = size_groups[size]
@@ -8269,19 +8274,21 @@ function process_duplicate_scan()
   session.index = session.index + 1
   local size = file_size(asset.path)
   if size <= 0 then
-    asset.fingerprint = ""
-    asset.fingerprint_size = 0
+    clear_asset_fingerprint(asset)
     session.failed = session.failed + 1
     if session.index > session.total then finish_duplicate_scan(session) end
     return
   end
   -- A size-only cache cannot detect an external replacement with identical
   -- length. An explicit audit therefore resamples every candidate.
+  local before = duplicate_file_stat(asset.path, size)
   local fingerprint = sampled_file_fingerprint(asset.path, size)
-  if fingerprint then
-    asset.fingerprint = fingerprint
-    asset.fingerprint_size = size
+  local after = duplicate_file_stat(asset.path, size)
+  local changed_during_read = duplicate_file_changed_since(before, after)
+  if fingerprint and not changed_during_read then
+    record_asset_fingerprint(asset, fingerprint, after)
   else
+    clear_asset_fingerprint(asset)
     session.failed = session.failed + 1
   end
 

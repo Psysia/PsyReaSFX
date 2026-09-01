@@ -16,9 +16,14 @@
 
 - Groups candidates by file size, then samples only the beginning, middle and
   end of equal-size files instead of hashing every complete file in the library.
-- Persists fingerprints in the existing index and invalidates them when file
-  size changes.
-- Presents grouped duplicate results without deleting or changing media.
+- Extends the existing index record with the fingerprint algorithm version,
+  file size, modification time and metadata source. Explicit audits always
+  resample, and algorithm upgrades invalidate older records automatically.
+- Uses optional js_ReaScriptAPI modification times when available. Without the
+  extension, audits still work but persisted fingerprints are not reused across
+  sessions.
+- Can perform a frame-budgeted byte-for-byte confirmation on demand, separating
+  candidates, confirmed matches and read failures without deleting source media.
 
 ### REAPER project association
 

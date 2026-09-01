@@ -115,6 +115,9 @@ function make_placeholder(path, known_root)
     last_used = 0,
     fingerprint = "",
     fingerprint_size = 0,
+    fingerprint_version = "",
+    fingerprint_modified = "",
+    fingerprint_stat_source = "",
   }
 
   ensure_asset_identity(asset)
@@ -267,6 +270,9 @@ local DB_FIELDS = {
   "library_id",
   "fingerprint",
   "fingerprint_size",
+  "fingerprint_version",
+  "fingerprint_modified",
+  "fingerprint_stat_source",
   "last_seen",
 }
 
