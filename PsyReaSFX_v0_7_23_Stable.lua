@@ -744,6 +744,12 @@ local state = {
   duplicate_group_count = 0,
   duplicate_asset_count = 0,
   duplicate_lookup = {},
+  duplicate_confirmation = nil,
+  duplicate_confirmed_groups = {},
+  duplicate_confirmed_lookup = {},
+  duplicate_confirmed_asset_count = 0,
+  duplicate_confirmation_failures = {},
+  duplicate_confirmation_failure_count = 0,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
@@ -1896,6 +1902,8 @@ I18N_EN["仅对大小相同的文件读取头部、中部和尾部采样块；�
   "Equal-size files are sampled at the beginning, middle and end. Results are not yet confirmed against complete contents; source files are never changed or deleted."
 I18N_EN["检查重复候选"] = "Check candidates"
 I18N_EN["查看重复候选"] = "Show candidates"
+I18N_EN["完整确认候选"] = "Confirm full contents"
+I18N_EN["正在逐字节确认重复候选"] = "Confirming candidate contents byte by byte"
 I18N_EN["当前 REAPER 工程"] = "Current REAPER project"
 I18N_EN["记录插入和 Transfer 后插入的素材，并可自动收集到绑定的项目素材箱。"] =
   "Tracks inserted assets, including Transfer inserts, and can collect them in a bound project bin."
@@ -1951,6 +1959,26 @@ I18N_PATTERNS_EN = {
   {
     "^候选组 (%d+) · 涉及素材 (%d+)$",
     "Candidate groups %1 · assets %2",
+  },
+  {
+    "^已确认相同  (%d+)$",
+    "Confirmed identical  %1",
+  },
+  {
+    "^确认读取失败  (%d+)$",
+    "Confirmation read failures  %1",
+  },
+  {
+    "^完整确认第 (%d+) / (%d+) 组 · 当前组已处理 (%d+)$",
+    "Full confirmation group %1 / %2 · processed %3 in current group",
+  },
+  {
+    "^已确认相同 (%d+) · 读取失败 (%d+)$",
+    "Confirmed identical %1 · read failures %2",
+  },
+  {
+    "^完整确认完成：(%d+) 组，(%d+) 个素材，读取失败 (%d+)$",
+    "Full confirmation complete: %1 groups, %2 assets, %3 read failures",
   },
   {
     "^来源已重定位：迁移 (%d+) 条路径，待重新扫描 (%d+) 条$",
@@ -8138,6 +8166,93 @@ function process_pending_transient_detection()
   end
 end
 
+local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024
+
+function close_duplicate_comparison(comparison)
+  if not comparison or comparison.closed then
+    return
+  end
+  comparison.closed = true
+  if comparison.left then
+    comparison.left:close()
+    comparison.left = nil
+  end
+  if comparison.right then
+    comparison.right:close()
+    comparison.right = nil
+  end
+end
+
+function begin_duplicate_comparison(left_path, right_path)
+  local left = io.open(left_path, "rb")
+  if not left then
+    return nil, "left_open"
+  end
+  local right = io.open(right_path, "rb")
+  if not right then
+    left:close()
+    return nil, "right_open"
+  end
+
+  local left_size = left:seek("end")
+  local right_size = right:seek("end")
+  if not left_size or not right_size then
+    left:close()
+    right:close()
+    return nil, "seek"
+  end
+  left:seek("set", 0)
+  right:seek("set", 0)
+
+  local comparison = {
+    left = left,
+    right = right,
+    left_path = left_path,
+    right_path = right_path,
+    bytes_compared = 0,
+    total_bytes = math.max(left_size, right_size),
+    closed = false,
+  }
+  if left_size ~= right_size then
+    close_duplicate_comparison(comparison)
+    comparison.result = "different"
+  end
+  return comparison
+end
+
+function step_duplicate_comparison(comparison, chunk_size)
+  if not comparison then
+    return "failed"
+  end
+  if comparison.result then
+    return comparison.result
+  end
+  if comparison.closed then
+    return "failed"
+  end
+
+  chunk_size = math.max(
+    4096,
+    math.floor(tonumber(chunk_size) or DUPLICATE_COMPARE_CHUNK_SIZE)
+  )
+  local left_chunk, left_error = comparison.left:read(chunk_size)
+  local right_chunk, right_error = comparison.right:read(chunk_size)
+  if left_error or right_error then
+    comparison.error = left_error or right_error or "read"
+    comparison.result = "failed"
+  elseif left_chunk ~= right_chunk then
+    comparison.result = "different"
+  elseif not left_chunk then
+    comparison.result = "equal"
+  else
+    comparison.bytes_compared = comparison.bytes_compared + #left_chunk
+    return "pending"
+  end
+
+  close_duplicate_comparison(comparison)
+  return comparison.result
+end
+
 function load_database()
   local file = io.open(DATABASE_FILE, "rb")
 
@@ -11089,6 +11204,12 @@ function asset_in_view(asset)
   elseif state.view == "duplicates"
     and not state.duplicate_lookup[path_key(asset.path)] then
     return false
+  elseif state.view == "duplicates_confirmed"
+    and not state.duplicate_confirmed_lookup[path_key(asset.path)] then
+    return false
+  elseif state.view == "duplicate_failures"
+    and not state.duplicate_confirmation_failures[path_key(asset.path)] then
+    return false
   elseif state.view == "project_used" then
     local bucket = project_usage_bucket(
       state.current_project_path,
@@ -11156,6 +11277,9 @@ function rebuild_results()
       if state.view == "duplicates" then
         av = state.duplicate_lookup[path_key(a.path)] or ""
         bv = state.duplicate_lookup[path_key(b.path)] or ""
+      elseif state.view == "duplicates_confirmed" then
+        av = state.duplicate_confirmed_lookup[path_key(a.path)] or ""
+        bv = state.duplicate_confirmed_lookup[path_key(b.path)] or ""
       elseif state.sort_mode == "duration" then
         av = tonumber(a.duration) or 0
         bv = tonumber(b.duration) or 0
@@ -15873,7 +15997,8 @@ function relink_root(record, supplied_path)
   end
 
   if state.scan or state.import_session or state.precache_session
-    or state.duplicate_scan or state.missing_audit then
+    or state.duplicate_scan or state.duplicate_confirmation
+    or state.missing_audit then
     set_status("请等待当前后台任务完成后再重新定位来源", true)
     return false
   end
@@ -15995,7 +16120,7 @@ function start_missing_audit()
   end
 
   if state.scan or state.import_session or state.precache_session
-    or state.duplicate_scan then
+    or state.duplicate_scan or state.duplicate_confirmation then
     set_status("请等待当前后台任务完成", true)
     return
   end
@@ -16098,7 +16223,7 @@ function start_duplicate_scan()
   end
 
   if state.scan or state.import_session or state.precache_session
-    or state.missing_audit then
+    or state.missing_audit or state.duplicate_confirmation then
     set_status("请等待当前后台任务完成", true)
     return
   end
@@ -16143,6 +16268,11 @@ function start_duplicate_scan()
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
   state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
   state.duplicate_scan = {
     candidates = candidates,
     index = 1,
@@ -16151,6 +16281,181 @@ function start_duplicate_scan()
     job_token = job_token,
   }
   set_status(string.format("正在检查重复候选：%d 个同尺寸文件", #candidates))
+end
+
+function close_duplicate_confirmation_session(session)
+  if session and session.comparison then
+    close_duplicate_comparison(session.comparison)
+    session.comparison = nil
+  end
+end
+
+function finish_duplicate_confirmation(session)
+  close_duplicate_confirmation_session(session)
+  state.duplicate_confirmed_groups = session.confirmed_groups
+  state.duplicate_confirmed_lookup = session.confirmed_lookup
+  state.duplicate_confirmed_asset_count = session.confirmed_assets
+  state.duplicate_confirmation_failures = session.failures
+  state.duplicate_confirmation_failure_count = session.failure_count
+  state.duplicate_confirmation = nil
+  Jobs.finish(session.job_token, true)
+  state.results_dirty = true
+  set_status(string.format(
+    "完整确认完成：%d 组，%d 个素材，读取失败 %d",
+    #session.confirmed_groups,
+    session.confirmed_assets,
+    session.failure_count
+  ), session.failure_count > 0)
+end
+
+function start_duplicate_confirmation()
+  if state.duplicate_confirmation or #state.duplicate_groups == 0 then
+    return
+  end
+  local job_token = Jobs.begin(
+    "duplicate_confirmation",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
+  end
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
+  state.duplicate_confirmation = {
+    groups = state.duplicate_groups,
+    group_index = 1,
+    asset_index = 1,
+    representative_index = 1,
+    partitions = {},
+    comparison = nil,
+    confirmed_groups = {},
+    confirmed_lookup = {},
+    confirmed_assets = 0,
+    failures = {},
+    failure_count = 0,
+    comparisons_finished = 0,
+    total_assets = state.duplicate_asset_count,
+    job_token = job_token,
+  }
+  set_status("正在逐字节确认重复候选")
+end
+
+function mark_duplicate_confirmation_failure(session, asset)
+  local key = path_key(asset.path)
+  if not session.failures[key] then
+    session.failures[key] = asset
+    session.failure_count = session.failure_count + 1
+  end
+end
+
+function finalize_duplicate_confirmation_group(session, candidate_group)
+  for partition_index, partition in ipairs(session.partitions) do
+    if #partition.assets > 1 then
+      local identity = tostring(candidate_group.fingerprint)
+        .. ":" .. tostring(partition_index)
+      local confirmed = {
+        fingerprint = identity,
+        assets = partition.assets,
+        count = #partition.assets,
+        confirmed = true,
+      }
+      session.confirmed_groups[#session.confirmed_groups + 1] = confirmed
+      session.confirmed_assets = session.confirmed_assets + #partition.assets
+      for _, asset in ipairs(partition.assets) do
+        session.confirmed_lookup[path_key(asset.path)] = identity
+      end
+    end
+  end
+end
+
+function advance_duplicate_confirmation_asset(session)
+  session.asset_index = session.asset_index + 1
+  session.representative_index = 1
+  session.comparison = nil
+end
+
+function process_duplicate_confirmation()
+  local session = state.duplicate_confirmation
+  if not session or not can_run_heavy_job() then
+    return
+  end
+  if session.job_token.cancel_requested then
+    close_duplicate_confirmation_session(session)
+    state.duplicate_confirmation = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    return
+  end
+
+  local candidate_group = session.groups[session.group_index]
+  if not candidate_group then
+    finish_duplicate_confirmation(session)
+    return
+  end
+  local asset = candidate_group.assets[session.asset_index]
+  if not asset then
+    finalize_duplicate_confirmation_group(session, candidate_group)
+    session.group_index = session.group_index + 1
+    session.asset_index = 1
+    session.representative_index = 1
+    session.partitions = {}
+    return
+  end
+  if #session.partitions == 0 then
+    session.partitions[1] = { representative = asset, assets = { asset } }
+    advance_duplicate_confirmation_asset(session)
+    return
+  end
+
+  local partition = session.partitions[session.representative_index]
+  if not partition then
+    session.partitions[#session.partitions + 1] = {
+      representative = asset,
+      assets = { asset },
+    }
+    advance_duplicate_confirmation_asset(session)
+    return
+  end
+  if not session.comparison then
+    local comparison, open_error = begin_duplicate_comparison(
+      partition.representative.path,
+      asset.path
+    )
+    if not comparison then
+      if open_error == "left_open" then
+        for _, previous in ipairs(partition.assets) do
+          mark_duplicate_confirmation_failure(session, previous)
+        end
+        table.remove(session.partitions, session.representative_index)
+      else
+        mark_duplicate_confirmation_failure(session, asset)
+        advance_duplicate_confirmation_asset(session)
+      end
+      return
+    end
+    session.comparison = comparison
+  end
+
+  local result = step_duplicate_comparison(session.comparison)
+  if result == "pending" then
+    return
+  end
+  session.comparisons_finished = session.comparisons_finished + 1
+  session.comparison = nil
+  if result == "equal" then
+    partition.assets[#partition.assets + 1] = asset
+    advance_duplicate_confirmation_asset(session)
+  elseif result == "different" then
+    session.representative_index = session.representative_index + 1
+  else
+    mark_duplicate_confirmation_failure(session, asset)
+    mark_duplicate_confirmation_failure(session, partition.representative)
+    advance_duplicate_confirmation_asset(session)
+  end
 end
 
 function finish_duplicate_scan(session)
@@ -16225,17 +16530,14 @@ function process_duplicate_scan()
     if session.index > session.total then finish_duplicate_scan(session) end
     return
   end
-  local cached = tostring(asset.fingerprint or "") ~= ""
-    and tonumber(asset.fingerprint_size) == size
-
-  if not cached then
-    local fingerprint = sampled_file_fingerprint(asset.path, size)
-    if fingerprint then
-      asset.fingerprint = fingerprint
-      asset.fingerprint_size = size
-    else
-      session.failed = session.failed + 1
-    end
+  -- A size-only cache cannot detect an external replacement with identical
+  -- length. An explicit audit therefore resamples every candidate.
+  local fingerprint = sampled_file_fingerprint(asset.path, size)
+  if fingerprint then
+    asset.fingerprint = fingerprint
+    asset.fingerprint_size = size
+  else
+    session.failed = session.failed + 1
   end
 
   if session.index > session.total then
@@ -16484,12 +16786,14 @@ function cancel_catalog_jobs(reason)
     "cache_verify_session",
     "missing_audit",
     "duplicate_scan",
+    "duplicate_confirmation",
   }
 
   for _, field in ipairs(maintenance_fields) do
     local session = state[field]
 
     if session and session.job_token then
+      close_duplicate_confirmation_session(session)
       Jobs.cancel(session.job_token)
       Jobs.finish(session.job_token, true, reason)
     end
@@ -16535,6 +16839,11 @@ function reset_database_keep_roots()
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
   state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
   state.history_dirty = false
   state.session_played = {}
   state.last_session_played = {}
@@ -16622,6 +16931,11 @@ function factory_reset()
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
   state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
 
   state.wave_cache_dir =
     DEFAULT_WAVE_CACHE_DIR
@@ -19700,6 +20014,36 @@ function draw_sidebar()
         and not state.active_collection_id,
       function()
         state.view = "duplicates"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.config_dirty = true
+      end
+    )
+  end
+
+  if state.duplicate_confirmed_asset_count > 0 then
+    sidebar_item(
+      string.format("已确认相同  %d", state.duplicate_confirmed_asset_count),
+      state.view == "duplicates_confirmed",
+      function()
+        state.view = "duplicates_confirmed"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.config_dirty = true
+      end
+    )
+  end
+
+  if state.duplicate_confirmation_failure_count > 0 then
+    sidebar_item(
+      string.format("确认读取失败  %d", state.duplicate_confirmation_failure_count),
+      state.view == "duplicate_failures",
+      function()
+        state.view = "duplicate_failures"
         state.active_collection_id = nil
         state.root_filter = nil
         state.library_filter_id = nil
@@ -27365,6 +27709,18 @@ function draw_settings_maintenance()
       )
     )
     ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
+  elseif state.duplicate_confirmation then
+    local session = state.duplicate_confirmation
+    ImGui.Text(ctx, string.format(
+      "完整确认第 %d / %d 组 · 当前组已处理 %d",
+      session.group_index,
+      #session.groups,
+      math.max(0, session.asset_index - 1)
+    ))
+    local fraction = #session.groups > 0
+      and math.min(1, (session.group_index - 1) / #session.groups)
+      or 1
+    ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
   else
     ImGui.TextDisabled(
       ctx,
@@ -27387,7 +27743,16 @@ function draw_settings_maintenance()
         state.results_dirty = true
         state.settings_close_requested = true
       end
+      ImGui.SameLine(ctx)
+      if dark_button("完整确认候选", 150) then
+        start_duplicate_confirmation()
+      end
     end
+    ImGui.TextDisabled(ctx, string.format(
+      "已确认相同 %d · 读取失败 %d",
+      state.duplicate_confirmed_asset_count,
+      state.duplicate_confirmation_failure_count
+    ))
   end
 
   ImGui.Separator(ctx)
@@ -28594,10 +28959,12 @@ function cleanup()
     state.cache_verify_session,
     state.missing_audit,
     state.duplicate_scan,
+    state.duplicate_confirmation,
   }
 
   for _, session in pairs(maintenance_sessions) do
     if session and session.job_token then
+      close_duplicate_confirmation_session(session)
       Jobs.cancel(session.job_token)
       Jobs.finish(
         session.job_token,
@@ -28772,6 +29139,7 @@ function loop()
     process_wave_cache_verification()
     process_missing_audit()
     process_duplicate_scan()
+    process_duplicate_confirmation()
     process_wave_precache()
     process_wave_queue()
     process_pending_transient_detection()

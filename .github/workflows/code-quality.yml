@@ -78,6 +78,13 @@ jobs:
             $lock.Dispose()
           }
 
+      - name: Run Lua full-file duplicate comparison
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Lua-duplicate-compare'
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          lua tools/lua_duplicate_compare_selftest.lua $fixture (Resolve-Path 'src/lua/45_duplicate_confirmation.lua')
+
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
 

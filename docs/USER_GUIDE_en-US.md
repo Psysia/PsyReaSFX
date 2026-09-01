@@ -581,8 +581,11 @@ moving media, then incrementally scans the new location.
 
 `Check candidates` first groups by file size, then samples equal-size files.
 The Duplicate candidates view keeps matching groups together. These are
-high-confidence candidates, not proof that the complete file contents match. PsyReaSFX never
-deletes duplicates automatically; review licensing, naming and path intent
+high-confidence candidates, not proof that the complete file contents match.
+`Confirm full contents` performs a frame-budgeted byte-for-byte comparison and
+separates confirmed matches from read failures. Every explicit candidate check
+resamples files instead of trusting an old size-only result. PsyReaSFX never
+deletes source files automatically; review licensing, naming and path intent
 before changing source media.
 
 ### Current-project usage

@@ -744,6 +744,12 @@ local state = {
   duplicate_group_count = 0,
   duplicate_asset_count = 0,
   duplicate_lookup = {},
+  duplicate_confirmation = nil,
+  duplicate_confirmed_groups = {},
+  duplicate_confirmed_lookup = {},
+  duplicate_confirmed_asset_count = 0,
+  duplicate_confirmation_failures = {},
+  duplicate_confirmation_failure_count = 0,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
@@ -1896,6 +1902,8 @@ I18N_EN["仅对大小相同的文件读取头部、中部和尾部采样块；�
   "Equal-size files are sampled at the beginning, middle and end. Results are not yet confirmed against complete contents; source files are never changed or deleted."
 I18N_EN["检查重复候选"] = "Check candidates"
 I18N_EN["查看重复候选"] = "Show candidates"
+I18N_EN["完整确认候选"] = "Confirm full contents"
+I18N_EN["正在逐字节确认重复候选"] = "Confirming candidate contents byte by byte"
 I18N_EN["当前 REAPER 工程"] = "Current REAPER project"
 I18N_EN["记录插入和 Transfer 后插入的素材，并可自动收集到绑定的项目素材箱。"] =
   "Tracks inserted assets, including Transfer inserts, and can collect them in a bound project bin."
@@ -1951,6 +1959,26 @@ I18N_PATTERNS_EN = {
   {
     "^候选组 (%d+) · 涉及素材 (%d+)$",
     "Candidate groups %1 · assets %2",
+  },
+  {
+    "^已确认相同  (%d+)$",
+    "Confirmed identical  %1",
+  },
+  {
+    "^确认读取失败  (%d+)$",
+    "Confirmation read failures  %1",
+  },
+  {
+    "^完整确认第 (%d+) / (%d+) 组 · 当前组已处理 (%d+)$",
+    "Full confirmation group %1 / %2 · processed %3 in current group",
+  },
+  {
+    "^已确认相同 (%d+) · 读取失败 (%d+)$",
+    "Confirmed identical %1 · read failures %2",
+  },
+  {
+    "^完整确认完成：(%d+) 组，(%d+) 个素材，读取失败 (%d+)$",
+    "Full confirmation complete: %1 groups, %2 assets, %3 read failures",
   },
   {
     "^来源已重定位：迁移 (%d+) 条路径，待重新扫描 (%d+) 条$",
