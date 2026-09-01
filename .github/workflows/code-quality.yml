@@ -27,6 +27,20 @@ jobs:
         with:
           node-version: 22
 
+      - name: Set up pinned Lua test runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/DevelopersCommunity/cmake-lua/releases/download/v5.4.6/Lua-5.4.6-win64.msi'
+          $msi = Join-Path $env:RUNNER_TEMP 'Lua-5.4.6-win64.msi'
+          $target = Join-Path $env:RUNNER_TEMP 'Lua-5.4.6'
+          Invoke-WebRequest -Uri $url -OutFile $msi
+          $actual = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = '1087abb5aca89cad29283a17745ac2819aa46ca076084e8b3416db87d2694ed8'
+          if ($actual -cne $expected) { throw "Lua runtime hash mismatch: $actual" }
+          $process = Start-Process msiexec.exe -ArgumentList '/a', $msi, '/qn', "TARGETDIR=$target" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Lua runtime extraction failed: $($process.ExitCode)" }
+          (Join-Path $target 'Lua/bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Parse Lua 5.3 source
         shell: pwsh
         run: |
@@ -44,6 +58,14 @@ jobs:
             throw 'Tracked ReaPack script is stale. Rebuild it from src/lua before committing.'
           }
           node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync(process.argv[1],'utf8'),{luaVersion:'5.3'}); console.log('Generated Lua parse OK');" $built
+
+      - name: Run Lua persistence fault injection
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Lua-persistence'
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $fixture 'backup') | Out-Null
+          lua tools/lua_persistence_selftest.lua $fixture (Resolve-Path 'src/lua/20_jobs_storage.lua')
 
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release

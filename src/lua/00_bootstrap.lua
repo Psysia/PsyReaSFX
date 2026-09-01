@@ -299,6 +299,9 @@ local MIGRATION_LOG_FILE =
 local BACKUP_DIR =
   DATA_DIR .. SEP .. "backups"
 
+local RESTORE_TRANSACTION_COMMIT_FILE =
+  DATA_DIR .. SEP .. "restore_transaction.commit"
+
 local CACHE_QUARANTINE_DIR =
   DATA_DIR .. SEP .. "cache_quarantine"
 
@@ -1390,8 +1393,11 @@ I18N_EN = {
   ["没有可重试的失败任务"] = "There are no failed tasks that can be retried",
   ["无法创建数据备份目录"] = "Unable to create the data-backup folder",
   ["没有可备份的数据文件"] = "There are no data files to back up",
+  ["无法完整创建数据备份"] = "Unable to create a complete data backup",
   ["没有可恢复的数据备份"] = "There is no data backup to restore",
   ["备份中没有可恢复的数据"] = "The backup contains no restorable data",
+  ["备份恢复失败，原数据已回滚"] = "Backup restore failed; the original data was rolled back",
+  ["备份恢复未能完整提交，请重启 PsyReaSFX"] = "Backup restore could not be committed completely; restart PsyReaSFX",
   ["拖拽到 REAPER 编排区"] = "Drag to the REAPER arrange view",
   ["播放或停止"] = "Play or stop",
   ["收藏或取消收藏"] = "Toggle favorite",
@@ -1910,6 +1916,10 @@ I18N_EN["请先保存当前 REAPER 工程，再绑定项目素材箱"] =
 I18N_EN["无法保存工程使用记录"] = "Unable to save project usage history"
 
 I18N_PATTERNS_EN = {
+  {
+    "^未能回滚中断的备份恢复：(.+)$",
+    "Could not roll back an interrupted backup restore: %1",
+  },
   {
     "^缺失素材  (%d+)$",
     "Missing assets  %1",

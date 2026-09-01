@@ -532,7 +532,12 @@ Back up the entire data directory. Starting with 0.8, `Settings →
 Maintenance` can create one automatic snapshot per day, create a manual backup,
 set retention, or restore the newest backup. Waveform caches and source audio
 are deliberately excluded. PsyReaSFX closes after restoration; run the script
-again to load the restored state.
+again to load the restored state. All backup files are staged before a grouped
+commit. If any file fails, already committed files are rolled back so settings,
+the catalog, and collections cannot be left at mixed generations. If REAPER
+stops during restoration, startup checks the transaction marker: a fully
+committed restore keeps the new generation and finishes cleanup; otherwise all
+touched files return to their retained rollback generation.
 
 The same page can move the waveform cache or switch to an empty destination.
 `Verify waveform cache` checks cached files in bounded batches and moves damaged

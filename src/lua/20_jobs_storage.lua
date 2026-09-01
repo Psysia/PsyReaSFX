@@ -228,43 +228,38 @@ function load_or_migrate_project_url()
   end
 end
 
-function copy_file(source_path, target_path)
+function copy_file_streaming(
+  source_path,
+  target_path
+)
+  local temporary_path =
+    target_path .. ".psyreasfx_tmp"
+  os.remove(temporary_path)
+
+  if not stream_file_to_temporary(
+    source_path,
+    temporary_path
+  ) then
+    return false
+  end
+
+  return commit_atomic_temporary(
+    target_path,
+    temporary_path
+  )
+end
+
+function stream_file_to_temporary(
+  source_path,
+  temporary_path
+)
   local input = io.open(source_path, "rb")
 
   if not input then
     return false
   end
 
-  local content = input:read("*a")
-  input:close()
-
-  local output = io.open(target_path, "wb")
-
-  if not output then
-    return false
-  end
-
-  output:write(content or "")
-  output:close()
-  return true
-end
-
-function copy_file_streaming(
-  source_path,
-  target_path
-)
-  local input =
-    io.open(source_path, "rb")
-
-  if not input then
-    return false
-  end
-
-  local temporary_path =
-    target_path .. ".psyreasfx_tmp"
-
-  local output =
-    io.open(temporary_path, "wb")
+  local output = io.open(temporary_path, "wb")
 
   if not output then
     input:close()
@@ -274,37 +269,78 @@ function copy_file_streaming(
   local ok = true
 
   while true do
-    local chunk = input:read(1024 * 1024)
+    local chunk, read_error = input:read(1024 * 1024)
 
     if not chunk then
+      if read_error then
+        ok = false
+      end
       break
     end
 
-    if not output:write(chunk) then
+    if state.persistence_fault_injection == "write"
+      or not output:write(chunk) then
       ok = false
       break
     end
   end
 
   input:close()
-  output:close()
+  local flushed = output:flush()
+  local closed = output:close()
 
-  if not ok then
+  if not ok or not flushed or not closed then
     os.remove(temporary_path)
     return false
   end
 
-  os.remove(target_path)
-
-  if not os.rename(
-    temporary_path,
-    target_path
-  ) then
+  if state.persistence_fault_injection == "after_close" then
     os.remove(temporary_path)
     return false
   end
 
   return true
+end
+
+function commit_atomic_temporary(
+  target_path,
+  temporary_path,
+  backup_path,
+  keep_backup
+)
+  backup_path = backup_path or (target_path .. ".bak")
+  local had_original = reaper.file_exists(target_path)
+  os.remove(backup_path)
+
+  if had_original
+    and not os.rename(target_path, backup_path) then
+    os.remove(temporary_path)
+    return false, had_original
+  end
+
+  if state.persistence_fault_injection == "after_backup" then
+    if had_original then
+      os.rename(backup_path, target_path)
+    end
+    os.remove(temporary_path)
+    return false, had_original
+  end
+
+  if not os.rename(
+    temporary_path,
+    target_path
+  ) then
+    if had_original then
+      os.rename(backup_path, target_path)
+    end
+    os.remove(temporary_path)
+    return false, had_original
+  end
+
+  if not keep_backup then
+    os.remove(backup_path)
+  end
+  return true, had_original
 end
 
 function persistent_data_files()
@@ -430,6 +466,11 @@ function preflight_persistence_schemas()
   state.persistence_schema_legacy = {}
 
   local problems = {}
+  if state.persistence_recovery_problem
+    and state.persistence_recovery_problem ~= "" then
+    problems[#problems + 1] =
+      state.persistence_recovery_problem
+  end
 
   for target_path, schema in pairs(PERSISTENCE_SCHEMAS) do
     local file = io.open(target_path, "rb")
@@ -706,31 +747,14 @@ function atomic_file_writer(target_path)
       return false, "injected failure after temporary close"
     end
 
-    local had_original = reaper.file_exists(self.target_path)
-    os.remove(self.backup_path)
-    if had_original
-      and not os.rename(self.target_path, self.backup_path) then
-      os.remove(self.temporary_path)
-      return false, "could not preserve previous file"
-    end
-
-    if state.persistence_fault_injection == "after_backup" then
-      if had_original then
-        os.rename(self.backup_path, self.target_path)
-      end
-      os.remove(self.temporary_path)
-      return false, "injected failure after backup"
-    end
-
-    if not os.rename(self.temporary_path, self.target_path) then
-      if had_original then
-        os.rename(self.backup_path, self.target_path)
-      end
-      os.remove(self.temporary_path)
+    local committed = commit_atomic_temporary(
+      self.target_path,
+      self.temporary_path,
+      self.backup_path
+    )
+    if not committed then
       return false, "could not install completed file"
     end
-
-    os.remove(self.backup_path)
     return true
   end
 
@@ -739,15 +763,61 @@ end
 
 function recover_atomic_data_files()
   local files = persistent_data_files()
+  local unresolved = {}
+  local restore_committed =
+    reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
   files[#files + 1] = SCAN_CHECKPOINT_FILE
   for _, target_path in ipairs(files) do
     local backup_path = target_path .. ".bak"
     local temporary_path = target_path .. ".tmp"
+    local restore_backup_path = target_path .. ".restore.bak"
+    local restore_temporary_path = target_path .. ".restore.tmp"
+    local restore_new_path = target_path .. ".restore.new"
 
-    if not reaper.file_exists(target_path)
+    -- A transaction marker is installed only after every restored file has
+    -- committed. With the marker, finish cleanup and retain the new generation;
+    -- without it, roll every touched file back to its previous generation.
+    local restore_pending = false
+    if restore_committed then
+      for _, artifact_path in ipairs({
+        restore_backup_path,
+        restore_temporary_path,
+        restore_new_path,
+      }) do
+        if reaper.file_exists(artifact_path)
+          and not os.remove(artifact_path) then
+          restore_pending = true
+        end
+      end
+    elseif reaper.file_exists(restore_backup_path) then
+      local removed = not reaper.file_exists(target_path)
+        or os.remove(target_path) ~= nil
+      if not removed
+        or not os.rename(restore_backup_path, target_path) then
+        restore_pending = true
+      end
+    elseif reaper.file_exists(restore_new_path) then
+      if reaper.file_exists(target_path)
+        and not os.remove(target_path) then
+        restore_pending = true
+      end
+    end
+    if not restore_committed then
+      os.remove(restore_temporary_path)
+      if not restore_pending then
+        os.remove(restore_new_path)
+      end
+    end
+    if restore_pending then
+      unresolved[#unresolved + 1] = basename(target_path)
+    end
+
+    if not restore_pending
+      and not reaper.file_exists(target_path)
       and reaper.file_exists(backup_path) then
       os.rename(backup_path, target_path)
-    elseif reaper.file_exists(target_path) then
+    elseif not restore_pending
+      and reaper.file_exists(target_path) then
       os.remove(backup_path)
     end
 
@@ -755,6 +825,17 @@ function recover_atomic_data_files()
     -- is never trusted as user data.
     os.remove(temporary_path)
   end
+  if restore_committed and #unresolved == 0 then
+    os.remove(RESTORE_TRANSACTION_COMMIT_FILE)
+    if reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE) then
+      unresolved[#unresolved + 1] =
+        basename(RESTORE_TRANSACTION_COMMIT_FILE)
+    end
+  end
+  state.persistence_recovery_problem = #unresolved > 0
+    and ("未能回滚中断的备份恢复："
+      .. table.concat(unresolved, ", "))
+    or ""
 end
 
 function remove_shallow_directory(path)
@@ -862,32 +943,54 @@ function create_data_backup(reason, quiet)
   end
 
   local copied = 0
+  local expected = 0
+  local failed = 0
 
   for _, source_path in ipairs(persistent_data_files()) do
     if reaper.file_exists(source_path) then
-      if copy_file_streaming(
+      expected = expected + 1
+      local inject_partial =
+        state.persistence_fault_injection
+          == "backup_after_first"
+        and copied > 0
+      if not inject_partial
+        and copy_file_streaming(
         source_path,
         join_path(directory, basename(source_path))
       ) then
         copied = copied + 1
+      else
+        failed = failed + 1
       end
     end
   end
 
-  local manifest = io.open(join_path(directory, "manifest.tsv"), "wb")
+  local manifest_path = join_path(directory, "manifest.tsv")
+  local manifest = io.open(manifest_path, "wb")
+  local manifest_ok = false
 
   if manifest then
-    manifest:write("version\t", VERSION, "\n")
-    manifest:write("created\t", os.date("%Y-%m-%d %H:%M:%S"), "\n")
-    manifest:write("reason\t", reason or "manual", "\n")
-    manifest:write("files\t", tostring(copied), "\n")
-    manifest:close()
+    local wrote = manifest:write("version\t", VERSION, "\n")
+      and manifest:write("created\t", os.date("%Y-%m-%d %H:%M:%S"), "\n")
+      and manifest:write("reason\t", reason or "manual", "\n")
+      and manifest:write("files\t", tostring(copied), "\n")
+    local flushed = manifest:flush()
+    local closed = manifest:close()
+    manifest_ok = wrote ~= nil and flushed ~= nil and closed ~= nil
   end
 
-  if copied <= 0 then
+  if expected <= 0 then
     remove_shallow_directory(directory)
     if not quiet then
       set_status("没有可备份的数据文件", true)
+    end
+    return false
+  end
+
+  if copied ~= expected or failed > 0 or not manifest_ok then
+    remove_shallow_directory(directory)
+    if not quiet then
+      set_status("无法完整创建数据备份", true)
     end
     return false
   end
@@ -901,6 +1004,149 @@ function create_data_backup(reason, quiet)
   end
 
   return true
+end
+
+function restore_data_backup_transaction(directory)
+  local plan = {}
+  if reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+    and not os.remove(RESTORE_TRANSACTION_COMMIT_FILE) then
+    return false, 0, "stale_commit_marker"
+  end
+
+  for _, target_path in ipairs(persistent_data_files()) do
+    local source_path = join_path(directory, basename(target_path))
+
+    if reaper.file_exists(source_path) then
+      local temporary_path = target_path .. ".restore.tmp"
+      os.remove(temporary_path)
+      if not stream_file_to_temporary(
+        source_path,
+        temporary_path
+      ) then
+        for _, item in ipairs(plan) do
+          os.remove(item.temporary_path)
+        end
+        return false, 0, "stage"
+      end
+      plan[#plan + 1] = {
+        target_path = target_path,
+        temporary_path = temporary_path,
+        backup_path = target_path .. ".restore.bak",
+        new_marker_path = target_path .. ".restore.new",
+        had_original = false,
+      }
+    end
+  end
+
+  if #plan == 0 then
+    return false, 0, "empty"
+  end
+
+  local committed = 0
+  for index, item in ipairs(plan) do
+    item.had_original = reaper.file_exists(item.target_path)
+    local marker_ok = true
+    if not item.had_original then
+      local marker = io.open(item.new_marker_path, "wb")
+      if marker then
+        marker_ok = marker:close() ~= nil
+      else
+        marker_ok = false
+      end
+    end
+    local ok = false
+    local had_original = item.had_original
+    if marker_ok then
+      ok, had_original = commit_atomic_temporary(
+        item.target_path,
+        item.temporary_path,
+        item.backup_path,
+        true
+      )
+    end
+    item.had_original = had_original == true
+    if ok then
+      committed = index
+    end
+
+    if ok
+      and state.persistence_fault_injection
+        == "restore_after_first"
+      and index == 1 then
+      ok = false
+    end
+
+    if not ok then
+      os.remove(item.temporary_path)
+      os.remove(item.new_marker_path)
+      for rollback = committed, 1, -1 do
+        local previous = plan[rollback]
+        local target_removed =
+          not reaper.file_exists(previous.target_path)
+          or os.remove(previous.target_path) ~= nil
+        if previous.had_original then
+          os.rename(
+            previous.backup_path,
+            previous.target_path
+          )
+        else
+          os.remove(previous.backup_path)
+          if target_removed then
+            os.remove(previous.new_marker_path)
+          end
+        end
+      end
+      for cleanup = index + 1, #plan do
+        os.remove(plan[cleanup].temporary_path)
+      end
+      return false, 0, "commit"
+    end
+  end
+
+  local commit_marker_temporary =
+    RESTORE_TRANSACTION_COMMIT_FILE .. ".tmp"
+  os.remove(commit_marker_temporary)
+  local marker = io.open(commit_marker_temporary, "wb")
+  local marker_ok = false
+  if marker then
+    local wrote = marker:write("committed\t1\n")
+    local flushed = marker:flush()
+    local closed = marker:close()
+    marker_ok = wrote ~= nil and flushed ~= nil and closed ~= nil
+  end
+  if state.persistence_fault_injection
+      == "restore_commit_marker" then
+    marker_ok = false
+  end
+  if marker_ok then
+    marker_ok = os.rename(
+      commit_marker_temporary,
+      RESTORE_TRANSACTION_COMMIT_FILE
+    ) ~= nil
+  end
+  if not marker_ok then
+    os.remove(commit_marker_temporary)
+    for rollback = #plan, 1, -1 do
+      local previous = plan[rollback]
+      if reaper.file_exists(previous.target_path) then
+        os.remove(previous.target_path)
+      end
+      if previous.had_original then
+        os.rename(previous.backup_path, previous.target_path)
+      else
+        os.remove(previous.backup_path)
+        os.remove(previous.new_marker_path)
+      end
+    end
+    return false, 0, "commit_marker"
+  end
+
+  for _, item in ipairs(plan) do
+    os.remove(item.backup_path)
+    os.remove(item.new_marker_path)
+  end
+  os.remove(RESTORE_TRANSACTION_COMMIT_FILE)
+  return true, #plan
 end
 
 function restore_latest_data_backup()
@@ -925,19 +1171,18 @@ function restore_latest_data_backup()
   end
 
   local directory = join_path(BACKUP_DIR, name)
-  local restored = 0
+  local restored_ok, restored, restore_error =
+    restore_data_backup_transaction(directory)
 
-  for _, target_path in ipairs(persistent_data_files()) do
-    local source_path = join_path(directory, basename(target_path))
-
-    if reaper.file_exists(source_path)
-      and copy_file_streaming(source_path, target_path) then
-      restored = restored + 1
+  if not restored_ok or restored <= 0 then
+    if restore_error == "empty" then
+      set_status("备份中没有可恢复的数据", true)
+      return
     end
-  end
-
-  if restored <= 0 then
-    set_status("备份中没有可恢复的数据", true)
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      "备份恢复未能完整提交，请重启 PsyReaSFX"
+    set_status("备份恢复失败，原数据已回滚", true)
     return
   end
 
@@ -1434,7 +1679,7 @@ function migrate_legacy_data()
 
   if not reaper.file_exists(CONFIG_FILE)
     and reaper.file_exists(LEGACY_CONFIG_FILE) then
-    if copy_file(LEGACY_CONFIG_FILE, CONFIG_FILE) then
+    if copy_file_streaming(LEGACY_CONFIG_FILE, CONFIG_FILE) then
       set_status("已迁移旧版音效库路径与偏好设置")
     end
   end
