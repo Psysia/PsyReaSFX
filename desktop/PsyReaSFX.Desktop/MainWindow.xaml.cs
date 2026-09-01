@@ -18,6 +18,7 @@ using Microsoft.Win32;
 using PsyReaSFX.Data;
 using PsyReaSFX.Desktop.Controls;
 using PsyReaSFX.Desktop.Services;
+using PsyReaSFX.Desktop.ViewModels;
 
 namespace PsyReaSFX.Desktop;
 
@@ -34,7 +35,9 @@ public partial class MainWindow : Window
     private readonly IPathIdentityService _paths = new PathIdentityService();
     private readonly CatalogReliabilityService _reliability;
     private readonly LibraryWatchService _watchFolders = new();
-    private ObservableCollection<AudioAsset> _assets = [];
+    private readonly CatalogViewModel _catalog = new();
+    private ObservableCollection<AudioAsset> _assets => _catalog.Assets;
+    private ICollectionView _view => _catalog.View;
     private readonly IPreviewController _previewEngine = new LowLatencyPreviewEngine();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
@@ -48,7 +51,6 @@ public partial class MainWindow : Window
     private bool _activitySaveInFlight;
     private PersistedState _state = new();
     private DesktopPreferences _preferences = new();
-    private ICollectionView _view;
     private AudioAsset? _selected;
     private AudioAsset? _previewing;
     private string _libraryIdFilter = "";
@@ -118,8 +120,7 @@ public partial class MainWindow : Window
         _preferences = _preferencesStore.Load();
         LuaWaveCache.Configure(_preferences.WaveformCacheDirectory);
         ApplyPreferences(_preferences, false);
-        _view = CollectionViewSource.GetDefaultView(_assets);
-        _view.Filter = FilterAsset;
+        _catalog.SetFilter(FilterAsset);
         AssetGrid.ItemsSource = _view;
         RegionSelector.ItemsSource = _previewRegions;
 
@@ -204,12 +205,10 @@ public partial class MainWindow : Window
             _state = state;
             _artwork.ApplyFallbacks(state);
             foreach (var item in state.Index) item.IsFavorite = state.Favorites.Contains(item.FilePath);
-            _assets = new ObservableCollection<AudioAsset>(state.Index);
+            _catalog.Replace(state.Index);
             _savedSessionPlayed = _assets.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var asset in _assets) asset.UiLanguage = _preferences.Language;
-            _view = CollectionViewSource.GetDefaultView(_assets);
-            _view.Filter = FilterAsset;
             AssetGrid.ItemsSource = _view;
             CollectionList.ItemsSource = _state.Collections;
             SavedSearchList.ItemsSource = _state.SavedSearches;
@@ -328,28 +327,23 @@ public partial class MainWindow : Window
 
     private void RefreshView()
     {
-        _view.Filter = FilterAsset;
-        _view.Refresh();
-        _visibleCount = _view.Cast<object>().Count();
+        _catalog.SetFilter(FilterAsset);
+        _visibleCount = _catalog.RefreshAndCount();
         UpdateCount();
         UpdateBreadcrumb();
     }
 
     private void ApplySort()
     {
-        using (_view.DeferRefresh())
+        var direction = _sortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        var property = _sortMode switch
         {
-            _view.SortDescriptions.Clear();
-            var direction = _sortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
-            var property = _sortMode switch
-            {
-                SortMode.Duration => nameof(AudioAsset.DurationSeconds),
-                SortMode.Library => nameof(AudioAsset.LibraryName),
-                SortMode.RecentlyPreviewed => nameof(AudioAsset.LastPreviewed),
-                _ => nameof(AudioAsset.FileName)
-            };
-            _view.SortDescriptions.Add(new SortDescription(property, direction));
-        }
+            SortMode.Duration => nameof(AudioAsset.DurationSeconds),
+            SortMode.Library => nameof(AudioAsset.LibraryName),
+            SortMode.RecentlyPreviewed => nameof(AudioAsset.LastPreviewed),
+            _ => nameof(AudioAsset.FileName)
+        };
+        _catalog.ApplySort(property, direction);
         SortButton.Content = $"{T("排序", "Sort")}: {SortLabel()}";
     }
 
@@ -398,10 +392,8 @@ public partial class MainWindow : Window
             referenceSnapshot = CapturePathReferences();
             ApplyPathIdentityRelocations(previousSnapshot, indexed);
             foreach (var asset in indexed) asset.IsFavorite = _state.Favorites.Contains(asset.FilePath);
-            _assets = new ObservableCollection<AudioAsset>(indexed);
+            _catalog.Replace(indexed);
             foreach (var asset in _assets) asset.UiLanguage = _preferences.Language;
-            _view = CollectionViewSource.GetDefaultView(_assets);
-            _view.Filter = FilterAsset;
             AssetGrid.ItemsSource = _view;
             _state.Index = indexed;
             await _store.SaveAsync(_state, job.Token);
@@ -643,7 +635,7 @@ public partial class MainWindow : Window
         List<AudioAsset> index,
         PathReferenceSnapshot? references)
     {
-        _assets = assets;
+        _catalog.Replace(assets);
         _state.Index = index;
         if (references != null)
         {
@@ -655,8 +647,7 @@ public partial class MainWindow : Window
                 if (references.CollectionItems.TryGetValue(collection.Id, out var items))
                     collection.Items = new ObservableCollection<string>(items);
         }
-        _view = CollectionViewSource.GetDefaultView(_assets);
-        _view.Filter = FilterAsset;
+        _catalog.SetFilter(FilterAsset);
         AssetGrid.ItemsSource = _view;
         ApplySort();
         RebuildLibraryTree();

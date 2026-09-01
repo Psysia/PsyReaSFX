@@ -10,6 +10,7 @@ using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using PsyReaSFX.Desktop.Controls;
 using PsyReaSFX.Desktop.Services;
+using PsyReaSFX.Desktop.ViewModels;
 using PsyReaSFX.Data;
 using PsyAudioFileReader = PsyReaSFX.Desktop.Services.AudioFileReader;
 
@@ -814,6 +815,15 @@ internal static class DesktopSelfTest
         IArtworkService artwork = new ArtworkService();
         IPathIdentityService paths = new PathIdentityService();
         ITransferService transfer = new TransferEngine();
+        var catalogView = new CatalogViewModel();
+        catalogView.Replace([
+            new AudioAsset { FileName = "B.wav", Ready = false },
+            new AudioAsset { FileName = "A.wav", Ready = true }
+        ]);
+        catalogView.SetFilter(item => item is AudioAsset asset && asset.Ready);
+        catalogView.ApplySort(nameof(AudioAsset.FileName), System.ComponentModel.ListSortDirection.Ascending);
+        var catalogViewPassed = catalogView.RefreshAndCount() == 1
+                                && catalogView.View.Cast<AudioAsset>().Single().FileName == "A.wav";
 
         var panels = new WindowStateController();
         var collapsed = panels.SetNavigation(false, 318);
@@ -827,6 +837,7 @@ internal static class DesktopSelfTest
                && artwork.FindForSource(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))) == ""
                && paths.Normalize(Path.GetTempPath()).Length > 0
                && transfer is TransferEngine
+               && catalogViewPassed
                && !collapsed.NavigationVisible
                && Math.Abs(collapsed.NavigationWidth - 318) < .1
                && focus.FocusMode && !focus.NavigationVisible && !focus.InspectorVisible
