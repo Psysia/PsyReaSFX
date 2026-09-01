@@ -815,6 +815,14 @@ internal static class DesktopSelfTest
         IArtworkService artwork = new ArtworkService();
         IPathIdentityService paths = new PathIdentityService();
         ITransferService transfer = new TransferEngine();
+        IOrganizationService organization = new OrganizationService();
+        var organized = organization.CreateCollection("playlist", "Boundary", [
+            new AudioAsset { FilePath = @"C:\Audio\A.wav" },
+            new AudioAsset { FilePath = @"c:\audio\a.wav" }
+        ]);
+        var organizationPassed = organized.Items.Count == 1
+                                 && organization.BuildSavedQuery("impact", "HIT", "WAVE", 2)
+                                     == "impact category:\"HIT\" format:WAVE channels:2";
         var catalogView = new CatalogViewModel();
         catalogView.Replace([
             new AudioAsset { FileName = "B.wav", Ready = false },
@@ -838,6 +846,7 @@ internal static class DesktopSelfTest
                && paths.Normalize(Path.GetTempPath()).Length > 0
                && transfer is TransferEngine
                && catalogViewPassed
+               && organizationPassed
                && !collapsed.NavigationVisible
                && Math.Abs(collapsed.NavigationWidth - 318) < .1
                && focus.FocusMode && !focus.NavigationVisible && !focus.InspectorVisible

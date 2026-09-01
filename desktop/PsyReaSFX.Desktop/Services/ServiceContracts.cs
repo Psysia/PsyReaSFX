@@ -95,3 +95,15 @@ public interface ITransferService
         IProgress<TransferProgress>? progress,
         CancellationToken cancellationToken);
 }
+
+public interface IOrganizationService
+{
+    AssetCollection CreateCollection(string kind, string name, IEnumerable<AudioAsset> assets);
+    int AddAssets(AssetCollection collection, IEnumerable<AudioAsset> assets);
+    int RemoveAssets(AssetCollection collection, IEnumerable<AudioAsset> assets);
+    HashSet<string> ActivePaths(AssetCollection collection);
+    string BuildSavedQuery(string text, string category, string format, int channels);
+    SavedSearchDefinition CreateSavedSearch(
+        string name, string query, string view, string libraryId, string root,
+        string statusFilter, string collectionId, string sortMode, bool sortDescending);
+}

@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     private readonly ICatalogIndexer _indexer = new LibraryIndexer();
     private readonly IArtworkService _artwork = new ArtworkService();
     private readonly IPathIdentityService _paths = new PathIdentityService();
+    private readonly IOrganizationService _organization = new OrganizationService();
     private readonly CatalogReliabilityService _reliability;
     private readonly LibraryWatchService _watchFolders = new();
     private readonly CatalogViewModel _catalog = new();
@@ -949,8 +950,7 @@ public partial class MainWindow : Window
     {
         var name = Interaction.InputBox(T("集合名称：", "Collection name:"), title, kind == "playlist" ? "New playlist" : "New project bin").Trim();
         if (name.Length == 0) return;
-        var collection = new AssetCollection { Name = name, Kind = kind };
-        foreach (var asset in SelectedAssets()) collection.Items.Add(asset.FilePath);
+        var collection = _organization.CreateCollection(kind, name, SelectedAssets());
         _state.Collections.Add(collection);
         PersistOrganization();
         RefreshCollectionLists(collection);
@@ -963,10 +963,8 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(T("请先选择一个播放列表或项目素材箱。", "Select a playlist or project bin first."), "PsyReaSFX Desktop"); return;
         }
-        var existing = collection.Items.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var added = 0;
-        foreach (var asset in SelectedAssets()) if (existing.Add(asset.FilePath)) { collection.Items.Add(asset.FilePath); added++; }
-        _activeCollectionPaths = existing;
+        var added = _organization.AddAssets(collection, SelectedAssets());
+        _activeCollectionPaths = _organization.ActivePaths(collection);
         PersistOrganization(); RefreshCollectionLists(collection); RefreshView();
         StatusText.Text = T($"已向 {collection.Name} 加入 {added:N0} 个素材", $"Added {added:N0} assets to {collection.Name}");
     }
@@ -974,10 +972,8 @@ public partial class MainWindow : Window
     private void RemoveFromCollection_Click(object sender, RoutedEventArgs e)
     {
         if (CollectionList.SelectedItem is not AssetCollection collection) return;
-        var remove = SelectedAssets().Select(asset => asset.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var count = collection.Items.Count(path => remove.Contains(path));
-        for (var index = collection.Items.Count - 1; index >= 0; index--) if (remove.Contains(collection.Items[index])) collection.Items.RemoveAt(index);
-        _activeCollectionPaths = collection.Items.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var count = _organization.RemoveAssets(collection, SelectedAssets());
+        _activeCollectionPaths = _organization.ActivePaths(collection);
         PersistOrganization(); RefreshCollectionLists(collection); RefreshView();
         StatusText.Text = T($"已从 {collection.Name} 移出 {count:N0} 个素材", $"Removed {count:N0} assets from {collection.Name}");
     }
@@ -1018,12 +1014,9 @@ public partial class MainWindow : Window
     {
         var name = Interaction.InputBox("保存当前查询与筛选条件：", "保存搜索", SearchBox.Text.Length > 0 ? SearchBox.Text : "Saved search").Trim();
         if (name.Length == 0) return;
-        var saved = new SavedSearchDefinition
-        {
-            Name = name, Query = BuildSavedQuery(), View = _browseMode.ToString(), LibraryId = _libraryIdFilter,
-            Root = _sourceFilter, StatusFilter = _statusFilter, CollectionId = _collectionIdFilter,
-            SortMode = _sortMode.ToString(), SortDescending = _sortDescending
-        };
+        var saved = _organization.CreateSavedSearch(
+            name, BuildSavedQuery(), _browseMode.ToString(), _libraryIdFilter,
+            _sourceFilter, _statusFilter, _collectionIdFilter, _sortMode.ToString(), _sortDescending);
         _state.SavedSearches.Add(saved); PersistOrganization();
         SavedSearchList.SelectedItem = saved;
         StatusText.Text = T($"已保存搜索：{name}", $"Saved search: {name}");
@@ -1031,12 +1024,7 @@ public partial class MainWindow : Window
 
     private string BuildSavedQuery()
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(SearchBox.Text)) parts.Add(SearchBox.Text.Trim());
-        if (_categoryFacet.Length > 0) parts.Add($"category:\"{_categoryFacet}\"");
-        if (_formatFacet.Length > 0) parts.Add($"format:{_formatFacet}");
-        if (_channelFacet > 0) parts.Add($"channels:{_channelFacet}");
-        return string.Join(' ', parts);
+        return _organization.BuildSavedQuery(SearchBox.Text, _categoryFacet, _formatFacet, _channelFacet);
     }
 
     private void SavedSearchList_SelectionChanged(object sender, SelectionChangedEventArgs e)
