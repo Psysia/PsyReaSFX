@@ -29,6 +29,7 @@ internal static class DesktopSelfTest
             var info = PsyAudioFileReader.ReadInfo(wavPath);
             var waveform = PsyAudioFileReader.ReadWaveform(wavPath, 256);
             var jobCoordinatorPassed = await VerifyJobCoordinatorAsync();
+            var architectureBoundariesPassed = VerifyArchitectureBoundaries();
             var library = new LibraryDefinition { Name = "Self Test" };
             library.Sources.Add(new LibrarySource { Path = working });
             var indexed = await new LibraryIndexer().BuildAsync(
@@ -623,6 +624,7 @@ internal static class DesktopSelfTest
                          && waveform.Length == 1
                          && waveform.All(channel => channel.Length == 256 && channel.Max() > .1f)
                          && jobCoordinatorPassed
+                         && architectureBoundariesPassed
                          && pathIdentityPassed
                          && indexed.Count == 1
                          && indexed[0].DurationSeconds > .45
@@ -663,6 +665,7 @@ internal static class DesktopSelfTest
                 waveformChannels = waveform.Length,
                 waveformBuckets = waveform.FirstOrDefault()?.Length ?? 0,
                 jobCoordinatorPassed,
+                architectureBoundariesPassed,
                 pathIdentityPassed,
                 indexedAssets = indexed.Count,
                 uiSmokePassed,
@@ -800,6 +803,36 @@ internal static class DesktopSelfTest
         {
             foreach (var lease in leases) lease.Dispose();
         }
+    }
+
+    private static bool VerifyArchitectureBoundaries()
+    {
+        IStorageService storage = new StateStore();
+        ICatalogIndexer catalog = new LibraryIndexer();
+        IJobCoordinator jobs = new BackgroundJobCoordinator();
+        using IPreviewController preview = new LowLatencyPreviewEngine();
+        IArtworkService artwork = new ArtworkService();
+        IPathIdentityService paths = new PathIdentityService();
+        ITransferService transfer = new TransferEngine();
+
+        var panels = new WindowStateController();
+        var collapsed = panels.SetNavigation(false, 318);
+        var focus = panels.SetFocusMode(true, 0, 344);
+        var restored = panels.SetFocusMode(false);
+
+        return storage.DataDirectory.Length > 0
+               && catalog.LastFailures.Count == 0
+               && jobs.Snapshot().Count == 0
+               && !preview.IsOpen
+               && artwork.FindForSource(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))) == ""
+               && paths.Normalize(Path.GetTempPath()).Length > 0
+               && transfer is TransferEngine
+               && !collapsed.NavigationVisible
+               && Math.Abs(collapsed.NavigationWidth - 318) < .1
+               && focus.FocusMode && !focus.NavigationVisible && !focus.InspectorVisible
+               && !restored.FocusMode && restored.NavigationVisible && restored.InspectorVisible
+               && Math.Abs(restored.NavigationWidth - 318) < .1
+               && Math.Abs(restored.InspectorWidth - 344) < .1;
     }
 
     private static async Task<bool> VerifyPathIdentityAsync(string working)

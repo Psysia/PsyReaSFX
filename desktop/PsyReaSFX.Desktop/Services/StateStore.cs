@@ -2,7 +2,7 @@ using PsyReaSFX.Data;
 
 namespace PsyReaSFX.Desktop.Services;
 
-public sealed class StateStore
+public sealed class StateStore : IStorageService
 {
     private readonly PsyReaSFXDatabase _database = new();
     public string DataDirectory => _database.DataDirectory;

@@ -17,6 +17,7 @@ public partial class TransferWindow : Window
     private readonly double _gain;
     private readonly bool _reverse;
     private readonly bool _preservePitch;
+    private readonly ITransferService _transfer = new TransferEngine();
     private CancellationTokenSource? _cancellation;
     private TransferRunResult? _lastResult;
 
@@ -151,7 +152,7 @@ public partial class TransferWindow : Window
         });
         try
         {
-            _lastResult = await new TransferEngine().RunAsync(requests, options, progress, _cancellation.Token);
+            _lastResult = await _transfer.RunAsync(requests, options, progress, _cancellation.Token);
             ResultText.Text = T($"完成：{_lastResult.SuccessCount} 成功 · {_lastResult.SkippedCount} 跳过 · {_lastResult.FailedCount} 失败",
                 $"Complete: {_lastResult.SuccessCount} succeeded · {_lastResult.SkippedCount} skipped · {_lastResult.FailedCount} failed");
             OpenLastOutputButton.IsEnabled = _lastResult.LastOutput != null; OpenReportButton.IsEnabled = File.Exists(_lastResult.ReportPath);

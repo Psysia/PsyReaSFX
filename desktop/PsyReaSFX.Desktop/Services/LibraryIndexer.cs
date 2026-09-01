@@ -3,7 +3,7 @@ using PsyReaSFX.Data;
 
 namespace PsyReaSFX.Desktop.Services;
 
-public sealed class LibraryIndexer
+public sealed class LibraryIndexer : ICatalogIndexer
 {
     private readonly ConcurrentBag<FailedScanItem> _failures = [];
     public IReadOnlyList<FailedScanItem> LastFailures => _failures.OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase).ToArray();

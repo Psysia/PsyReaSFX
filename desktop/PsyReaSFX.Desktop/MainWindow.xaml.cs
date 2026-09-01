@@ -27,20 +27,23 @@ public partial class MainWindow : Window
     private enum SortMode { Name, Duration, Library, RecentlyPreviewed }
     private readonly record struct QueryToken(string Field, string Term, bool Exclude);
 
-    private readonly StateStore _store = new();
+    private readonly IStorageService _store = new StateStore();
     private readonly DesktopPreferencesStore _preferencesStore = new();
-    private readonly LibraryIndexer _indexer = new();
+    private readonly ICatalogIndexer _indexer = new LibraryIndexer();
+    private readonly IArtworkService _artwork = new ArtworkService();
+    private readonly IPathIdentityService _paths = new PathIdentityService();
     private readonly CatalogReliabilityService _reliability;
     private readonly LibraryWatchService _watchFolders = new();
     private ObservableCollection<AudioAsset> _assets = [];
-    private readonly LowLatencyPreviewEngine _previewEngine = new();
+    private readonly IPreviewController _previewEngine = new LowLatencyPreviewEngine();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _autoPreviewTimer = new() { Interval = TimeSpan.FromMilliseconds(110) };
     private readonly DispatcherTimer _activitySaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _bridgeTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly ReaperBridgeService _bridge = new();
-    private readonly BackgroundJobCoordinator _jobs = new();
+    private readonly IJobCoordinator _jobs = new BackgroundJobCoordinator();
+    private readonly WindowStateController _windowState = new();
     private readonly HashSet<string> _activityDirty = new(StringComparer.OrdinalIgnoreCase);
     private bool _activitySaveInFlight;
     private PersistedState _state = new();
@@ -57,9 +60,6 @@ public partial class MainWindow : Window
     private bool _autoPreview = true;
     private bool _isPlaying;
     private bool _initialized;
-    private bool _focusMode;
-    private bool _navigationVisible = true;
-    private bool _inspectorVisible = true;
     private bool _suppressSelectionPreview;
     private double _pendingSeekRatio;
     private long _lastTimeTextUpdateTick;
@@ -70,8 +70,6 @@ public partial class MainWindow : Window
     private double _gainDb;
     private bool _reverseAudition;
     private bool _preservePitch = true;
-    private GridLength _navigationWidth = new(240);
-    private GridLength _inspectorWidth = new(292);
     private Point _dragStart;
     private List<QueryToken> _queryTokens = [];
     private int _visibleCount;
@@ -204,7 +202,7 @@ public partial class MainWindow : Window
         {
             var state = await _store.LoadAsync();
             _state = state;
-            ApplyArtworkFallbacks(state);
+            _artwork.ApplyFallbacks(state);
             foreach (var item in state.Index) item.IsFavorite = state.Favorites.Contains(item.FilePath);
             _assets = new ObservableCollection<AudioAsset>(state.Index);
             _savedSessionPlayed = _assets.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath)
@@ -481,8 +479,8 @@ public partial class MainWindow : Window
         var dialog = new OpenFolderDialog { Title = $"向 {library.Name} 添加素材文件夹", Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
         if (library.Sources.Any(s => s.Path.Equals(dialog.FolderName, StringComparison.OrdinalIgnoreCase))) return;
-        var artwork = ArtworkFinder.FindForSource(dialog.FolderName);
-        var identity = PathIdentity.CaptureSource(dialog.FolderName);
+        var artwork = _artwork.FindForSource(dialog.FolderName);
+        var identity = _paths.CaptureSource(dialog.FolderName);
         library.Sources.Add(new LibrarySource
         {
             Path = identity.DisplayPath,
@@ -592,7 +590,7 @@ public partial class MainWindow : Window
     {
         foreach (var source in _state.Libraries.SelectMany(library => library.Sources))
         {
-            var identity = PathIdentity.CaptureSource(source.Path);
+            var identity = _paths.CaptureSource(source.Path);
             source.Path = identity.DisplayPath;
             if (!string.IsNullOrWhiteSpace(identity.CanonicalPath)) source.CanonicalPath = identity.CanonicalPath;
             if (!string.IsNullOrWhiteSpace(identity.VolumeLabel)) source.VolumeLabel = identity.VolumeLabel;
@@ -697,12 +695,12 @@ public partial class MainWindow : Window
         var dialog = new OpenFolderDialog { Title = $"重新定位 {source.DisplayName}", Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
 
-        var newIdentity = PathIdentity.CaptureSource(dialog.FolderName);
+        var newIdentity = _paths.CaptureSource(dialog.FolderName);
         if (!Directory.Exists(newIdentity.DisplayPath)) return;
 
         var overlaps = _state.Libraries.SelectMany(item => item.Sources)
             .Where(item => !ReferenceEquals(item, source))
-            .Select(item => PathIdentity.CaptureSource(item.Path))
+            .Select(item => _paths.CaptureSource(item.Path))
             .Any(item => PathsOverlap(item.CanonicalPath, newIdentity.CanonicalPath));
         if (overlaps)
         {
@@ -713,7 +711,7 @@ public partial class MainWindow : Window
 
         var candidates = _assets.Where(asset => asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)).ToArray();
         var occupied = _assets.Where(asset => !asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase))
-            .Select(asset => PathIdentity.Normalize(asset.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Select(asset => _paths.Normalize(asset.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var missing = 0;
         var conflicts = new List<string>();
@@ -722,9 +720,9 @@ public partial class MainWindow : Window
         foreach (var asset in candidates)
         {
             var relative = string.IsNullOrWhiteSpace(asset.RelativePath)
-                ? PathIdentity.RelativeTo(source.Path, asset.FilePath)
+                ? _paths.RelativeTo(source.Path, asset.FilePath)
                 : asset.RelativePath;
-            var target = PathIdentity.Normalize(Path.Combine(newIdentity.DisplayPath, relative));
+            var target = _paths.Normalize(Path.Combine(newIdentity.DisplayPath, relative));
             if (!targets.Add(target) || occupied.Contains(target)) conflicts.Add(target);
             else if (!File.Exists(target)) missing++;
             if (!string.IsNullOrWhiteSpace(asset.ArtworkPath) && !PathIsInside(asset.ArtworkPath, source.Path)) externalArtwork++;
@@ -754,7 +752,7 @@ public partial class MainWindow : Window
         source.VolumeSerial = newIdentity.VolumeSerial;
         source.LastSeenUtc = newIdentity.LastSeenUtc;
         if (PathIsInside(oldArtwork, oldPath))
-            source.ArtworkPath = Path.Combine(newIdentity.DisplayPath, PathIdentity.RelativeTo(oldPath, oldArtwork));
+            source.ArtworkPath = Path.Combine(newIdentity.DisplayPath, _paths.RelativeTo(oldPath, oldArtwork));
 
         if (await RescanAsync(false))
         {
@@ -772,15 +770,15 @@ public partial class MainWindow : Window
         StatusText.Text = T("重定位未提交，已恢复原来源。", "Relocation was not committed; the original source was restored.");
     }
 
-    private static bool PathsOverlap(string first, string second) =>
+    private bool PathsOverlap(string first, string second) =>
         PathIsInside(first, second) || PathIsInside(second, first);
 
-    private static bool PathIsInside(string candidate, string root)
+    private bool PathIsInside(string candidate, string root)
     {
         if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(root)) return false;
         try
         {
-            var relative = Path.GetRelativePath(PathIdentity.Normalize(root), PathIdentity.Normalize(candidate));
+            var relative = Path.GetRelativePath(_paths.Normalize(root), _paths.Normalize(candidate));
             return relative == "." || (!relative.Equals("..", StringComparison.Ordinal)
                 && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal));
         }
@@ -2577,27 +2575,6 @@ public partial class MainWindow : Window
         _preferences.SidebarSectionExpanded["activity"] = ActivitySection.IsExpanded;
     }
 
-    private static void ApplyArtworkFallbacks(PersistedState state)
-    {
-        var sourcesById = state.Libraries.SelectMany(library => library.Sources)
-            .Where(source => !string.IsNullOrWhiteSpace(source.Id))
-            .GroupBy(source => source.Id, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var sourcesByPath = state.Libraries.SelectMany(library => library.Sources)
-            .Where(source => !string.IsNullOrWhiteSpace(source.Path))
-            .GroupBy(source => source.Path, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        foreach (var asset in state.Index)
-        {
-            if (!string.IsNullOrWhiteSpace(asset.ArtworkPath) && File.Exists(asset.ArtworkPath)) continue;
-            LibrarySource? source = null;
-            if (!string.IsNullOrWhiteSpace(asset.RootId)) sourcesById.TryGetValue(asset.RootId, out source);
-            if (source == null && !string.IsNullOrWhiteSpace(asset.SourcePath)) sourcesByPath.TryGetValue(asset.SourcePath, out source);
-            if (source != null && !string.IsNullOrWhiteSpace(source.ArtworkPath) && File.Exists(source.ArtworkPath))
-                asset.ArtworkPath = source.ArtworkPath;
-        }
-    }
-
     private async Task ResolveMissingSourceArtworkAsync()
     {
         try
@@ -2608,7 +2585,7 @@ public partial class MainWindow : Window
             var changed = false;
             foreach (var source in missing)
             {
-                var artwork = await Task.Run(() => ArtworkFinder.FindForSource(source.Path));
+                var artwork = await _artwork.FindForSourceAsync(source.Path);
                 if (string.IsNullOrWhiteSpace(artwork)) continue;
                 ApplySourceArtwork(source, artwork);
                 changed = true;
@@ -2626,11 +2603,7 @@ public partial class MainWindow : Window
 
     private void ApplySourceArtwork(LibrarySource source, string artwork)
     {
-        source.ArtworkPath = artwork;
-        source.ArtworkChecked = true;
-        foreach (var asset in _assets.Where(asset => asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)
-                                                     || asset.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)))
-            asset.ArtworkPath = artwork;
+        _artwork.ApplyToSource(source, _assets, artwork);
         if (_selected != null && (_selected.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)
                                   || _selected.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)))
         {
@@ -2647,7 +2620,7 @@ public partial class MainWindow : Window
 
     private async Task DetectArtworkForSourceAsync(LibrarySource source, bool announce)
     {
-        var artwork = await Task.Run(() => ArtworkFinder.FindForSource(source.Path));
+        var artwork = await _artwork.FindForSourceAsync(source.Path);
         if (string.IsNullOrWhiteSpace(artwork))
         {
             if (announce) MessageBox.Show("没有在该实体路径或其 Artwork/Cover 子目录中找到合适图片。", "PsyReaSFX Desktop");
@@ -2749,35 +2722,6 @@ public partial class MainWindow : Window
         StatusText.Text = _autoPreview ? T("自动试听已开启", "Auto preview enabled") : T("自动试听已关闭", "Auto preview disabled");
     }
 
-    private void NavigationToggle_Click(object sender, RoutedEventArgs e) => SetNavigationVisible(!_navigationVisible);
-    private void InspectorToggle_Click(object sender, RoutedEventArgs e) => SetInspectorVisible(!_inspectorVisible);
-    private void FocusToggle_Click(object sender, RoutedEventArgs e)
-    {
-        _focusMode = !_focusMode;
-        if (_focusMode) { SetNavigationVisible(false); SetInspectorVisible(false); }
-        else { SetNavigationVisible(true); SetInspectorVisible(true); }
-        FocusToggle.Foreground = _focusMode ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("TextBrush");
-        FocusToggle.IsActive = _focusMode;
-    }
-
-    private void SetNavigationVisible(bool visible)
-    {
-        if (_navigationVisible && NavigationColumn.Width.Value > 0) _navigationWidth = NavigationColumn.Width;
-        _navigationVisible = visible; NavigationPanel.Visibility = NavigationSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        NavigationColumn.MinWidth = visible ? 190 : 0;
-        NavigationColumn.Width = visible ? _navigationWidth : new GridLength(0); NavigationSplitterColumn.Width = visible ? new GridLength(5) : new GridLength(0);
-        NavigationToggle.IsActive = visible;
-    }
-
-    private void SetInspectorVisible(bool visible)
-    {
-        if (_inspectorVisible && InspectorColumn.Width.Value > 0) _inspectorWidth = InspectorColumn.Width;
-        _inspectorVisible = visible; InspectorPanel.Visibility = InspectorSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        InspectorColumn.MinWidth = visible ? 230 : 0;
-        InspectorColumn.Width = visible ? _inspectorWidth : new GridLength(0); InspectorSplitterColumn.Width = visible ? new GridLength(5) : new GridLength(0);
-        InspectorToggle.IsActive = visible;
-    }
-
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
@@ -2846,8 +2790,8 @@ public partial class MainWindow : Window
         if (_jobs.Snapshot().Any(job => job.FinishedUtc == null))
             AppDiagnostics.Write("Background job shutdown reached its five-second timeout.");
         _previewEngine.Dispose();
-        _preferences.NavigationVisible = _navigationVisible;
-        _preferences.InspectorVisible = _inspectorVisible;
+        _preferences.NavigationVisible = _windowState.State.NavigationVisible;
+        _preferences.InspectorVisible = _windowState.State.InspectorVisible;
         _preferences.AutoPreview = _autoPreview;
         _preferences.AuditionPitchSemitones = _pitchSemitones;
         _preferences.AuditionRate = _playbackRate;

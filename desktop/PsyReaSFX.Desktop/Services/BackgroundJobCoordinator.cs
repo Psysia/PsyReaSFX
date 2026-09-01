@@ -54,7 +54,7 @@ public sealed record BackgroundJobSnapshot(
 /// coordinator requests cancellation but never disposes another operation's
 /// token source; the lease owner does that after its awaits have unwound.
 /// </summary>
-public sealed class BackgroundJobCoordinator
+public sealed class BackgroundJobCoordinator : IJobCoordinator
 {
     private readonly object _gate = new();
     private readonly Dictionary<BackgroundJobKind, BackgroundJobLease> _current = [];

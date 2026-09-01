@@ -11,7 +11,7 @@ namespace PsyReaSFX.Desktop.Services;
 /// media and writes a new file; project tracks and the REAPER master bus are
 /// deliberately outside this processing path.
 /// </summary>
-public sealed class TransferEngine
+public sealed class TransferEngine : ITransferService
 {
     private const int MaximumJobs = 4096;
     private const int MaximumVariantsPerAsset = 128;

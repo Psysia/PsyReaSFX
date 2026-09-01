@@ -69,7 +69,7 @@
 
 目标：降低 27,000 行 Lua 单文件和 2,600 行 Desktop 主窗口的回归风险。
 
-- [ ] 建立 `Storage`、`Catalog`、`Jobs`、`PathIdentity`、`Preview`、`Transfer`、`UI` 明确接口。
+- [x] 建立 `Storage`、`Catalog`、`Jobs`、`PathIdentity`、`Preview`、`Transfer`、`UI` 明确接口。
 - [ ] 禁止新代码直接任意修改全局 `state`，改为通过模块入口改变状态。
 - [ ] Lua 源码迁移到 `src/lua/` 模块；发布时自动合成为单个 ReaPack 脚本。
 - [ ] 自动生成发布文件和版本头，停止手工维护 `v0_7_23_Stable.lua` 这种历史文件名。

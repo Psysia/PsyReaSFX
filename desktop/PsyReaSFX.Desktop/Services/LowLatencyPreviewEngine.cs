@@ -8,7 +8,7 @@ namespace PsyReaSFX.Desktop.Services;
 /// on the source timeline so the UI, loop selection and waveform stay aligned
 /// even while rate processing is active.
 /// </summary>
-public sealed class LowLatencyPreviewEngine : IDisposable
+public sealed class LowLatencyPreviewEngine : IPreviewController
 {
     private readonly object _gate = new();
     private IWavePlayer? _output;
