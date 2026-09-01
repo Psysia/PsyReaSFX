@@ -4,12 +4,23 @@ namespace PsyReaSFX.Desktop.Services;
 
 public sealed class StateStore : IStorageService
 {
-    private readonly PsyReaSFXDatabase _database = new();
+    private readonly PsyReaSFXDatabase _database;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly object _workspaceQueueGate = new();
+    private readonly List<TaskCompletionSource> _pendingWorkspaceWaiters = [];
+    private CatalogSnapshot? _pendingWorkspace;
+    private bool _workspacePumpRunning;
+    private long _workspaceWritesExecuted;
+    private long _workspaceWritesCoalesced;
     public string DataDirectory => _database.DataDirectory;
     public string DatabasePath => _database.DatabasePath;
     public MigrationSummary? LastMigration { get; private set; }
     public Exception? LastError { get; private set; }
     public bool CanWrite => LastError is null;
+    internal long WorkspaceWritesExecuted => Interlocked.Read(ref _workspaceWritesExecuted);
+    internal long WorkspaceWritesCoalesced => Interlocked.Read(ref _workspaceWritesCoalesced);
+
+    public StateStore(PsyReaSFXDatabase? database = null) => _database = database ?? new PsyReaSFXDatabase();
 
     public async Task<PersistedState> LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -36,8 +47,7 @@ public sealed class StateStore : IStorageService
 
     public void Save(PersistedState state)
     {
-        EnsureWritable();
-        _database.SaveDesktopSnapshotAsync(ToSnapshot(state)).GetAwaiter().GetResult();
+        SaveAsync(state).GetAwaiter().GetResult();
     }
 
     public Task SaveAsync(PersistedState state, CancellationToken cancellationToken = default)
@@ -46,50 +56,66 @@ public sealed class StateStore : IStorageService
         // Capture mutable UI collections before the first await. The database
         // can then write in the background without enumerating live WPF state.
         var snapshot = ToSnapshot(state);
-        return _database.SaveDesktopSnapshotAsync(snapshot, cancellationToken);
+        return WriteSerializedAsync(token => _database.SaveDesktopSnapshotAsync(snapshot, token), cancellationToken);
     }
 
     public void SaveWorkspace(PersistedState state)
     {
-        EnsureWritable();
-        _database.SaveWorkspaceAsync(ToSnapshot(state)).GetAwaiter().GetResult();
+        SaveWorkspaceAsync(state).GetAwaiter().GetResult();
     }
 
     public Task SaveWorkspaceAsync(PersistedState state, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        var snapshot = ToSnapshot(state);
-        return _database.SaveWorkspaceAsync(snapshot, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var snapshot = ToWorkspaceSnapshot(state);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_workspaceQueueGate)
+        {
+            if (_pendingWorkspace is not null)
+                Interlocked.Increment(ref _workspaceWritesCoalesced);
+            _pendingWorkspace = snapshot;
+            _pendingWorkspaceWaiters.Add(completion);
+            if (!_workspacePumpRunning)
+            {
+                _workspacePumpRunning = true;
+                _ = Task.Run(PumpWorkspaceWritesAsync);
+            }
+        }
+        return cancellationToken.CanBeCanceled
+            ? completion.Task.WaitAsync(cancellationToken)
+            : completion.Task;
     }
 
     public void SaveActivities(IEnumerable<AudioAsset> assets)
     {
-        EnsureWritable();
-        _database.SaveAssetActivityAsync(assets.Select(ToAsset)).GetAwaiter().GetResult();
+        SaveActivitiesAsync(assets).GetAwaiter().GetResult();
     }
 
     public Task SaveActivitiesAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.SaveAssetActivityAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+        var rows = assets.Select(ToAsset).ToArray();
+        return WriteSerializedAsync(token => _database.SaveAssetActivityAsync(rows, token), cancellationToken);
     }
 
     public Task SaveAssetDetailsAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.SaveAssetDetailsAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+        var rows = assets.Select(ToAsset).ToArray();
+        return WriteSerializedAsync(token => _database.SaveAssetDetailsAsync(rows, token), cancellationToken);
     }
 
     public void SaveSessionPlayed(IEnumerable<string> paths)
     {
-        EnsureWritable();
-        _database.ReplaceSessionPlayedAsync(paths).GetAwaiter().GetResult();
+        SaveSessionPlayedAsync(paths).GetAwaiter().GetResult();
     }
 
     public Task SaveSessionPlayedAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.ReplaceSessionPlayedAsync(paths.ToArray(), cancellationToken);
+        var rows = paths.ToArray();
+        return WriteSerializedAsync(token => _database.ReplaceSessionPlayedAsync(rows, token), cancellationToken);
     }
 
     public Task<IReadOnlyList<RegionRecord>> LoadRegionsAsync(string assetPath, CancellationToken cancellationToken = default) =>
@@ -98,13 +124,13 @@ public sealed class StateStore : IStorageService
     public Task SaveRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.UpsertRegionAsync(region, cancellationToken);
+        return WriteSerializedAsync(token => _database.UpsertRegionAsync(region, token), cancellationToken);
     }
 
     public Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.DeleteRegionAsync(region, cancellationToken);
+        return WriteSerializedAsync(token => _database.DeleteRegionAsync(region, token), cancellationToken);
     }
 
     public Task<LoudnessRecord?> LoadLoudnessAsync(string assetPath, CancellationToken cancellationToken = default) =>
@@ -113,17 +139,61 @@ public sealed class StateStore : IStorageService
     public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.UpsertLoudnessAsync(row, cancellationToken);
+        return WriteSerializedAsync(token => _database.UpsertLoudnessAsync(row, token), cancellationToken);
     }
 
     public Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default)
     {
         EnsureWritable();
-        return _database.AddProjectUsageAsync(row, cancellationToken);
+        return WriteSerializedAsync(token => _database.AddProjectUsageAsync(row, token), cancellationToken);
     }
 
     public Task<IReadOnlyList<ProjectUsageRecord>> LoadProjectUsageAsync(int limit = 500, CancellationToken cancellationToken = default) =>
         _database.LoadProjectUsageAsync(limit, cancellationToken);
+
+    private async Task PumpWorkspaceWritesAsync()
+    {
+        while (true)
+        {
+            CatalogSnapshot snapshot;
+            TaskCompletionSource[] waiters;
+            lock (_workspaceQueueGate)
+            {
+                if (_pendingWorkspace is null)
+                {
+                    _workspacePumpRunning = false;
+                    return;
+                }
+                snapshot = _pendingWorkspace;
+                _pendingWorkspace = null;
+                waiters = _pendingWorkspaceWaiters.ToArray();
+                _pendingWorkspaceWaiters.Clear();
+            }
+
+            try
+            {
+                await WriteSerializedAsync(
+                    token => _database.SaveWorkspaceAsync(snapshot, token),
+                    CancellationToken.None).ConfigureAwait(false);
+                Interlocked.Increment(ref _workspaceWritesExecuted);
+                foreach (var waiter in waiters) waiter.TrySetResult();
+            }
+            catch (Exception exception)
+            {
+                foreach (var waiter in waiters) waiter.TrySetException(exception);
+            }
+        }
+    }
+
+    private Task WriteSerializedAsync(
+        Func<CancellationToken, Task> writer,
+        CancellationToken cancellationToken) =>
+        Task.Run(async () =>
+        {
+            await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try { await writer(cancellationToken).ConfigureAwait(false); }
+            finally { _writeGate.Release(); }
+        });
 
     private void EnsureWritable()
     {
@@ -166,6 +236,14 @@ public sealed class StateStore : IStorageService
 
     private static CatalogSnapshot ToSnapshot(PersistedState state)
     {
+        var snapshot = ToWorkspaceSnapshot(state);
+        snapshot.Assets.AddRange(state.Index.Select(ToAsset));
+        snapshot.SessionPlayed.UnionWith(state.Index.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath));
+        return snapshot;
+    }
+
+    private static CatalogSnapshot ToWorkspaceSnapshot(PersistedState state)
+    {
         var snapshot = new CatalogSnapshot();
         foreach (var library in state.Libraries)
         {
@@ -175,9 +253,7 @@ public sealed class StateStore : IStorageService
                     source.ArtworkPath, source.ArtworkChecked, source.ArtworkScanVersion, source.CanonicalPath,
                     source.VolumeLabel, source.VolumeSerial, source.LastSeenUtc));
         }
-        snapshot.Assets.AddRange(state.Index.Select(ToAsset));
         snapshot.Favorites.UnionWith(state.Favorites);
-        snapshot.SessionPlayed.UnionWith(state.Index.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath));
         foreach (var collection in state.Collections)
         {
             snapshot.Collections.Add(new CollectionRecord(collection.Id, collection.Name, collection.Kind));

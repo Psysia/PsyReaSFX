@@ -37,6 +37,8 @@ internal static class DesktopSelfTest
             var indexed = await new LibraryIndexer().BuildAsync(
                 [library], [], new InlineProgress<(int Count, string File)>(), CancellationToken.None);
             var pathIdentityPassed = await VerifyPathIdentityAsync(working);
+            var storageQueue = await VerifyStorageQueueAsync(working);
+            var storageQueuePassed = storageQueue.Passed;
 
             var database = new PsyReaSFXDatabase(Path.Combine(working, "database"));
             await database.InitializeAsync();
@@ -629,6 +631,7 @@ internal static class DesktopSelfTest
                          && previewControllerPassed
                          && architectureBoundariesPassed
                          && pathIdentityPassed
+                         && storageQueuePassed
                          && indexed.Count == 1
                          && indexed[0].DurationSeconds > .45
                          && migrationPassed
@@ -671,6 +674,8 @@ internal static class DesktopSelfTest
                 previewControllerPassed,
                 architectureBoundariesPassed,
                 pathIdentityPassed,
+                storageQueuePassed,
+                storageQueueProbe = storageQueue.Probe,
                 indexedAssets = indexed.Count,
                 uiSmokePassed,
                 panelCollapsePassed,
@@ -920,6 +925,32 @@ internal static class DesktopSelfTest
                && !restored.FocusMode && restored.NavigationVisible && restored.InspectorVisible
                && Math.Abs(restored.NavigationWidth - 318) < .1
                && Math.Abs(restored.InspectorWidth - 344) < .1;
+    }
+
+    private static async Task<(bool Passed, string Probe)> VerifyStorageQueueAsync(string working)
+    {
+        var database = new PsyReaSFXDatabase(Path.Combine(working, "database-storage-queue"));
+        var store = new StateStore(database);
+        await database.InitializeAsync();
+        var state = new PersistedState();
+        state.Libraries.Add(new LibraryDefinition { Id = "queue-library", Name = "Queue 0" });
+
+        var saves = new List<Task>();
+        for (var i = 1; i <= 64; i++)
+        {
+            state.Libraries[0].Name = $"Queue {i}";
+            saves.Add(store.SaveWorkspaceAsync(state));
+        }
+        await Task.WhenAll(saves);
+
+        var loaded = await database.LoadSnapshotAsync();
+        var finalName = loaded.Libraries.Single().Name;
+        var passed = finalName == "Queue 64"
+                     && store.WorkspaceWritesExecuted < saves.Count
+                     && store.WorkspaceWritesCoalesced > 0
+                     && store.WorkspaceWritesExecuted + store.WorkspaceWritesCoalesced <= saves.Count;
+        return (passed,
+            $"final={finalName}; requested={saves.Count}; executed={store.WorkspaceWritesExecuted}; coalesced={store.WorkspaceWritesCoalesced}");
     }
 
     private static async Task<bool> VerifyPathIdentityAsync(string working)
