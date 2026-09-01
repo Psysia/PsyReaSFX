@@ -577,10 +577,11 @@ drive or folder, expand its logical library, right-click that source and choose
 `Relink source folder…`. PsyReaSFX updates the index and related records without
 moving media, then incrementally scans the new location.
 
-### Duplicate review
+### Duplicate-candidate review
 
-`Check duplicates` first groups by file size, then samples equal-size candidates.
-The Duplicate assets view keeps matching groups together. PsyReaSFX never
+`Check candidates` first groups by file size, then samples equal-size files.
+The Duplicate candidates view keeps matching groups together. These are
+high-confidence candidates, not proof that the complete file contents match. PsyReaSFX never
 deletes duplicates automatically; review licensing, naming and path intent
 before changing source media.
 

@@ -8010,7 +8010,7 @@ function start_duplicate_scan()
     failed = 0,
     job_token = job_token,
   }
-  set_status(string.format("正在检查重复素材：%d 个同尺寸候选", #candidates))
+  set_status(string.format("正在检查重复候选：%d 个同尺寸文件", #candidates))
 end
 
 function finish_duplicate_scan(session)
@@ -8053,7 +8053,7 @@ function finish_duplicate_scan(session)
   Jobs.finish(session.job_token, true)
   state.results_dirty = true
   state.db_dirty = true
-  set_status(string.format("重复检查完成：%d 组，%d 个素材", #duplicates, asset_count))
+  set_status(string.format("候选检查完成：%d 组，%d 个素材", #duplicates, asset_count))
 end
 
 function process_duplicate_scan()
@@ -11555,7 +11555,7 @@ function draw_sidebar()
 
   if state.duplicate_asset_count > 0 then
     sidebar_item(
-      string.format("重复素材  %d", state.duplicate_asset_count),
+      string.format("重复候选  %d", state.duplicate_asset_count),
       state.view == "duplicates"
         and not state.active_collection_id,
       function()
@@ -19207,8 +19207,8 @@ function draw_settings_maintenance()
   ImGui.Separator(ctx)
 
   settings_section_title(
-    "重复素材",
-    "仅对大小相同的候选文件读取头部、中部和尾部采样块；不会修改或删除源文件。"
+    "重复候选",
+    "仅对大小相同的文件读取头部、中部和尾部采样块；结果尚未经过完整内容确认，不会修改或删除源文件。"
   )
 
   if state.duplicate_scan then
@@ -19229,17 +19229,17 @@ function draw_settings_maintenance()
     ImGui.TextDisabled(
       ctx,
       string.format(
-        "重复组 %d · 涉及素材 %d",
+        "候选组 %d · 涉及素材 %d",
         state.duplicate_group_count,
         state.duplicate_asset_count
       )
     )
-    if dark_button("检查重复素材", 150) then
+    if dark_button("检查重复候选", 150) then
       start_duplicate_scan()
     end
     if state.duplicate_asset_count > 0 then
       ImGui.SameLine(ctx)
-      if dark_button("查看重复素材", 150) then
+      if dark_button("查看重复候选", 150) then
         state.view = "duplicates"
         state.active_collection_id = nil
         state.root_filter = nil
