@@ -39,7 +39,7 @@ public partial class MainWindow : Window
     private readonly CatalogViewModel _catalog = new();
     private ObservableCollection<AudioAsset> _assets => _catalog.Assets;
     private ICollectionView _view => _catalog.View;
-    private readonly IPreviewController _previewEngine = new LowLatencyPreviewEngine();
+    private readonly IPreviewController _previewEngine;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _autoPreviewTimer = new() { Interval = TimeSpan.FromMilliseconds(110) };
@@ -117,6 +117,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _reliability = new CatalogReliabilityService(_store.DataDirectory);
+        _previewEngine = new PreviewController(_jobs, new LowLatencyPreviewEngine());
         InitializeComponent();
         _preferences = _preferencesStore.Load();
         LuaWaveCache.Configure(_preferences.WaveformCacheDirectory);
@@ -1588,16 +1589,9 @@ public partial class MainWindow : Window
     {
         if (_selected == null || !File.Exists(_selected.FilePath)) return;
         var asset = _selected;
-        using var job = _jobs.TryStart(
-            BackgroundJobKind.Preview,
-            BackgroundJobResource.PreviewEngine,
-            true,
-            BackgroundJobPriority.Realtime);
-        if (job == null) return;
         try
         {
             _autoPreviewTimer.Stop();
-            var token = job.Token;
             if (_previewing != null && !ReferenceEquals(_previewing, asset)) _previewing.PreviewPlayhead = -1;
             _previewing = asset;
             _pendingSeekRatio = Math.Clamp(ratio, 0, 1);
@@ -1609,8 +1603,8 @@ public partial class MainWindow : Window
             // pitch shifter's overlap buffer. Reusing that buffer mixed a few
             // frames from the old position into the new one and caused clicks.
             StatusText.Text = T($"正在准备试听：{asset.FileName}", $"Preparing preview: {asset.FileName}");
-            await _previewEngine.OpenAsync(asset.FilePath, startAt, true, token);
-            if (token.IsCancellationRequested || !ReferenceEquals(_previewing, asset)) return;
+            var started = await _previewEngine.OpenAsync(asset.FilePath, startAt, true);
+            if (!started || !ReferenceEquals(_previewing, asset)) return;
             _isPlaying = true;
             SetPlaybackClock(startAt);
             PlayButton.Icon = "pause";
@@ -1621,7 +1615,6 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
-            job.MarkFailed(exception);
             _isPlaying = false;
             PlayButton.Icon = "play";
             StatusText.Text = T($"无法试听：{exception.Message}", $"Preview failed: {exception.Message}");
@@ -1941,11 +1934,8 @@ public partial class MainWindow : Window
         if (_selected == null) return;
         var channels = CurrentAuditionChannels();
         UpdateChannelModePresentation();
-        using var job = _jobs.TryStart(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine, true);
-        if (job == null) return;
-        try { await _previewEngine.ReconfigureAsync(_reverseAudition, channels, job.Token); }
-        catch (OperationCanceledException) { return; }
-        catch (Exception exception) { job.MarkFailed(exception); AppDiagnostics.Write("Channel audition reconfiguration failed.", exception); }
+        try { await _previewEngine.ReconfigureAsync(_reverseAudition, channels); }
+        catch (Exception exception) { AppDiagnostics.Write("Channel audition reconfiguration failed.", exception); }
     }
 
     private int[] CurrentAuditionChannels() => _channelMode == 0 ? [] : [_channelMode - 1];
@@ -1978,11 +1968,8 @@ public partial class MainWindow : Window
         _reverseAudition = !_reverseAudition;
         ReverseButton.IsActive = _reverseAudition;
         ReverseButton.Foreground = _reverseAudition ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("MutedBrush");
-        using var job = _jobs.TryStart(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine, true);
-        if (job == null) return;
-        try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], job.Token); }
-        catch (OperationCanceledException) { }
-        catch (Exception exception) { job.MarkFailed(exception); StatusText.Text = exception.Message; AppDiagnostics.Write("Reverse audition failed.", exception); }
+        try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1]); }
+        catch (Exception exception) { StatusText.Text = exception.Message; AppDiagnostics.Write("Reverse audition failed.", exception); }
     }
 
     private async void PreservePitch_Click(object sender, RoutedEventArgs e)
@@ -1994,11 +1981,8 @@ public partial class MainWindow : Window
         StatusText.Text = _preservePitch ? T("变速时保持音高", "Pitch is preserved while changing speed") : T("变速会同步改变音高", "Pitch follows playback speed");
         if (_previewEngine.IsOpen)
         {
-            using var job = _jobs.TryStart(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine, true);
-            if (job == null) return;
-            try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], job.Token); }
-            catch (OperationCanceledException) { }
-            catch (Exception exception) { job.MarkFailed(exception); AppDiagnostics.Write("Preserve-pitch pipeline rebuild failed.", exception); }
+            try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1]); }
+            catch (Exception exception) { AppDiagnostics.Write("Preserve-pitch pipeline rebuild failed.", exception); }
         }
     }
 

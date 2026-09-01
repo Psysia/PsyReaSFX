@@ -73,7 +73,7 @@
 - [ ] 禁止新代码直接任意修改全局 `state`，改为通过模块入口改变状态。
 - [x] Lua 源码迁移到 `src/lua/` 模块；发布时自动合成为单个 ReaPack 脚本。
 - [x] 自动生成发布文件和版本头；历史文件名仅作为 CI 校验的兼容镜像，不再作为手工源文件维护。
-- [ ] Desktop 拆出 `CatalogViewModel`、`PreviewController`、`OrganizationService`、`ArtworkService`、`WindowStateController`。
+- [x] Desktop 拆出 `CatalogViewModel`、`PreviewController`、`OrganizationService`、`ArtworkService`、`WindowStateController`。
 - [ ] 将中英文字符串集中到资源表，禁止继续散落硬编码。
 - [ ] 每迁移一个模块都运行行为对照和性能基线，不在同一提交加入新功能。
 

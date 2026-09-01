@@ -48,7 +48,7 @@ public interface IJobCoordinator
     IReadOnlyList<BackgroundJobSnapshot> Snapshot();
 }
 
-public interface IPreviewController : IDisposable
+public interface IPreviewEngine : IDisposable
 {
     event EventHandler? PlaybackEnded;
     event EventHandler<Exception>? PlaybackFailed;
@@ -66,6 +66,29 @@ public interface IPreviewController : IDisposable
     void SetAuditionChannels(IReadOnlyList<int>? auditionChannels);
     Task OpenAsync(string path, double sourcePosition, bool autoplay, CancellationToken cancellationToken = default);
     Task ReconfigureAsync(bool reverse, IReadOnlyList<int>? auditionChannels = null, CancellationToken cancellationToken = default);
+    void Play();
+    Task PauseAsync(CancellationToken cancellationToken = default);
+    Task StopAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IPreviewController : IDisposable
+{
+    event EventHandler? PlaybackEnded;
+    event EventHandler<Exception>? PlaybackFailed;
+    bool IsOpen { get; }
+    bool IsPlaying { get; }
+    string Path { get; }
+    double Duration { get; }
+    double Position { get; set; }
+    double Rate { get; set; }
+    double PitchSemitones { get; set; }
+    double GainDb { get; set; }
+    bool PreservePitch { get; set; }
+    bool Reverse { get; }
+    IReadOnlyList<int> AuditionChannels { get; }
+    void SetAuditionChannels(IReadOnlyList<int>? auditionChannels);
+    Task<bool> OpenAsync(string path, double sourcePosition, bool autoplay, CancellationToken cancellationToken = default);
+    Task<bool> ReconfigureAsync(bool reverse, IReadOnlyList<int>? auditionChannels = null, CancellationToken cancellationToken = default);
     void Play();
     Task PauseAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);

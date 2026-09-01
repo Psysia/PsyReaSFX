@@ -30,6 +30,7 @@ internal static class DesktopSelfTest
             var info = PsyAudioFileReader.ReadInfo(wavPath);
             var waveform = PsyAudioFileReader.ReadWaveform(wavPath, 256);
             var jobCoordinatorPassed = await VerifyJobCoordinatorAsync();
+            var previewControllerPassed = await VerifyPreviewControllerAsync();
             var architectureBoundariesPassed = VerifyArchitectureBoundaries();
             var library = new LibraryDefinition { Name = "Self Test" };
             library.Sources.Add(new LibrarySource { Path = working });
@@ -625,6 +626,7 @@ internal static class DesktopSelfTest
                          && waveform.Length == 1
                          && waveform.All(channel => channel.Length == 256 && channel.Max() > .1f)
                          && jobCoordinatorPassed
+                         && previewControllerPassed
                          && architectureBoundariesPassed
                          && pathIdentityPassed
                          && indexed.Count == 1
@@ -666,6 +668,7 @@ internal static class DesktopSelfTest
                 waveformChannels = waveform.Length,
                 waveformBuckets = waveform.FirstOrDefault()?.Length ?? 0,
                 jobCoordinatorPassed,
+                previewControllerPassed,
                 architectureBoundariesPassed,
                 pathIdentityPassed,
                 indexedAssets = indexed.Count,
@@ -806,12 +809,76 @@ internal static class DesktopSelfTest
         }
     }
 
+    private static async Task<bool> VerifyPreviewControllerAsync()
+    {
+        var jobs = new BackgroundJobCoordinator();
+        var engine = new BlockingPreviewEngine();
+        using var preview = new PreviewController(jobs, engine);
+        var first = preview.OpenAsync("first.wav", 0, true);
+        await engine.FirstOpenStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var second = await preview.OpenAsync("second.wav", 0, true);
+        var firstResult = await first;
+        return !firstResult
+               && second
+               && engine.CancelledOpenCount == 1
+               && engine.Path == "second.wav"
+               && !jobs.IsActive(BackgroundJobKind.Preview);
+    }
+
+    private sealed class BlockingPreviewEngine : IPreviewEngine
+    {
+        public TaskCompletionSource FirstOpenStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int CancelledOpenCount { get; private set; }
+        public event EventHandler? PlaybackEnded { add { } remove { } }
+        public event EventHandler<Exception>? PlaybackFailed { add { } remove { } }
+        public bool IsOpen => Path.Length > 0;
+        public bool IsPlaying { get; private set; }
+        public string Path { get; private set; } = "";
+        public double Duration => 1;
+        public double Position { get; set; }
+        public double Rate { get; set; } = 1;
+        public double PitchSemitones { get; set; }
+        public double GainDb { get; set; }
+        public bool PreservePitch { get; set; } = true;
+        public bool Reverse { get; private set; }
+        public IReadOnlyList<int> AuditionChannels { get; private set; } = [];
+
+        public void SetAuditionChannels(IReadOnlyList<int>? auditionChannels) =>
+            AuditionChannels = auditionChannels?.ToArray() ?? [];
+
+        public async Task OpenAsync(string path, double sourcePosition, bool autoplay, CancellationToken cancellationToken = default)
+        {
+            if (path == "first.wav")
+            {
+                FirstOpenStarted.TrySetResult();
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken); }
+                catch (OperationCanceledException) { CancelledOpenCount++; throw; }
+            }
+            Path = path;
+            Position = sourcePosition;
+            IsPlaying = autoplay;
+        }
+
+        public Task ReconfigureAsync(bool reverse, IReadOnlyList<int>? auditionChannels = null, CancellationToken cancellationToken = default)
+        {
+            Reverse = reverse;
+            SetAuditionChannels(auditionChannels);
+            return Task.CompletedTask;
+        }
+
+        public void Play() => IsPlaying = true;
+        public Task PauseAsync(CancellationToken cancellationToken = default) { IsPlaying = false; return Task.CompletedTask; }
+        public Task StopAsync(CancellationToken cancellationToken = default) { IsPlaying = false; Position = 0; return Task.CompletedTask; }
+        public void Dispose() { }
+    }
+
     private static bool VerifyArchitectureBoundaries()
     {
         IStorageService storage = new StateStore();
         ICatalogIndexer catalog = new LibraryIndexer();
         IJobCoordinator jobs = new BackgroundJobCoordinator();
-        using IPreviewController preview = new LowLatencyPreviewEngine();
+        using IPreviewController preview = new PreviewController(jobs, new LowLatencyPreviewEngine());
         IArtworkService artwork = new ArtworkService();
         IPathIdentityService paths = new PathIdentityService();
         ITransferService transfer = new TransferEngine();

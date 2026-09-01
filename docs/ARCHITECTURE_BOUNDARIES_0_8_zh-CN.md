@@ -10,7 +10,7 @@
 | Catalog | `ICatalogIndexer` | `LibraryIndexer` + `CatalogViewModel` | 从稳定来源快照构建素材目录，并统一持有可替换的 WPF 目录视图 |
 | Jobs | `IJobCoordinator` | `BackgroundJobCoordinator` | generation、取消、资源互斥和退出收敛 |
 | PathIdentity | `IPathIdentityService` | `PathIdentityService` | 路径规范化、来源实体识别和相对路径 |
-| Preview | `IPreviewController` | `LowLatencyPreviewEngine` | 打开、播放、暂停、参数和声道试听 |
+| Preview | `IPreviewController` / `IPreviewEngine` | `PreviewController` + `LowLatencyPreviewEngine` | 控制器拥有替换、取消和失败生命周期；引擎只拥有设备与 DSP 资源 |
 | Transfer | `ITransferService` | `TransferEngine` | 独立输出、批量变体和任务报告 |
 | Artwork | `IArtworkService` | `ArtworkService` | 封面查找、来源封面应用和回退 |
 | Organization | `IOrganizationService` | `OrganizationService` | 集合成员去重、增删和保存搜索快照构造 |
@@ -36,7 +36,7 @@ Lua 的可维护源已按职责机械拆分到 `src/lua/`，顺序为启动与�
 
 1. 将仍在窗口中的搜索语法、筛选条件和目录选择策略继续移入 `CatalogViewModel`。
 2. 将仍在窗口中的收藏、集合菜单、保存搜索载入和试听活动继续移入 `OrganizationService`。
-3. 将预览 UI 编排从窗口移入更高层 `PreviewController`，底层音频引擎继续实现 `IPreviewController`。
+3. 将剩余的播放按钮文案与进度显示编排逐步移出窗口；试听替换、取消和管线重建已经由 `PreviewController` 统一管理。
 4. 将剩余窗口布局与偏好写回移入 `WindowStateController`。
 5. 集中尚未进入 `UiLocalization` 的中英文运行时文本。
 
