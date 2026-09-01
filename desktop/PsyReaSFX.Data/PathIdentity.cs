@@ -56,14 +56,25 @@ public static class PathIdentity
     public static string Normalize(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return "";
-        var full = Path.GetFullPath(path.Trim()).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        path = StripExtendedPrefix(path.Trim());
+        var full = Path.GetFullPath(path).Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
         var root = Path.GetPathRoot(full) ?? "";
         return full.Length > root.Length ? full.TrimEnd(Path.DirectorySeparatorChar) : full;
     }
 
-    public static string NormalizeRelative(string path) =>
-        (path ?? "").Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
-            .TrimStart(Path.DirectorySeparatorChar).TrimEnd(Path.DirectorySeparatorChar);
+    public static string NormalizeRelative(string path)
+    {
+        var segments = new List<string>();
+        foreach (var segment in (path ?? "")
+                     .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)
+                     .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment == ".") continue;
+            if (segment == ".." && segments.Count > 0 && segments[^1] != "..") segments.RemoveAt(segments.Count - 1);
+            else segments.Add(segment);
+        }
+        return string.Join(Path.DirectorySeparatorChar, segments);
+    }
 
     public static string RelativeTo(string sourcePath, string assetPath)
     {
@@ -83,10 +94,36 @@ public static class PathIdentity
 
     public static bool SamePhysicalSource(SourcePathIdentity first, SourcePathIdentity second)
     {
-        if (!string.IsNullOrWhiteSpace(first.VolumeSerial)
-            && first.VolumeSerial.Equals(second.VolumeSerial, StringComparison.OrdinalIgnoreCase))
-            return first.CanonicalPath.Equals(second.CanonicalPath, StringComparison.OrdinalIgnoreCase);
-        return first.CanonicalPath.Equals(second.CanonicalPath, StringComparison.OrdinalIgnoreCase);
+        var firstCanonical = Normalize(first.CanonicalPath);
+        var secondCanonical = Normalize(second.CanonicalPath);
+        if (!string.IsNullOrWhiteSpace(firstCanonical)
+            && firstCanonical.Equals(secondCanonical, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !string.IsNullOrWhiteSpace(first.VolumeSerial)
+               && first.VolumeSerial.Equals(second.VolumeSerial, StringComparison.OrdinalIgnoreCase)
+               && !string.IsNullOrWhiteSpace(firstCanonical)
+               && !string.IsNullOrWhiteSpace(secondCanonical)
+               && PathWithinVolume(firstCanonical).Equals(
+                   PathWithinVolume(secondCanonical), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string PathWithinVolume(string path)
+    {
+        var normalized = Normalize(path);
+        var root = Path.GetPathRoot(normalized) ?? "";
+        return NormalizeRelative(normalized[root.Length..]);
+    }
+
+    private static string StripExtendedPrefix(string path)
+    {
+        if (path.StartsWith("\\\\?\\UNC\\", StringComparison.OrdinalIgnoreCase)) return "\\\\" + path[8..];
+        return path.Length >= 7
+               && path.StartsWith("\\\\?\\", StringComparison.OrdinalIgnoreCase)
+               && char.IsAsciiLetter(path[4])
+               && path[5] == ':'
+            ? path[4..]
+            : path;
     }
 
     private static string ResolveCanonical(string path)
@@ -101,11 +138,7 @@ public static class PathIdentity
             var length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
             if (length == 0 || length >= buffer.Capacity) return path;
             var resolved = buffer.ToString();
-            if (resolved.StartsWith("\\\\?\\UNC\\", StringComparison.OrdinalIgnoreCase))
-                resolved = "\\\\" + resolved[8..];
-            else if (resolved.StartsWith("\\\\?\\", StringComparison.OrdinalIgnoreCase))
-                resolved = resolved[4..];
-            return Normalize(resolved);
+            return Normalize(StripExtendedPrefix(resolved));
         }
         catch { return path; }
     }

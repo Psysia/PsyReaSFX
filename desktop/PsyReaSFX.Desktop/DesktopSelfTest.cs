@@ -1042,6 +1042,18 @@ internal static class DesktopSelfTest
         var missing = await indexer.BuildAsync([newLibrary], moved, new InlineProgress<(int Count, string File)>(), CancellationToken.None);
         var sourceIdentity = PathIdentity.CaptureSource(newRoot);
         var trailingIdentity = PathIdentity.CaptureSource(newRoot + Path.DirectorySeparatorChar);
+        var extendedIdentity = PathIdentity.CaptureSource(@"\\?\" + newRoot);
+        var junctionPath = Path.Combine(working, "identity-junction");
+        var junctionCreated = TryCreateJunction(junctionPath, newRoot);
+        var junctionIdentity = junctionCreated
+            ? PathIdentity.CaptureSource(junctionPath)
+            : null;
+        var reassignedFirst = new SourcePathIdentity(
+            @"X:\Sound Library", @"X:\Sound Library", "", "A1B2C3D4", 0);
+        var reassignedSecond = new SourcePathIdentity(
+            @"Y:\Sound Library", @"Y:\Sound Library", "", "A1B2C3D4", 0);
+        var differentFolder = new SourcePathIdentity(
+            @"Y:\Other Library", @"Y:\Other Library", "", "A1B2C3D4", 0);
 
         return firstAsset.AssetId.Length == 32
                && unchangedWriteSkipped
@@ -1061,7 +1073,43 @@ internal static class DesktopSelfTest
                && missing.Count == 1 && !missing[0].Ready && missing[0].AssetId == firstAsset.AssetId
                && !string.IsNullOrWhiteSpace(sourceIdentity.CanonicalPath)
                && sourceIdentity.LastSeenUtc > 0
-               && PathIdentity.SamePhysicalSource(sourceIdentity, trailingIdentity);
+               && PathIdentity.SamePhysicalSource(sourceIdentity, trailingIdentity)
+               && PathIdentity.SamePhysicalSource(sourceIdentity, extendedIdentity)
+               && junctionCreated && junctionIdentity != null
+               && PathIdentity.SamePhysicalSource(sourceIdentity, junctionIdentity)
+               && PathIdentity.SamePhysicalSource(reassignedFirst, reassignedSecond)
+               && !PathIdentity.SamePhysicalSource(reassignedFirst, differentFolder)
+               && !PathIdentity.SamePhysicalSource(
+                   new SourcePathIdentity("", "", "", "", 0),
+                   new SourcePathIdentity("", "", "", "", 0))
+               && PathIdentity.NormalizeRelative(@"Folder\.\Nested\..\File.wav")
+                   == Path.Combine("Folder", "File.wav");
+    }
+
+    private static bool TryCreateJunction(string junctionPath, string targetPath)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            var startInfo = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add("/d");
+            startInfo.ArgumentList.Add("/c");
+            startInfo.ArgumentList.Add("mklink");
+            startInfo.ArgumentList.Add("/J");
+            startInfo.ArgumentList.Add(junctionPath);
+            startInfo.ArgumentList.Add(targetPath);
+            using var process = System.Diagnostics.Process.Start(startInfo);
+            if (process == null) return false;
+            process.WaitForExit();
+            return process.ExitCode == 0 && Directory.Exists(junctionPath);
+        }
+        catch { return false; }
     }
 
     private static CatalogSnapshot IdentitySnapshot(LibraryDefinition library, AudioAsset asset, string path)
