@@ -189,7 +189,7 @@ function add_or_update_asset(asset)
       tostring(existing.artwork_path or "") ~= ""
 
     existing._search_blob = nil
-    state.library_counts_dirty = true
+    invalidate_library_counts()
 
     if old_folder ~= path_key(existing.folder or "")
       or old_root_id ~= tostring(existing.root_id or "") then
@@ -227,7 +227,7 @@ function add_or_update_asset(asset)
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
   state.database_ordered_assets = nil
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
   return asset
 end
@@ -241,7 +241,7 @@ function rebuild_assets()
   end
 
   state.results_dirty = true
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
 end
 

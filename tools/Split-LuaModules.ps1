@@ -19,7 +19,11 @@ $boundaries = @(
     @{ File = "10_ui_core.lua"; Marker = "function translate_ui_text(value)" },
     @{ File = "20_jobs_storage.lua"; Marker = "function Jobs.begin(" },
     @{ File = "30_catalog.lua"; Marker = "function parse_ucs_filename(filename)" },
+    @{ File = "35_incremental_results.lua"; Marker = "-- Incremental result construction keeps large catalogs out of a single UI" },
+    @{ File = "36_asset_journal.lua"; Marker = "-- Generation-bound asset journal codec. Decoding validates the complete" },
+    @{ File = "37_catalog_caches.lua"; Marker = "-- Sparse activity indexes and frame-budgeted aggregate caches for large" },
     @{ File = "40_analysis.lua"; Marker = "function asset_regions(asset)" },
+    @{ File = "45_duplicate_confirmation.lua"; Marker = "local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024" },
     @{ File = "50_runtime_ui.lua"; Marker = "function load_database()" }
 )
 

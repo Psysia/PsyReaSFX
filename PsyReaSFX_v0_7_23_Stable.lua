@@ -481,6 +481,7 @@ local WAVE_INTERVAL = 0.012
 local SAVE_INTERVAL = 8
 local WATCH_INTERVAL = 60
 local DATABASE_JOURNAL_COMPACT_COUNT = 10000
+local LIBRARY_COUNT_ASSETS_PER_FRAME = 4000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
@@ -659,6 +660,7 @@ local state = {
   libraries_dirty = false,
   library_asset_counts = {},
   library_counts_dirty = true,
+  library_counts_job = nil,
   library_filter_id = nil,
   expanded_libraries = {},
   expanded_source_folders = {},
@@ -693,6 +695,7 @@ local state = {
   searches_dirty = false,
 
   history_dirty = false,
+  preview_history_assets = {},
 
   -- 当前启动会话的已播放颜色。完整历史仍保存到 history_v1.tsv。
   session_played = {},
@@ -3516,6 +3519,10 @@ function library_for_path(path, root)
   return library and library.name or basename(root)
 end
 
+function invalidate_library_counts()
+  state.library_counts_dirty = true
+  state.library_counts_job = nil
+end
 
 function refresh_asset_library_binding(asset)
   local previous_root = tostring(asset.root or "")
@@ -3531,7 +3538,7 @@ function refresh_asset_library_binding(asset)
   asset.library = library and library.name
     or library_for_path(asset.path, root)
   asset._search_blob = nil
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   return previous_root ~= tostring(asset.root or "")
     or previous_root_id ~= tostring(asset.root_id or "")
     or previous_library_id ~= tostring(asset.library_id or "")
@@ -5873,7 +5880,7 @@ function add_or_update_asset(asset)
       tostring(existing.artwork_path or "") ~= ""
 
     existing._search_blob = nil
-    state.library_counts_dirty = true
+    invalidate_library_counts()
 
     if old_folder ~= path_key(existing.folder or "")
       or old_root_id ~= tostring(existing.root_id or "") then
@@ -5911,7 +5918,7 @@ function add_or_update_asset(asset)
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
   state.database_ordered_assets = nil
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
   return asset
 end
@@ -5925,7 +5932,7 @@ function rebuild_assets()
   end
 
   state.results_dirty = true
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
 end
 
@@ -7567,6 +7574,50 @@ function write_asset_journal_atomic(
   end
   if not file:close() then return false, "commit_failed" end
   return true, #encoded
+end
+
+-- Sparse activity indexes and frame-budgeted aggregate caches for large
+-- catalogs. These helpers are REAPER-independent so capacity behavior can be
+-- tested without launching the UI.
+
+function new_library_count_job()
+  return { index = 1, counts = {} }
+end
+
+function step_library_count_job(job, assets, batch_size)
+  if type(job) ~= "table" or type(assets) ~= "table" then
+    return false, nil, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(#assets, job.index + batch_size - 1)
+  for index = job.index, last do
+    local id = tostring(assets[index].library_id or "")
+    if id ~= "" then
+      job.counts[id] = (job.counts[id] or 0) + 1
+    end
+  end
+  job.index = last + 1
+  return job.index > #assets, job.counts
+end
+
+function ordered_preview_history_assets(
+  history_assets,
+  by_path,
+  path_key_function,
+  sort_key_function
+)
+  local assets = {}
+  for _, asset in pairs(history_assets or {}) do
+    local key = asset and path_key_function(asset.path) or nil
+    if key and by_path[key] == asset
+      and (tonumber(asset.last_previewed) or 0) > 0 then
+      assets[#assets + 1] = asset
+    end
+  end
+  table.sort(assets, function(left, right)
+    return sort_key_function(left) < sort_key_function(right)
+  end)
+  return assets
 end
 
 function asset_regions(asset)
@@ -10196,6 +10247,8 @@ function load_history()
           tonumber(fields[3]) or 0
         asset.last_previewed =
           tonumber(fields[4]) or 0
+        ensure_asset_identity(asset)
+        state.preview_history_assets[asset.asset_id] = asset
       end
     end
   end
@@ -10215,18 +10268,22 @@ function save_history()
 
   write_persistence_schema(file, HISTORY_FILE)
 
-  for _, asset in ipairs(state.assets) do
-    if (tonumber(asset.last_previewed) or 0) > 0 then
-      file:write(
-        "preview\t",
-        escape_tsv(asset.path),
-        "\t",
-        tostring(asset.preview_count or 0),
-        "\t",
-        tostring(asset.last_previewed or 0),
-        "\n"
-      )
-    end
+  local history_assets = ordered_preview_history_assets(
+    state.preview_history_assets,
+    state.by_path,
+    path_key,
+    asset_path_sort_key
+  )
+  for _, asset in ipairs(history_assets) do
+    file:write(
+      "preview\t",
+      escape_tsv(asset.path),
+      "\t",
+      tostring(asset.preview_count or 0),
+      "\t",
+      tostring(asset.last_previewed or 0),
+      "\n"
+    )
   end
 
   if not file:close() then
@@ -10284,6 +10341,8 @@ function record_preview_history(asset)
   asset.preview_count =
     (tonumber(asset.preview_count) or 0) + 1
   asset.last_previewed = os.time()
+  ensure_asset_identity(asset)
+  state.preview_history_assets[asset.asset_id] = asset
   local played_key =
     path_key(asset.path)
 
@@ -11764,6 +11823,7 @@ function finish_scan()
       state.by_path[key] = nil
       state.favorites[key] = nil
       state.selected_set[key] = nil
+      state.preview_history_assets[asset.asset_id or ""] = nil
       removed = removed + 1
     end
   end
@@ -16623,6 +16683,7 @@ function remove_root(root)
     if path_is_inside(asset.path, root) then
       state.by_path[key] = nil
       state.favorites[key] = nil
+      state.preview_history_assets[asset.asset_id or ""] = nil
 
       if state.regions_by_path[key] then
         state.regions_by_path[key] = nil
@@ -17040,7 +17101,7 @@ function relink_root(record, supplied_path)
   state.libraries_dirty = true
   mark_database_snapshot_dirty()
   state.results_dirty = true
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
   state.missing_assets = {}
   state.missing_asset_count = 0
@@ -17811,6 +17872,7 @@ function reset_database_keep_roots()
   state.duplicate_confirmation_failures = {}
   state.duplicate_confirmation_failure_count = 0
   state.history_dirty = false
+  state.preview_history_assets = {}
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
@@ -17888,6 +17950,7 @@ function factory_reset()
   state.collections_dirty = false
   state.searches_dirty = false
   state.history_dirty = false
+  state.preview_history_assets = {}
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
@@ -19664,22 +19727,35 @@ function end_module()
 end
 
 function library_asset_count(library_id)
-  if state.library_counts_dirty and not state.scan then
-    state.library_asset_counts = {}
+  return state.library_asset_counts[library_id] or 0
+end
 
-    for _, asset in ipairs(state.assets) do
-      local id = asset.library_id or ""
-
-      if id ~= "" then
-        state.library_asset_counts[id] =
-          (state.library_asset_counts[id] or 0) + 1
-      end
-    end
-
-    state.library_counts_dirty = false
+function process_library_count_rebuild()
+  if not state.library_counts_dirty then
+    state.library_counts_job = nil
+    return
+  end
+  if state.scan or state.import_session then
+    state.library_counts_job = nil
+    return
   end
 
-  return state.library_asset_counts[library_id] or 0
+  local job = state.library_counts_job
+  if not job then
+    job = new_library_count_job()
+    state.library_counts_job = job
+  end
+
+  local complete, counts = step_library_count_job(
+    job,
+    state.assets,
+    LIBRARY_COUNT_ASSETS_PER_FRAME
+  )
+  if complete then
+    state.library_asset_counts = counts
+    state.library_counts_dirty = false
+    state.library_counts_job = nil
+  end
 end
 
 function rename_library(library)
@@ -30117,6 +30193,7 @@ function loop()
     process_pending_transient_detection()
     process_loudness_queue()
   end
+  process_library_count_rebuild()
   cleanup_retired_preview_sources(false)
   poll_preview()
   poll_current_project_binding()

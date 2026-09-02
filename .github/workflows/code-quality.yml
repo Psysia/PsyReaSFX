@@ -95,6 +95,11 @@ jobs:
         run: |
           lua tools/lua_asset_journal_selftest.lua (Resolve-Path 'src/lua/36_asset_journal.lua')
 
+      - name: Run Lua catalog cache capacity smoke test
+        shell: pwsh
+        run: |
+          lua tools/lua_catalog_caches_selftest.lua (Resolve-Path 'src/lua/37_catalog_caches.lua') 25000
+
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
 

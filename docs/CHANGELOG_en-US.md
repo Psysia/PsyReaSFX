@@ -11,6 +11,8 @@
   journal. Structural scans and relinks retain atomic full snapshots, and unclassified
   mutation paths safely fall back to a snapshot.
 - Coalesces repeated changes to the same asset and compacts at 10,000 distinct assets.
+- Rebuilds sidebar library counts across bounded frames and saves preview history from
+  its sparse played-asset index instead of scanning the whole catalog after one preview.
 
 ### Missing assets and source relink
 

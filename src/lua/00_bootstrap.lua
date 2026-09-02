@@ -481,6 +481,7 @@ local WAVE_INTERVAL = 0.012
 local SAVE_INTERVAL = 8
 local WATCH_INTERVAL = 60
 local DATABASE_JOURNAL_COMPACT_COUNT = 10000
+local LIBRARY_COUNT_ASSETS_PER_FRAME = 4000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
@@ -659,6 +660,7 @@ local state = {
   libraries_dirty = false,
   library_asset_counts = {},
   library_counts_dirty = true,
+  library_counts_job = nil,
   library_filter_id = nil,
   expanded_libraries = {},
   expanded_source_folders = {},
@@ -693,6 +695,7 @@ local state = {
   searches_dirty = false,
 
   history_dirty = false,
+  preview_history_assets = {},
 
   -- 当前启动会话的已播放颜色。完整历史仍保存到 history_v1.tsv。
   session_played = {},

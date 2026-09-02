@@ -1330,6 +1330,10 @@ function library_for_path(path, root)
   return library and library.name or basename(root)
 end
 
+function invalidate_library_counts()
+  state.library_counts_dirty = true
+  state.library_counts_job = nil
+end
 
 function refresh_asset_library_binding(asset)
   local previous_root = tostring(asset.root or "")
@@ -1345,7 +1349,7 @@ function refresh_asset_library_binding(asset)
   asset.library = library and library.name
     or library_for_path(asset.path, root)
   asset._search_blob = nil
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   return previous_root ~= tostring(asset.root or "")
     or previous_root_id ~= tostring(asset.root_id or "")
     or previous_library_id ~= tostring(asset.library_id or "")

@@ -1248,6 +1248,8 @@ function load_history()
           tonumber(fields[3]) or 0
         asset.last_previewed =
           tonumber(fields[4]) or 0
+        ensure_asset_identity(asset)
+        state.preview_history_assets[asset.asset_id] = asset
       end
     end
   end
@@ -1267,18 +1269,22 @@ function save_history()
 
   write_persistence_schema(file, HISTORY_FILE)
 
-  for _, asset in ipairs(state.assets) do
-    if (tonumber(asset.last_previewed) or 0) > 0 then
-      file:write(
-        "preview\t",
-        escape_tsv(asset.path),
-        "\t",
-        tostring(asset.preview_count or 0),
-        "\t",
-        tostring(asset.last_previewed or 0),
-        "\n"
-      )
-    end
+  local history_assets = ordered_preview_history_assets(
+    state.preview_history_assets,
+    state.by_path,
+    path_key,
+    asset_path_sort_key
+  )
+  for _, asset in ipairs(history_assets) do
+    file:write(
+      "preview\t",
+      escape_tsv(asset.path),
+      "\t",
+      tostring(asset.preview_count or 0),
+      "\t",
+      tostring(asset.last_previewed or 0),
+      "\n"
+    )
   end
 
   if not file:close() then
@@ -1336,6 +1342,8 @@ function record_preview_history(asset)
   asset.preview_count =
     (tonumber(asset.preview_count) or 0) + 1
   asset.last_previewed = os.time()
+  ensure_asset_identity(asset)
+  state.preview_history_assets[asset.asset_id] = asset
   local played_key =
     path_key(asset.path)
 
@@ -2816,6 +2824,7 @@ function finish_scan()
       state.by_path[key] = nil
       state.favorites[key] = nil
       state.selected_set[key] = nil
+      state.preview_history_assets[asset.asset_id or ""] = nil
       removed = removed + 1
     end
   end
@@ -7675,6 +7684,7 @@ function remove_root(root)
     if path_is_inside(asset.path, root) then
       state.by_path[key] = nil
       state.favorites[key] = nil
+      state.preview_history_assets[asset.asset_id or ""] = nil
 
       if state.regions_by_path[key] then
         state.regions_by_path[key] = nil
@@ -8092,7 +8102,7 @@ function relink_root(record, supplied_path)
   state.libraries_dirty = true
   mark_database_snapshot_dirty()
   state.results_dirty = true
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
   state.missing_assets = {}
   state.missing_asset_count = 0
@@ -8863,6 +8873,7 @@ function reset_database_keep_roots()
   state.duplicate_confirmation_failures = {}
   state.duplicate_confirmation_failure_count = 0
   state.history_dirty = false
+  state.preview_history_assets = {}
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
@@ -8940,6 +8951,7 @@ function factory_reset()
   state.collections_dirty = false
   state.searches_dirty = false
   state.history_dirty = false
+  state.preview_history_assets = {}
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
@@ -10716,22 +10728,35 @@ function end_module()
 end
 
 function library_asset_count(library_id)
-  if state.library_counts_dirty and not state.scan then
-    state.library_asset_counts = {}
+  return state.library_asset_counts[library_id] or 0
+end
 
-    for _, asset in ipairs(state.assets) do
-      local id = asset.library_id or ""
-
-      if id ~= "" then
-        state.library_asset_counts[id] =
-          (state.library_asset_counts[id] or 0) + 1
-      end
-    end
-
-    state.library_counts_dirty = false
+function process_library_count_rebuild()
+  if not state.library_counts_dirty then
+    state.library_counts_job = nil
+    return
+  end
+  if state.scan or state.import_session then
+    state.library_counts_job = nil
+    return
   end
 
-  return state.library_asset_counts[library_id] or 0
+  local job = state.library_counts_job
+  if not job then
+    job = new_library_count_job()
+    state.library_counts_job = job
+  end
+
+  local complete, counts = step_library_count_job(
+    job,
+    state.assets,
+    LIBRARY_COUNT_ASSETS_PER_FRAME
+  )
+  if complete then
+    state.library_asset_counts = counts
+    state.library_counts_dirty = false
+    state.library_counts_job = nil
+  end
 end
 
 function rename_library(library)
@@ -21169,6 +21194,7 @@ function loop()
     process_pending_transient_detection()
     process_loudness_queue()
   end
+  process_library_count_rebuild()
   cleanup_retired_preview_sources(false)
   poll_preview()
   poll_current_project_binding()
