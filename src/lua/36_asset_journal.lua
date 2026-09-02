@@ -184,3 +184,18 @@ function decode_asset_journal(text, expected_generation, expected_fields)
   end
   return entries
 end
+
+function read_asset_journal(path, expected_generation, expected_fields)
+  local file, open_error = io.open(path, "rb")
+  if not file then return nil, open_error or "missing" end
+  local text, read_error = file:read("*a")
+  local closed = file:close()
+  if not text or not closed then
+    return nil, read_error or "read_failed"
+  end
+  return decode_asset_journal(
+    text,
+    expected_generation,
+    expected_fields
+  )
+end

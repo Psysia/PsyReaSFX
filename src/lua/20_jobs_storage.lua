@@ -348,6 +348,7 @@ function persistent_data_files()
     CONFIG_FILE,
     LIBRARIES_FILE,
     DATABASE_FILE,
+    DATABASE_JOURNAL_FILE,
     COLLECTIONS_FILE,
     PROJECT_USAGE_FILE,
     SAVED_SEARCHES_FILE,
@@ -472,15 +473,31 @@ function persistence_migration_path(target_path, from_version)
   return steps
 end
 
-function persistence_schema_header(kind, version)
-  return table.concat(
-    {
-      PERSISTENCE_SCHEMA_MAGIC,
-      kind,
-      tostring(version),
-    },
-    "\t"
-  ) .. "\n"
+function persistence_schema_header(kind, version, generation)
+  local fields = {
+    PERSISTENCE_SCHEMA_MAGIC,
+    kind,
+    tostring(version),
+  }
+  if generation ~= nil then
+    fields[#fields + 1] = "generation"
+    fields[#fields + 1] = tostring(generation)
+  end
+  return table.concat(fields, "\t") .. "\n"
+end
+
+function persistence_schema_generation(fields)
+  if not is_persistence_schema_fields(fields) then return 0 end
+  for index = 4, #fields - 1 do
+    if fields[index] == "generation" then
+      local generation = tonumber(fields[index + 1])
+      if generation and generation >= 0 and generation % 1 == 0 then
+        return generation
+      end
+      return nil, "invalid_generation"
+    end
+  end
+  return 0
 end
 
 function write_persistence_schema(file, target_path)

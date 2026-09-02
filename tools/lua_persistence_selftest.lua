@@ -62,6 +62,7 @@ local data_names = {
 CONFIG_FILE = path_join(root, data_names[1])
 LIBRARIES_FILE = path_join(root, data_names[2])
 DATABASE_FILE = path_join(root, data_names[3])
+DATABASE_JOURNAL_FILE = path_join(root, "database.journal")
 COLLECTIONS_FILE = path_join(root, data_names[4])
 PROJECT_USAGE_FILE = path_join(root, data_names[5])
 SAVED_SEARCHES_FILE = path_join(root, data_names[6])
@@ -208,6 +209,28 @@ assert(
   read_all(schema_output) == "psyreasfx_schema\tdatabase\t3\n",
   "database writer did not advance to schema 3"
 )
+local generated_header = persistence_schema_header("database", 3, 27)
+assert(
+  generated_header
+    == "psyreasfx_schema\tdatabase\t3\tgeneration\t27\n",
+  "database generation was not embedded in the atomic snapshot"
+)
+assert(
+  persistence_schema_generation(split_tsv(generated_header)) == 27,
+  "database generation was not recovered from the snapshot"
+)
+assert(
+  persistence_schema_generation(
+    split_tsv("psyreasfx_schema\tdatabase\t3")
+  ) == 0,
+  "legacy schema header did not default to generation zero"
+)
+local invalid_generation, invalid_generation_error =
+  persistence_schema_generation(
+    split_tsv("psyreasfx_schema\tdatabase\t3\tgeneration\tbroken")
+  )
+assert(invalid_generation == nil)
+assert(invalid_generation_error == "invalid_generation")
 
 write_all(DATABASE_FILE, "psyreasfx_schema\tdatabase\t4\n")
 assert(not preflight_persistence_schemas(), "future database schema was accepted")

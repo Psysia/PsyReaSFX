@@ -39,6 +39,14 @@ local corrupt = encoded:gsub("new value", "bad value", 1)
 local _, checksum_error = decode_asset_journal(corrupt, 17, fields)
 assert(checksum_error == "checksum_mismatch")
 
+local journal_path = os.tmpname()
+local journal_file = assert(io.open(journal_path, "wb"))
+assert(journal_file:write(encoded))
+assert(journal_file:close())
+local file_decoded = assert(read_asset_journal(journal_path, 17, fields))
+assert(#file_decoded == #entries)
+os.remove(journal_path)
+
 local many = {}
 for index = 1, 10000 do
   many[index] = {

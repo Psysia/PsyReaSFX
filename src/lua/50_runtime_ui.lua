@@ -13,8 +13,20 @@ function load_database()
   end
 
   local headers = split_tsv(header_line)
+  state.database_generation = 0
 
   if is_persistence_schema_fields(headers) then
+    local generation, generation_error =
+      persistence_schema_generation(headers)
+    if generation == nil then
+      file:close()
+      state.persistence_read_only = true
+      state.persistence_read_only_reason =
+        "索引快照代次无效：" .. tostring(generation_error)
+      set_status("索引快照代次无效，已进入只读保护", true)
+      return
+    end
+    state.database_generation = generation
     header_line = file:read("*l")
 
     if not header_line then
@@ -29,69 +41,163 @@ function load_database()
 
   for line in file:lines() do
     local values = split_tsv(line)
-    local asset = {}
-
+    local asset = database_asset_from_values(headers, values)
+    local raw_path = ""
     for index, field in ipairs(headers) do
-      asset[field] = values[index] or ""
+      if field == "path" then
+        raw_path = values[index] or ""
+        break
+      end
     end
 
-    if asset.path and asset.path ~= ""
-      and not is_ignored_media_path(asset.path) then
-      asset.duration = tonumber(asset.duration) or 0
-      asset.channels = tonumber(asset.channels) or 0
-      asset.sample_rate = tonumber(asset.sample_rate) or 0
-      asset.bit_depth = tonumber(asset.bit_depth) or 0
-      asset.size = tonumber(asset.size) or 0
-      asset.workflow_status =
-        WORKFLOW_STATUS[asset.workflow_status]
-        and asset.workflow_status
-        or "none"
-      asset.marked =
-        asset.marked == "1"
-        or asset.marked == "true"
-      asset.preview_count =
-        tonumber(asset.preview_count) or 0
-      asset.last_previewed =
-        tonumber(asset.last_previewed) or 0
-      asset.indexed =
-        asset.indexed == "1"
-        or asset.indexed == "true"
-        or asset.duration > 0
-      asset.ready =
-        asset.ready == "1"
-        or asset.ready == "true"
-      asset.used_count = tonumber(asset.used_count) or 0
-      asset.last_used = tonumber(asset.last_used) or 0
-      asset.fingerprint = tostring(asset.fingerprint or "")
-      asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
-      asset.fingerprint_version = tostring(asset.fingerprint_version or "")
-      asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
-      asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
-      if asset.fingerprint ~= ""
-        and not fingerprint_metadata_is_compatible(asset) then
-        clear_asset_fingerprint(asset)
-        state.db_dirty = true
-      end
-      asset.last_seen = tonumber(asset.last_seen) or 0
-      ensure_asset_identity(asset)
-
+    if asset then
       add_or_update_asset(asset)
-    elseif asset.path and asset.path ~= "" then
+    elseif raw_path ~= "" then
       ignored = ignored + 1
     end
   end
 
   file:close()
 
+  local journal_ok = replay_database_journal()
+
   if ignored > 0 then
     state.db_dirty = true
-    set_status(
-      string.format(
-        "已从索引自动忽略 %d 个系统元数据文件",
-        ignored
+    if journal_ok then
+      set_status(
+        string.format(
+          "已从索引自动忽略 %d 个系统元数据文件",
+          ignored
+        )
       )
-    )
+    end
   end
+end
+
+function database_asset_from_values(headers, values)
+  local asset = {}
+  for index, field in ipairs(headers or {}) do
+    asset[field] = values[index] or ""
+  end
+  if not asset.path or asset.path == ""
+    or is_ignored_media_path(asset.path) then
+    return nil
+  end
+  asset.duration = tonumber(asset.duration) or 0
+  asset.channels = tonumber(asset.channels) or 0
+  asset.sample_rate = tonumber(asset.sample_rate) or 0
+  asset.bit_depth = tonumber(asset.bit_depth) or 0
+  asset.size = tonumber(asset.size) or 0
+  asset.workflow_status = WORKFLOW_STATUS[asset.workflow_status]
+    and asset.workflow_status or "none"
+  asset.marked = asset.marked == "1" or asset.marked == "true"
+  asset.preview_count = tonumber(asset.preview_count) or 0
+  asset.last_previewed = tonumber(asset.last_previewed) or 0
+  asset.indexed = asset.indexed == "1" or asset.indexed == "true"
+    or asset.duration > 0
+  asset.ready = asset.ready == "1" or asset.ready == "true"
+  asset.used_count = tonumber(asset.used_count) or 0
+  asset.last_used = tonumber(asset.last_used) or 0
+  asset.fingerprint = tostring(asset.fingerprint or "")
+  asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
+  asset.fingerprint_version = tostring(asset.fingerprint_version or "")
+  asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
+  asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+  if asset.fingerprint ~= ""
+    and not fingerprint_metadata_is_compatible(asset) then
+    clear_asset_fingerprint(asset)
+    state.db_dirty = true
+  end
+  asset.last_seen = tonumber(asset.last_seen) or 0
+  ensure_asset_identity(asset)
+  return asset
+end
+
+function replace_database_asset(asset)
+  local key = path_key(asset.path)
+  local existing = state.by_path[key]
+  if not existing then
+    add_or_update_asset(asset)
+    return
+  end
+  for _, field in ipairs(DB_FIELDS) do
+    existing[field] = asset[field]
+  end
+  existing.artwork_checked = tostring(existing.artwork_path or "") ~= ""
+  existing._search_blob = nil
+  existing._sort_path_value = nil
+end
+
+function replay_database_journal()
+  local probe = io.open(DATABASE_JOURNAL_FILE, "rb")
+  if not probe then return true end
+  probe:close()
+
+  local entries, journal_error = read_asset_journal(
+    DATABASE_JOURNAL_FILE,
+    state.database_generation or 0,
+    DB_FIELDS
+  )
+  if not entries then
+    if journal_error == "generation_mismatch" then
+      os.remove(DATABASE_JOURNAL_FILE)
+      return true
+    end
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      "素材增量日志无法安全重放：" .. tostring(journal_error)
+    set_status("素材增量日志损坏，已进入只读保护", true)
+    return false
+  end
+
+  local path_field = nil
+  for index, field in ipairs(DB_FIELDS) do
+    if field == "path" then path_field = index break end
+  end
+  if not path_field then return false end
+
+  local actions = {}
+  for _, entry in ipairs(entries) do
+    local path = tostring(entry.values[path_field] or "")
+    if path == "" or is_ignored_media_path(path) then
+      state.persistence_read_only = true
+      state.persistence_read_only_reason =
+        "素材增量日志包含无效路径"
+      set_status("素材增量日志损坏，已进入只读保护", true)
+      return false
+    end
+    local action = {
+      op = entry.op,
+      key = path_key(path),
+    }
+    if entry.op == "upsert" then
+      action.asset = database_asset_from_values(DB_FIELDS, entry.values)
+      if not action.asset then
+        state.persistence_read_only = true
+        state.persistence_read_only_reason =
+          "素材增量日志包含无效素材"
+        set_status("素材增量日志损坏，已进入只读保护", true)
+        return false
+      end
+    end
+    actions[#actions + 1] = action
+  end
+
+  for _, action in ipairs(actions) do
+    local key = action.key
+    if action.op == "delete" then
+      state.by_path[key] = nil
+      state.favorites[key] = nil
+      state.selected_set[key] = nil
+    else
+      replace_database_asset(action.asset)
+    end
+  end
+  if #actions > 0 then
+    rebuild_assets()
+    state.db_dirty = true
+  end
+  return true
 end
 
 function save_database()
@@ -104,7 +210,11 @@ function save_database()
     return
   end
 
-  write_persistence_schema(file, DATABASE_FILE)
+  local next_generation =
+    math.floor(tonumber(state.database_generation) or 0) + 1
+  file:write(
+    persistence_schema_header("database", 3, next_generation)
+  )
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
   local ordered = state.database_ordered_assets
@@ -152,6 +262,9 @@ function save_database()
     set_status("无法保存索引", true)
     return false
   end
+  state.database_generation = next_generation
+  clear_asset_changes(state.database_changes)
+  os.remove(DATABASE_JOURNAL_FILE)
   state.db_dirty = false
   return true
 end
@@ -8613,6 +8726,8 @@ function reset_database_keep_roots()
   state.assets = {}
   state.by_path = {}
   state.database_ordered_assets = nil
+  state.database_generation = 0
+  clear_asset_changes(state.database_changes)
   state.results = {}
   state.results_job = nil
   state.results_dirty = true
@@ -8623,6 +8738,7 @@ function reset_database_keep_roots()
   clear_row_selection()
   clear_wave_cache()
   os.remove(DATABASE_FILE)
+  os.remove(DATABASE_JOURNAL_FILE)
   os.remove(HISTORY_FILE)
   os.remove(LAST_PLAYED_SESSION_FILE)
   os.remove(SCAN_CHECKPOINT_FILE)
@@ -8680,6 +8796,8 @@ function factory_reset()
   state.assets = {}
   state.by_path = {}
   state.database_ordered_assets = nil
+  state.database_generation = 0
+  clear_asset_changes(state.database_changes)
   state.results = {}
   state.results_job = nil
   state.results_dirty = true
@@ -8700,6 +8818,7 @@ function factory_reset()
   os.remove(CONFIG_FILE)
   os.remove(LIBRARIES_FILE)
   os.remove(DATABASE_FILE)
+  os.remove(DATABASE_JOURNAL_FILE)
   os.remove(COLLECTIONS_FILE)
   os.remove(SAVED_SEARCHES_FILE)
   os.remove(HISTORY_FILE)

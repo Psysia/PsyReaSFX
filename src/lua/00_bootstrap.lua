@@ -284,6 +284,9 @@ local PROJECT_URL_FILE =
 local DATABASE_FILE =
   DATA_DIR .. SEP .. "index_v3.tsv"
 
+local DATABASE_JOURNAL_FILE =
+  DATA_DIR .. SEP .. "index_v3.journal"
+
 local SCAN_CHECKPOINT_FILE =
   DATA_DIR .. SEP .. "scan_checkpoint_v1.tsv"
 
@@ -670,6 +673,12 @@ local state = {
   assets = {},
   by_path = {},
   database_ordered_assets = nil,
+  database_generation = 0,
+  database_changes = {
+    by_key = {},
+    count = 0,
+    requires_snapshot = false,
+  },
   favorites = {},
   recent = {},
 
