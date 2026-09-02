@@ -4465,7 +4465,7 @@ function process_import_session()
 
   if checkpoint_now - (state.import_checkpoint_last_at or 0)
       >= IMPORT_CHECKPOINT_INTERVAL then
-    save_database()
+    save_database_changes()
     save_failed_tasks()
     state.import_checkpoint_last_at = checkpoint_now
   end
@@ -20854,7 +20854,7 @@ function autosave()
   if state.db_dirty
     and not state.scan
     and not state.import_session then
-    save_database()
+    save_database_changes()
   end
 
   if state.collections_dirty then
