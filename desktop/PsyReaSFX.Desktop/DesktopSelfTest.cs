@@ -112,7 +112,13 @@ internal static class DesktopSelfTest
             var detailDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-details"));
             await detailDatabase.InitializeAsync();
             var detailSnapshot = new CatalogSnapshot();
-            detailSnapshot.Assets.Add(new AssetRecord { Path = wavPath, Name = Path.GetFileName(wavPath), Description = "before", Ready = true, Indexed = true });
+            detailSnapshot.Assets.Add(new AssetRecord
+            {
+                Path = wavPath, Name = Path.GetFileName(wavPath), Description = "before",
+                PreviewCount = 7, LastPreviewed = 1_777_777_777.25,
+                Ready = true, Indexed = true
+            });
+            detailSnapshot.Favorites.Add(wavPath);
             detailSnapshot.Collections.Add(new CollectionRecord("collection-a4", "A4 playlist", "playlist"));
             detailSnapshot.CollectionItems.Add(new CollectionItemRecord("collection-a4", wavPath, 0));
             detailSnapshot.SavedSearches.Add(new SavedSearchRecord("search-a4", "Impacts", "category:impact", "All", "", "Name", false, null, "collection-a4", null));
@@ -132,7 +138,10 @@ internal static class DesktopSelfTest
                                      && savedDetails.WorkflowStatus == "approved" && savedDetails.Marked;
             var organizationPassed = organizationSnapshot.Collections.Count == 1 && organizationSnapshot.CollectionItems.Count == 1
                                      && organizationSnapshot.SavedSearches.Count == 1
-                                     && organizationSnapshot.SessionPlayed.Contains(wavPath);
+                                     && organizationSnapshot.SessionPlayed.Contains(wavPath)
+                                     && organizationSnapshot.Favorites.Contains(wavPath);
+            var activityRoundTripPassed = savedDetails.PreviewCount == 7
+                                          && Math.Abs(savedDetails.LastPreviewed - 1_777_777_777.25) < .001;
             var usageRecord = new ProjectUsageRecord(
                 "usage-a8", wavPath, Path.Combine(working, "SelfTest.rpp"), "SelfTest", "insert_current",
                 wavPath, "SFX", 1, 1.25, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
@@ -669,6 +678,7 @@ internal static class DesktopSelfTest
                          && luaSchemaImportPassed
                          && assetDetailsPassed
                          && organizationPassed
+                         && activityRoundTripPassed
                          && projectUsagePassed
                          && regionPersistencePassed
                          && selectionDragPassed
@@ -730,6 +740,7 @@ internal static class DesktopSelfTest
                 schemaMigrationPassed,
                 luaSchemaImportPassed,
                 organizationPassed,
+                activityRoundTripPassed,
                 projectUsagePassed,
                 regionPersistencePassed,
                 selectionDragPassed,
