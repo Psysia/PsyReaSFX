@@ -5,6 +5,51 @@
 local ASSET_JOURNAL_MAGIC = "psyreasfx_asset_journal"
 local ASSET_JOURNAL_VERSION = 1
 
+function new_asset_change_set()
+  return { by_key = {}, count = 0, requires_snapshot = false }
+end
+
+function record_asset_change(change_set, key, operation, values)
+  if type(change_set) ~= "table" or type(change_set.by_key) ~= "table"
+    or (operation ~= "upsert" and operation ~= "delete") then
+    return false
+  end
+  key = tostring(key or "")
+  if key == "" or type(values) ~= "table" then return false end
+  if not change_set.by_key[key] then
+    change_set.count = (change_set.count or 0) + 1
+  end
+  change_set.by_key[key] = { op = operation, values = values }
+  return true
+end
+
+function require_asset_snapshot(change_set)
+  if type(change_set) ~= "table" then return false end
+  change_set.requires_snapshot = true
+  return true
+end
+
+function ordered_asset_changes(change_set)
+  local keys = {}
+  for key in pairs(change_set and change_set.by_key or {}) do
+    keys[#keys + 1] = key
+  end
+  table.sort(keys)
+  local entries = {}
+  for _, key in ipairs(keys) do
+    entries[#entries + 1] = change_set.by_key[key]
+  end
+  return entries
+end
+
+function clear_asset_changes(change_set)
+  if type(change_set) ~= "table" then return false end
+  change_set.by_key = {}
+  change_set.count = 0
+  change_set.requires_snapshot = false
+  return true
+end
+
 local function journal_escape(value)
   return tostring(value or "")
     :gsub("\\", "\\\\")

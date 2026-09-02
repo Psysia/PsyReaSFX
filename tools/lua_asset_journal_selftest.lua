@@ -1,6 +1,21 @@
 local module_path = assert(arg[1], "asset journal module is required")
 assert(loadfile(module_path))()
 
+local changes = new_asset_change_set()
+assert(record_asset_change(changes, "b", "upsert", { "b1" }))
+assert(record_asset_change(changes, "a", "upsert", { "a1" }))
+assert(record_asset_change(changes, "b", "upsert", { "b2" }))
+assert(changes.count == 2)
+assert(record_asset_change(changes, "a", "delete", { "a-deleted" }))
+local ordered = ordered_asset_changes(changes)
+assert(#ordered == 2)
+assert(ordered[1].op == "delete" and ordered[1].values[1] == "a-deleted")
+assert(ordered[2].op == "upsert" and ordered[2].values[1] == "b2")
+assert(require_asset_snapshot(changes) and changes.requires_snapshot)
+assert(clear_asset_changes(changes))
+assert(changes.count == 0 and not changes.requires_snapshot)
+assert(#ordered_asset_changes(changes) == 0)
+
 local fields = { "path", "name", "description" }
 local entries = {
   { op = "upsert", values = { "C:\\Library\\A.wav", "A.wav", "line 1\nline\t2" } },
