@@ -669,6 +669,7 @@ local state = {
   pending_folder_drop = nil,
   assets = {},
   by_path = {},
+  database_ordered_assets = nil,
   favorites = {},
   recent = {},
 
@@ -700,6 +701,7 @@ local state = {
   sort_mode = "name",
   sort_desc = false,
   results_dirty = true,
+  results_job = nil,
 
   selected_index = 0,
   selected_path = nil,

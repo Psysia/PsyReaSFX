@@ -124,6 +124,15 @@ function make_placeholder(path, known_root)
   return asset
 end
 
+function asset_path_sort_key(asset)
+  local source = tostring(asset.path or "")
+  if asset._sort_path_source ~= source then
+    asset._sort_path_source = source
+    asset._sort_path_value = path_key(source)
+  end
+  return asset._sort_path_value
+end
+
 function add_or_update_asset(asset)
   ensure_asset_identity(asset)
   local key = path_key(asset.path)
@@ -217,6 +226,7 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
+  state.database_ordered_assets = nil
   state.library_counts_dirty = true
   invalidate_folder_navigation()
   return asset
@@ -224,6 +234,7 @@ end
 
 function rebuild_assets()
   state.assets = {}
+  state.database_ordered_assets = nil
 
   for _, asset in pairs(state.by_path) do
     state.assets[#state.assets + 1] = asset

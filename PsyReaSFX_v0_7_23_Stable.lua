@@ -669,6 +669,7 @@ local state = {
   pending_folder_drop = nil,
   assets = {},
   by_path = {},
+  database_ordered_assets = nil,
   favorites = {},
   recent = {},
 
@@ -700,6 +701,7 @@ local state = {
   sort_mode = "name",
   sort_desc = false,
   results_dirty = true,
+  results_job = nil,
 
   selected_index = 0,
   selected_path = nil,
@@ -5724,6 +5726,15 @@ function make_placeholder(path, known_root)
   return asset
 end
 
+function asset_path_sort_key(asset)
+  local source = tostring(asset.path or "")
+  if asset._sort_path_source ~= source then
+    asset._sort_path_source = source
+    asset._sort_path_value = path_key(source)
+  end
+  return asset._sort_path_value
+end
+
 function add_or_update_asset(asset)
   ensure_asset_identity(asset)
   local key = path_key(asset.path)
@@ -5817,6 +5828,7 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
+  state.database_ordered_assets = nil
   state.library_counts_dirty = true
   invalidate_folder_navigation()
   return asset
@@ -5824,6 +5836,7 @@ end
 
 function rebuild_assets()
   state.assets = {}
+  state.database_ordered_assets = nil
 
   for _, asset in pairs(state.by_path) do
     state.assets[#state.assets + 1] = asset
@@ -7029,6 +7042,199 @@ function save_config()
   end
   state.config_dirty = false
   return true
+end
+
+-- Incremental result construction keeps large catalogs out of a single UI
+-- frame. The module is intentionally independent of REAPER/ImGui so the
+-- ordering contract can be exercised by the command-line Lua self-test.
+
+RESULT_BUILD_DEFAULT_BUDGET = 10000
+RESULT_SORT_CHUNK_SIZE = 4096
+
+function begin_incremental_result_job(
+  source,
+  predicate,
+  less,
+  key_selector,
+  selected_key
+)
+  return {
+    source = source or {},
+    predicate = predicate,
+    less = less,
+    key_selector = key_selector,
+    selected_key = selected_key,
+    index = 1,
+    total = #(source or {}),
+    matches = {},
+    sort_index = 1,
+    runs = {},
+    stage = "filter",
+    selected_index = 0,
+  }
+end
+
+local function begin_merge_round(job)
+  if #job.runs <= 1 then
+    job.result = job.runs[1] or {}
+    job.runs = nil
+    job.select_index = 1
+    job.stage = "select"
+    return
+  end
+
+  job.merge_input = job.runs
+  job.merge_output = {}
+  job.merge_pair_index = 1
+  job.merge = nil
+  job.runs = nil
+  job.stage = "merge"
+end
+
+local function prepare_merge_pair(job)
+  local left = job.merge_input[job.merge_pair_index]
+  local right = job.merge_input[job.merge_pair_index + 1]
+
+  if not left then
+    job.runs = job.merge_output
+    job.merge_input = nil
+    job.merge_output = nil
+    begin_merge_round(job)
+    return false
+  end
+
+  if not right then
+    job.merge_output[#job.merge_output + 1] = left
+    job.merge_pair_index = job.merge_pair_index + 2
+    return false
+  end
+
+  job.merge = {
+    left = left,
+    right = right,
+    left_index = 1,
+    right_index = 1,
+    output = {},
+  }
+  return true
+end
+
+local function append_merge_value(merge, value)
+  merge.output[#merge.output + 1] = value
+end
+
+local function step_merge(job, budget)
+  local processed = 0
+
+  while processed < budget and job.stage == "merge" do
+    if not job.merge then
+      if not prepare_merge_pair(job) then
+        if job.stage ~= "merge" then
+          break
+        end
+      end
+    end
+
+    local merge = job.merge
+    if merge then
+      local left_value = merge.left[merge.left_index]
+      local right_value = merge.right[merge.right_index]
+
+      if left_value and right_value then
+        if job.less(right_value, left_value) then
+          append_merge_value(merge, right_value)
+          merge.right_index = merge.right_index + 1
+        else
+          append_merge_value(merge, left_value)
+          merge.left_index = merge.left_index + 1
+        end
+      elseif left_value then
+        append_merge_value(merge, left_value)
+        merge.left_index = merge.left_index + 1
+      elseif right_value then
+        append_merge_value(merge, right_value)
+        merge.right_index = merge.right_index + 1
+      else
+        job.merge_output[#job.merge_output + 1] = merge.output
+        job.merge_pair_index = job.merge_pair_index + 2
+        job.merge = nil
+      end
+
+      processed = processed + 1
+    end
+  end
+end
+
+function step_incremental_result_job(job, budget)
+  -- Keep collection work moving alongside allocation-heavy merge rounds.
+  -- Small explicit steps avoid deferring all reclamation to one long UI frame.
+  collectgarbage("step", 16)
+  budget = math.max(
+    1,
+    math.floor(tonumber(budget) or RESULT_BUILD_DEFAULT_BUDGET)
+  )
+
+  if job.stage == "filter" then
+    local processed = 0
+    while job.index <= job.total and processed < budget do
+      local value = job.source[job.index]
+      if value and job.predicate(value) then
+        job.matches[#job.matches + 1] = value
+      end
+      job.index = job.index + 1
+      processed = processed + 1
+    end
+
+    if job.index > job.total then
+      job.source = nil
+      job.stage = "sort_chunks"
+    end
+  elseif job.stage == "sort_chunks" then
+    if job.sort_index <= #job.matches then
+      local run = {}
+      local last = math.min(
+        #job.matches,
+        job.sort_index + RESULT_SORT_CHUNK_SIZE - 1
+      )
+      for index = job.sort_index, last do
+        run[#run + 1] = job.matches[index]
+      end
+      table.sort(run, job.less)
+      job.runs[#job.runs + 1] = run
+      job.sort_index = last + 1
+    else
+      job.matches = nil
+      begin_merge_round(job)
+    end
+  elseif job.stage == "merge" then
+    step_merge(job, budget)
+  elseif job.stage == "select" then
+    if not job.selected_key or not job.key_selector then
+      job.stage = "complete"
+    else
+      local processed = 0
+      while job.select_index <= #job.result
+        and processed < budget do
+        if job.key_selector(job.result[job.select_index])
+          == job.selected_key then
+          job.selected_index = job.select_index
+          job.select_index = #job.result + 1
+          break
+        end
+        job.select_index = job.select_index + 1
+        processed = processed + 1
+      end
+      if job.select_index > #job.result then
+        job.stage = "complete"
+      end
+    end
+  end
+
+  if job.stage == "complete" then
+    return "complete", job.result or {}, job.selected_index or 0
+  end
+
+  return "pending"
 end
 
 function asset_regions(asset)
@@ -8517,19 +8723,22 @@ function save_database()
   write_persistence_schema(file, DATABASE_FILE)
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
-  local ordered = {}
+  local ordered = state.database_ordered_assets
 
-  for _, asset in ipairs(state.assets) do
-    ordered[#ordered + 1] = asset
-  end
-
-  table.sort(
-    ordered,
-    function(a, b)
-      return path_key(a.path)
-        < path_key(b.path)
+  if not ordered then
+    ordered = {}
+    for _, asset in ipairs(state.assets) do
+      ordered[#ordered + 1] = asset
+      asset_path_sort_key(asset)
     end
-  )
+    table.sort(
+      ordered,
+      function(a, b)
+        return asset_path_sort_key(a) < asset_path_sort_key(b)
+      end
+    )
+    state.database_ordered_assets = ordered
+  end
 
   for _, asset in ipairs(ordered) do
     local fields = {}
@@ -11418,83 +11627,121 @@ function asset_in_view(asset)
   return true
 end
 
-function rebuild_results()
-  state.results = {}
+local function cached_sort_text(asset, field, source_field, value_field)
+  local source = tostring(asset[field] or "")
+  if asset[source_field] ~= source then
+    asset[source_field] = source
+    asset[value_field] = safe_lower(source)
+  end
+  return asset[value_field]
+end
 
-  for _, asset in ipairs(state.assets) do
-    if asset_in_view(asset)
-      and matches_search(asset) then
-      state.results[#state.results + 1] = asset
+local function cached_sort_path(asset)
+  return asset_path_sort_key(asset)
+end
+
+local function result_sort_comparator()
+  local direction = state.sort_desc and -1 or 1
+  local view = state.view
+  local sort_mode = state.sort_mode
+  local duplicate_lookup = state.duplicate_lookup
+  local confirmed_lookup = state.duplicate_confirmed_lookup
+
+  return function(a, b)
+    local av
+    local bv
+
+    if view == "duplicates" then
+      av = duplicate_lookup[cached_sort_path(a)] or ""
+      bv = duplicate_lookup[cached_sort_path(b)] or ""
+    elseif view == "duplicates_confirmed" then
+      av = confirmed_lookup[cached_sort_path(a)] or ""
+      bv = confirmed_lookup[cached_sort_path(b)] or ""
+    elseif sort_mode == "duration" then
+      av = tonumber(a.duration) or 0
+      bv = tonumber(b.duration) or 0
+    elseif sort_mode == "library" then
+      av = cached_sort_text(
+        a,
+        "library",
+        "_sort_library_source",
+        "_sort_library_value"
+      )
+      bv = cached_sort_text(
+        b,
+        "library",
+        "_sort_library_source",
+        "_sort_library_value"
+      )
+    elseif sort_mode == "used" then
+      av = tonumber(a.last_used) or 0
+      bv = tonumber(b.last_used) or 0
+    elseif sort_mode == "previewed" then
+      av = tonumber(a.last_previewed) or 0
+      bv = tonumber(b.last_previewed) or 0
+    else
+      av = cached_sort_text(
+        a,
+        "name",
+        "_sort_name_source",
+        "_sort_name_value"
+      )
+      bv = cached_sort_text(
+        b,
+        "name",
+        "_sort_name_source",
+        "_sort_name_value"
+      )
     end
+
+    if av == bv then
+      local a_path = cached_sort_path(a)
+      local b_path = cached_sort_path(b)
+      if a_path == b_path then
+        return false
+      end
+      return direction > 0 and a_path < b_path or a_path > b_path
+    end
+
+    return direction > 0 and av < bv or av > bv
+  end
+end
+
+function start_results_rebuild()
+  state.results_dirty = false
+  state.results_job = begin_incremental_result_job(
+    state.assets,
+    function(asset)
+      return asset_in_view(asset) and matches_search(asset)
+    end,
+    result_sort_comparator(),
+    cached_sort_path,
+    state.selected_path and path_key(state.selected_path) or nil
+  )
+end
+
+function process_results_rebuild()
+  if state.results_dirty or not state.results_job then
+    start_results_rebuild()
   end
 
-  local direction =
-    state.sort_desc and -1 or 1
+  local status, results, selected_index =
+    step_incremental_result_job(
+      state.results_job,
+      RESULT_BUILD_DEFAULT_BUDGET
+    )
 
-  table.sort(
-    state.results,
-    function(a, b)
-      local av
-      local bv
+  if status == "complete" then
+    state.results = results
+    state.selected_index = selected_index
+    state.results_job = nil
+  end
+end
 
-      if state.view == "duplicates" then
-        av = state.duplicate_lookup[path_key(a.path)] or ""
-        bv = state.duplicate_lookup[path_key(b.path)] or ""
-      elseif state.view == "duplicates_confirmed" then
-        av = state.duplicate_confirmed_lookup[path_key(a.path)] or ""
-        bv = state.duplicate_confirmed_lookup[path_key(b.path)] or ""
-      elseif state.sort_mode == "duration" then
-        av = tonumber(a.duration) or 0
-        bv = tonumber(b.duration) or 0
-      elseif state.sort_mode == "library" then
-        av = safe_lower(a.library)
-        bv = safe_lower(b.library)
-      elseif state.sort_mode == "used" then
-        av = tonumber(a.last_used) or 0
-        bv = tonumber(b.last_used) or 0
-      elseif state.sort_mode == "previewed" then
-        av = tonumber(a.last_previewed) or 0
-        bv = tonumber(b.last_previewed) or 0
-      else
-        av = safe_lower(a.name)
-        bv = safe_lower(b.name)
-      end
-
-      if av == bv then
-        local a_path = path_key(a.path)
-        local b_path = path_key(b.path)
-
-        if a_path == b_path then
-          return false
-        end
-
-        if direction > 0 then
-          return a_path < b_path
-        end
-
-        return a_path > b_path
-      end
-
-      if direction > 0 then
-        return av < bv
-      end
-
-      return av > bv
-    end
-  )
-
-  state.results_dirty = false
-
-  if state.selected_path then
-    state.selected_index = 0
-
-    for index, asset in ipairs(state.results) do
-      if path_key(asset.path)
-        == path_key(state.selected_path) then
-        state.selected_index = index
-        break
-      end
-    end
+function rebuild_results()
+  start_results_rebuild()
+  while state.results_job do
+    process_results_rebuild()
   end
 end
 
@@ -16040,6 +16287,7 @@ function migrate_asset_path(asset, new_path, record)
   asset.missing = not reaper.file_exists(asset.path)
   asset._search_blob = nil
   asset.artwork_checked = false
+  state.database_ordered_assets = nil
 
   -- A relink changes the physical identity even when the target happens to
   -- have the same byte length. Never carry a sampled result across paths.
@@ -16980,7 +17228,10 @@ function reset_database_keep_roots()
   cancel_catalog_jobs("database reset")
   state.assets = {}
   state.by_path = {}
+  state.database_ordered_assets = nil
   state.results = {}
+  state.results_job = nil
+  state.results_dirty = true
   state.favorites = {}
   state.recent = {}
   state.active_collection_id = nil
@@ -17044,7 +17295,10 @@ function factory_reset()
   state.library_filter_id = nil
   state.assets = {}
   state.by_path = {}
+  state.database_ordered_assets = nil
   state.results = {}
+  state.results_job = nil
+  state.results_dirty = true
   state.favorites = {}
   state.recent = {}
   state.collections = {}
@@ -29313,8 +29567,8 @@ function loop()
   watch_folders()
   autosave()
 
-  if state.results_dirty then
-    rebuild_results()
+  if state.results_dirty or state.results_job then
+    process_results_rebuild()
   end
 
   draw_main()

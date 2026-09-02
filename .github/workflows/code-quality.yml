@@ -85,6 +85,11 @@ jobs:
           New-Item -ItemType Directory -Path $fixture | Out-Null
           lua tools/lua_duplicate_compare_selftest.lua $fixture (Resolve-Path 'src/lua/45_duplicate_confirmation.lua')
 
+      - name: Run Lua incremental result rebuild
+        shell: pwsh
+        run: |
+          lua tools/lua_incremental_results_selftest.lua (Resolve-Path 'src/lua/35_incremental_results.lua') 25000
+
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
 

@@ -15,6 +15,7 @@ $modules = @(
     "10_ui_core.lua",
     "20_jobs_storage.lua",
     "30_catalog.lua",
+    "35_incremental_results.lua",
     "40_analysis.lua",
     "45_duplicate_confirmation.lua",
     "50_runtime_ui.lua"

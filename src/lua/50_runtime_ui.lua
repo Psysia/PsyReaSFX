@@ -107,19 +107,22 @@ function save_database()
   write_persistence_schema(file, DATABASE_FILE)
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
-  local ordered = {}
+  local ordered = state.database_ordered_assets
 
-  for _, asset in ipairs(state.assets) do
-    ordered[#ordered + 1] = asset
-  end
-
-  table.sort(
-    ordered,
-    function(a, b)
-      return path_key(a.path)
-        < path_key(b.path)
+  if not ordered then
+    ordered = {}
+    for _, asset in ipairs(state.assets) do
+      ordered[#ordered + 1] = asset
+      asset_path_sort_key(asset)
     end
-  )
+    table.sort(
+      ordered,
+      function(a, b)
+        return asset_path_sort_key(a) < asset_path_sort_key(b)
+      end
+    )
+    state.database_ordered_assets = ordered
+  end
 
   for _, asset in ipairs(ordered) do
     local fields = {}
@@ -3008,83 +3011,121 @@ function asset_in_view(asset)
   return true
 end
 
-function rebuild_results()
-  state.results = {}
+local function cached_sort_text(asset, field, source_field, value_field)
+  local source = tostring(asset[field] or "")
+  if asset[source_field] ~= source then
+    asset[source_field] = source
+    asset[value_field] = safe_lower(source)
+  end
+  return asset[value_field]
+end
 
-  for _, asset in ipairs(state.assets) do
-    if asset_in_view(asset)
-      and matches_search(asset) then
-      state.results[#state.results + 1] = asset
+local function cached_sort_path(asset)
+  return asset_path_sort_key(asset)
+end
+
+local function result_sort_comparator()
+  local direction = state.sort_desc and -1 or 1
+  local view = state.view
+  local sort_mode = state.sort_mode
+  local duplicate_lookup = state.duplicate_lookup
+  local confirmed_lookup = state.duplicate_confirmed_lookup
+
+  return function(a, b)
+    local av
+    local bv
+
+    if view == "duplicates" then
+      av = duplicate_lookup[cached_sort_path(a)] or ""
+      bv = duplicate_lookup[cached_sort_path(b)] or ""
+    elseif view == "duplicates_confirmed" then
+      av = confirmed_lookup[cached_sort_path(a)] or ""
+      bv = confirmed_lookup[cached_sort_path(b)] or ""
+    elseif sort_mode == "duration" then
+      av = tonumber(a.duration) or 0
+      bv = tonumber(b.duration) or 0
+    elseif sort_mode == "library" then
+      av = cached_sort_text(
+        a,
+        "library",
+        "_sort_library_source",
+        "_sort_library_value"
+      )
+      bv = cached_sort_text(
+        b,
+        "library",
+        "_sort_library_source",
+        "_sort_library_value"
+      )
+    elseif sort_mode == "used" then
+      av = tonumber(a.last_used) or 0
+      bv = tonumber(b.last_used) or 0
+    elseif sort_mode == "previewed" then
+      av = tonumber(a.last_previewed) or 0
+      bv = tonumber(b.last_previewed) or 0
+    else
+      av = cached_sort_text(
+        a,
+        "name",
+        "_sort_name_source",
+        "_sort_name_value"
+      )
+      bv = cached_sort_text(
+        b,
+        "name",
+        "_sort_name_source",
+        "_sort_name_value"
+      )
     end
+
+    if av == bv then
+      local a_path = cached_sort_path(a)
+      local b_path = cached_sort_path(b)
+      if a_path == b_path then
+        return false
+      end
+      return direction > 0 and a_path < b_path or a_path > b_path
+    end
+
+    return direction > 0 and av < bv or av > bv
+  end
+end
+
+function start_results_rebuild()
+  state.results_dirty = false
+  state.results_job = begin_incremental_result_job(
+    state.assets,
+    function(asset)
+      return asset_in_view(asset) and matches_search(asset)
+    end,
+    result_sort_comparator(),
+    cached_sort_path,
+    state.selected_path and path_key(state.selected_path) or nil
+  )
+end
+
+function process_results_rebuild()
+  if state.results_dirty or not state.results_job then
+    start_results_rebuild()
   end
 
-  local direction =
-    state.sort_desc and -1 or 1
+  local status, results, selected_index =
+    step_incremental_result_job(
+      state.results_job,
+      RESULT_BUILD_DEFAULT_BUDGET
+    )
 
-  table.sort(
-    state.results,
-    function(a, b)
-      local av
-      local bv
+  if status == "complete" then
+    state.results = results
+    state.selected_index = selected_index
+    state.results_job = nil
+  end
+end
 
-      if state.view == "duplicates" then
-        av = state.duplicate_lookup[path_key(a.path)] or ""
-        bv = state.duplicate_lookup[path_key(b.path)] or ""
-      elseif state.view == "duplicates_confirmed" then
-        av = state.duplicate_confirmed_lookup[path_key(a.path)] or ""
-        bv = state.duplicate_confirmed_lookup[path_key(b.path)] or ""
-      elseif state.sort_mode == "duration" then
-        av = tonumber(a.duration) or 0
-        bv = tonumber(b.duration) or 0
-      elseif state.sort_mode == "library" then
-        av = safe_lower(a.library)
-        bv = safe_lower(b.library)
-      elseif state.sort_mode == "used" then
-        av = tonumber(a.last_used) or 0
-        bv = tonumber(b.last_used) or 0
-      elseif state.sort_mode == "previewed" then
-        av = tonumber(a.last_previewed) or 0
-        bv = tonumber(b.last_previewed) or 0
-      else
-        av = safe_lower(a.name)
-        bv = safe_lower(b.name)
-      end
-
-      if av == bv then
-        local a_path = path_key(a.path)
-        local b_path = path_key(b.path)
-
-        if a_path == b_path then
-          return false
-        end
-
-        if direction > 0 then
-          return a_path < b_path
-        end
-
-        return a_path > b_path
-      end
-
-      if direction > 0 then
-        return av < bv
-      end
-
-      return av > bv
-    end
-  )
-
-  state.results_dirty = false
-
-  if state.selected_path then
-    state.selected_index = 0
-
-    for index, asset in ipairs(state.results) do
-      if path_key(asset.path)
-        == path_key(state.selected_path) then
-        state.selected_index = index
-        break
-      end
-    end
+function rebuild_results()
+  start_results_rebuild()
+  while state.results_job do
+    process_results_rebuild()
   end
 end
 
@@ -7630,6 +7671,7 @@ function migrate_asset_path(asset, new_path, record)
   asset.missing = not reaper.file_exists(asset.path)
   asset._search_blob = nil
   asset.artwork_checked = false
+  state.database_ordered_assets = nil
 
   -- A relink changes the physical identity even when the target happens to
   -- have the same byte length. Never carry a sampled result across paths.
@@ -8570,7 +8612,10 @@ function reset_database_keep_roots()
   cancel_catalog_jobs("database reset")
   state.assets = {}
   state.by_path = {}
+  state.database_ordered_assets = nil
   state.results = {}
+  state.results_job = nil
+  state.results_dirty = true
   state.favorites = {}
   state.recent = {}
   state.active_collection_id = nil
@@ -8634,7 +8679,10 @@ function factory_reset()
   state.library_filter_id = nil
   state.assets = {}
   state.by_path = {}
+  state.database_ordered_assets = nil
   state.results = {}
+  state.results_job = nil
+  state.results_dirty = true
   state.favorites = {}
   state.recent = {}
   state.collections = {}
@@ -20903,8 +20951,8 @@ function loop()
   watch_folders()
   autosave()
 
-  if state.results_dirty then
-    rebuild_results()
+  if state.results_dirty or state.results_job then
+    process_results_rebuild()
   end
 
   draw_main()
