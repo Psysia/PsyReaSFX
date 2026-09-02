@@ -428,6 +428,50 @@ local PERSISTENCE_SCHEMAS = {
   },
 }
 
+-- Every published format advances one version at a time. Loaders normalize
+-- older rows into the current in-memory model; these explicit edges are the
+-- audit contract that authorizes the final atomic rewrite. A missing edge is a
+-- hard stop rather than permission to jump directly to the newest schema.
+local PERSISTENCE_MIGRATIONS = {
+  [CONFIG_FILE] = { [0] = 1 },
+  [LIBRARIES_FILE] = { [0] = 1, [1] = 2 },
+  [DATABASE_FILE] = { [0] = 1, [1] = 2, [2] = 3 },
+  [COLLECTIONS_FILE] = { [0] = 1 },
+  [PROJECT_USAGE_FILE] = { [0] = 1 },
+  [SAVED_SEARCHES_FILE] = { [0] = 1 },
+  [HISTORY_FILE] = { [0] = 1 },
+  [LAST_PLAYED_SESSION_FILE] = { [0] = 1 },
+  [REGIONS_FILE] = { [0] = 1 },
+  [LOUDNESS_FILE] = { [0] = 1 },
+  [FAILED_TASKS_FILE] = { [0] = 1 },
+  [BACKUP_STATE_FILE] = { [0] = 1 },
+}
+
+function persistence_migration_path(target_path, from_version)
+  local schema = PERSISTENCE_SCHEMAS[target_path]
+  local registered = PERSISTENCE_MIGRATIONS[target_path]
+  local current = tonumber(from_version)
+  if not schema or not registered or not current
+    or current < 0 or current % 1 ~= 0
+    or current > schema.version then
+    return nil, "invalid_start"
+  end
+
+  local steps = {}
+  while current < schema.version do
+    local next_version = registered[current]
+    if next_version ~= current + 1 then
+      return nil, "missing_step_" .. tostring(current)
+    end
+    steps[#steps + 1] = {
+      from = current,
+      to = next_version,
+    }
+    current = next_version
+  end
+  return steps
+end
+
 function persistence_schema_header(kind, version)
   return table.concat(
     {
@@ -547,9 +591,27 @@ function schedule_legacy_schema_migrations()
     if current ~= nil
       and current < schema.version
       and target_path ~= MIGRATION_LOG_FILE then
+      local steps, path_error =
+        persistence_migration_path(target_path, current)
+      if not steps then
+        state.persistence_read_only = true
+        state.persistence_read_only_reason = string.format(
+          "缺少数据迁移步骤：%s v%d（%s）",
+          basename(target_path),
+          current,
+          tostring(path_error or "unknown")
+        )
+        set_status(
+          state.persistence_read_only_reason
+            .. "；已停止后续写入",
+          true
+        )
+        return false
+      end
       pending[#pending + 1] = {
         path = target_path,
         from = current,
+        steps = steps,
       }
     end
   end
@@ -603,15 +665,27 @@ function schedule_legacy_schema_migrations()
       ok = saver() ~= false
     end
 
-    local logged = append_schema_migration_log(
-      schema and schema.kind or basename(target_path),
-      migration.from,
-      schema and schema.version or 0,
-      ok and "completed" or "failed"
-    )
-
-    if not logged then
-      ok = false
+    local kind = schema and schema.kind or basename(target_path)
+    if ok then
+      for _, step in ipairs(migration.steps) do
+        if not append_schema_migration_log(
+          kind,
+          step.from,
+          step.to,
+          "completed"
+        ) then
+          ok = false
+          break
+        end
+      end
+    else
+      local first_step = migration.steps[1]
+      append_schema_migration_log(
+        kind,
+        first_step and first_step.from or migration.from,
+        first_step and first_step.to or (schema and schema.version or 0),
+        "failed"
+      )
     end
 
     if not ok then
