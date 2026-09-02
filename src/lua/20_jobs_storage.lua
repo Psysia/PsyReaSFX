@@ -1115,7 +1115,9 @@ function restore_data_backup_transaction(directory)
         temporary_path
       ) then
         for _, item in ipairs(plan) do
-          os.remove(item.temporary_path)
+          if item.temporary_path then
+            os.remove(item.temporary_path)
+          end
         end
         return false, 0, "stage"
       end
@@ -1125,6 +1127,19 @@ function restore_data_backup_transaction(directory)
         backup_path = target_path .. ".restore.bak",
         new_marker_path = target_path .. ".restore.new",
         had_original = false,
+      }
+    elseif target_path == DATABASE_JOURNAL_FILE
+      and reaper.file_exists(target_path) then
+      -- Backups created before incremental persistence have no journal.
+      -- Removing the current one is part of the same rollback-safe restore,
+      -- otherwise post-backup edits could reappear over the restored snapshot.
+      plan[#plan + 1] = {
+        target_path = target_path,
+        temporary_path = nil,
+        backup_path = target_path .. ".restore.bak",
+        new_marker_path = target_path .. ".restore.new",
+        had_original = true,
+        delete_only = true,
       }
     end
   end
@@ -1137,7 +1152,7 @@ function restore_data_backup_transaction(directory)
   for index, item in ipairs(plan) do
     item.had_original = reaper.file_exists(item.target_path)
     local marker_ok = true
-    if not item.had_original then
+    if not item.had_original and not item.delete_only then
       local marker = io.open(item.new_marker_path, "wb")
       if marker then
         marker_ok = marker:close() ~= nil
@@ -1147,7 +1162,11 @@ function restore_data_backup_transaction(directory)
     end
     local ok = false
     local had_original = item.had_original
-    if marker_ok then
+    if marker_ok and item.delete_only then
+      os.remove(item.backup_path)
+      ok = item.had_original
+        and os.rename(item.target_path, item.backup_path) ~= nil
+    elseif marker_ok then
       ok, had_original = commit_atomic_temporary(
         item.target_path,
         item.temporary_path,
@@ -1166,9 +1185,15 @@ function restore_data_backup_transaction(directory)
       and index == 1 then
       ok = false
     end
+    if ok
+      and item.delete_only
+      and state.persistence_fault_injection
+        == "restore_after_journal_delete" then
+      ok = false
+    end
 
     if not ok then
-      os.remove(item.temporary_path)
+      if item.temporary_path then os.remove(item.temporary_path) end
       os.remove(item.new_marker_path)
       for rollback = committed, 1, -1 do
         local previous = plan[rollback]
@@ -1188,7 +1213,9 @@ function restore_data_backup_transaction(directory)
         end
       end
       for cleanup = index + 1, #plan do
-        os.remove(plan[cleanup].temporary_path)
+        if plan[cleanup].temporary_path then
+          os.remove(plan[cleanup].temporary_path)
+        end
       end
       return false, 0, "commit"
     end

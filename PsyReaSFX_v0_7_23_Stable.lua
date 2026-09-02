@@ -480,6 +480,7 @@ local META_INTERVAL = 0.075
 local WAVE_INTERVAL = 0.012
 local SAVE_INTERVAL = 8
 local WATCH_INTERVAL = 60
+local DATABASE_JOURNAL_COMPACT_COUNT = 10000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
@@ -1752,6 +1753,10 @@ I18N_EN = {
   ["恢复默认缓存目录，并移动现有缓存？"] = "Restore the default cache directory and move the existing cache?",
   ["无法保存 Region 数据"] = "Unable to save Region data",
   ["无法保存响度缓存"] = "Unable to save loudness cache",
+  ["索引快照代次无效，已进入只读保护"] =
+    "The catalog snapshot generation is invalid; read-only protection is active",
+  ["素材增量日志损坏，已进入只读保护"] =
+    "The asset journal is damaged; read-only protection is active",
   ["已设置 Artwork"] = "Artwork set",
   ["瞬态检测设置…"] = "Transient detection settings…",
   ["拖到编排区需要 SWS Extension"] = "Dragging to the arrange view requires SWS Extension",
@@ -1773,6 +1778,7 @@ I18N_PREFIX_EN = {
     "Migrated legacy library paths and preferences",
   ["无法保存配置"] = "Unable to save configuration",
   ["无法保存索引"] = "Unable to save database index",
+  ["无法保存素材增量日志："] = "Unable to save the asset journal: ",
   ["无法保存播放列表"] = "Unable to save playlists",
   ["无法保存搜索条件"] = "Unable to save saved searches",
   ["无法保存试听历史"] = "Unable to save preview history",
@@ -3512,6 +3518,10 @@ end
 
 
 function refresh_asset_library_binding(asset)
+  local previous_root = tostring(asset.root or "")
+  local previous_root_id = tostring(asset.root_id or "")
+  local previous_library_id = tostring(asset.library_id or "")
+  local previous_library = tostring(asset.library or "")
   local root, record = root_for_path(asset.path)
   local library = library_for_root_record(record)
 
@@ -3522,16 +3532,35 @@ function refresh_asset_library_binding(asset)
     or library_for_path(asset.path, root)
   asset._search_blob = nil
   state.library_counts_dirty = true
+  return previous_root ~= tostring(asset.root or "")
+    or previous_root_id ~= tostring(asset.root_id or "")
+    or previous_library_id ~= tostring(asset.library_id or "")
+    or previous_library ~= tostring(asset.library or "")
 end
 
 function refresh_all_asset_library_bindings()
+  local changed_assets = {}
+  local requires_snapshot = false
   for _, asset in ipairs(state.assets) do
-    refresh_asset_library_binding(asset)
+    if refresh_asset_library_binding(asset) then
+      if #changed_assets < DATABASE_JOURNAL_COMPACT_COUNT then
+        changed_assets[#changed_assets + 1] = asset
+      else
+        requires_snapshot = true
+      end
+    end
   end
 
   invalidate_folder_navigation()
   state.results_dirty = true
-  state.db_dirty = true
+  if requires_snapshot then
+    clear_asset_changes(state.database_changes)
+    mark_database_snapshot_dirty()
+  else
+    for _, asset in ipairs(changed_assets) do
+      mark_asset_database_change(asset)
+    end
+  end
 end
 
 function db_to_amp(db)
@@ -4961,7 +4990,9 @@ function restore_data_backup_transaction(directory)
         temporary_path
       ) then
         for _, item in ipairs(plan) do
-          os.remove(item.temporary_path)
+          if item.temporary_path then
+            os.remove(item.temporary_path)
+          end
         end
         return false, 0, "stage"
       end
@@ -4971,6 +5002,19 @@ function restore_data_backup_transaction(directory)
         backup_path = target_path .. ".restore.bak",
         new_marker_path = target_path .. ".restore.new",
         had_original = false,
+      }
+    elseif target_path == DATABASE_JOURNAL_FILE
+      and reaper.file_exists(target_path) then
+      -- Backups created before incremental persistence have no journal.
+      -- Removing the current one is part of the same rollback-safe restore,
+      -- otherwise post-backup edits could reappear over the restored snapshot.
+      plan[#plan + 1] = {
+        target_path = target_path,
+        temporary_path = nil,
+        backup_path = target_path .. ".restore.bak",
+        new_marker_path = target_path .. ".restore.new",
+        had_original = true,
+        delete_only = true,
       }
     end
   end
@@ -4983,7 +5027,7 @@ function restore_data_backup_transaction(directory)
   for index, item in ipairs(plan) do
     item.had_original = reaper.file_exists(item.target_path)
     local marker_ok = true
-    if not item.had_original then
+    if not item.had_original and not item.delete_only then
       local marker = io.open(item.new_marker_path, "wb")
       if marker then
         marker_ok = marker:close() ~= nil
@@ -4993,7 +5037,11 @@ function restore_data_backup_transaction(directory)
     end
     local ok = false
     local had_original = item.had_original
-    if marker_ok then
+    if marker_ok and item.delete_only then
+      os.remove(item.backup_path)
+      ok = item.had_original
+        and os.rename(item.target_path, item.backup_path) ~= nil
+    elseif marker_ok then
       ok, had_original = commit_atomic_temporary(
         item.target_path,
         item.temporary_path,
@@ -5012,9 +5060,15 @@ function restore_data_backup_transaction(directory)
       and index == 1 then
       ok = false
     end
+    if ok
+      and item.delete_only
+      and state.persistence_fault_injection
+        == "restore_after_journal_delete" then
+      ok = false
+    end
 
     if not ok then
-      os.remove(item.temporary_path)
+      if item.temporary_path then os.remove(item.temporary_path) end
       os.remove(item.new_marker_path)
       for rollback = committed, 1, -1 do
         local previous = plan[rollback]
@@ -5034,7 +5088,9 @@ function restore_data_backup_transaction(directory)
         end
       end
       for cleanup = index + 1, #plan do
-        os.remove(plan[cleanup].temporary_path)
+        if plan[cleanup].temporary_path then
+          os.remove(plan[cleanup].temporary_path)
+        end
       end
       return false, 0, "commit"
     end
@@ -7284,8 +7340,33 @@ function record_asset_change(change_set, key, operation, values)
   if not change_set.by_key[key] then
     change_set.count = (change_set.count or 0) + 1
   end
-  change_set.by_key[key] = { op = operation, values = values }
+  local copied_values = {}
+  for index, value in ipairs(values) do
+    copied_values[index] = value
+  end
+  change_set.by_key[key] = {
+    op = operation,
+    values = copied_values,
+  }
   return true
+end
+
+function asset_changes_require_snapshot(
+  change_set,
+  snapshot_exists,
+  compact_count
+)
+  if not snapshot_exists or type(change_set) ~= "table" then
+    return true
+  end
+  local count = math.floor(tonumber(change_set.count) or 0)
+  local threshold = math.max(
+    1,
+    math.floor(tonumber(compact_count) or 1)
+  )
+  return change_set.requires_snapshot == true
+    or count <= 0
+    or count >= threshold
 end
 
 function require_asset_snapshot(change_set)
@@ -7463,6 +7544,29 @@ function read_asset_journal(path, expected_generation, expected_fields)
     expected_generation,
     expected_fields
   )
+end
+
+function write_asset_journal_atomic(
+  path,
+  generation,
+  fields,
+  entries,
+  writer_factory
+)
+  local encoded, encode_error = encode_asset_journal(
+    generation,
+    fields,
+    entries
+  )
+  if not encoded then return false, encode_error end
+  local file, open_error = writer_factory(path)
+  if not file then return false, open_error or "open_failed" end
+  if not file:write(encoded) then
+    file:close()
+    return false, "write_failed"
+  end
+  if not file:close() then return false, "commit_failed" end
+  return true, #encoded
 end
 
 function asset_regions(asset)
@@ -8906,7 +9010,7 @@ function load_database()
   local journal_ok = replay_database_journal()
 
   if ignored > 0 then
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
     if journal_ok then
       set_status(
         string.format(
@@ -8950,11 +9054,100 @@ function database_asset_from_values(headers, values)
   if asset.fingerprint ~= ""
     and not fingerprint_metadata_is_compatible(asset) then
     clear_asset_fingerprint(asset)
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
   end
   asset.last_seen = tonumber(asset.last_seen) or 0
   ensure_asset_identity(asset)
   return asset
+end
+
+function database_asset_values(asset)
+  local values = {}
+  for _, field in ipairs(DB_FIELDS) do
+    local value = asset and asset[field] or ""
+    if field == "indexed" then
+      value = asset and asset.indexed and "1" or "0"
+    elseif field == "ready" then
+      value = asset and asset.ready and "1" or "0"
+    elseif field == "marked" then
+      value = asset and asset.marked and "1" or "0"
+    end
+    values[#values + 1] = value
+  end
+  return values
+end
+
+function mark_asset_database_change(asset)
+  if not asset or not asset.path or asset.path == "" then
+    return false
+  end
+  state.db_dirty = true
+  return record_asset_change(
+    state.database_changes,
+    path_key(asset.path),
+    "upsert",
+    database_asset_values(asset)
+  )
+end
+
+function mark_asset_database_delete(asset_or_path)
+  local path = type(asset_or_path) == "table"
+    and asset_or_path.path or asset_or_path
+  path = tostring(path or "")
+  if path == "" then return false end
+  local values = database_asset_values(nil)
+  for index, field in ipairs(DB_FIELDS) do
+    if field == "path" then
+      values[index] = path
+      break
+    end
+  end
+  state.db_dirty = true
+  return record_asset_change(
+    state.database_changes,
+    path_key(path),
+    "delete",
+    values
+  )
+end
+
+function mark_database_snapshot_dirty()
+  state.db_dirty = true
+  return require_asset_snapshot(state.database_changes)
+end
+
+function save_database_journal()
+  ensure_dirs()
+  local entries = ordered_asset_changes(state.database_changes)
+  if #entries == 0 then return save_database() end
+  local written, write_error = write_asset_journal_atomic(
+    DATABASE_JOURNAL_FILE,
+    state.database_generation or 0,
+    DB_FIELDS,
+    entries,
+    atomic_file_writer
+  )
+  if not written then
+    set_status(
+      "无法保存素材增量日志：" .. tostring(write_error),
+      true
+    )
+    return false
+  end
+  state.db_dirty = false
+  return true
+end
+
+function save_database_changes()
+  local changes = state.database_changes
+  if asset_changes_require_snapshot(
+    changes,
+    reaper.file_exists(DATABASE_FILE),
+    DATABASE_JOURNAL_COMPACT_COUNT
+  ) then
+    return save_database()
+  end
+  return save_database_journal()
 end
 
 function replace_database_asset(asset)
@@ -9013,6 +9206,7 @@ function replay_database_journal()
     local action = {
       op = entry.op,
       key = path_key(path),
+      values = entry.values,
     }
     if entry.op == "upsert" then
       action.asset = database_asset_from_values(DB_FIELDS, entry.values)
@@ -9036,10 +9230,21 @@ function replay_database_journal()
     else
       replace_database_asset(action.asset)
     end
+    record_asset_change(
+      state.database_changes,
+      action.key,
+      action.op,
+      action.op == "upsert"
+        and database_asset_values(action.asset)
+        or action.values
+    )
   end
   if #actions > 0 then
     rebuild_assets()
-    state.db_dirty = true
+    if (state.database_changes.count or 0)
+      >= DATABASE_JOURNAL_COMPACT_COUNT then
+      state.db_dirty = true
+    end
   end
   return true
 end
@@ -9057,7 +9262,11 @@ function save_database()
   local next_generation =
     math.floor(tonumber(state.database_generation) or 0) + 1
   file:write(
-    persistence_schema_header("database", 3, next_generation)
+    persistence_schema_header(
+      "database",
+      PERSISTENCE_SCHEMAS[DATABASE_FILE].version,
+      next_generation
+    )
   )
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
@@ -10050,12 +10259,12 @@ function set_workflow_status(
   for _, asset in ipairs(assets or {}) do
     if asset.workflow_status ~= status then
       asset.workflow_status = status
+      mark_asset_database_change(asset)
       count = count + 1
     end
   end
 
   if count > 0 then
-    state.db_dirty = true
     state.results_dirty = true
     set_status(
       string.format(
@@ -10910,7 +11119,7 @@ function process_artwork_queue()
 
       if found ~= "" then
         asset.artwork_path = shared and "" or found
-        state.db_dirty = true
+        mark_asset_database_change(asset)
       elseif current ~= "-" then
         asset.artwork_path = ""
       end
@@ -11235,7 +11444,7 @@ function clear_artwork_cache()
     end
   end
 
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   set_status("已清空 Artwork 缓存；可见素材将重新查找封面")
 end
 
@@ -11390,7 +11599,7 @@ function index_asset(asset)
 
   reaper.PCM_Source_Destroy(source)
 
-  state.db_dirty = true
+  mark_asset_database_change(asset)
   state.results_dirty = true
   return true
 end
@@ -11562,7 +11771,7 @@ function finish_scan()
   if removed > 0 then
     rebuild_assets()
     state.config_dirty = true
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
   end
 
   local pending = {}
@@ -11717,7 +11926,7 @@ function process_scan()
               scan.new_assets[#scan.new_assets + 1] =
                 asset
 
-              state.db_dirty = true
+              mark_asset_database_change(asset)
             elseif not state.by_path[key].ready then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
@@ -13127,7 +13336,7 @@ function finish_import_session()
   state.import_session = nil
   state.import_cancel_requested = false
   state.results_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
 
   save_database()
   save_failed_tasks()
@@ -13180,7 +13389,7 @@ function cancel_import_session()
   rebuild_assets()
   state.import_session = nil
   state.import_cancel_requested = false
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   save_database()
   Jobs.cancel(session.job_token)
   Jobs.finish(session.job_token, true, "canceled")
@@ -13250,7 +13459,7 @@ function process_import_session()
         session.failed = session.failed + 1
         session.done = session.done + 1
         session.current = nil
-        state.db_dirty = true
+        mark_asset_database_change(asset)
         return
       end
     end
@@ -13275,7 +13484,7 @@ function process_import_session()
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
       return
     end
 
@@ -13315,7 +13524,7 @@ function process_import_session()
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
     elseif result == "failed" then
       destroy_wave_job(current.wave_job)
       asset.ready = true
@@ -13324,7 +13533,7 @@ function process_import_session()
       session.failed = session.failed + 1
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
     end
   end
 end
@@ -14077,12 +14286,12 @@ function set_assets_marked(assets, marked)
     if asset.marked ~= next_value then
       asset.marked = next_value
       asset._search_blob = nil
+      mark_asset_database_change(asset)
       changed = true
     end
   end
 
   if changed then
-    state.db_dirty = true
     state.results_dirty = true
     set_status(
       marked
@@ -14142,7 +14351,7 @@ function push_recent(asset, project_action)
   asset.last_used = os.time()
 
   state.config_dirty = true
-  state.db_dirty = true
+  mark_asset_database_change(asset)
 
   if project_action then
     record_project_usage(asset, project_action)
@@ -16443,7 +16652,7 @@ function remove_root(root)
   clear_row_selection()
   rebuild_assets()
   state.libraries_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   set_status("已移除来源路径：" .. basename(root))
 end
 
@@ -16829,7 +17038,7 @@ function relink_root(record, supplied_path)
   end
 
   state.libraries_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   state.results_dirty = true
   state.library_counts_dirty = true
   invalidate_folder_navigation()
@@ -16853,7 +17062,7 @@ function relink_root(record, supplied_path)
     end
     state.root_filter = old_root_filter
     state.libraries_dirty = true
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
     save_libraries()
     save_database()
     set_status("来源重定位提交失败，已恢复原路径和引用", true)
@@ -16993,7 +17202,7 @@ function start_duplicate_scan()
       if size ~= (tonumber(asset.size) or 0) then
         asset.size = size
         clear_asset_fingerprint(asset)
-        state.db_dirty = true
+        mark_asset_database_change(asset)
       end
       local group = size_groups[size]
       if not group then
@@ -17246,7 +17455,7 @@ function finish_duplicate_scan(session)
   state.duplicate_scan = nil
   Jobs.finish(session.job_token, true)
   state.results_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   set_status(string.format("候选检查完成：%d 组，%d 个素材", #duplicates, asset_count))
 end
 
@@ -17605,7 +17814,7 @@ function reset_database_keep_roots()
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   state.config_dirty = true
   save_config()
 
@@ -21882,7 +22091,7 @@ function draw_import_progress()
         Jobs.finish(scan.job_token, true, "user canceled")
         clear_scan_checkpoint()
         rebuild_assets()
-        state.db_dirty = true
+        mark_database_snapshot_dirty()
         set_status("已取消扫描")
       else
         state.import_cancel_requested = true
@@ -25601,12 +25810,12 @@ function apply_metadata_editor(assets)
 
     if asset_changed then
       asset._search_blob = nil
+      mark_asset_database_change(asset)
       changed_count = changed_count + 1
     end
   end
 
   if changed_count > 0 then
-    state.db_dirty = true
     state.results_dirty = true
     state.metadata_editor.signature = ""
 
@@ -25661,7 +25870,7 @@ function choose_artwork_for_asset(asset)
     asset.artwork_path =
       normalize_slashes(filename)
     asset.artwork_checked = true
-    state.db_dirty = true
+    mark_asset_database_change(asset)
     state.results_dirty = true
     set_status("已设置 Artwork")
   end
@@ -25735,14 +25944,14 @@ function draw_inspector_artwork_header(asset)
     state.artwork_folder_cache = {}
     state.artwork_dimension_cache = {}
     queue_artwork(asset, true)
-    state.db_dirty = true
+    mark_asset_database_change(asset)
   end
 
   if tostring(asset.artwork_path or "") ~= "" then
     if dark_button("清除封面", -1) then
       asset.artwork_path = "-"
       asset.artwork_checked = true
-      state.db_dirty = true
+      mark_asset_database_change(asset)
       state.results_dirty = true
     end
   end
@@ -28646,7 +28855,7 @@ function draw_settings_maintenance()
   if dark_button("立即创建备份", 150) then
     if state.config_dirty then save_config() end
     if state.libraries_dirty then save_libraries() end
-    if state.db_dirty and not state.scan and not state.import_session then save_database() end
+    if state.db_dirty and not state.scan and not state.import_session then save_database_changes() end
     if state.collections_dirty then save_collections() end
     if state.searches_dirty then save_saved_searches() end
     if state.history_dirty then save_history() end
@@ -28934,7 +29143,7 @@ function draw_settings_popup()
 
   if dark_button("保存并关闭", button_width) then
     save_config()
-    save_database()
+    if state.db_dirty then save_database_changes() end
     ImGui.CloseCurrentPopup(ctx)
   end
 
@@ -29753,7 +29962,7 @@ function cleanup()
   end
 
   if state.db_dirty then
-    save_database()
+    save_database_changes()
   end
 
   if state.collections_dirty then

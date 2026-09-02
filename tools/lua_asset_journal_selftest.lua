@@ -3,7 +3,10 @@ assert(loadfile(module_path))()
 
 local changes = new_asset_change_set()
 assert(record_asset_change(changes, "b", "upsert", { "b1" }))
-assert(record_asset_change(changes, "a", "upsert", { "a1" }))
+local mutable_values = { "a1" }
+assert(record_asset_change(changes, "a", "upsert", mutable_values))
+mutable_values[1] = "mutated-after-record"
+assert(ordered_asset_changes(changes)[1].values[1] == "a1")
 assert(record_asset_change(changes, "b", "upsert", { "b2" }))
 assert(changes.count == 2)
 assert(record_asset_change(changes, "a", "delete", { "a-deleted" }))
@@ -15,6 +18,16 @@ assert(require_asset_snapshot(changes) and changes.requires_snapshot)
 assert(clear_asset_changes(changes))
 assert(changes.count == 0 and not changes.requires_snapshot)
 assert(#ordered_asset_changes(changes) == 0)
+assert(asset_changes_require_snapshot(changes, true, 10000))
+assert(asset_changes_require_snapshot(changes, false, 10000))
+assert(record_asset_change(changes, "one", "upsert", { "1" }))
+assert(not asset_changes_require_snapshot(changes, true, 10000))
+changes.count = 10000
+assert(asset_changes_require_snapshot(changes, true, 10000))
+changes.count = 1
+assert(require_asset_snapshot(changes))
+assert(asset_changes_require_snapshot(changes, true, 10000))
+assert(clear_asset_changes(changes))
 
 local fields = { "path", "name", "description" }
 local entries = {
@@ -28,6 +41,22 @@ assert(#decoded == #entries)
 assert(decoded[1].values[1] == entries[1].values[1])
 assert(decoded[1].values[3] == entries[1].values[3])
 assert(decoded[3].values[3] == "new value")
+
+local replayed = {}
+local function replay(target, decoded_entries)
+  for _, entry in ipairs(decoded_entries) do
+    local key = entry.values[1]
+    if entry.op == "delete" then
+      target[key] = nil
+    else
+      target[key] = entry.values[3]
+    end
+  end
+end
+replay(replayed, decoded)
+replay(replayed, decoded)
+assert(replayed["C:\\Library\\A.wav"] == "new value")
+assert(replayed["C:\\Library\\Old.wav"] == nil)
 
 local _, generation_error = decode_asset_journal(encoded, 18, fields)
 assert(generation_error == "generation_mismatch")
@@ -46,6 +75,48 @@ assert(journal_file:close())
 local file_decoded = assert(read_asset_journal(journal_path, 17, fields))
 assert(#file_decoded == #entries)
 os.remove(journal_path)
+
+local written_payload = nil
+local write_closed = false
+local write_ok = assert(write_asset_journal_atomic(
+  "memory",
+  17,
+  fields,
+  entries,
+  function()
+    return {
+      write = function(_, value)
+        written_payload = value
+        return true
+      end,
+      close = function()
+        write_closed = true
+        return true
+      end,
+    }
+  end
+))
+assert(write_ok and write_closed)
+assert(assert(decode_asset_journal(written_payload, 17, fields)))
+
+local failed_writer_closed = false
+local failed_write, failed_write_error = write_asset_journal_atomic(
+  "memory",
+  17,
+  fields,
+  entries,
+  function()
+    return {
+      write = function() return nil end,
+      close = function()
+        failed_writer_closed = true
+        return false
+      end,
+    }
+  end
+)
+assert(not failed_write and failed_write_error == "write_failed")
+assert(failed_writer_closed)
 
 local many = {}
 for index = 1, 10000 do

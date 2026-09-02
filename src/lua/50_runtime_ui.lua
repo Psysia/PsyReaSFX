@@ -62,7 +62,7 @@ function load_database()
   local journal_ok = replay_database_journal()
 
   if ignored > 0 then
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
     if journal_ok then
       set_status(
         string.format(
@@ -106,11 +106,100 @@ function database_asset_from_values(headers, values)
   if asset.fingerprint ~= ""
     and not fingerprint_metadata_is_compatible(asset) then
     clear_asset_fingerprint(asset)
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
   end
   asset.last_seen = tonumber(asset.last_seen) or 0
   ensure_asset_identity(asset)
   return asset
+end
+
+function database_asset_values(asset)
+  local values = {}
+  for _, field in ipairs(DB_FIELDS) do
+    local value = asset and asset[field] or ""
+    if field == "indexed" then
+      value = asset and asset.indexed and "1" or "0"
+    elseif field == "ready" then
+      value = asset and asset.ready and "1" or "0"
+    elseif field == "marked" then
+      value = asset and asset.marked and "1" or "0"
+    end
+    values[#values + 1] = value
+  end
+  return values
+end
+
+function mark_asset_database_change(asset)
+  if not asset or not asset.path or asset.path == "" then
+    return false
+  end
+  state.db_dirty = true
+  return record_asset_change(
+    state.database_changes,
+    path_key(asset.path),
+    "upsert",
+    database_asset_values(asset)
+  )
+end
+
+function mark_asset_database_delete(asset_or_path)
+  local path = type(asset_or_path) == "table"
+    and asset_or_path.path or asset_or_path
+  path = tostring(path or "")
+  if path == "" then return false end
+  local values = database_asset_values(nil)
+  for index, field in ipairs(DB_FIELDS) do
+    if field == "path" then
+      values[index] = path
+      break
+    end
+  end
+  state.db_dirty = true
+  return record_asset_change(
+    state.database_changes,
+    path_key(path),
+    "delete",
+    values
+  )
+end
+
+function mark_database_snapshot_dirty()
+  state.db_dirty = true
+  return require_asset_snapshot(state.database_changes)
+end
+
+function save_database_journal()
+  ensure_dirs()
+  local entries = ordered_asset_changes(state.database_changes)
+  if #entries == 0 then return save_database() end
+  local written, write_error = write_asset_journal_atomic(
+    DATABASE_JOURNAL_FILE,
+    state.database_generation or 0,
+    DB_FIELDS,
+    entries,
+    atomic_file_writer
+  )
+  if not written then
+    set_status(
+      "无法保存素材增量日志：" .. tostring(write_error),
+      true
+    )
+    return false
+  end
+  state.db_dirty = false
+  return true
+end
+
+function save_database_changes()
+  local changes = state.database_changes
+  if asset_changes_require_snapshot(
+    changes,
+    reaper.file_exists(DATABASE_FILE),
+    DATABASE_JOURNAL_COMPACT_COUNT
+  ) then
+    return save_database()
+  end
+  return save_database_journal()
 end
 
 function replace_database_asset(asset)
@@ -169,6 +258,7 @@ function replay_database_journal()
     local action = {
       op = entry.op,
       key = path_key(path),
+      values = entry.values,
     }
     if entry.op == "upsert" then
       action.asset = database_asset_from_values(DB_FIELDS, entry.values)
@@ -192,10 +282,21 @@ function replay_database_journal()
     else
       replace_database_asset(action.asset)
     end
+    record_asset_change(
+      state.database_changes,
+      action.key,
+      action.op,
+      action.op == "upsert"
+        and database_asset_values(action.asset)
+        or action.values
+    )
   end
   if #actions > 0 then
     rebuild_assets()
-    state.db_dirty = true
+    if (state.database_changes.count or 0)
+      >= DATABASE_JOURNAL_COMPACT_COUNT then
+      state.db_dirty = true
+    end
   end
   return true
 end
@@ -213,7 +314,11 @@ function save_database()
   local next_generation =
     math.floor(tonumber(state.database_generation) or 0) + 1
   file:write(
-    persistence_schema_header("database", 3, next_generation)
+    persistence_schema_header(
+      "database",
+      PERSISTENCE_SCHEMAS[DATABASE_FILE].version,
+      next_generation
+    )
   )
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
@@ -1206,12 +1311,12 @@ function set_workflow_status(
   for _, asset in ipairs(assets or {}) do
     if asset.workflow_status ~= status then
       asset.workflow_status = status
+      mark_asset_database_change(asset)
       count = count + 1
     end
   end
 
   if count > 0 then
-    state.db_dirty = true
     state.results_dirty = true
     set_status(
       string.format(
@@ -2066,7 +2171,7 @@ function process_artwork_queue()
 
       if found ~= "" then
         asset.artwork_path = shared and "" or found
-        state.db_dirty = true
+        mark_asset_database_change(asset)
       elseif current ~= "-" then
         asset.artwork_path = ""
       end
@@ -2391,7 +2496,7 @@ function clear_artwork_cache()
     end
   end
 
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   set_status("已清空 Artwork 缓存；可见素材将重新查找封面")
 end
 
@@ -2546,7 +2651,7 @@ function index_asset(asset)
 
   reaper.PCM_Source_Destroy(source)
 
-  state.db_dirty = true
+  mark_asset_database_change(asset)
   state.results_dirty = true
   return true
 end
@@ -2718,7 +2823,7 @@ function finish_scan()
   if removed > 0 then
     rebuild_assets()
     state.config_dirty = true
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
   end
 
   local pending = {}
@@ -2873,7 +2978,7 @@ function process_scan()
               scan.new_assets[#scan.new_assets + 1] =
                 asset
 
-              state.db_dirty = true
+              mark_asset_database_change(asset)
             elseif not state.by_path[key].ready then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
@@ -4283,7 +4388,7 @@ function finish_import_session()
   state.import_session = nil
   state.import_cancel_requested = false
   state.results_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
 
   save_database()
   save_failed_tasks()
@@ -4336,7 +4441,7 @@ function cancel_import_session()
   rebuild_assets()
   state.import_session = nil
   state.import_cancel_requested = false
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   save_database()
   Jobs.cancel(session.job_token)
   Jobs.finish(session.job_token, true, "canceled")
@@ -4406,7 +4511,7 @@ function process_import_session()
         session.failed = session.failed + 1
         session.done = session.done + 1
         session.current = nil
-        state.db_dirty = true
+        mark_asset_database_change(asset)
         return
       end
     end
@@ -4431,7 +4536,7 @@ function process_import_session()
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
       return
     end
 
@@ -4471,7 +4576,7 @@ function process_import_session()
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
     elseif result == "failed" then
       destroy_wave_job(current.wave_job)
       asset.ready = true
@@ -4480,7 +4585,7 @@ function process_import_session()
       session.failed = session.failed + 1
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
     end
   end
 end
@@ -5233,12 +5338,12 @@ function set_assets_marked(assets, marked)
     if asset.marked ~= next_value then
       asset.marked = next_value
       asset._search_blob = nil
+      mark_asset_database_change(asset)
       changed = true
     end
   end
 
   if changed then
-    state.db_dirty = true
     state.results_dirty = true
     set_status(
       marked
@@ -5298,7 +5403,7 @@ function push_recent(asset, project_action)
   asset.last_used = os.time()
 
   state.config_dirty = true
-  state.db_dirty = true
+  mark_asset_database_change(asset)
 
   if project_action then
     record_project_usage(asset, project_action)
@@ -7599,7 +7704,7 @@ function remove_root(root)
   clear_row_selection()
   rebuild_assets()
   state.libraries_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   set_status("已移除来源路径：" .. basename(root))
 end
 
@@ -7985,7 +8090,7 @@ function relink_root(record, supplied_path)
   end
 
   state.libraries_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   state.results_dirty = true
   state.library_counts_dirty = true
   invalidate_folder_navigation()
@@ -8009,7 +8114,7 @@ function relink_root(record, supplied_path)
     end
     state.root_filter = old_root_filter
     state.libraries_dirty = true
-    state.db_dirty = true
+    mark_database_snapshot_dirty()
     save_libraries()
     save_database()
     set_status("来源重定位提交失败，已恢复原路径和引用", true)
@@ -8149,7 +8254,7 @@ function start_duplicate_scan()
       if size ~= (tonumber(asset.size) or 0) then
         asset.size = size
         clear_asset_fingerprint(asset)
-        state.db_dirty = true
+        mark_asset_database_change(asset)
       end
       local group = size_groups[size]
       if not group then
@@ -8402,7 +8507,7 @@ function finish_duplicate_scan(session)
   state.duplicate_scan = nil
   Jobs.finish(session.job_token, true)
   state.results_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   set_status(string.format("候选检查完成：%d 组，%d 个素材", #duplicates, asset_count))
 end
 
@@ -8761,7 +8866,7 @@ function reset_database_keep_roots()
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   state.config_dirty = true
   save_config()
 
@@ -13038,7 +13143,7 @@ function draw_import_progress()
         Jobs.finish(scan.job_token, true, "user canceled")
         clear_scan_checkpoint()
         rebuild_assets()
-        state.db_dirty = true
+        mark_database_snapshot_dirty()
         set_status("已取消扫描")
       else
         state.import_cancel_requested = true
@@ -16757,12 +16862,12 @@ function apply_metadata_editor(assets)
 
     if asset_changed then
       asset._search_blob = nil
+      mark_asset_database_change(asset)
       changed_count = changed_count + 1
     end
   end
 
   if changed_count > 0 then
-    state.db_dirty = true
     state.results_dirty = true
     state.metadata_editor.signature = ""
 
@@ -16817,7 +16922,7 @@ function choose_artwork_for_asset(asset)
     asset.artwork_path =
       normalize_slashes(filename)
     asset.artwork_checked = true
-    state.db_dirty = true
+    mark_asset_database_change(asset)
     state.results_dirty = true
     set_status("已设置 Artwork")
   end
@@ -16891,14 +16996,14 @@ function draw_inspector_artwork_header(asset)
     state.artwork_folder_cache = {}
     state.artwork_dimension_cache = {}
     queue_artwork(asset, true)
-    state.db_dirty = true
+    mark_asset_database_change(asset)
   end
 
   if tostring(asset.artwork_path or "") ~= "" then
     if dark_button("清除封面", -1) then
       asset.artwork_path = "-"
       asset.artwork_checked = true
-      state.db_dirty = true
+      mark_asset_database_change(asset)
       state.results_dirty = true
     end
   end
@@ -19802,7 +19907,7 @@ function draw_settings_maintenance()
   if dark_button("立即创建备份", 150) then
     if state.config_dirty then save_config() end
     if state.libraries_dirty then save_libraries() end
-    if state.db_dirty and not state.scan and not state.import_session then save_database() end
+    if state.db_dirty and not state.scan and not state.import_session then save_database_changes() end
     if state.collections_dirty then save_collections() end
     if state.searches_dirty then save_saved_searches() end
     if state.history_dirty then save_history() end
@@ -20090,7 +20195,7 @@ function draw_settings_popup()
 
   if dark_button("保存并关闭", button_width) then
     save_config()
-    save_database()
+    if state.db_dirty then save_database_changes() end
     ImGui.CloseCurrentPopup(ctx)
   end
 
@@ -20909,7 +21014,7 @@ function cleanup()
   end
 
   if state.db_dirty then
-    save_database()
+    save_database_changes()
   end
 
   if state.collections_dirty then

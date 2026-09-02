@@ -1332,6 +1332,10 @@ end
 
 
 function refresh_asset_library_binding(asset)
+  local previous_root = tostring(asset.root or "")
+  local previous_root_id = tostring(asset.root_id or "")
+  local previous_library_id = tostring(asset.library_id or "")
+  local previous_library = tostring(asset.library or "")
   local root, record = root_for_path(asset.path)
   local library = library_for_root_record(record)
 
@@ -1342,16 +1346,35 @@ function refresh_asset_library_binding(asset)
     or library_for_path(asset.path, root)
   asset._search_blob = nil
   state.library_counts_dirty = true
+  return previous_root ~= tostring(asset.root or "")
+    or previous_root_id ~= tostring(asset.root_id or "")
+    or previous_library_id ~= tostring(asset.library_id or "")
+    or previous_library ~= tostring(asset.library or "")
 end
 
 function refresh_all_asset_library_bindings()
+  local changed_assets = {}
+  local requires_snapshot = false
   for _, asset in ipairs(state.assets) do
-    refresh_asset_library_binding(asset)
+    if refresh_asset_library_binding(asset) then
+      if #changed_assets < DATABASE_JOURNAL_COMPACT_COUNT then
+        changed_assets[#changed_assets + 1] = asset
+      else
+        requires_snapshot = true
+      end
+    end
   end
 
   invalidate_folder_navigation()
   state.results_dirty = true
-  state.db_dirty = true
+  if requires_snapshot then
+    clear_asset_changes(state.database_changes)
+    mark_database_snapshot_dirty()
+  else
+    for _, asset in ipairs(changed_assets) do
+      mark_asset_database_change(asset)
+    end
+  end
 end
 
 function db_to_amp(db)

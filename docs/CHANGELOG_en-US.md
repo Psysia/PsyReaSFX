@@ -2,6 +2,16 @@
 
 ## 0.8.0 Beta 3
 
+### 500k catalogs and incremental persistence
+
+- Rebuilds result sets with batched filtering, chunked sorting and frame-budgeted merging.
+- Adds monotonic snapshot generations; asset journals must match the snapshot generation
+  and pass complete validation before replay.
+- Writes common marks, workflow, Artwork, metadata and preview-count changes to a small
+  journal. Structural scans and relinks retain atomic full snapshots, and unclassified
+  mutation paths safely fall back to a snapshot.
+- Coalesces repeated changes to the same asset and compacts at 10,000 distinct assets.
+
 ### Missing assets and source relink
 
 - Adds a frame-budgeted missing-file audit that distinguishes offline physical

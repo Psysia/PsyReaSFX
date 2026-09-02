@@ -101,6 +101,7 @@ local first = CONFIG_FILE
 local second = LIBRARIES_FILE
 write_all(first, "old-config")
 write_all(second, "old-libraries")
+write_all(DATABASE_JOURNAL_FILE, "post-backup-journal")
 write_all(path_join(backup, basename(first)), "new-config")
 write_all(path_join(backup, basename(second)), "new-libraries")
 
@@ -109,12 +110,24 @@ local restored = restore_data_backup_transaction(backup)
 assert(not restored, "grouped restore fault unexpectedly succeeded")
 assert(read_all(first) == "old-config", "first file was not rolled back")
 assert(read_all(second) == "old-libraries", "second file changed after rollback")
+assert(read_all(DATABASE_JOURNAL_FILE) == "post-backup-journal")
+
+state.persistence_fault_injection = "restore_after_journal_delete"
+local journal_delete_restored = restore_data_backup_transaction(backup)
+assert(not journal_delete_restored, "journal-delete fault unexpectedly succeeded")
+assert(read_all(first) == "old-config")
+assert(read_all(second) == "old-libraries")
+assert(
+  read_all(DATABASE_JOURNAL_FILE) == "post-backup-journal",
+  "journal deletion was not rolled back"
+)
 
 state.persistence_fault_injection = nil
 local restored_ok, restored_count = restore_data_backup_transaction(backup)
-assert(restored_ok and restored_count == 2)
+assert(restored_ok and restored_count == 3)
 assert(read_all(first) == "new-config")
 assert(read_all(second) == "new-libraries")
+assert(not exists(DATABASE_JOURNAL_FILE), "restore retained a journal absent from the backup")
 
 write_all(first, "old-before-marker-failure")
 write_all(second, "old-libraries-before-marker-failure")

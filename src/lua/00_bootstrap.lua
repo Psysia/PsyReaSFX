@@ -480,6 +480,7 @@ local META_INTERVAL = 0.075
 local WAVE_INTERVAL = 0.012
 local SAVE_INTERVAL = 8
 local WATCH_INTERVAL = 60
+local DATABASE_JOURNAL_COMPACT_COUNT = 10000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
@@ -1752,6 +1753,10 @@ I18N_EN = {
   ["恢复默认缓存目录，并移动现有缓存？"] = "Restore the default cache directory and move the existing cache?",
   ["无法保存 Region 数据"] = "Unable to save Region data",
   ["无法保存响度缓存"] = "Unable to save loudness cache",
+  ["索引快照代次无效，已进入只读保护"] =
+    "The catalog snapshot generation is invalid; read-only protection is active",
+  ["素材增量日志损坏，已进入只读保护"] =
+    "The asset journal is damaged; read-only protection is active",
   ["已设置 Artwork"] = "Artwork set",
   ["瞬态检测设置…"] = "Transient detection settings…",
   ["拖到编排区需要 SWS Extension"] = "Dragging to the arrange view requires SWS Extension",
@@ -1773,6 +1778,7 @@ I18N_PREFIX_EN = {
     "Migrated legacy library paths and preferences",
   ["无法保存配置"] = "Unable to save configuration",
   ["无法保存索引"] = "Unable to save database index",
+  ["无法保存素材增量日志："] = "Unable to save the asset journal: ",
   ["无法保存播放列表"] = "Unable to save playlists",
   ["无法保存搜索条件"] = "Unable to save saved searches",
   ["无法保存试听历史"] = "Unable to save preview history",

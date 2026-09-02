@@ -515,6 +515,7 @@ Important data includes:
 | `config.tsv` | interface, language, theme and column settings |
 | `libraries_v2.tsv` | logical libraries and source relationships |
 | `index_v3.tsv` | asset index and database metadata |
+| `index_v3.journal` | asset-level changes relative to the current index snapshot; compacted automatically |
 | `wave_cache_v3/` | multi-resolution waveform data |
 | `collections_v1.tsv` | playlists and project bins |
 | `saved_searches_v1.tsv` | saved search state |
@@ -538,6 +539,9 @@ the catalog, and collections cannot be left at mixed generations. If REAPER
 stops during restoration, startup checks the transaction marker: a fully
 committed restore keeps the new generation and finishes cleanup; otherwise all
 touched files return to their retained rollback generation.
+The index snapshot and journal share a generation check. Startup validates the
+whole journal before replay, so an old-generation or partially written record
+is never applied to only part of the catalog.
 
 The same page can move the waveform cache or switch to an empty destination.
 `Verify waveform cache` checks cached files in bounded batches and moves damaged

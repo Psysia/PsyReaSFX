@@ -19,8 +19,33 @@ function record_asset_change(change_set, key, operation, values)
   if not change_set.by_key[key] then
     change_set.count = (change_set.count or 0) + 1
   end
-  change_set.by_key[key] = { op = operation, values = values }
+  local copied_values = {}
+  for index, value in ipairs(values) do
+    copied_values[index] = value
+  end
+  change_set.by_key[key] = {
+    op = operation,
+    values = copied_values,
+  }
   return true
+end
+
+function asset_changes_require_snapshot(
+  change_set,
+  snapshot_exists,
+  compact_count
+)
+  if not snapshot_exists or type(change_set) ~= "table" then
+    return true
+  end
+  local count = math.floor(tonumber(change_set.count) or 0)
+  local threshold = math.max(
+    1,
+    math.floor(tonumber(compact_count) or 1)
+  )
+  return change_set.requires_snapshot == true
+    or count <= 0
+    or count >= threshold
 end
 
 function require_asset_snapshot(change_set)
@@ -198,4 +223,27 @@ function read_asset_journal(path, expected_generation, expected_fields)
     expected_generation,
     expected_fields
   )
+end
+
+function write_asset_journal_atomic(
+  path,
+  generation,
+  fields,
+  entries,
+  writer_factory
+)
+  local encoded, encode_error = encode_asset_journal(
+    generation,
+    fields,
+    entries
+  )
+  if not encoded then return false, encode_error end
+  local file, open_error = writer_factory(path)
+  if not file then return false, open_error or "open_failed" end
+  if not file:write(encoded) then
+    file:close()
+    return false, "write_failed"
+  end
+  if not file:close() then return false, "commit_failed" end
+  return true, #encoded
 end
