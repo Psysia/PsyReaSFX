@@ -23,7 +23,7 @@ internal static class LuaDataImporter
         {
             ["config.tsv"] = ("config", 1),
             ["libraries_v2.tsv"] = ("libraries", 2),
-            ["index_v3.tsv"] = ("database", 2),
+            ["index_v3.tsv"] = ("database", 3),
             ["collections_v1.tsv"] = ("collections", 1),
             ["saved_searches_v1.tsv"] = ("saved_searches", 1),
             ["history_v1.tsv"] = ("history", 1),

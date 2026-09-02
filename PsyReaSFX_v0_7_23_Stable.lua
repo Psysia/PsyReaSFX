@@ -4211,7 +4211,7 @@ local PERSISTENCE_SCHEMAS = {
   },
   [DATABASE_FILE] = {
     kind = "database",
-    version = 2,
+    version = 3,
     dirty_flag = "db_dirty",
   },
   [COLLECTIONS_FILE] = {

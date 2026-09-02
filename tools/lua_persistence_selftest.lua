@@ -38,6 +38,13 @@ function escape_tsv(value)
     :gsub("\r", "\\r")
     :gsub("\n", "\\n")
 end
+function split_tsv(line)
+  local fields = {}
+  for field in (tostring(line or "") .. "\t"):gmatch("(.-)\t") do
+    fields[#fields + 1] = field
+  end
+  return fields
+end
 
 state = { persistence_fault_injection = nil }
 Jobs = { active = {}, history = {}, generation = 0, accepting = true }
@@ -178,5 +185,22 @@ if externally_locked_target and externally_locked_source then
     "external file lock damaged the prior target"
   )
 end
+
+write_all(DATABASE_FILE, "psyreasfx_schema\tdatabase\t2\n")
+assert(preflight_persistence_schemas(), "database schema 2 should remain readable")
+assert(state.persistence_schema_versions[DATABASE_FILE] == 2)
+
+local schema_output = path_join(root, "database-schema-header.tsv")
+local schema_file = assert(io.open(schema_output, "wb"))
+assert(write_persistence_schema(schema_file, DATABASE_FILE))
+assert(schema_file:close())
+assert(
+  read_all(schema_output) == "psyreasfx_schema\tdatabase\t3\n",
+  "database writer did not advance to schema 3"
+)
+
+write_all(DATABASE_FILE, "psyreasfx_schema\tdatabase\t4\n")
+assert(not preflight_persistence_schemas(), "future database schema was accepted")
+assert(state.persistence_read_only, "future database schema did not enable read-only protection")
 
 print("Lua persistence self-test OK")

@@ -71,15 +71,17 @@ internal static class DesktopSelfTest
             await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "libraries_v2.tsv"),
                 "psyreasfx_schema\tlibraries\t2\nversion\t3\nlibrary\tlib-self\tSchema library\t\t1\n" +
                 $"root\troot-self\tlib-self\t{working}\t\t1\t\t0\t0\t{working}\t\tSELF0001\t1\n");
-            const string luaAssetHeader = "asset_id\tpath\trelative_path\tname\tfolder\troot\tlibrary\tduration\tchannels\tsample_rate\tbit_depth\tsource_type\tsize\tdescription\tkeywords\tcatid\tcategory\tsubcategory\tartwork_path\tworkflow_status\tmarked\tpreview_count\tlast_previewed\tindexed\tready\tused_count\tlast_used\troot_id\tlibrary_id\tlast_seen";
+            const string luaAssetHeader = "asset_id\tpath\trelative_path\tname\tfolder\troot\tlibrary\tduration\tchannels\tsample_rate\tbit_depth\tsource_type\tsize\tdescription\tkeywords\tcatid\tcategory\tsubcategory\tartwork_path\tworkflow_status\tmarked\tpreview_count\tlast_previewed\tindexed\tready\tused_count\tlast_used\troot_id\tlibrary_id\tfingerprint\tfingerprint_size\tfingerprint_version\tfingerprint_modified\tfingerprint_stat_source\tlast_seen";
             var luaAssetValues = string.Join('\t', new[]
             {
                 "asset_schema_self", wavPath, Path.GetFileName(wavPath), Path.GetFileName(wavPath), working, working, "Schema library", "0.5", "2", "48000", "16",
                 "WAVE", new FileInfo(wavPath).Length.ToString(), "schema fixture", "test", "", "TEST", "FIXTURE", "",
-                "none", "0", "0", "0", "1", "1", "0", "0", "root-self", "lib-self", "1"
+                "none", "0", "0", "0", "1", "1", "0", "0", "root-self", "lib-self",
+                "sample-fingerprint", new FileInfo(wavPath).Length.ToString(), "sample-fnv1a-head-mid-tail-v1",
+                "2026.09.02 10:00:00", "js_file_stat", "1"
             });
             await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "index_v3.tsv"),
-                $"psyreasfx_schema\tdatabase\t2\n{luaAssetHeader}\n{luaAssetValues}\n");
+                $"psyreasfx_schema\tdatabase\t3\n{luaAssetHeader}\n{luaAssetValues}\n");
             await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "config.tsv"),
                 "psyreasfx_schema\tconfig\t1\nversion\t0.8\nsetting\tlanguage\tzh\n");
             var luaSchemaDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-lua-schema"));

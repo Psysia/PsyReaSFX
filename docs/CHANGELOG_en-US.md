@@ -22,6 +22,9 @@
 - Uses optional js_ReaScriptAPI modification times when available. Without the
   extension, audits still work but persisted fingerprints are not reused across
   sessions.
+- Advances `index_v3.tsv` to database schema 3 after a pre-migration snapshot.
+  The Desktop importer accepts the additive columns by name and still rejects
+  unsupported future schemas.
 - Can perform a frame-budgeted byte-for-byte confirmation on demand, separating
   candidates, confirmed matches and read failures without deleting source media.
 
