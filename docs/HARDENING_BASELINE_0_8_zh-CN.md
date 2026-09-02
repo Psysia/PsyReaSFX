@@ -15,7 +15,8 @@
 
 功能基线文档：
 
-- `docs/DESKTOP_PARITY_0_7_23.md`
+- `desktop/FEATURE_PARITY_0_7_23.md`
+- `desktop/FEATURE_PARITY_0_7_23_zh-CN.md`
 - `docs/DESKTOP_ALPHA_zh-CN.md`
 - `docs/CHANGELOG_zh-CN.md`
 - `docs/CODE_REVIEW_2026-08-31_zh-CN.md`
