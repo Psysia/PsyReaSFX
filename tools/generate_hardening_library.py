@@ -50,8 +50,8 @@ def main() -> int:
     parser.add_argument("--allow-existing", action="store_true")
     args = parser.parse_args()
 
-    if args.count < 1 or args.count > 250000:
-        parser.error("--count must be between 1 and 250000")
+    if args.count < 1 or args.count > 500000:
+        parser.error("--count must be between 1 and 500000")
     root = args.root.resolve()
     if root.exists() and any(root.iterdir()) and not args.allow_existing:
         parser.error(f"refusing to write into non-empty directory: {root}")

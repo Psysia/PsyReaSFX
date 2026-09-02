@@ -202,6 +202,7 @@ public sealed class PsyReaSFXDatabase
         var incomingAssetIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var changedAssets = 0;
         var unchangedAssets = 0;
+        await using var assetUpsert = CreateAssetUpsertCommand(connection);
         foreach (var asset in snapshot.Assets)
         {
             var relativePath = EffectiveRelativePath(asset);
@@ -210,7 +211,8 @@ public sealed class PsyReaSFXDatabase
             if (!existingAssets.TryGetValue(assetId, out var existing)
                 || !AssetRecordsEquivalent(existing, asset, assetId, relativePath))
             {
-                await UpsertAssetAsync(connection, asset, cancellationToken, assetId, relativePath);
+                BindAssetUpsertCommand(assetUpsert, asset, assetId, relativePath);
+                await assetUpsert.ExecuteNonQueryAsync(cancellationToken);
                 changedAssets++;
             }
             else unchangedAssets++;
@@ -808,18 +810,52 @@ public sealed class PsyReaSFXDatabase
     {
         var relativePath = effectiveRelativePath ?? EffectiveRelativePath(row);
         var assetId = effectiveAssetId ?? EffectiveAssetId(row, relativePath);
+        await using var command = CreateAssetUpsertCommand(connection);
+        BindAssetUpsertCommand(command, row, assetId, relativePath);
+        await command.ExecuteNonQueryAsync(token);
+    }
+
+    private static SqliteCommand CreateAssetUpsertCommand(SqliteConnection connection)
+    {
         var command = connection.CreateCommand(); command.CommandText = """
             INSERT INTO assets(asset_id,path,relative_path,name,folder,root,library,duration,channels,sample_rate,bit_depth,source_type,size,description,keywords,catid,category,subcategory,artwork_path,workflow_status,marked,preview_count,last_previewed,indexed,ready,used_count,last_used,root_id,library_id,last_seen_utc)
             VALUES($asset_id,$path,$relative_path,$name,$folder,$root,$library,$duration,$channels,$rate,$depth,$type,$size,$description,$keywords,$catid,$category,$subcategory,$artwork,$status,$marked,$preview_count,$last_previewed,$indexed,$ready,$used_count,$last_used,$root_id,$library_id,$last_seen)
             ON CONFLICT(path) DO UPDATE SET asset_id=excluded.asset_id,relative_path=excluded.relative_path,name=excluded.name,folder=excluded.folder,root=excluded.root,library=excluded.library,duration=excluded.duration,channels=excluded.channels,sample_rate=excluded.sample_rate,bit_depth=excluded.bit_depth,source_type=excluded.source_type,size=excluded.size,description=CASE WHEN excluded.description='' THEN assets.description ELSE excluded.description END,keywords=CASE WHEN excluded.keywords='' THEN assets.keywords ELSE excluded.keywords END,catid=CASE WHEN excluded.catid='' THEN assets.catid ELSE excluded.catid END,category=CASE WHEN excluded.category='' THEN assets.category ELSE excluded.category END,subcategory=CASE WHEN excluded.subcategory='' THEN assets.subcategory ELSE excluded.subcategory END,artwork_path=CASE WHEN excluded.artwork_path='' THEN assets.artwork_path ELSE excluded.artwork_path END,workflow_status=excluded.workflow_status,marked=excluded.marked,preview_count=MAX(assets.preview_count,excluded.preview_count),last_previewed=MAX(assets.last_previewed,excluded.last_previewed),indexed=excluded.indexed,ready=excluded.ready,used_count=MAX(assets.used_count,excluded.used_count),last_used=MAX(assets.last_used,excluded.last_used),root_id=excluded.root_id,library_id=excluded.library_id,last_seen_utc=MAX(assets.last_seen_utc,excluded.last_seen_utc)
             """;
-        void Add(string name, object? value) => command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-        Add("$asset_id", assetId); Add("$path", row.Path); Add("$relative_path", relativePath); Add("$name", row.Name); Add("$folder", row.Folder); Add("$root", row.Root); Add("$library", row.Library);
-        Add("$duration", row.Duration); Add("$channels", row.Channels); Add("$rate", row.SampleRate); Add("$depth", row.BitDepth); Add("$type", row.SourceType); Add("$size", row.Size);
-        Add("$description", row.Description); Add("$keywords", row.Keywords); Add("$catid", row.CatId); Add("$category", row.Category); Add("$subcategory", row.Subcategory); Add("$artwork", row.ArtworkPath);
-        Add("$status", row.WorkflowStatus); Add("$marked", row.Marked); Add("$preview_count", row.PreviewCount); Add("$last_previewed", row.LastPreviewed); Add("$indexed", row.Indexed); Add("$ready", row.Ready);
-        Add("$used_count", row.UsedCount); Add("$last_used", row.LastUsed); Add("$root_id", row.RootId); Add("$library_id", row.LibraryId); Add("$last_seen", row.LastSeenUtc);
-        await command.ExecuteNonQueryAsync(token);
+        foreach (var name in new[]
+        {
+            "$asset_id", "$path", "$relative_path", "$name", "$folder", "$root", "$library",
+            "$duration", "$channels", "$rate", "$depth", "$type", "$size", "$description",
+            "$keywords", "$catid", "$category", "$subcategory", "$artwork", "$status", "$marked",
+            "$preview_count", "$last_previewed", "$indexed", "$ready", "$used_count", "$last_used",
+            "$root_id", "$library_id", "$last_seen"
+        }) command.Parameters.Add(new SqliteParameter(name, null));
+        command.Prepare();
+        return command;
+    }
+
+    private static void BindAssetUpsertCommand(
+        SqliteCommand command,
+        AssetRecord row,
+        string assetId,
+        string relativePath)
+    {
+        var parameters = command.Parameters;
+        parameters[0].Value = assetId; parameters[1].Value = row.Path;
+        parameters[2].Value = relativePath; parameters[3].Value = row.Name;
+        parameters[4].Value = row.Folder; parameters[5].Value = row.Root;
+        parameters[6].Value = row.Library; parameters[7].Value = row.Duration;
+        parameters[8].Value = row.Channels; parameters[9].Value = row.SampleRate;
+        parameters[10].Value = row.BitDepth; parameters[11].Value = row.SourceType;
+        parameters[12].Value = row.Size; parameters[13].Value = row.Description;
+        parameters[14].Value = row.Keywords; parameters[15].Value = row.CatId;
+        parameters[16].Value = row.Category; parameters[17].Value = row.Subcategory;
+        parameters[18].Value = row.ArtworkPath; parameters[19].Value = row.WorkflowStatus;
+        parameters[20].Value = row.Marked; parameters[21].Value = row.PreviewCount;
+        parameters[22].Value = row.LastPreviewed; parameters[23].Value = row.Indexed;
+        parameters[24].Value = row.Ready; parameters[25].Value = row.UsedCount;
+        parameters[26].Value = row.LastUsed; parameters[27].Value = row.RootId;
+        parameters[28].Value = row.LibraryId; parameters[29].Value = row.LastSeenUtc;
     }
 
     private static AssetRecord ReadAsset(SqliteDataReader r) => new()

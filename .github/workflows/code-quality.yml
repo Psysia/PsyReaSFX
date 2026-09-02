@@ -121,3 +121,14 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "Hardening benchmark failed with exit code $($process.ExitCode)."
           }
+
+      - name: Run synthetic capacity smoke test
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-capacity-benchmark.json'
+          $exe = 'desktop/PsyReaSFX.Desktop/bin/Release/net8.0-windows/PsyReaSFX.Desktop.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--hardening-capacity-benchmark', '25000', $report -Wait -PassThru -WindowStyle Hidden
+          Get-Content -LiteralPath $report
+          if ($process.ExitCode -ne 0) {
+            throw "Capacity benchmark failed with exit code $($process.ExitCode)."
+          }

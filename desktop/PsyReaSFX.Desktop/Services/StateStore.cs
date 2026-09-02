@@ -202,7 +202,7 @@ public sealed class StateStore : IStorageService
                 "Catalog writes are disabled because the database did not open successfully.", LastError);
     }
 
-    private static PersistedState FromSnapshot(CatalogSnapshot snapshot)
+    internal static PersistedState FromSnapshot(CatalogSnapshot snapshot)
     {
         var state = new PersistedState { Favorites = new HashSet<string>(snapshot.Favorites, StringComparer.OrdinalIgnoreCase) };
         var byId = new Dictionary<string, LibraryDefinition>(StringComparer.OrdinalIgnoreCase);
