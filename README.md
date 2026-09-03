@@ -14,6 +14,50 @@
   <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
 </p>
 
+> **Repository scope / 仓库定位**
+>
+> This repository is also the home of **Psysia's REAPER workflow tools**. PsyReaSFX is the largest tool in the collection, while the same ReaPack repository also publishes a growing set of focused editing, track-management and rendering utilities.
+>
+> 本仓库同时作为 **Psysia 的 REAPER 工作流工具集合**。PsyReaSFX 是其中体量最大的工具之一，同一个 ReaPack 源还提供一系列面向剪辑、轨道整理与渲染工作的轻量脚本。
+
+## REAPER tools / REAPER 工具集
+
+All tools below can be installed from the same ReaPack repository used by PsyReaSFX. Most utility scripts are intentionally small and focused, so they can be assigned directly to keyboard shortcuts or toolbar buttons.
+
+以下工具均可通过与 PsyReaSFX 相同的 ReaPack 仓库安装。多数脚本都针对单一工作流设计，适合直接绑定快捷键或工具栏按钮。
+
+| Tool / 工具 | What it does / 功能 |
+|---|---|
+| **PsyReaSFX** | Sound-asset browser and workflow workspace for library management, waveform audition, metadata, REAPER insertion and Transfer. / 音效资产浏览与工作流工具，用于素材库管理、波形试听、元数据、REAPER 插入与 Transfer。 |
+| **Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵** | Builds Regions from selected items, derives names from track/folder hierarchy, and writes matching Region Render Matrix targets. / 根据选中素材建立 Region，按轨道或文件夹层级命名，并自动写入对应的 Region Render Matrix。 |
+| **Sort Tracks by Earliest Item Position / 按最早素材位置排序轨道** | Sorts selected tracks, or tracks containing selected media items, by the earliest relevant item position. Selected items take priority when present. / 按最早素材位置排序轨道；有选中素材时优先识别素材所在轨道，并按各轨道最早的选中素材排序。 |
+| **Smart Tail Render Panel / 智能尾音渲染面板** | Configures REAPER's native render tail, trim-ending-silence threshold and safety padding for Region or time-selection rendering. / 配置 REAPER 原生尾音、尾部静音裁切阈值与安全留白，适用于 Region 和时间选区渲染。 |
+| **Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音** | Applies saved auto-tail settings before opening REAPER's Render dialog. / 打开渲染窗口前自动应用已保存的尾音设置。 |
+| **Remove Gaps Between Selected Items / 移除选中素材间隙** | Moves selected media items together so each item starts at the end of the previous one. / 将选中素材依次首尾相接，快速移除它们之间的空隙。 |
+| **Split Selected Items to New Tracks / 拆分选中素材到新轨道** | Moves selected items onto newly created tracks while keeping timeline positions and naming tracks from take names. / 将选中素材拆分到新轨道，保持原时间位置，并根据 Take 名称自动命名轨道。 |
+| **Reverse Selected Items in Place / 原位反转选中素材** | Creates a reversed take for each selected item and crops to the reversed take for a one-action in-place reverse workflow. / 对选中素材生成反向 Take 并裁切到当前 Take，实现一键原位反转。 |
+| **Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图** | Toggles REAPER peak display between LUFS-M spectral peaks and the regular spectrogram view. / 在 LUFS-M 频谱峰值显示与普通 Spectrogram 之间切换。 |
+| **Create Folder from Selected Tracks with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2** | Wraps selected tracks in a new folder bus and automatically inserts Pro-L 2 on the parent track. / 将选中轨道包进新的父文件夹轨，并自动在父轨挂载 Pro-L 2。 |
+
+### Tool documentation / 工具使用文档
+
+- [REAPER utility guide — English](docs/ReaScripts_Guide.md)
+- [REAPER 工具使用手册 — 简体中文](docs/ReaScripts_Guide_zh-CN.md)
+
+### Install the tool collection with ReaPack / 通过 ReaPack 安装工具集
+
+Open `Extensions → ReaPack → Import repositories...` and import:
+
+```text
+https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+```
+
+Then synchronize packages and search for the individual tool you want. You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.
+
+在 REAPER 中导入同一个仓库地址并同步后，直接搜索需要的脚本即可。**安装这些轻量工具并不要求同时安装 PsyReaSFX。**
+
+---
+
 > **Development preview:** PsyReaSFX 0.8.0 Beta 3 combines the former Beta
 > 3/4/5 reliability roadmap in one build: missing-file audit and source relink,
 > sampled duplicate detection for large libraries, and persistent REAPER
@@ -269,8 +313,10 @@ inspector retains its neutral empty-state illustration.
 
 ## Documentation
 
-- [User Guide — English](docs/USER_GUIDE_en-US.md)
-- [用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
+- [REAPER utility guide — English](docs/ReaScripts_Guide.md)
+- [REAPER 工具使用手册 — 简体中文](docs/ReaScripts_Guide_zh-CN.md)
+- [PsyReaSFX User Guide — English](docs/USER_GUIDE_en-US.md)
+- [PsyReaSFX 用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
 - [Changelog — English](docs/CHANGELOG_en-US.md)
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
 - [Standalone Chinese project page](README_zh-CN.md)
@@ -285,7 +331,7 @@ work-area obstruction without slowing deliberate hierarchy navigation.
 
 ## Author and license
 
-PsyReaSFX is created by **Psysia**.  
+PsyReaSFX and the bundled REAPER utilities are created by **Psysia**.  
 Copyright © 2026 Psysia. All rights reserved.
 
 The bundled Orbitron font is distributed under the SIL Open Font License 1.1;
