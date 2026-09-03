@@ -1,381 +1,207 @@
 -- @description Sort Tracks by Earliest Item Position / 按最早素材位置排序轨道
--- @version 1.2
+-- @version 1.3
 -- @author Psysia
---
--- 使用方式：
--- 1. 选中两条或更多轨道：
---    按每条轨道上“所有素材”的最早位置排序。
---
--- 2. 没有选中轨道，但选中了多个素材：
---    自动识别素材所在轨道，
---    按每条轨道上“被选中素材”的最早位置排序。
---
--- 3. 如果时间位置完全相同：
---    保持轨道原本的上下相对顺序。
+-- @changelog
+--   + Selected media items now take priority over selected tracks.
+--   + Sort source tracks by the earliest selected item on each track.
+--   + Preserve non-contiguous destination slots and folder endings.
+--   + Restore original track selection and UI state after errors.
 
+local PROJECT = 0
 
-------------------------------------------------------------
--- 获取轨道上所有素材中最早的位置
-------------------------------------------------------------
+local function valid_track(track)
+    return track ~= nil and reaper.ValidatePtr2(PROJECT, track, "MediaTrack*")
+end
 
-local function get_earliest_item_pos_on_track(track)
+local function track_number(track)
+    return math.floor(
+        reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") + 0.5
+    )
+end
 
-    local num_items = reaper.CountTrackMediaItems(track)
-
-    if num_items == 0 then
+local function earliest_item_position(track)
+    local item_count = reaper.CountTrackMediaItems(track)
+    if item_count == 0 then
         return math.huge
     end
 
-    local min_pos = math.huge
-
-    for i = 0, num_items - 1 do
-
+    local earliest = math.huge
+    for i = 0, item_count - 1 do
         local item = reaper.GetTrackMediaItem(track, i)
-
-        local pos =
-            reaper.GetMediaItemInfo_Value(
-                item,
-                "D_POSITION"
-            )
-
-        if pos < min_pos then
-            min_pos = pos
+        local position = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        if position < earliest then
+            earliest = position
         end
     end
-
-    return min_pos
+    return earliest
 end
-
-
-------------------------------------------------------------
--- 保存当前轨道选择状态
-------------------------------------------------------------
 
 local function save_selected_tracks()
-
-    local selected = {}
-
-    local count =
-        reaper.CountSelectedTracks(0)
+    local tracks = {}
+    local count = reaper.CountSelectedTracks(PROJECT)
 
     for i = 0, count - 1 do
-
-        selected[#selected + 1] =
-            reaper.GetSelectedTrack(0, i)
+        local track = reaper.GetSelectedTrack(PROJECT, i)
+        if valid_track(track) then
+            tracks[#tracks + 1] = track
+        end
     end
 
-    return selected
+    return tracks
 end
 
+local function restore_track_selection(tracks)
+    reaper.Main_OnCommand(40297, 0) -- Track: Unselect all tracks
 
-------------------------------------------------------------
--- 清除全部轨道选择
-------------------------------------------------------------
-
-local function clear_track_selection()
-
-    local track_count =
-        reaper.CountTracks(0)
-
-    for i = 0, track_count - 1 do
-
-        local track =
-            reaper.GetTrack(0, i)
-
-        reaper.SetTrackSelected(
-            track,
-            false
-        )
-    end
-end
-
-
-------------------------------------------------------------
--- 恢复轨道选择状态
-------------------------------------------------------------
-
-local function restore_track_selection(selected_tracks)
-
-    clear_track_selection()
-
-    for _, track in ipairs(selected_tracks) do
-
-        -- 确认轨道仍然存在
-        if reaper.ValidatePtr(track, "MediaTrack*") then
-
-            reaper.SetTrackSelected(
-                track,
-                true
-            )
+    for _, track in ipairs(tracks) do
+        if valid_track(track) then
+            reaper.SetTrackSelected(track, true)
         end
     end
 end
 
+local function build_destination_indices(entries)
+    local indices = {}
 
-------------------------------------------------------------
--- 主程序
-------------------------------------------------------------
+    for _, entry in ipairs(entries) do
+        indices[#indices + 1] = entry.original_order
+    end
 
-local function main()
+    table.sort(indices)
+    return indices
+end
 
-    --------------------------------------------------------
-    -- 保存原本轨道选择
-    --------------------------------------------------------
+local function collect_from_selected_items()
+    local item_count = reaper.CountSelectedMediaItems(PROJECT)
+    if item_count == 0 then
+        return nil
+    end
 
-    local original_selected_tracks =
-        save_selected_tracks()
+    local by_track = {}
+    local entries = {}
 
+    for i = 0, item_count - 1 do
+        local item = reaper.GetSelectedMediaItem(PROJECT, i)
+        local track = item and reaper.GetMediaItem_Track(item) or nil
 
-    --------------------------------------------------------
-    -- 模式判断
-    --------------------------------------------------------
+        if valid_track(track) then
+            local position = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+            local entry = by_track[track]
 
-    local num_sel_tracks =
-        reaper.CountSelectedTracks(0)
-
-    local num_sel_items =
-        reaper.CountSelectedMediaItems(0)
-
-
-    local tracks_data = {}
-
-    local min_track_idx =
-        math.huge
-
-
-    --------------------------------------------------------
-    -- 模式 A：
-    -- 已经选中轨道
-    --------------------------------------------------------
-
-    if num_sel_tracks >= 2 then
-
-        for i = 0, num_sel_tracks - 1 do
-
-            local track =
-                reaper.GetSelectedTrack(0, i)
-
-            local track_idx =
-                math.floor(
-                    reaper.GetMediaTrackInfo_Value(
-                        track,
-                        "IP_TRACKNUMBER"
-                    ) - 1
-                )
-
-            local earliest_pos =
-                get_earliest_item_pos_on_track(
-                    track
-                )
-
-            if track_idx < min_track_idx then
-                min_track_idx = track_idx
+            if not entry then
+                entry = {
+                    track = track,
+                    position = position,
+                    original_order = track_number(track),
+                }
+                by_track[track] = entry
+                entries[#entries + 1] = entry
+            elseif position < entry.position then
+                entry.position = position
             end
+        end
+    end
 
-            tracks_data[#tracks_data + 1] = {
+    return entries
+end
 
+local function collect_from_selected_tracks()
+    local selected_count = reaper.CountSelectedTracks(PROJECT)
+    local entries = {}
+
+    for i = 0, selected_count - 1 do
+        local track = reaper.GetSelectedTrack(PROJECT, i)
+
+        if valid_track(track) then
+            entries[#entries + 1] = {
                 track = track,
-
-                pos = earliest_pos,
-
-                orig_idx = track_idx
+                position = earliest_item_position(track),
+                original_order = track_number(track),
             }
         end
+    end
 
+    return entries
+end
 
-    --------------------------------------------------------
-    -- 模式 B：
-    -- 没选轨道，但选中了素材
-    --------------------------------------------------------
-
-    elseif num_sel_tracks == 0
-       and num_sel_items > 0 then
-
-
-        ----------------------------------------------------
-        -- 用 track 指针作为 key，
-        -- 防止同一轨道被重复加入
-        ----------------------------------------------------
-
-        local track_map = {}
-
-
-        for i = 0, num_sel_items - 1 do
-
-            local item =
-                reaper.GetSelectedMediaItem(
-                    0,
-                    i
-                )
-
-            local track =
-                reaper.GetMediaItemTrack(
-                    item
-                )
-
-            local pos =
-                reaper.GetMediaItemInfo_Value(
-                    item,
-                    "D_POSITION"
-                )
-
-
-            ------------------------------------------------
-            -- 第一次遇到这条轨道
-            ------------------------------------------------
-
-            if not track_map[track] then
-
-                local track_idx =
-                    math.floor(
-                        reaper.GetMediaTrackInfo_Value(
-                            track,
-                            "IP_TRACKNUMBER"
-                        ) - 1
-                    )
-
-                local data = {
-
-                    track = track,
-
-                    pos = pos,
-
-                    orig_idx = track_idx
-                }
-
-                track_map[track] =
-                    data
-
-                tracks_data[#tracks_data + 1] =
-                    data
-
-
-                if track_idx < min_track_idx then
-                    min_track_idx = track_idx
-                end
-
-
-            ------------------------------------------------
-            -- 同一轨道还有其他选中素材
-            -- 只保留最早位置
-            ------------------------------------------------
-
-            else
-
-                local data =
-                    track_map[track]
-
-                if pos < data.pos then
-                    data.pos = pos
-                end
-            end
+local function sort_entries(entries)
+    table.sort(entries, function(a, b)
+        if a.position == b.position then
+            return a.original_order < b.original_order
         end
+        return a.position < b.position
+    end)
+end
 
+local function main()
+    local original_track_selection = save_selected_tracks()
 
-        ----------------------------------------------------
-        -- 如果所有选中素材都在同一条轨道
-        ----------------------------------------------------
+    -- Selected media items always take priority. This avoids REAPER's incidental
+    -- track-selection state changing which mode the script uses.
+    local entries = collect_from_selected_items()
+    local item_mode = entries ~= nil
 
-        if #tracks_data < 2 then
-            return
-        end
+    if not item_mode then
+        entries = collect_from_selected_tracks()
+    end
 
-
-    --------------------------------------------------------
-    -- 其他情况
-    --------------------------------------------------------
-
-    else
-
+    if #entries < 2 then
+        reaper.ShowMessageBox(
+            item_mode
+                and "Select media items on at least two tracks.\n\n请至少选择两个不同轨道上的素材。"
+                or "Select at least two tracks.\n\n请至少选择两条轨道。",
+            "Sort Tracks / 排序轨道",
+            0
+        )
         return
     end
 
-
-    --------------------------------------------------------
-    -- 时间升序排序
-    --------------------------------------------------------
-
-    table.sort(
-        tracks_data,
-
-        function(a, b)
-
-            ------------------------------------------------
-            -- 时间一样：
-            -- 保持原始上下顺序
-            ------------------------------------------------
-
-            if a.pos == b.pos then
-                return a.orig_idx < b.orig_idx
-            end
-
-            return a.pos < b.pos
-        end
-    )
-
-
-    --------------------------------------------------------
-    -- 开始移动轨道
-    --------------------------------------------------------
+    local destination_indices = build_destination_indices(entries)
+    sort_entries(entries)
 
     reaper.Undo_BeginBlock()
-
     reaper.PreventUIRefresh(1)
 
+    local ok, err = xpcall(function()
+        for i, entry in ipairs(entries) do
+            if not valid_track(entry.track) then
+                error("Track pointer became invalid before move " .. i)
+            end
 
-    local insert_idx =
-        min_track_idx
+            reaper.SetOnlyTrackSelected(entry.track)
 
+            -- Keep the v1.1 move behavior: preserve original non-contiguous
+            -- destination slots and preserve folder endings.
+            if not reaper.ReorderSelectedTracks(destination_indices[i], 2) then
+                error("REAPER rejected track move " .. i)
+            end
+        end
+    end, debug.traceback)
 
-    for _, data in ipairs(tracks_data) do
-
-        ----------------------------------------------------
-        -- 一次只移动一根轨道
-        ----------------------------------------------------
-
-        reaper.SetOnlyTrackSelected(
-            data.track
-        )
-
-
-        reaper.ReorderSelectedTracks(
-            insert_idx,
-            0
-        )
-
-
-        insert_idx =
-            insert_idx + 1
-    end
-
-
-    --------------------------------------------------------
-    -- 恢复执行脚本前的轨道选择
-    --------------------------------------------------------
-
-    restore_track_selection(
-        original_selected_tracks
-    )
-
-
-    --------------------------------------------------------
-    -- 刷新
-    --------------------------------------------------------
-
+    restore_track_selection(original_track_selection)
     reaper.PreventUIRefresh(-1)
-
-    reaper.TrackList_AdjustWindows(
-        false
-    )
-
+    reaper.TrackList_AdjustWindows(false)
     reaper.UpdateArrange()
 
+    if ok then
+        reaper.Undo_EndBlock(
+            item_mode
+                and "Sort tracks by selected item positions / 按选中素材位置排序轨道"
+                or "Sort selected tracks by earliest item position / 按最早素材位置排序选中轨道",
+            -1
+        )
+    else
+        reaper.Undo_EndBlock(
+            "Sort tracks failed / 排序轨道失败",
+            -1
+        )
 
-    reaper.Undo_EndBlock(
-        "Sort tracks by earliest item position",
-        -1
-    )
+        reaper.ShowMessageBox(
+            "Unable to reorder tracks.\n\n无法重新排列轨道。\n\n" .. tostring(err),
+            "Sort Tracks / 排序轨道",
+            0
+        )
+    end
 end
-
 
 main()
