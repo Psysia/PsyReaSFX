@@ -32,11 +32,6 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23/assets/fonts/OFL.txt</source>
       </version>
     </reapack>
-    <reapack name="psy_Auto Tail Time Selection Render_自动尾音时间选区渲染.lua" type="script" desc="Auto Tail Time Selection Render / 自动尾音时间选区渲染">
-      <metadata><description><![CDATA[Auto Tail Time Selection Render / 自动尾音时间选区渲染]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
-      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
-- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Auto Tail Time Selection Render_自动尾音时间选区渲染.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Auto%20Tail%20Time%20Selection%20Render_%E8%87%AA%E5%8A%A8%E5%B0%BE%E9%9F%B3%E6%97%B6%E9%97%B4%E9%80%89%E5%8C%BA%E6%B8%B2%E6%9F%93.lua</source></version>
-    </reapack>
     <reapack name="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua" type="script" desc="Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵">
       <metadata><description><![CDATA[Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
       <version name="2.4" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
@@ -56,11 +51,6 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
       <metadata><description><![CDATA[Remove Gaps Between Selected Items / 移除选中素材间隙]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
       <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
 - 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Remove Gaps Between Selected Items_移除选中素材间隙.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Remove%20Gaps%20Between%20Selected%20Items_%E7%A7%BB%E9%99%A4%E9%80%89%E4%B8%AD%E7%B4%A0%E6%9D%90%E9%97%B4%E9%9A%99.lua</source></version>
-    </reapack>
-    <reapack name="psy_Toggle Auto Tail Render_切换自动尾音渲染.lua" type="script" desc="Toggle Auto Tail Render / 切换自动尾音渲染">
-      <metadata><description><![CDATA[Toggle Auto Tail Render / 切换自动尾音渲染]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
-      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
-- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Toggle Auto Tail Render_切换自动尾音渲染.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Toggle%20Auto%20Tail%20Render_%E5%88%87%E6%8D%A2%E8%87%AA%E5%8A%A8%E5%B0%BE%E9%9F%B3%E6%B8%B2%E6%9F%93.lua</source></version>
     </reapack>
     <reapack name="psy_Toggle LUFS-M and Spectrogram_切换LUFS-M与频谱图.lua" type="script" desc="Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图">
       <metadata><description><![CDATA[Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
