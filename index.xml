@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <index version="1" name="Psysia ReaPack Repository">
   <category name="Psysia">
     <reapack name="PsyReaSFX.lua" type="script" desc="PsyReaSFX">
@@ -9,17 +9,16 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.8.0-beta3" author="Psysia" time="2026-08-28T07:38:09Z">
+      <version name="0.8.0-beta2" author="Psysia" time="2026-08-22T01:54:41Z">
         <changelog><![CDATA[
-- Adds missing-file audit and safe physical-source relink.
-- Adds sampled duplicate detection designed for large libraries.
-- Tracks current REAPER project usage and binds project bins.
-- Retains quiet Watch Folder, interrupted recovery, backups and cache verification.
+- Runs scheduled Watch Folder checks quietly with a lightweight toolbar indicator.
+- Adds interrupted-scan recovery, failed-task retry and periodic index checkpoints.
+- Adds data snapshots and waveform-cache integrity verification.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/fonts/OFL.txt</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/fonts/OFL.txt</source>
       </version>
       <version name="0.7.23" author="Psysia" time="2026-07-24T09:15:50Z">
         <changelog><![CDATA[
@@ -33,6 +32,60 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.7.23/assets/fonts/OFL.txt</source>
       </version>
     </reapack>
+    <reapack name="psy_Auto Tail Time Selection Render_自动尾音时间选区渲染.lua" type="script" desc="Auto Tail Time Selection Render / 自动尾音时间选区渲染">
+      <metadata><description><![CDATA[Auto Tail Time Selection Render / 自动尾音时间选区渲染]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Auto Tail Time Selection Render_自动尾音时间选区渲染.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Auto%20Tail%20Time%20Selection%20Render_%E8%87%AA%E5%8A%A8%E5%B0%BE%E9%9F%B3%E6%97%B6%E9%97%B4%E9%80%89%E5%8C%BA%E6%B8%B2%E6%9F%93.lua</source></version>
+    </reapack>
+    <reapack name="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua" type="script" desc="Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵">
+      <metadata><description><![CDATA[Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="2.4" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Create%20Folder%20Region%20and%20Render%20Matrix_%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
+    </reapack>
+    <reapack name="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua" type="script" desc="Sort Selected Tracks by Earliest Item Position / 按最早素材位置排序选中轨道">
+      <metadata><description><![CDATA[Sort Selected Tracks by Earliest Item Position / 按最早素材位置排序选中轨道]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Sort%20Selected%20Tracks%20by%20Earliest%20Item%20Position_%E6%8C%89%E6%9C%80%E6%97%A9%E7%B4%A0%E6%9D%90%E4%BD%8D%E7%BD%AE%E6%8E%92%E5%BA%8F%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
+    </reapack>
+    <reapack name="psy_Open Render Dialog with Auto Tail_打开渲染对话框并应用自动尾音.lua" type="script" desc="Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音">
+      <metadata><description><![CDATA[Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Open Render Dialog with Auto Tail_打开渲染对话框并应用自动尾音.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Open%20Render%20Dialog%20with%20Auto%20Tail_%E6%89%93%E5%BC%80%E6%B8%B2%E6%9F%93%E5%AF%B9%E8%AF%9D%E6%A1%86%E5%B9%B6%E5%BA%94%E7%94%A8%E8%87%AA%E5%8A%A8%E5%B0%BE%E9%9F%B3.lua</source></version>
+    </reapack>
+    <reapack name="psy_Remove Gaps Between Selected Items_移除选中素材间隙.lua" type="script" desc="Remove Gaps Between Selected Items / 移除选中素材间隙">
+      <metadata><description><![CDATA[Remove Gaps Between Selected Items / 移除选中素材间隙]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Remove Gaps Between Selected Items_移除选中素材间隙.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Remove%20Gaps%20Between%20Selected%20Items_%E7%A7%BB%E9%99%A4%E9%80%89%E4%B8%AD%E7%B4%A0%E6%9D%90%E9%97%B4%E9%9A%99.lua</source></version>
+    </reapack>
+    <reapack name="psy_Toggle Auto Tail Render_切换自动尾音渲染.lua" type="script" desc="Toggle Auto Tail Render / 切换自动尾音渲染">
+      <metadata><description><![CDATA[Toggle Auto Tail Render / 切换自动尾音渲染]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Toggle Auto Tail Render_切换自动尾音渲染.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Toggle%20Auto%20Tail%20Render_%E5%88%87%E6%8D%A2%E8%87%AA%E5%8A%A8%E5%B0%BE%E9%9F%B3%E6%B8%B2%E6%9F%93.lua</source></version>
+    </reapack>
+    <reapack name="psy_Toggle LUFS-M and Spectrogram_切换LUFS-M与频谱图.lua" type="script" desc="Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图">
+      <metadata><description><![CDATA[Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Toggle LUFS-M and Spectrogram_切换LUFS-M与频谱图.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Toggle%20LUFS-M%20and%20Spectrogram_%E5%88%87%E6%8D%A2LUFS-M%E4%B8%8E%E9%A2%91%E8%B0%B1%E5%9B%BE.lua</source></version>
+    </reapack>
+    <reapack name="psy_Smart Tail Render Panel_智能尾音渲染面板.lua" type="script" desc="Smart Tail Render Panel / 智能尾音渲染面板">
+      <metadata><description><![CDATA[Smart Tail Render Panel / 智能尾音渲染面板]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.1" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Smart Tail Render Panel_智能尾音渲染面板.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Tail%20Render%20Panel_%E6%99%BA%E8%83%BD%E5%B0%BE%E9%9F%B3%E6%B8%B2%E6%9F%93%E9%9D%A2%E6%9D%BF.lua</source></version>
+    </reapack>
+    <reapack name="psy_Create Folder from Selected Tracks with Pro-L 2_从选中轨道创建文件夹并挂载Pro-L 2.lua" type="script" desc="Create Folder from Selected Tracks with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2">
+      <metadata><description><![CDATA[Create Folder from Selected Tracks with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Create Folder from Selected Tracks with Pro-L 2_从选中轨道创建文件夹并挂载Pro-L 2.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Create%20Folder%20from%20Selected%20Tracks%20with%20Pro-L%202_%E4%BB%8E%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%B9%B6%E6%8C%82%E8%BD%BDPro-L%202.lua</source></version>
+    </reapack>
+    <reapack name="psy_Split Selected Items to New Tracks_拆分选中素材到新轨道.lua" type="script" desc="Split Selected Items to New Tracks / 拆分选中素材到新轨道">
+      <metadata><description><![CDATA[Split Selected Items to New Tracks / 拆分选中素材到新轨道]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Split Selected Items to New Tracks_拆分选中素材到新轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Split%20Selected%20Items%20to%20New%20Tracks_%E6%8B%86%E5%88%86%E9%80%89%E4%B8%AD%E7%B4%A0%E6%9D%90%E5%88%B0%E6%96%B0%E8%BD%A8%E9%81%93.lua</source></version>
+    </reapack>
+    <reapack name="psy_Reverse Selected Items in Place_原位反转选中素材.lua" type="script" desc="Reverse Selected Items in Place / 原位反转选中素材">
+      <metadata><description><![CDATA[Reverse Selected Items in Place / 原位反转选中素材]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
+- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Reverse Selected Items in Place_原位反转选中素材.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Reverse%20Selected%20Items%20in%20Place_%E5%8E%9F%E4%BD%8D%E5%8F%8D%E8%BD%AC%E9%80%89%E4%B8%AD%E7%B4%A0%E6%9D%90.lua</source></version>
+    </reapack>
   </category>
 </index>
-
