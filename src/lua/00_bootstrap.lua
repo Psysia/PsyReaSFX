@@ -491,6 +491,7 @@ local DUPLICATE_SORT_ITEMS_PER_FRAME = 4000
 local PRECACHE_COLLECT_FILES_PER_FRAME = 64
 local PRECACHE_CACHE_PROBES_PER_FRAME = 8
 local PRECACHE_FRAME_BUDGET = 0.0025
+local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
 
 local MINI_WAVE_DEFAULT_POINTS = 256
 local MINI_WAVE_MAX_POINTS = 512
@@ -730,6 +731,7 @@ local state = {
   -- 导入阶段的素材保持隐藏，直到元数据与缩略波形全部准备完成。
   import_session = nil,
   import_cancel_requested = false,
+  import_recovery_audit = nil,
 
   -- 从列表/大波形拖到 REAPER 编排区。
   external_drag = nil,

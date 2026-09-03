@@ -2724,6 +2724,57 @@ end
 -- Scan
 ----------------------------------------------------------------
 
+function start_import_recovery_audit()
+  if state.persistence_read_only or #state.roots == 0
+    or #state.assets == 0 then
+    state.import_recovery_audit = nil
+    return
+  end
+  state.import_recovery_audit = {
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+  }
+end
+
+function process_import_recovery_audit()
+  local audit = state.import_recovery_audit
+  if not audit or state.scan or state.import_session
+    or state.transfer_running or not can_run_heavy_job() then
+    return
+  end
+
+  for _, token in pairs(Jobs.active) do
+    if token.resource == "catalog_exclusive"
+      and not token.finished then
+      return
+    end
+  end
+
+  if audit.assets ~= state.assets then
+    audit.assets = state.assets
+    audit.index = 1
+    audit.total = #state.assets
+  end
+
+  local last = math.min(
+    audit.total,
+    audit.index + IMPORT_RECOVERY_ASSETS_PER_FRAME - 1
+  )
+  for index = audit.index, last do
+    local asset = audit.assets[index]
+    if asset and not asset.ready then
+      state.import_recovery_audit = nil
+      start_scan("恢复未完成导入")
+      return
+    end
+  end
+  audit.index = last + 1
+  if audit.index > audit.total then
+    state.import_recovery_audit = nil
+  end
+end
+
 function start_scan(reason, roots_override, options)
   local requested = roots_override or state.roots
   local silent =
@@ -21261,15 +21312,6 @@ if not state.persistence_read_only
   create_data_backup("auto", true)
 end
 
-local needs_import_recovery = false
-
-for _, asset in ipairs(state.assets) do
-  if not asset.ready then
-    needs_import_recovery = true
-    break
-  end
-end
-
 local interrupted_scan = state.resume_scan_on_start
   and load_scan_checkpoint()
   or nil
@@ -21281,19 +21323,18 @@ if state.persistence_read_only then
   )
 elseif interrupted_scan then
   start_scan("恢复中断扫描", interrupted_scan.roots)
-elseif #state.roots > 0
-  and (#state.assets == 0 or needs_import_recovery) then
-  start_scan(
-    needs_import_recovery
-      and "恢复未完成导入"
-      or "首次扫描"
-  )
+elseif #state.roots > 0 and #state.assets == 0 then
+  start_scan("首次扫描")
+elseif #state.roots > 0 then
+  start_import_recovery_audit()
 end
 
 function loop()
   if not state.open then
     return
   end
+
+  process_import_recovery_audit()
 
   if state.transfer_running then
     -- Transfer receives the background-work budget while active. Library
