@@ -37,13 +37,14 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
       <version name="2.4" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
 - 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Create%20Folder%20Region%20and%20Render%20Matrix_%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
     </reapack>
-    <reapack name="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua" type="script" desc="Sort Selected Tracks by Earliest Item Position / 按最早素材位置排序选中轨道">
-      <metadata><description><![CDATA[Sort Selected Tracks by Earliest Item Position / 按最早素材位置排序选中轨道]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
-      <version name="1.2" author="Psysia" time="2026-09-03T08:31:00Z"><changelog><![CDATA[- Add support for sorting tracks from selected media items.
-- When no tracks are selected, automatically detect tracks from selected items.
-- Multiple selected items on the same track use the earliest selected item.
-- 新增通过框选素材自动识别并排序所在轨道。
-- 同一轨道选中多个素材时，以最早的选中素材为排序依据。]]></changelog><source main="main" file="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Sort%20Selected%20Tracks%20by%20Earliest%20Item%20Position_%E6%8C%89%E6%9C%80%E6%97%A9%E7%B4%A0%E6%9D%90%E4%BD%8D%E7%BD%AE%E6%8E%92%E5%BA%8F%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
+    <reapack name="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua" type="script" desc="Sort Tracks by Earliest Item Position / 按最早素材位置排序轨道">
+      <metadata><description><![CDATA[Sort selected tracks, or tracks containing selected media items, by earliest item position / 按最早素材位置排序选中轨道或选中素材所在轨道]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.3" author="Psysia" time="2026-09-03T08:40:00Z"><changelog><![CDATA[- Selected media items now take priority over incidental track selection.
+- Sort source tracks by the earliest selected item on each track.
+- Restore v1.1 non-contiguous destination-slot and folder-ending preservation.
+- Restore track selection and UI state after errors.
+- 选中素材时优先按素材所在轨道排序，不再受当前轨道选中状态干扰。
+- 同一轨道多个选中素材取最早位置，并恢复非连续轨道槽位与文件夹结构保护。]]></changelog><source main="main" file="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Sort%20Selected%20Tracks%20by%20Earliest%20Item%20Position_%E6%8C%89%E6%9C%80%E6%97%A9%E7%B4%A0%E6%9D%90%E4%BD%8D%E7%BD%AE%E6%8E%92%E5%BA%8F%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
     </reapack>
     <reapack name="psy_Open Render Dialog with Auto Tail_打开渲染对话框并应用自动尾音.lua" type="script" desc="Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音">
       <metadata><description><![CDATA[Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
