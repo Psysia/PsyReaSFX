@@ -39,8 +39,9 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
     </reapack>
     <reapack name="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua" type="script" desc="Sort Selected Tracks by Earliest Item Position / 按最早素材位置排序选中轨道">
       <metadata><description><![CDATA[Sort Selected Tracks by Earliest Item Position / 按最早素材位置排序选中轨道]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
-      <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
-- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Sort%20Selected%20Tracks%20by%20Earliest%20Item%20Position_%E6%8C%89%E6%9C%80%E6%97%A9%E7%B4%A0%E6%9D%90%E4%BD%8D%E7%BD%AE%E6%8E%92%E5%BA%8F%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
+      <version name="1.1" author="Psysia" time="2026-09-03T08:11:42Z"><changelog><![CDATA[- Fix non-contiguous track sorting by preserving original destination slots.
+- Preserve folder endings and restore selection/UI state after errors.
+- 修复非连续轨道排序，并保护文件夹结构及异常后的选择/UI 状态。]]></changelog><source main="main" file="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Sort%20Selected%20Tracks%20by%20Earliest%20Item%20Position_%E6%8C%89%E6%9C%80%E6%97%A9%E7%B4%A0%E6%9D%90%E4%BD%8D%E7%BD%AE%E6%8E%92%E5%BA%8F%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
     </reapack>
     <reapack name="psy_Open Render Dialog with Auto Tail_打开渲染对话框并应用自动尾音.lua" type="script" desc="Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音">
       <metadata><description><![CDATA[Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
