@@ -1,340 +1,133 @@
 <p align="center">
-  <img src="assets/brand/psyreasfx-hero.png" alt="PsyReaSFX — Sound Assets Organized" width="100%">
+  <img src="assets/brand/psyreasfx-hero.png" alt="Psysia REAPER Tools" width="100%">
 </p>
+
+<h1 align="center">Psysia REAPER Tools</h1>
+
+<p align="center">
+  A collection of practical REAPER tools for sound design, editing, track management, rendering, and asset workflows.
+</p>
+
+<p align="center">
+  <a href="README_zh-CN.md">简体中文</a> · <strong>English</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
+  <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
+  <img src="https://img.shields.io/badge/Author-Psysia-555555" alt="Psysia">
+</p>
+
+## About this repository
+
+This repository is the home of **Psysia's REAPER tools**.
+
+It contains both focused utility scripts and larger workflow tools. **PsyReaSFX** is the largest tool in the collection, but it is only one part of the repository. Each utility can be installed independently through the same ReaPack source.
+
+## Install with ReaPack
+
+In REAPER, open:
+
+`Extensions → ReaPack → Import repositories...`
+
+Import this repository:
+
+```text
+https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+```
+
+Then synchronize packages and search for the tool you want.
+
+You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.
+
+## Tool collection
+
+### Asset workflow
+
+| Tool | Description |
+|---|---|
+| **PsyReaSFX** | Sound-asset browser and workflow workspace for library management, waveform audition, metadata, REAPER insertion, and Transfer. |
+
+### Rendering
+
+| Tool | Description |
+|---|---|
+| **Create Folder Region and Render Matrix** | Creates Regions from selected items, derives Region names from track/folder hierarchy, and writes matching Region Render Matrix targets. |
+| **Smart Tail Render Panel** | Configures REAPER's native render tail, silence-trim threshold, and safety padding for Region and time-selection rendering. |
+| **Open Render Dialog with Auto Tail** | Applies saved auto-tail settings before opening REAPER's Render dialog. |
+
+### Track and item workflow
+
+| Tool | Description |
+|---|---|
+| **Sort Tracks by Earliest Item Position** | Sorts selected tracks, or tracks containing selected media items, by the earliest relevant item position. Selected items take priority when present. |
+| **Remove Gaps Between Selected Items** | Moves selected items together so each item begins at the end of the previous one. |
+| **Split Selected Items to New Tracks** | Moves selected items to newly created tracks while keeping their timeline positions and naming the new tracks from Take names. |
+| **Reverse Selected Items in Place** | Reverses selected items in place using a reversed Take workflow that can be undone in one step. |
+| **Create Folder from Selected Tracks with Pro-L 2** | Wraps selected tracks in a new parent folder and inserts Pro-L 2 on the new folder bus. |
+
+### Display workflow
+
+| Tool | Description |
+|---|---|
+| **Toggle LUFS-M and Spectrogram** | Switches REAPER's peak display between LUFS-M spectral peaks and the standard spectrogram view. |
+
+## PsyReaSFX
 
 <p align="center">
   <strong>Browse · Organize · Preview · Deliver</strong><br>
   A high-performance sound-asset workspace built inside REAPER.
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Version-0.7.23%20Stable-19D8FF" alt="Version 0.7.23 Stable">
-  <img src="https://img.shields.io/badge/Host-REAPER-13253D" alt="REAPER">
-  <img src="https://img.shields.io/badge/UI-ReaImGui-0A1020" alt="ReaImGui">
-  <img src="https://img.shields.io/badge/Install-ReaPack-1F6FCC" alt="ReaPack">
-</p>
+PsyReaSFX is designed for game-audio designers, sound designers, and REAPER users who maintain large personal or production sound libraries.
 
-> **Repository scope / 仓库定位**
->
-> This repository is also the home of **Psysia's REAPER workflow tools**. PsyReaSFX is the largest tool in the collection, while the same ReaPack repository also publishes a growing set of focused editing, track-management and rendering utilities.
->
-> 本仓库同时作为 **Psysia 的 REAPER 工作流工具集合**。PsyReaSFX 是其中体量最大的工具之一，同一个 ReaPack 源还提供一系列面向剪辑、轨道整理与渲染工作的轻量脚本。
+It combines library management, waveform browsing, search, audition, metadata, collections, REAPER placement, and processed delivery in one dockable workspace.
 
-## REAPER tools / REAPER 工具集
+### Main capabilities
 
-All tools below can be installed from the same ReaPack repository used by PsyReaSFX. Most utility scripts are intentionally small and focused, so they can be assigned directly to keyboard shortcuts or toolbar buttons.
+- Logical libraries with multiple physical source folders.
+- Inline waveforms and detailed mono, stereo, and multichannel preview.
+- Filename, path, metadata, UCS-field, library, and workflow-state search.
+- Favorites, playlists, project bins, workflow states, and non-destructive metadata.
+- Regions, transient suggestions, LUFS / True Peak display, Pitch / Rate / Gain, and channel audition.
+- Insert to current track, new track, BWF position, and drag selections directly into REAPER.
+- Transfer with naming templates, format conversion, sample-rate/channel options, fades, normalization, and collision handling.
 
-以下工具均可通过与 PsyReaSFX 相同的 ReaPack 仓库安装。多数脚本都针对单一工作流设计，适合直接绑定快捷键或工具栏按钮。
+### PsyReaSFX releases
 
-| Tool / 工具 | What it does / 功能 |
-|---|---|
-| **PsyReaSFX** | Sound-asset browser and workflow workspace for library management, waveform audition, metadata, REAPER insertion and Transfer. / 音效资产浏览与工作流工具，用于素材库管理、波形试听、元数据、REAPER 插入与 Transfer。 |
-| **Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵** | Builds Regions from selected items, derives names from track/folder hierarchy, and writes matching Region Render Matrix targets. / 根据选中素材建立 Region，按轨道或文件夹层级命名，并自动写入对应的 Region Render Matrix。 |
-| **Sort Tracks by Earliest Item Position / 按最早素材位置排序轨道** | Sorts selected tracks, or tracks containing selected media items, by the earliest relevant item position. Selected items take priority when present. / 按最早素材位置排序轨道；有选中素材时优先识别素材所在轨道，并按各轨道最早的选中素材排序。 |
-| **Smart Tail Render Panel / 智能尾音渲染面板** | Configures REAPER's native render tail, trim-ending-silence threshold and safety padding for Region or time-selection rendering. / 配置 REAPER 原生尾音、尾部静音裁切阈值与安全留白，适用于 Region 和时间选区渲染。 |
-| **Open Render Dialog with Auto Tail / 打开渲染对话框并应用自动尾音** | Applies saved auto-tail settings before opening REAPER's Render dialog. / 打开渲染窗口前自动应用已保存的尾音设置。 |
-| **Remove Gaps Between Selected Items / 移除选中素材间隙** | Moves selected media items together so each item starts at the end of the previous one. / 将选中素材依次首尾相接，快速移除它们之间的空隙。 |
-| **Split Selected Items to New Tracks / 拆分选中素材到新轨道** | Moves selected items onto newly created tracks while keeping timeline positions and naming tracks from take names. / 将选中素材拆分到新轨道，保持原时间位置，并根据 Take 名称自动命名轨道。 |
-| **Reverse Selected Items in Place / 原位反转选中素材** | Creates a reversed take for each selected item and crops to the reversed take for a one-action in-place reverse workflow. / 对选中素材生成反向 Take 并裁切到当前 Take，实现一键原位反转。 |
-| **Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图** | Toggles REAPER peak display between LUFS-M spectral peaks and the regular spectrogram view. / 在 LUFS-M 频谱峰值显示与普通 Spectrogram 之间切换。 |
-| **Create Folder from Selected Tracks with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2** | Wraps selected tracks in a new folder bus and automatically inserts Pro-L 2 on the parent track. / 将选中轨道包进新的父文件夹轨，并自动在父轨挂载 Pro-L 2。 |
-
-### Tool documentation / 工具使用文档
-
-- [REAPER utility guide — English](docs/ReaScripts_Guide.md)
-- [REAPER 工具使用手册 — 简体中文](docs/ReaScripts_Guide_zh-CN.md)
-
-### Install the tool collection with ReaPack / 通过 ReaPack 安装工具集
-
-Open `Extensions → ReaPack → Import repositories...` and import:
-
-```text
-https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
-```
-
-Then synchronize packages and search for the individual tool you want. You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.
-
-在 REAPER 中导入同一个仓库地址并同步后，直接搜索需要的脚本即可。**安装这些轻量工具并不要求同时安装 PsyReaSFX。**
-
----
-
-> **Development preview:** PsyReaSFX 0.8.0 Beta 3 combines the former Beta
-> 3/4/5 reliability roadmap in one build: missing-file audit and source relink,
-> sampled duplicate detection for large libraries, and persistent REAPER
-> project-usage tracking with bound project bins. It also retains Beta 1/2
-> recovery, backups, cache verification and quiet Watch Folder checks. Stable
-> remains the default ReaPack version; previews are opt-in.
-
-### Release downloads
-
-- [Download PsyReaSFX 0.7.23 Stable for REAPER](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip)
-- [Download PsyReaSFX 0.8.0 Beta 3 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.0-beta3)
-- [Download PsyReaSFX Desktop 0.7.23 Alpha 8 Light RC1](https://github.com/Psysia/PsyReaSFX/releases/download/desktop-v0.7.23-alpha8-light-rc1/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip)
-
-ReaPack publishes Stable and current Beta/RC versions together. Normal users
-stay on the newest Stable; users who enable **pre-releases (bleeding-edge)** for
-PsyReaSFX receive the newest preview and can switch versions from ReaPack's
-**Versions** menu. The current Lua Stable ZIP remains a permanent Release asset
-for manual installation and rollback. Historical release notes and tags remain
-available even when obsolete preview assets are retired.
-
-<details>
-<summary><strong>简体中文概览（点击展开，不离开当前页面）</strong></summary>
-
-### PsyReaSFX 是什么？
-
-PsyReaSFX 是运行在 REAPER 内部的音效资产工作区，将素材库、波形浏览、搜索、试听、元数据、集合整理、工程插入与处理后导出集中到一个可停靠界面中。
-
-它适合需要长期管理大型音效库的游戏音频设计师、声音设计师和 REAPER 用户：一个逻辑音效库可以聚合多个硬盘路径；列表内直接显示波形；点击波形任意位置即可试听；素材选区能够直接拖入工程或通过 Transfer 输出为新文件。
-
-### 核心能力
-
-- 多来源逻辑音效库、文件夹拖放导入与 Watch Folder。
-- 高密度内联波形、立体声/多声道大波形和点击定位试听。
-- 文件名、描述、关键词、UCS 字段、状态和库的联合搜索。
-- Artwork、非破坏性元数据、收藏、播放列表、项目素材箱与工作流状态。
-- Region、瞬态建议、LUFS/True Peak 显示、Pitch/Rate/Gain 与声道监听。
-- 插入当前轨、新轨、BWF 位置，以及选区拖入 REAPER。
-- Transfer 路径、命名模板、格式、采样率、声道、淡化、标准化和冲突策略。
-
-### 安装
-
-在 REAPER 中打开 `Extensions → ReaPack → Import repositories...`，导入：
-
-```text
-https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
-```
-
-同步仓库后搜索并安装 `PsyReaSFX`。完整说明请阅读[中文用户手册](docs/USER_GUIDE_zh-CN.md)，版本变化请查看[中文更新日志](docs/CHANGELOG_zh-CN.md)。
-
-ReaPack 会在同一个 PsyReaSFX 包中同时提供 Stable 与当前 Beta/RC。普通用户
-默认停留在最新 Stable；对该包启用“预发布版本（bleeding-edge）”后才会收到
-最新测试版，也可以通过“Versions”菜单主动切换。Lua Stable ZIP 仍永久保留在
-GitHub Release 中，作为手动安装和回退通道。
-
-</details>
-
-## Choose your edition
-
-| PsyReaSFX for REAPER | PsyReaSFX Desktop Alpha |
-|---|---|
-| The complete REAPER workflow: metadata, waveform selections, multichannel audition, REAPER insertion and Transfer rendering. ReaPack offers Stable and opt-in preview versions together; the retained Stable ZIP remains available for manual rollback. | The standalone migration shares the `0.7.23` product baseline. Alpha 8 Light RC1 adds an optional REAPER Bridge for current-track, new-track and BWF delivery, plus persistent project-usage history, while retaining the Alpha 7 catalog, audition, organization, waveform, Transfer and reliability work. |
-
-[Install the REAPER edition](#install-with-reapack) · [Download Lua Stable](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip) · [Download Desktop Alpha](https://github.com/Psysia/PsyReaSFX/releases/download/desktop-v0.7.23-alpha8-light-rc1/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip) · [Desktop Alpha notes](desktop/README.md)
-
-Desktop Alpha 8 Light RC1 is a development build, not the final Stable desktop release. It reads the existing Lua data directory without modifying it, keeps its own SQLite catalog, and can optionally communicate with REAPER through the bundled bridge script. Standalone browsing, audition, organization and Transfer continue to work when REAPER is closed.
-
-## One workspace for the sound-library loop
-
-PsyReaSFX turns REAPER into a focused sound-asset environment without
-replacing the project workflow you already use. Search a library, audition at
-the waveform, organize candidates, place a selection on the timeline, or
-render a processed copy—all from one dockable interface.
-
-It is designed for large personal and production libraries where folder paths,
-metadata and project choices must remain understandable over time.
-
-## The workflow
-
-| Discover | Organize |
-|---|---|
-| Browse inline waveforms, search filenames and metadata, filter by library or workflow state, and audition from any point in a result waveform. | Group multiple source folders under one logical library, maintain Artwork and metadata, and collect sounds into playlists or project bins. |
-
-| Audition | Deliver |
-|---|---|
-| Inspect high-resolution channel lanes, make a selection, loop or scrub it, change Pitch/Rate/Gain, compare loudness and save useful regions. | Insert files or selections into REAPER, use BWF placement, drag from the browser, or create processed files through Transfer. |
-
-## Workspace
-
-<p align="center">
-  <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation and metadata panels" width="100%">
-</p>
-
-The workspace is intentionally modular:
-
-- **Navigation** holds logical libraries, source folders, favorites,
-  indexed folder hierarchy, collections, saved searches and workflow filters.
-- **Results** keeps a pinned, configurable column header with inline waveform,
-  metadata, Artwork and duration fields.
-- **Inspector** provides pinned Artwork and non-destructive metadata editing.
-- **Preview** shows accurate channel lanes, time selection, loudness, regions,
-  audition controls and REAPER delivery actions.
-
-The left and right panels can be hidden independently. Focus mode leaves only
-the result list and preview area. Navigation groups can also be collapsed
-individually, and their open/closed state is restored on the next launch.
-
-<p align="center">
-  <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX focus mode" width="100%">
-</p>
-
-## See it in action
-
-### Build one library from multiple source folders
-
-Create a logical library first, expand it in place, and attach independent
-source folders over time. Each source retains its own path, online state and
-Artwork assignment.
-
-<p align="center">
-  <img src="assets/screenshots/logical-library-workflow.gif" alt="Expanding a logical library with multiple source folders" width="760">
-</p>
-
-### Select on the waveform and deliver to REAPER
-
-Drag across the detailed waveform to define a precise range, audition the
-selection, then drag that range directly into the REAPER arrange view.
-
-<p align="center">
-  <img src="assets/screenshots/waveform-edit-drag-reaper.gif" alt="Creating a waveform selection and dragging it into REAPER" width="100%">
-</p>
-
-## Core capabilities
-
-### Libraries that match real storage
-
-A logical library is not tied to one folder. Create the library first, then
-attach source folders from different drives or locations. Each source keeps
-its own path, online state and Artwork. Drag folders from Windows Explorer onto
-a library, All Libraries, or the central drop target to choose the intended
-relationship.
-
-### Indexed folder hierarchy
-
-Hover the borderless folder-search icon beside the search field to open a
-native cascading browser: `logical library → physical source → indexed
-subfolder`. Move sideways through the menus and click any level to show the
-audio in that folder and all descendants. The browser closes immediately and
-leaves only a compact, removable `Pathname` condition above the results.
-
-The hierarchy is generated from the existing asset index in small background
-batches. Hover navigation never rescans the drive, never reserves permanent
-workspace height, and intentionally omits directories with no indexed audio.
-
-### Search that stays close to the material
-
-Plain text searches filenames, paths, descriptions, keywords, categories,
-library names and UCS-derived fields. Structured filters such as
-`category:impact`, `library:boom`, `status:candidate`, `marked:true` and
-negative terms narrow results without changing the underlying library.
-
-### Waveform-first audition
-
-Every visible result can show a cached waveform. Click inside it to start from
-that position. The detailed preview supports separate mono, stereo and
-multichannel lanes, zoom, pan, scrub, selections, loops, regions and direct
-selection drag into the REAPER arrange view.
-
-### Organization without touching source files
-
-Favorites, marks, workflow states, playlists, project bins, saved searches and
-metadata edits live in the PsyReaSFX database. Source audio remains unchanged
-unless you explicitly use a Transfer operation that writes a new output file.
-
-### Transfer and REAPER delivery
-
-Transfer can export the full file or current waveform selection using an
-output directory, naming template, explicit WAV 16/24/32-bit PCM or FLAC,
-sample rate, channel mode, fades, Peak/True Peak/RMS-I/LUFS-I normalization
-and collision policy. Source metadata can be preserved where REAPER and the
-target container support it; 16-bit WAV output offers optional dither and
-noise shaping.
-
-Batch Variants turn comma-separated Pitch, Rate and Gain lists into a bounded
-set of normal/reverse deliverables. Variant-aware naming tokens keep outputs
-distinct, while per-file progress, stop-after-current, a TSV task report and
-safe temporary-file replacement make large jobs inspectable and recoverable.
-Finished files can optionally be inserted into the current REAPER project.
-The output folder can also open automatically after a successful job. Output,
-latest-result and report-folder actions use one Unicode-safe system opener.
-
-For selections that end before the source file does, optional **Smart source
-tail** scans the remaining source audio for the last event above a configurable
-threshold, then preserves a bounded hold period. This retains source-recorded
-reverb and delay tails without adding the same fixed duration to every export.
-
-<p align="center">
-  <img src="assets/screenshots/transfer-settings-en.png" alt="Privacy-safe PsyReaSFX Transfer settings" width="860">
-</p>
-
-## Quick start
-
-### Requirements
-
-- REAPER 7.x
-- ReaImGui 0.10 or newer
-- SWS Extension strongly recommended for precise seeking, channel audition and
-  arrange-view drag placement
-
-### Install with ReaPack
-
-1. Open `Extensions → ReaPack → Import repositories...`.
-2. Paste this repository URL:
-
-   ```text
-   https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
-   ```
-
-3. Synchronize packages.
-4. Search for `PsyReaSFX` and install it.
-5. Run the script from REAPER's Action List and assign a shortcut if desired.
-
-ReaPack installs the script, application icon and Orbitron brand font. Future
-updates arrive through the same repository URL.
-
-### First library
-
-1. Open the left navigation with `F9` if it is hidden.
-2. Choose **New library** and name the logical library.
-3. Add one or more source folders, or drag folders from Windows Explorer onto
-   the library.
-4. Allow the import progress task to finish.
-5. Click a waveform in the result list to audition it.
-
-## Performance model
-
-PsyReaSFX avoids loading an entire library into the interface at once. Scans,
-folder-hierarchy construction, metadata work, waveform construction and Artwork
-discovery are divided into small tasks. Only visible result rows and the
-selected file receive immediate high-priority work. Waveforms are cached on
-disk and can be precached from Settings for predictable browsing on very large
-libraries.
-
-Artwork discovery supports both covers beside WAV files and commercial-library
-layouts such as `1. Audio / 2. Artwork`. Numbered Artwork, Cover, Image and
-Thumbnail folders are searched with strict depth and folder budgets. Each
-physical source retains its own result, so one source never silently supplies
-the cover for another source in the same logical library.
-
-When several images are available, PsyReaSFX reads only their lightweight
-headers and prefers a near-square cover before applying filename and resolution
-tie-breakers. Missing covers leave the Artwork result cell empty; the larger
-inspector retains its neutral empty-state illustration.
+- [PsyReaSFX 0.7.23 Stable](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip)
+- [All releases](https://github.com/Psysia/PsyReaSFX/releases)
+- [Desktop project notes](desktop/README.md)
 
 ## Documentation
 
-- [REAPER utility guide — English](docs/ReaScripts_Guide.md)
+### Utility scripts
+
+- [REAPER Utility Guide — English](docs/ReaScripts_Guide.md)
 - [REAPER 工具使用手册 — 简体中文](docs/ReaScripts_Guide_zh-CN.md)
-- [PsyReaSFX User Guide — English](docs/USER_GUIDE_en-US.md)
-- [PsyReaSFX 用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
+
+### PsyReaSFX
+
+- [User Guide — English](docs/USER_GUIDE_en-US.md)
+- [用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
 - [Changelog — English](docs/CHANGELOG_en-US.md)
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
-- [Standalone Chinese project page](README_zh-CN.md)
 
-## Release status
+## Repository structure
 
-`0.7.23 Stable` completes the 0.7 browsing, audition and Transfer cycle. The
-folder browser now opens only after a deliberate click on its toolbar icon,
-while logical libraries, physical sources and indexed subfolders continue to
-expand through familiar hover-driven cascading menus. This avoids accidental
-work-area obstruction without slowing deliberate hierarchy navigation.
+```text
+Scripts/Psysia/    REAPER utility scripts
+assets/            PsyReaSFX artwork, fonts, and screenshots
+docs/              User guides and changelogs
+desktop/           PsyReaSFX Desktop development files
+website/           Project website
+index.xml          ReaPack repository index
+```
 
 ## Author and license
 
-PsyReaSFX and the bundled REAPER utilities are created by **Psysia**.  
+Created by **Psysia**.
+
 Copyright © 2026 Psysia. All rights reserved.
 
-The bundled Orbitron font is distributed under the SIL Open Font License 1.1;
-its license is included in `assets/fonts/OFL.txt`.
-
-Project home: [github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
+See [LICENSE](LICENSE) for repository licensing details. Bundled third-party assets retain their respective licenses.
