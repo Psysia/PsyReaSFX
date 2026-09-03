@@ -8257,33 +8257,6 @@ function start_duplicate_scan()
     return
   end
 
-  local size_groups = {}
-  for _, asset in ipairs(state.assets) do
-    local size = asset.ready and file_size(asset.path) or 0
-    if size > 0 then
-      if size ~= (tonumber(asset.size) or 0) then
-        asset.size = size
-        clear_asset_fingerprint(asset)
-        mark_asset_database_change(asset)
-      end
-      local group = size_groups[size]
-      if not group then
-        group = {}
-        size_groups[size] = group
-      end
-      group[#group + 1] = asset
-    end
-  end
-
-  local candidates = {}
-  for _, group in pairs(size_groups) do
-    if #group > 1 then
-      for _, asset in ipairs(group) do
-        candidates[#candidates + 1] = asset
-      end
-    end
-  end
-
   state.duplicate_groups = {}
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
@@ -8294,13 +8267,22 @@ function start_duplicate_scan()
   state.duplicate_confirmation_failures = {}
   state.duplicate_confirmation_failure_count = 0
   state.duplicate_scan = {
-    candidates = candidates,
+    phase = "sizes",
+    assets = state.assets,
+    asset_index = 1,
+    asset_total = #state.assets,
+    size_groups = {},
+    candidates = {},
     index = 1,
-    total = #candidates,
+    total = 0,
     failed = 0,
+    fingerprint_groups = {},
+    duplicate_groups = {},
+    duplicate_lookup = {},
+    duplicate_asset_count = 0,
     job_token = job_token,
   }
-  set_status(string.format("正在检查重复候选：%d 个同尺寸文件", #candidates))
+  set_status(string.format("正在读取文件大小：0 / %d", #state.assets))
 end
 
 function close_duplicate_confirmation_session(session)
@@ -8479,36 +8461,9 @@ function process_duplicate_confirmation()
 end
 
 function finish_duplicate_scan(session)
-  local groups = {}
-  for _, asset in ipairs(session.candidates) do
-    local fingerprint = tostring(asset.fingerprint or "")
-    if fingerprint ~= "" then
-      local group = groups[fingerprint]
-      if not group then
-        group = {}
-        groups[fingerprint] = group
-      end
-      group[#group + 1] = asset
-    end
-  end
-
-  local duplicates = {}
-  local lookup = {}
-  local asset_count = 0
-  for fingerprint, group in pairs(groups) do
-    if #group > 1 then
-      table.sort(group, function(a, b) return path_key(a.path) < path_key(b.path) end)
-      duplicates[#duplicates + 1] = { fingerprint = fingerprint, assets = group, count = #group }
-      asset_count = asset_count + #group
-      for _, asset in ipairs(group) do
-        lookup[path_key(asset.path)] = fingerprint
-      end
-    end
-  end
-  table.sort(duplicates, function(a, b)
-    if a.count == b.count then return a.fingerprint < b.fingerprint end
-    return a.count > b.count
-  end)
+  local duplicates = session.sorted_groups or session.duplicate_groups or {}
+  local lookup = session.duplicate_lookup or {}
+  local asset_count = session.duplicate_asset_count or 0
 
   state.duplicate_groups = duplicates
   state.duplicate_lookup = lookup
@@ -8535,9 +8490,75 @@ function process_duplicate_scan()
     return
   end
 
+  if session.phase == "sizes" then
+    local processed = 0
+    local deadline = reaper.time_precise()
+      + DUPLICATE_STAT_FRAME_BUDGET
+    while session.asset_index <= session.asset_total
+      and processed < DUPLICATE_STAT_FILES_PER_FRAME
+      and reaper.time_precise() < deadline do
+      local asset = session.assets[session.asset_index]
+      session.asset_index = session.asset_index + 1
+      processed = processed + 1
+      local size = asset and asset.ready and file_size(asset.path) or 0
+      if asset and size > 0 then
+        if size ~= (tonumber(asset.size) or 0) then
+          asset.size = size
+          clear_asset_fingerprint(asset)
+          mark_asset_database_change(asset)
+        end
+        add_duplicate_size_candidate(
+          session.size_groups,
+          session.candidates,
+          size,
+          asset
+        )
+      end
+    end
+    if session.asset_index > session.asset_total then
+      session.assets = nil
+      session.size_groups = nil
+      session.phase = "fingerprints"
+      session.index = 1
+      session.total = #session.candidates
+      set_status(string.format(
+        "正在检查重复候选：%d 个同尺寸文件",
+        session.total
+      ))
+    end
+    return
+  end
+
+  if session.phase == "sort" then
+    local result, sorted = step_incremental_result_job(
+      session.sort_job,
+      DUPLICATE_SORT_ITEMS_PER_FRAME
+    )
+    if result == "complete" then
+      session.sorted_groups = sorted
+      session.sort_job = nil
+      finish_duplicate_scan(session)
+    end
+    return
+  end
+
   local asset = session.candidates[session.index]
   if not asset then
-    finish_duplicate_scan(session)
+    session.candidates = nil
+    session.fingerprint_groups = nil
+    session.phase = "sort"
+    session.sort_job = begin_incremental_result_job(
+      session.duplicate_groups,
+      function() return true end,
+      function(left, right)
+        if left.count == right.count then
+          return left.fingerprint < right.fingerprint
+        end
+        return left.count > right.count
+      end,
+      nil,
+      nil
+    )
     return
   end
 
@@ -8546,7 +8567,6 @@ function process_duplicate_scan()
   if size <= 0 then
     clear_asset_fingerprint(asset)
     session.failed = session.failed + 1
-    if session.index > session.total then finish_duplicate_scan(session) end
     return
   end
   -- A size-only cache cannot detect an external replacement with identical
@@ -8557,14 +8577,29 @@ function process_duplicate_scan()
   local changed_during_read = duplicate_file_changed_since(before, after)
   if fingerprint and not changed_during_read then
     record_asset_fingerprint(asset, fingerprint, after)
+    local became_duplicate = add_duplicate_fingerprint_asset(
+      session.fingerprint_groups,
+      session.duplicate_groups,
+      session.duplicate_lookup,
+      fingerprint,
+      asset,
+      path_key
+    )
+    if became_duplicate then
+      local group = session.fingerprint_groups[fingerprint]
+      if group.count == 2 then
+        session.duplicate_asset_count =
+          session.duplicate_asset_count + 2
+      else
+        session.duplicate_asset_count =
+          session.duplicate_asset_count + 1
+      end
+    end
   else
     clear_asset_fingerprint(asset)
     session.failed = session.failed + 1
   end
 
-  if session.index > session.total then
-    finish_duplicate_scan(session)
-  end
 end
 
 function remove_library(library_id)
@@ -19746,14 +19781,60 @@ function draw_settings_maintenance()
 
   if state.duplicate_scan then
     local session = state.duplicate_scan
-    local completed = math.min((session.index or 1) - 1, session.total or 0)
-    local fraction = session.total > 0 and completed / session.total or 1
+    local phase = session.phase or "fingerprints"
+    local completed = 0
+    local total = 0
+    local label = "重复检查"
+    local fraction = 0
+    if phase == "sizes" then
+      label = "读取文件大小"
+      total = session.asset_total or 0
+      completed = math.min(
+        math.max(0, (session.asset_index or 1) - 1),
+        total
+      )
+      fraction = total > 0 and completed / total or 1
+    elseif phase == "fingerprints" then
+      label = "采样重复候选"
+      total = session.total or 0
+      completed = math.min(
+        math.max(0, (session.index or 1) - 1),
+        total
+      )
+      fraction = total > 0 and completed / total or 1
+    else
+      label = "整理候选组"
+      total = #(session.duplicate_groups or {})
+      local sort_job = session.sort_job
+      if sort_job and sort_job.stage == "filter" then
+        completed = math.min(
+          math.max(0, (sort_job.index or 1) - 1),
+          sort_job.total or total
+        )
+        total = sort_job.total or total
+        fraction = total > 0 and completed / total * 0.25 or 0.25
+      elseif sort_job and sort_job.stage == "sort_chunks" then
+        completed = math.min(
+          math.max(0, (sort_job.sort_index or 1) - 1),
+          total
+        )
+        fraction = 0.25
+          + (total > 0 and completed / total * 0.25 or 0.25)
+      elseif sort_job and sort_job.stage == "merge" then
+        completed = total
+        fraction = 0.75
+      else
+        completed = total
+        fraction = 0.95
+      end
+    end
     ImGui.Text(
       ctx,
       string.format(
-        "重复检查 %d / %d · 失败 %d",
+        "%s %d / %d · 失败 %d",
+        label,
         completed,
-        session.total or 0,
+        total,
         session.failed or 0
       )
     )

@@ -41,3 +41,63 @@ function ordered_preview_history_assets(
   end)
   return assets
 end
+
+-- Add a file to a size bucket without retaining every singleton in a second
+-- candidate array. The first item is emitted only when a second item proves
+-- that the size can contain duplicates.
+function add_duplicate_size_candidate(groups, candidates, size, asset)
+  if type(groups) ~= "table" or type(candidates) ~= "table"
+    or type(asset) ~= "table" or (tonumber(size) or 0) <= 0 then
+    return false
+  end
+  local key = tonumber(size)
+  local group = groups[key]
+  if not group then
+    groups[key] = { first = asset, count = 1 }
+    return false
+  end
+  group.count = group.count + 1
+  if group.count == 2 then
+    candidates[#candidates + 1] = group.first
+  end
+  candidates[#candidates + 1] = asset
+  return true
+end
+
+-- Build final fingerprint groups while fingerprints are produced. This avoids
+-- a second full pass over every candidate at the end of a large scan.
+function add_duplicate_fingerprint_asset(
+  groups,
+  duplicates,
+  lookup,
+  fingerprint,
+  asset,
+  path_key_function
+)
+  if type(groups) ~= "table" or type(duplicates) ~= "table"
+    or type(lookup) ~= "table" or type(asset) ~= "table"
+    or type(path_key_function) ~= "function" then
+    return false
+  end
+  fingerprint = tostring(fingerprint or "")
+  if fingerprint == "" then return false end
+
+  local group = groups[fingerprint]
+  if not group then
+    groups[fingerprint] = {
+      fingerprint = fingerprint,
+      assets = { asset },
+      count = 1,
+    }
+    return false
+  end
+
+  group.assets[#group.assets + 1] = asset
+  group.count = #group.assets
+  if group.count == 2 then
+    duplicates[#duplicates + 1] = group
+    lookup[path_key_function(group.assets[1].path)] = fingerprint
+  end
+  lookup[path_key_function(asset.path)] = fingerprint
+  return true
+end
