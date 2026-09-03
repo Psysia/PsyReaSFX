@@ -21050,7 +21050,8 @@ function autosave()
 
   if state.db_dirty
     and not state.scan
-    and not state.import_session then
+    and not state.import_session
+    and not state.asset_binding_refresh then
     save_database_changes()
   end
 
@@ -21202,6 +21203,13 @@ function cleanup()
     return
   end
 
+  if state.asset_binding_refresh
+    and (state.asset_binding_refresh.changed_count or 0) > 0 then
+    -- The deferred pass may have changed objects that have not reached its
+    -- incremental persistence phase yet. Preserve them on an early exit.
+    mark_database_snapshot_dirty()
+  end
+
   if state.config_dirty then
     save_config()
   end
@@ -21334,6 +21342,7 @@ function loop()
     return
   end
 
+  process_asset_library_binding_refresh()
   process_import_recovery_audit()
 
   if state.transfer_running then

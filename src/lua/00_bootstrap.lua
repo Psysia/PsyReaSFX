@@ -492,6 +492,8 @@ local PRECACHE_COLLECT_FILES_PER_FRAME = 64
 local PRECACHE_CACHE_PROBES_PER_FRAME = 8
 local PRECACHE_FRAME_BUDGET = 0.0025
 local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
+local ASSET_BINDINGS_PER_FRAME = 4000
+local ASSET_BINDING_CHANGES_PER_FRAME = 250
 
 local MINI_WAVE_DEFAULT_POINTS = 256
 local MINI_WAVE_MAX_POINTS = 512
@@ -722,6 +724,7 @@ local state = {
   sort_desc = false,
   results_dirty = true,
   results_job = nil,
+  asset_binding_refresh = nil,
 
   selected_index = 0,
   selected_path = nil,

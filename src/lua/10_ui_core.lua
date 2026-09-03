@@ -1349,7 +1349,6 @@ function refresh_asset_library_binding(asset)
   asset.library = library and library.name
     or library_for_path(asset.path, root)
   asset._search_blob = nil
-  invalidate_library_counts()
   return previous_root ~= tostring(asset.root or "")
     or previous_root_id ~= tostring(asset.root_id or "")
     or previous_library_id ~= tostring(asset.library_id or "")
@@ -1357,27 +1356,96 @@ function refresh_asset_library_binding(asset)
 end
 
 function refresh_all_asset_library_bindings()
-  local changed_assets = {}
-  local requires_snapshot = false
-  for _, asset in ipairs(state.assets) do
-    if refresh_asset_library_binding(asset) then
-      if #changed_assets < DATABASE_JOURNAL_COMPACT_COUNT then
-        changed_assets[#changed_assets + 1] = asset
-      else
-        requires_snapshot = true
-      end
-    end
+  local previous = state.asset_binding_refresh
+  if previous and (previous.changed_count or 0) > 0 then
+    -- Some objects may already have been changed by the superseded pass.
+    -- A snapshot request guarantees they cannot become an untracked partial
+    -- update when a second library edit restarts the job.
+    mark_database_snapshot_dirty()
   end
 
   invalidate_folder_navigation()
+  invalidate_library_counts()
+  state.asset_binding_refresh = {
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    phase = "bindings",
+    changed_assets = {},
+    changed_count = 0,
+    persist_index = 1,
+    requires_snapshot = false,
+  }
+end
+
+function finish_asset_library_binding_refresh(session)
+  state.asset_binding_refresh = nil
+  invalidate_folder_navigation()
+  invalidate_library_counts()
   state.results_dirty = true
-  if requires_snapshot then
-    clear_asset_changes(state.database_changes)
+  if session.requires_snapshot then
     mark_database_snapshot_dirty()
-  else
-    for _, asset in ipairs(changed_assets) do
-      mark_asset_database_change(asset)
+  end
+end
+
+function process_asset_library_binding_refresh()
+  local session = state.asset_binding_refresh
+  if not session or not can_run_heavy_job() then return end
+
+  for _, token in pairs(Jobs.active) do
+    if token.resource == "catalog_exclusive"
+      and not token.finished then
+      return
     end
+  end
+
+  if session.assets ~= state.assets then
+    if (session.changed_count or 0) > 0 then
+      mark_database_snapshot_dirty()
+    end
+    refresh_all_asset_library_bindings()
+    return
+  end
+
+  if session.phase == "bindings" then
+    local last = math.min(
+      session.total,
+      session.index + ASSET_BINDINGS_PER_FRAME - 1
+    )
+    for index = session.index, last do
+      local asset = session.assets[index]
+      if asset and refresh_asset_library_binding(asset) then
+        session.changed_count = session.changed_count + 1
+        if not session.requires_snapshot
+          and session.changed_count <= DATABASE_JOURNAL_COMPACT_COUNT then
+          session.changed_assets[#session.changed_assets + 1] = asset
+        else
+          session.requires_snapshot = true
+          session.changed_assets = nil
+        end
+      end
+    end
+    session.index = last + 1
+    if session.index > session.total then
+      if session.requires_snapshot or session.changed_count == 0 then
+        finish_asset_library_binding_refresh(session)
+      else
+        session.phase = "persist"
+      end
+    end
+    return
+  end
+
+  local last = math.min(
+    #session.changed_assets,
+    session.persist_index + ASSET_BINDING_CHANGES_PER_FRAME - 1
+  )
+  for index = session.persist_index, last do
+    mark_asset_database_change(session.changed_assets[index])
+  end
+  session.persist_index = last + 1
+  if session.persist_index > #session.changed_assets then
+    finish_asset_library_binding_refresh(session)
   end
 end
 
