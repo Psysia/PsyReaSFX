@@ -3953,32 +3953,6 @@ function wave_cache_file_exists(asset, points, preserve_channels)
   ) ~= nil
 end
 
-function precache_asset_list(scope)
-  local assets = {}
-
-  for _, asset in ipairs(state.assets) do
-    local include =
-      asset.ready
-      and reaper.file_exists(asset.path)
-
-    if include
-      and scope == "current"
-      and (state.root_filter or state.library_filter_id) then
-      if state.root_filter then
-        include = path_is_inside(asset.path, state.root_filter)
-      else
-        include = asset.library_id == state.library_filter_id
-      end
-    end
-
-    if include then
-      assets[#assets + 1] = asset
-    end
-  end
-
-  return assets
-end
-
 function start_wave_precache(points, scope)
   if state.scan or state.import_session then
     set_status(
@@ -3999,17 +3973,6 @@ function start_wave_precache(points, scope)
   points =
     tonumber(points) == 2048 and 2048 or 4096
 
-  local assets =
-    precache_asset_list(scope or "all")
-
-  if #assets == 0 then
-    set_status(
-      "当前范围没有可预缓存的素材",
-      true
-    )
-    return
-  end
-
   local job_token =
     Jobs.begin("wave_precache", "catalog_exclusive", false)
 
@@ -4019,16 +3982,24 @@ function start_wave_precache(points, scope)
   end
 
   state.precache_cancel_requested = false
+  scope = scope or "all"
   state.precache_session = {
-    assets = assets,
-    total = #assets,
+    phase = "collect",
+    source = state.assets,
+    source_total = #state.assets,
+    collect_index = 1,
+    filter_root = scope == "current" and state.root_filter or nil,
+    filter_library_id = scope == "current"
+      and not state.root_filter and state.library_filter_id or nil,
+    assets = {},
+    total = 0,
     index = 1,
     generated = 0,
     cached = 0,
     failed = 0,
     points = points,
     preserve_channels = state.multichannel_waveform,
-    scope = scope or "all",
+    scope = scope,
     current = nil,
     started = reaper.time_precise(),
     job_token = job_token,
@@ -4036,9 +4007,8 @@ function start_wave_precache(points, scope)
 
   set_status(
     string.format(
-      "开始预缓存 %d 个素材的 %d 点高精度波形",
-      #assets,
-      points
+      "正在整理高精度波形预缓存范围：0 / %d",
+      #state.assets
     )
   )
 end
@@ -4111,14 +4081,58 @@ function process_wave_precache()
 
   local now = reaper.time_precise()
 
+  if session.phase == "collect" then
+    local processed = 0
+    local deadline = now + PRECACHE_FRAME_BUDGET
+    while session.collect_index <= session.source_total
+      and processed < PRECACHE_COLLECT_FILES_PER_FRAME
+      and reaper.time_precise() < deadline do
+      local asset = session.source[session.collect_index]
+      session.collect_index = session.collect_index + 1
+      processed = processed + 1
+      local include = asset and asset.ready
+      if include and session.filter_root then
+        include = path_is_inside(asset.path, session.filter_root)
+      elseif include and session.filter_library_id then
+        include = asset.library_id == session.filter_library_id
+      end
+      if include and reaper.file_exists(asset.path) then
+        session.assets[#session.assets + 1] = asset
+      end
+    end
+    if session.collect_index > session.source_total then
+      session.source = nil
+      session.phase = "precache"
+      session.total = #session.assets
+      if session.total == 0 then
+        state.precache_session = nil
+        state.precache_cancel_requested = false
+        Jobs.finish(session.job_token, true)
+        set_status("当前范围没有可预缓存的素材", true)
+      else
+        set_status(string.format(
+          "开始预缓存 %d 个素材的 %d 点高精度波形",
+          session.total,
+          session.points
+        ))
+      end
+    end
+    return
+  end
+
   if now < state.next_wave_job then
     return
   end
 
   if not session.current then
-    while session.index <= session.total do
+    local probed = 0
+    local deadline = now + PRECACHE_FRAME_BUDGET
+    while session.index <= session.total
+      and probed < PRECACHE_CACHE_PROBES_PER_FRAME
+      and reaper.time_precise() < deadline do
       local asset =
         session.assets[session.index]
+      probed = probed + 1
 
       if wave_cache_file_exists(
         asset,
@@ -4149,6 +4163,9 @@ function process_wave_precache()
     if not session.current
       and session.index > session.total then
       finish_wave_precache()
+      return
+    end
+    if not session.current then
       return
     end
   end
@@ -19329,6 +19346,29 @@ function draw_settings_waveforms()
     if dark_button("停止预缓存", 110) then
       state.precache_cancel_requested = true
     end
+
+    local session = state.precache_session
+    local collecting = session.phase == "collect"
+    local total = collecting
+      and (session.source_total or 0) or (session.total or 0)
+    local completed = collecting
+      and math.max(0, (session.collect_index or 1) - 1)
+      or math.max(0, (session.index or 1) - 1)
+    completed = math.min(completed, total)
+    local fraction = total > 0 and completed / total or 0
+    ImGui.TextDisabled(ctx, string.format(
+      "%s %d / %d",
+      collecting and "正在整理范围" or "正在预缓存",
+      completed,
+      total
+    ))
+    ImGui.ProgressBar(
+      ctx,
+      fraction,
+      -1,
+      18,
+      string.format("%.1f%%", fraction * 100)
+    )
   end
 
   ImGui.Spacing(ctx)
