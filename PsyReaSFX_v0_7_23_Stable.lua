@@ -495,6 +495,8 @@ local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
 local ASSET_BINDINGS_PER_FRAME = 4000
 local ASSET_BINDING_CHANGES_PER_FRAME = 250
 local SCAN_FINALIZE_ASSETS_PER_FRAME = 4000
+local RELINK_PLAN_FILES_PER_FRAME = 48
+local RELINK_PLAN_FRAME_BUDGET = 0.0025
 
 local MINI_WAVE_DEFAULT_POINTS = 256
 local MINI_WAVE_MAX_POINTS = 512
@@ -777,6 +779,7 @@ local state = {
   duplicate_confirmed_asset_count = 0,
   duplicate_confirmation_failures = {},
   duplicate_confirmation_failure_count = 0,
+  relink_plan_session = nil,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
@@ -17275,8 +17278,8 @@ function validate_relinked_root(record, new_root)
   return true
 end
 
-function build_relink_plan(record, new_root)
-  local plan = {
+function new_relink_plan(record, new_root, job_token)
+  return {
     record = record,
     old_root = record.path,
     new_root = new_root,
@@ -17285,18 +17288,24 @@ function build_relink_plan(record, new_root)
     conflicts = {},
     missing = 0,
     external_artwork = 0,
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    job_token = job_token,
   }
+end
 
-  for _, asset in ipairs(state.assets) do
-    if tostring(asset.root_id or "") == tostring(record.id)
-      or path_is_inside(asset.path, record.path) then
+function process_relink_plan_entry(plan, asset)
+  if asset then
+    if tostring(asset.root_id or "") == tostring(plan.record.id)
+      or path_is_inside(asset.path, plan.record.path) then
       local relative = tostring(asset.relative_path or "")
       if relative == "" then
-        relative = asset_relative_path(asset.path, record.path)
+        relative = asset_relative_path(asset.path, plan.record.path)
       end
       local target = relative == ""
-        and new_root
-        or join_path(new_root, relative)
+        and plan.new_root
+        or join_path(plan.new_root, relative)
       local target_key = path_key(target)
       local conflict = state.by_path[target_key]
       local duplicate_target = plan.targets[target_key]
@@ -17313,7 +17322,7 @@ function build_relink_plan(record, new_root)
 
       local artwork_relative = relative_path_from_root(
         asset.artwork_path or "",
-        record.path
+        plan.record.path
       )
       if tostring(asset.artwork_path or "") ~= ""
         and not artwork_relative then
@@ -17329,8 +17338,14 @@ function build_relink_plan(record, new_root)
       }
     end
   end
+end
 
-  return plan
+function cancel_relink_plan(session, reason)
+  if not session then return end
+  state.relink_plan_session = nil
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, reason or "canceled")
+  set_status("已取消来源重定位计划")
 end
 
 function confirm_relink_plan(plan)
@@ -17365,44 +17380,12 @@ function confirm_relink_plan(plan)
   ) == 6
 end
 
-function relink_root(record, supplied_path)
-  if not record then
-    return false
-  end
-
-  if state.scan or state.import_session or state.precache_session
-    or state.duplicate_scan or state.duplicate_confirmation
-    or state.missing_audit then
-    set_status("请等待当前后台任务完成后再重新定位来源", true)
-    return false
-  end
-
-  local new_root = supplied_path
-    or choose_folder("重新定位来源路径", record.path)
-
-  if not new_root or trim(new_root) == "" then
-    return false
-  end
-
-  new_root = canonical_source_path(new_root)
-  if not directory_exists(new_root) then
-    set_status("新来源目录不存在或无法访问：" .. new_root, true)
-    return false
-  end
-
-  local valid, conflict = validate_relinked_root(record, new_root)
-  if not valid then
-    set_status("新来源目录与现有来源重叠：" .. conflict.path, true)
-    return false
-  end
-
-  local plan = build_relink_plan(record, new_root)
-  if not confirm_relink_plan(plan) then
-    return false
-  end
-
+function commit_relink_plan(plan)
+  local record = plan.record
+  local new_root = plan.new_root
   if not create_data_backup("source_relink", true) then
     set_status("无法创建重定位恢复快照，未修改任何路径", true)
+    Jobs.finish(plan.job_token, false, "backup failed")
     return false
   end
 
@@ -17481,10 +17464,90 @@ function relink_root(record, supplied_path)
     save_libraries()
     save_database()
     set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    Jobs.finish(plan.job_token, false, "commit failed")
     return false
   end
   set_status(string.format("来源已重定位：迁移 %d 条路径，待重新扫描 %d 条", moved, unresolved))
+  Jobs.finish(plan.job_token, true)
   start_scan("重定位后增量扫描", { new_root }, { silent = unresolved == 0 })
+  return true
+end
+
+function process_relink_plan()
+  local plan = state.relink_plan_session
+  if not plan or not can_run_heavy_job() then return end
+  if plan.job_token.cancel_requested then
+    cancel_relink_plan(plan, "user canceled")
+    return
+  end
+  if plan.assets ~= state.assets
+    or state.root_by_id[plan.record.id] ~= plan.record then
+    cancel_relink_plan(plan, "catalog changed")
+    set_status("素材库结构已变化，请重新开始来源重定位", true)
+    return
+  end
+
+  local processed = 0
+  local deadline = reaper.time_precise() + RELINK_PLAN_FRAME_BUDGET
+  while plan.index <= plan.total
+    and processed < RELINK_PLAN_FILES_PER_FRAME
+    and reaper.time_precise() < deadline do
+    process_relink_plan_entry(plan, plan.assets[plan.index])
+    plan.index = plan.index + 1
+    processed = processed + 1
+  end
+  if plan.index <= plan.total then return end
+
+  plan.assets = nil
+  state.relink_plan_session = nil
+  if not confirm_relink_plan(plan) then
+    Jobs.finish(plan.job_token, true, "not confirmed")
+    return
+  end
+  commit_relink_plan(plan)
+end
+
+function relink_root(record, supplied_path)
+  if not record then return false end
+  if state.relink_plan_session or state.scan or state.import_session
+    or state.precache_session or state.duplicate_scan
+    or state.duplicate_confirmation or state.missing_audit then
+    set_status("请等待当前后台任务完成后再重新定位来源", true)
+    return false
+  end
+
+  local new_root = supplied_path
+    or choose_folder("重新定位来源路径", record.path)
+  if not new_root or trim(new_root) == "" then return false end
+  new_root = canonical_source_path(new_root)
+  if not directory_exists(new_root) then
+    set_status("新来源目录不存在或无法访问：" .. new_root, true)
+    return false
+  end
+  local valid, conflict = validate_relinked_root(record, new_root)
+  if not valid then
+    set_status("新来源目录与现有来源重叠：" .. conflict.path, true)
+    return false
+  end
+
+  local job_token = Jobs.begin(
+    "relink_plan",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return false
+  end
+  state.relink_plan_session = new_relink_plan(
+    record,
+    new_root,
+    job_token
+  )
+  set_status(string.format(
+    "正在生成来源重定位计划：0 / %d",
+    #state.assets
+  ))
   return true
 end
 
@@ -18197,6 +18260,7 @@ function cancel_catalog_jobs(reason)
     "missing_audit",
     "duplicate_scan",
     "duplicate_confirmation",
+    "relink_plan_session",
   }
 
   for _, field in ipairs(maintenance_fields) do
@@ -22395,10 +22459,12 @@ function draw_import_progress()
   local visible_import =
     state.import_session
     and not state.import_session.silent
+  local visible_relink = state.relink_plan_session
 
   if not visible_scan
     and not visible_import
-    and not state.precache_session then
+    and not state.precache_session
+    and not visible_relink then
     return
   end
 
@@ -22415,7 +22481,33 @@ function draw_import_progress()
     72,
     ImGui.ChildFlags_Borders
   ) then
-    if state.precache_session then
+    if visible_relink then
+      local completed = math.min(
+        math.max(0, (visible_relink.index or 1) - 1),
+        visible_relink.total or 0
+      )
+      local total = visible_relink.total or 0
+      local fraction = total > 0 and completed / total or 1
+      ImGui.Text(ctx, string.format(
+        "正在生成来源重定位计划  %d / %d  目标 %d  缺失 %d  冲突 %d",
+        completed,
+        total,
+        #visible_relink.entries,
+        visible_relink.missing,
+        #visible_relink.conflicts
+      ))
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(ctx, compact(
+        visible_relink.old_root .. " → " .. visible_relink.new_root,
+        80
+      ))
+    elseif state.precache_session then
       local session = state.precache_session
       local current_progress =
         session.current
@@ -22582,7 +22674,10 @@ function draw_import_progress()
     ImGui.SameLine(ctx)
 
     if dark_button("取消", 72) then
-      if state.precache_session then
+      if visible_relink then
+        Jobs.cancel(visible_relink.job_token)
+        set_status("正在取消来源重定位计划…")
+      elseif state.precache_session then
         state.precache_cancel_requested = true
       elseif visible_scan then
         local scan = state.scan
@@ -30497,6 +30592,7 @@ function cleanup()
     state.missing_audit,
     state.duplicate_scan,
     state.duplicate_confirmation,
+    state.relink_plan_session,
   }
 
   for _, session in pairs(maintenance_sessions) do
@@ -30665,6 +30761,8 @@ function loop()
     -- scanning, waveform generation, Artwork and loudness analysis resume
     -- automatically after the job finishes or is stopped.
     process_transfer_job()
+  elseif state.relink_plan_session then
+    process_relink_plan()
   else
     process_scan()
     process_import_session()

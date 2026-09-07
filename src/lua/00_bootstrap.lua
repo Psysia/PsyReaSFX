@@ -495,6 +495,8 @@ local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
 local ASSET_BINDINGS_PER_FRAME = 4000
 local ASSET_BINDING_CHANGES_PER_FRAME = 250
 local SCAN_FINALIZE_ASSETS_PER_FRAME = 4000
+local RELINK_PLAN_FILES_PER_FRAME = 48
+local RELINK_PLAN_FRAME_BUDGET = 0.0025
 
 local MINI_WAVE_DEFAULT_POINTS = 256
 local MINI_WAVE_MAX_POINTS = 512
@@ -777,6 +779,7 @@ local state = {
   duplicate_confirmed_asset_count = 0,
   duplicate_confirmation_failures = {},
   duplicate_confirmation_failure_count = 0,
+  relink_plan_session = nil,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
