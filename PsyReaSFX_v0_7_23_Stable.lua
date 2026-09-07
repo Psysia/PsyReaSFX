@@ -5290,9 +5290,14 @@ function write_scan_checkpoint(scan, phase)
     return
   end
 
-  file:write("version\t1\n")
+  file:write("version\t2\n")
   file:write("phase\t", escape_tsv(phase or "scan"), "\n")
   file:write("reason\t", escape_tsv(scan.reason or "扫描"), "\n")
+  file:write(
+    "force_rebuild\t",
+    scan.force_rebuild and "1" or "0",
+    "\n"
+  )
   file:write("files\t", tostring(scan.files or 0), "\n")
   file:write("directories\t", tostring(scan.directories or 0), "\n")
 
@@ -5314,7 +5319,11 @@ function load_scan_checkpoint()
     return nil
   end
 
-  local checkpoint = { roots = {}, reason = "恢复中断扫描" }
+  local checkpoint = {
+    roots = {},
+    reason = "恢复中断扫描",
+    force_rebuild = false,
+  }
 
   for line in file:lines() do
     local fields = split_tsv(line)
@@ -5323,6 +5332,8 @@ function load_scan_checkpoint()
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
+    elseif fields[1] == "force_rebuild" then
+      checkpoint.force_rebuild = fields[2] == "1"
     end
   end
 
@@ -11960,6 +11971,9 @@ function start_scan(reason, roots_override, options)
   local silent =
     type(options) == "table"
     and options.silent == true
+  local force_rebuild =
+    type(options) == "table"
+    and options.force_rebuild == true
 
   if #requested == 0 then
     set_status("请先添加音效库根目录", true)
@@ -11980,6 +11994,7 @@ function start_scan(reason, roots_override, options)
     new_assets = {},
     started = reaper.time_precise(),
     silent = silent,
+    force_rebuild = force_rebuild,
   }
 
   for _, root in ipairs(requested) do
@@ -12320,6 +12335,11 @@ function process_scan()
                 asset
 
               mark_asset_database_change(asset)
+            elseif scan.force_rebuild then
+              local asset = state.by_path[key]
+              asset.ready = false
+              asset.indexed = false
+              scan.new_assets[#scan.new_assets + 1] = asset
             elseif not state.by_path[key].ready then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
@@ -20559,14 +20579,11 @@ function draw_library_manager_popup()
       ImGui.SameLine(ctx)
 
       if dark_button("重建", 54) then
-        for _, asset in ipairs(state.assets) do
-          if path_is_inside(asset.path, record.path) then
-            asset.ready = false
-            asset.indexed = false
-          end
-        end
-
-        start_scan("重建 " .. basename(record.path), { record.path })
+        start_scan(
+          "重建 " .. basename(record.path),
+          { record.path },
+          { force_rebuild = true }
+        )
       end
 
       ImGui.SameLine(ctx)
@@ -30734,7 +30751,11 @@ if state.persistence_read_only then
     true
   )
 elseif interrupted_scan then
-  start_scan("恢复中断扫描", interrupted_scan.roots)
+  start_scan(
+    "恢复中断扫描",
+    interrupted_scan.roots,
+    { force_rebuild = interrupted_scan.force_rebuild }
+  )
 elseif #state.roots > 0 and #state.assets == 0 then
   start_scan("首次扫描")
 elseif #state.roots > 0 then

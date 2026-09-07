@@ -1325,9 +1325,14 @@ function write_scan_checkpoint(scan, phase)
     return
   end
 
-  file:write("version\t1\n")
+  file:write("version\t2\n")
   file:write("phase\t", escape_tsv(phase or "scan"), "\n")
   file:write("reason\t", escape_tsv(scan.reason or "扫描"), "\n")
+  file:write(
+    "force_rebuild\t",
+    scan.force_rebuild and "1" or "0",
+    "\n"
+  )
   file:write("files\t", tostring(scan.files or 0), "\n")
   file:write("directories\t", tostring(scan.directories or 0), "\n")
 
@@ -1349,7 +1354,11 @@ function load_scan_checkpoint()
     return nil
   end
 
-  local checkpoint = { roots = {}, reason = "恢复中断扫描" }
+  local checkpoint = {
+    roots = {},
+    reason = "恢复中断扫描",
+    force_rebuild = false,
+  }
 
   for line in file:lines() do
     local fields = split_tsv(line)
@@ -1358,6 +1367,8 @@ function load_scan_checkpoint()
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
+    elseif fields[1] == "force_rebuild" then
+      checkpoint.force_rebuild = fields[2] == "1"
     end
   end
 

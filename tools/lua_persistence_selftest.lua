@@ -28,6 +28,9 @@ local function exists(path)
 end
 
 function join_path(left, right) return path_join(left, right) end
+function normalize_slashes(path)
+  return tostring(path or ""):gsub("\\", "/")
+end
 function basename(path)
   return path:match("([^/\\]+)$") or path
 end
@@ -174,6 +177,19 @@ function remove_shallow_directory(path)
 end
 function prune_data_backups() end
 function set_status() end
+
+write_scan_checkpoint({
+  reason = "forced rebuild",
+  roots = { "C:/Audio/Library" },
+  files = 12,
+  directories = 3,
+  force_rebuild = true,
+}, "scan")
+local forced_checkpoint = assert(load_scan_checkpoint())
+assert(forced_checkpoint.force_rebuild == true)
+assert(forced_checkpoint.roots[1] == "C:/Audio/Library")
+assert(read_all(SCAN_CHECKPOINT_FILE):match("version\t2\n"))
+clear_scan_checkpoint()
 
 write_all(first, "backup-config")
 write_all(second, "backup-libraries")
