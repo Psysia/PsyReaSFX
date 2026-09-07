@@ -1011,6 +1011,28 @@ function replay_pending_project_usage(session)
   if session then session.pending_usage = {} end
 end
 
+function replay_pending_history(session)
+  for id, asset in pairs(session and session.pending_history or {}) do
+    state.preview_history_assets[id] = asset
+  end
+  if session then session.pending_history = {} end
+end
+
+function replay_pending_session_played(session)
+  for key in pairs(session and session.pending_played or {}) do
+    state.session_played[key] = true
+  end
+  if session then session.pending_played = {} end
+end
+
+function auxiliary_save_label(kind)
+  if kind == "collections" then return "播放列表" end
+  if kind == "project_usage" then return "工程使用记录" end
+  if kind == "history" then return "试听历史" end
+  if kind == "session_played" then return "本次试听高亮" end
+  return "辅助数据"
+end
+
 function cancel_auxiliary_save(reason)
   local session = state.auxiliary_save_session
   if not session then return false end
@@ -1020,9 +1042,15 @@ function cancel_auxiliary_save(reason)
   state.auxiliary_save_session = nil
   if session.kind == "collections" then
     state.collections_dirty = true
-  else
+  elseif session.kind == "project_usage" then
     state.project_usage_dirty = true
     replay_pending_project_usage(session)
+  elseif session.kind == "history" then
+    state.history_dirty = true
+    replay_pending_history(session)
+  elseif session.kind == "session_played" then
+    state.session_played_dirty = true
+    replay_pending_session_played(session)
   end
   return true
 end
@@ -1031,9 +1059,8 @@ function fail_auxiliary_save(session, message)
   if state.auxiliary_save_session ~= session then return end
   cancel_auxiliary_save("write failed")
   set_status(
-    session.kind == "collections"
-      and "无法后台保存播放列表：" .. tostring(message or "写入失败")
-      or "无法后台保存工程使用记录：" .. tostring(message or "写入失败"),
+    "无法后台保存" .. auxiliary_save_label(session.kind)
+      .. "：" .. tostring(message or "写入失败"),
     true
   )
 end
@@ -1100,6 +1127,15 @@ function finish_auxiliary_save(session)
   state.auxiliary_save_session = nil
   if session.kind == "project_usage" then
     replay_pending_project_usage(session)
+  elseif session.kind == "history" then
+    replay_pending_history(session)
+  elseif session.kind == "session_played" then
+    state.last_session_played = session.job.saved
+    replay_pending_session_played(session)
+  end
+  if state.collections_dirty or state.history_dirty
+    or state.session_played_dirty or state.project_usage_dirty then
+    state.last_save = 0
   end
   return true
 end
@@ -1141,11 +1177,37 @@ function process_auxiliary_save()
   local session = state.auxiliary_save_session
   if not session then return end
   local deadline = reaper.time_precise() + AUXILIARY_SAVE_FRAME_BUDGET
-  local complete
+  local complete, failure
   if session.kind == "collections" then
     complete = process_collections_save(session, deadline)
-  else
+  elseif session.kind == "project_usage" then
     complete = process_project_usage_save(session, deadline)
+  elseif session.kind == "history" then
+    complete, failure = step_history_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      path_key,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "session_played" then
+    complete, failure = step_path_set_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  else
+    fail_auxiliary_save(session, "未知保存任务")
+    return
+  end
+  if failure then
+    fail_auxiliary_save(session, failure)
+    return
   end
   if complete and state.auxiliary_save_session == session then
     finish_auxiliary_save(session)
@@ -1653,6 +1715,10 @@ end
 
 function save_history()
   if state.root_removal_session then return false end
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "history" then
+    cancel_auxiliary_save("synchronous history save")
+  end
   ensure_dirs()
 
   local file = atomic_file_writer(HISTORY_FILE)
@@ -1688,6 +1754,74 @@ function save_history()
   end
   state.history_dirty = false
   return true
+end
+
+function start_history_save()
+  if state.auxiliary_save_session or not state.history_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(HISTORY_FILE)
+  if not writer then
+    set_status("无法后台保存试听历史：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, HISTORY_FILE) then
+    writer:abort()
+    set_status("无法后台保存试听历史：无法写入文件头", true)
+    return false
+  end
+  state.history_dirty = false
+  state.auxiliary_save_session = {
+    kind = "history",
+    writer = writer,
+    job = new_history_persistence_job(
+      state.preview_history_assets,
+      state.by_path
+    ),
+    pending_history = {},
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function start_session_played_save()
+  if state.auxiliary_save_session or not state.session_played_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(LAST_PLAYED_SESSION_FILE)
+  if not writer then
+    set_status("无法后台保存本次试听高亮：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, LAST_PLAYED_SESSION_FILE) then
+    writer:abort()
+    set_status("无法后台保存本次试听高亮：无法写入文件头", true)
+    return false
+  end
+  state.session_played_dirty = false
+  state.auxiliary_save_session = {
+    kind = "session_played",
+    writer = writer,
+    job = new_path_set_persistence_job(state.session_played),
+    pending_played = {},
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function schedule_auxiliary_save()
+  if state.auxiliary_save_session then return false end
+  if state.scan or state.import_session or state.root_removal_session
+    or state.relink_plan_session then
+    return false
+  end
+  if state.collections_dirty then return start_collections_save() end
+  if state.history_dirty then return start_history_save() end
+  if state.session_played_dirty then return start_session_played_save() end
+  if state.project_usage_dirty then return start_project_usage_save() end
+  return false
 end
 
 function workflow_label(status)
@@ -1738,12 +1872,22 @@ function record_preview_history(asset)
     (tonumber(asset.preview_count) or 0) + 1
   asset.last_previewed = os.time()
   ensure_asset_identity(asset)
-  state.preview_history_assets[asset.asset_id] = asset
+  local save_session = state.auxiliary_save_session
+  if save_session and save_session.kind == "history"
+    and not state.preview_history_assets[asset.asset_id] then
+    save_session.pending_history[asset.asset_id] = asset
+  else
+    state.preview_history_assets[asset.asset_id] = asset
+  end
   local played_key =
     path_key(asset.path)
 
   if not state.session_played[played_key] then
-    state.session_played[played_key] = true
+    if save_session and save_session.kind == "session_played" then
+      save_session.pending_played[played_key] = true
+    else
+      state.session_played[played_key] = true
+    end
     state.session_played_dirty = true
   end
 
@@ -3267,6 +3411,7 @@ function start_scan(reason, roots_override, options)
     return
   end
 
+  cancel_auxiliary_save("catalog scan")
   local job_token, job_error =
     Jobs.begin(
       "catalog_pipeline",
@@ -22327,20 +22472,8 @@ function autosave()
     save_database_changes()
   end
 
-  if state.collections_dirty and not state.auxiliary_save_session then
-    start_collections_save()
-  end
-
   if state.searches_dirty then
     save_saved_searches()
-  end
-
-  if state.history_dirty then
-    save_history()
-  end
-
-  if state.session_played_dirty then
-    save_last_played_session()
   end
 
   if state.regions_dirty then
@@ -22355,9 +22488,7 @@ function autosave()
     save_failed_tasks()
   end
 
-  if state.project_usage_dirty and not state.auxiliary_save_session then
-    start_project_usage_save()
-  end
+  schedule_auxiliary_save()
 
   state.last_save = now
 end

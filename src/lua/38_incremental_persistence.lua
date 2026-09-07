@@ -155,3 +155,102 @@ function step_project_usage_persistence_job(
   end
   return job.projects[job.project_index] == nil
 end
+
+function new_history_persistence_job(history_assets, by_path)
+  history_assets = type(history_assets) == "table" and history_assets or {}
+  return {
+    entries = history_assets,
+    by_path = type(by_path) == "table" and by_path or {},
+    next_key = next(history_assets),
+    processed = 0,
+    written = 0,
+  }
+end
+
+function step_history_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local id = job.next_key
+    local asset = job.entries[id]
+    job.next_key = next(job.entries, id)
+    if asset and job.by_path[key_function(asset.path)] == asset
+      and (tonumber(asset.last_previewed) or 0) > 0 then
+      if not writer:write(
+        "preview\t", escape_function(asset.path), "\t",
+        tostring(asset.preview_count or 0), "\t",
+        tostring(asset.last_previewed or 0), "\n"
+      ) then
+        return false, "write_history"
+      end
+      job.written = job.written + 1
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    if processed % 64 == 0 and deadline
+      and type(time_function) == "function"
+      and time_function() >= deadline then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+function new_path_set_persistence_job(path_set)
+  path_set = type(path_set) == "table" and path_set or {}
+  return {
+    entries = path_set,
+    next_key = next(path_set),
+    saved = {},
+    processed = 0,
+  }
+end
+
+function step_path_set_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    job.next_key = next(job.entries, key)
+    if job.entries[key] then
+      if not writer:write("played\t", escape_function(key), "\n") then
+        return false, "write_played"
+      end
+      job.saved[key] = true
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    if processed % 64 == 0 and deadline
+      and type(time_function) == "function"
+      and time_function() >= deadline then
+      return false
+    end
+  end
+  return job.next_key == nil
+end

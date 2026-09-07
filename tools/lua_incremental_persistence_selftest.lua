@@ -84,13 +84,74 @@ local timed_complete = step_project_usage_persistence_job(
   function() return 1 end
 )
 if item_count >= 64 then
-  assert(not timed_complete and timed_job.processed == 64)
+assert(not timed_complete and timed_job.processed == 64)
 end
 
+local history_by_id = {}
+local history_by_path = {}
+local played = {}
+for index = 1, item_count do
+  local path = string.format("C:/History/%07d.wav", index)
+  local asset = {
+    path = path,
+    preview_count = index,
+    last_previewed = index,
+  }
+  history_by_id[tostring(index)] = asset
+  history_by_path[key(path)] = asset
+  played[key(path)] = true
+end
+if item_count > 1 then
+  history_by_path[key(history_by_id["1"].path)] = nil
+end
+writer = new_writer()
+local history_job = new_history_persistence_job(
+  history_by_id,
+  history_by_path
+)
+local history_steps = 0
+repeat
+  history_steps = history_steps + 1
+until step_history_persistence_job(
+  history_job, writer, 4000, escape, key
+)
+assert(history_steps == math.ceil(item_count / 4000))
+assert(#writer.lines == item_count - (item_count > 1 and 1 or 0))
+
+writer = new_writer()
+local played_job = new_path_set_persistence_job(played)
+local played_steps = 0
+repeat
+  played_steps = played_steps + 1
+until step_path_set_persistence_job(
+  played_job, writer, 4000, escape
+)
+assert(played_steps == math.ceil(item_count / 4000))
+assert(#writer.lines == item_count)
+local saved_count = 0
+for _ in pairs(played_job.saved) do saved_count = saved_count + 1 end
+assert(saved_count == item_count)
+
+local failed_history_writer = new_writer(0)
+local failed_history_job = new_history_persistence_job(
+  history_by_id,
+  history_by_path
+)
+local history_complete, history_failure = step_history_persistence_job(
+  failed_history_job,
+  failed_history_writer,
+  4000,
+  escape,
+  key
+)
+assert(not history_complete and history_failure == "write_history")
+
 print(string.format(
-  "Lua incremental persistence self-test OK: records=%d collection_steps=%d usage_steps=%d memory=%.1fMiB",
+  "Lua incremental persistence self-test OK: records=%d collection_steps=%d usage_steps=%d history_steps=%d played_steps=%d memory=%.1fMiB",
   item_count,
   collection_steps,
   usage_steps,
+  history_steps,
+  played_steps,
   collectgarbage("count") / 1024
 ))

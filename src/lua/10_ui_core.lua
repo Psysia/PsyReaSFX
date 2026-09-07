@@ -638,6 +638,10 @@ end
 
 function save_last_played_session()
   if state.root_removal_session then return false end
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "session_played" then
+    cancel_auxiliary_save("synchronous session history save")
+  end
   ensure_dirs()
 
   local file =
@@ -702,6 +706,10 @@ function migrate_last_played_session_schema()
 end
 
 function restore_last_session_played_highlights(silent)
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "session_played" then
+    cancel_auxiliary_save("restore session highlights")
+  end
   local count =
     last_session_played_count()
 
@@ -746,8 +754,13 @@ function clear_session_played_highlights()
 end
 
 function clear_saved_session_played_highlights()
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "session_played" then
+    cancel_auxiliary_save("clear saved session highlights")
+  end
   state.last_session_played = {}
   os.remove(LAST_PLAYED_SESSION_FILE)
+  state.session_played_dirty = false
 
   if state.restore_played_on_start then
     state.restore_played_on_start = false
