@@ -75,6 +75,22 @@ function clear_asset_changes(change_set)
   return true
 end
 
+function merge_asset_changes(target, source)
+  if type(target) ~= "table" or type(target.by_key) ~= "table"
+    or type(source) ~= "table" or type(source.by_key) ~= "table" then
+    return false
+  end
+  for key, entry in pairs(source.by_key) do
+    if type(entry) == "table" then
+      record_asset_change(target, key, entry.op, entry.values or {})
+    end
+  end
+  if source.requires_snapshot == true then
+    require_asset_snapshot(target)
+  end
+  return true
+end
+
 local function journal_escape(value)
   return tostring(value or "")
     :gsub("\\", "\\\\")

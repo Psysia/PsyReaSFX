@@ -171,7 +171,7 @@ end
 function save_database_journal()
   ensure_dirs()
   local entries = ordered_asset_changes(state.database_changes)
-  if #entries == 0 then return save_database() end
+  if #entries == 0 then return start_database_snapshot() end
   local written, write_error = write_asset_journal_atomic(
     DATABASE_JOURNAL_FILE,
     state.database_generation or 0,
@@ -197,7 +197,7 @@ function save_database_changes()
     reaper.file_exists(DATABASE_FILE),
     DATABASE_JOURNAL_COMPACT_COUNT
   ) then
-    return save_database()
+    return start_database_snapshot()
   end
   return save_database_journal()
 end
@@ -301,7 +301,15 @@ function replay_database_journal()
   return true
 end
 
-function save_database()
+function write_database_asset_line(file, asset)
+  local fields = database_asset_values(asset)
+  for index, value in ipairs(fields) do
+    fields[index] = escape_tsv(value)
+  end
+  return file:write(table.concat(fields, "\t"), "\n")
+end
+
+function save_database_now()
   ensure_dirs()
 
   local file = atomic_file_writer(DATABASE_FILE)
@@ -340,27 +348,11 @@ function save_database()
   end
 
   for _, asset in ipairs(ordered) do
-    local fields = {}
-
-    for _, field in ipairs(DB_FIELDS) do
-      local value = asset[field]
-
-      if field == "indexed" then
-        value = asset.indexed and "1" or "0"
-      elseif field == "ready" then
-        value = asset.ready and "1" or "0"
-      elseif field == "marked" then
-        value = asset.marked and "1" or "0"
-      end
-
-      fields[#fields + 1] =
-        escape_tsv(value)
+    if not write_database_asset_line(file, asset) then
+      file:close()
+      set_status("无法保存索引", true)
+      return false
     end
-
-    file:write(
-      table.concat(fields, "\t"),
-      "\n"
-    )
   end
 
   if not file:close() then
@@ -370,8 +362,171 @@ function save_database()
   state.database_generation = next_generation
   clear_asset_changes(state.database_changes)
   os.remove(DATABASE_JOURNAL_FILE)
+  if state.clear_scan_checkpoint_after_database_save then
+    clear_scan_checkpoint()
+    state.clear_scan_checkpoint_after_database_save = false
+  end
   state.db_dirty = false
   return true
+end
+
+function restore_database_snapshot_changes(session)
+  if not session then return end
+  local captured = session.captured_changes or new_asset_change_set()
+  merge_asset_changes(captured, state.database_changes)
+  require_asset_snapshot(captured)
+  state.database_changes = captured
+  state.db_dirty = true
+end
+
+function cancel_database_snapshot(reason)
+  local session = state.database_snapshot_session
+  if not session then return false end
+  if session.writer and session.writer.abort then
+    session.writer:abort()
+  end
+  restore_database_snapshot_changes(session)
+  state.database_snapshot_session = nil
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, reason or "canceled")
+  return true
+end
+
+function start_database_snapshot()
+  if state.database_snapshot_session then return true end
+  if state.persistence_read_only then return false end
+
+  ensure_dirs()
+  local job_token, job_error = Jobs.begin(
+    "database_snapshot",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    if job_error ~= "resource_busy" then
+      set_status("无法启动索引保存任务", true)
+    end
+    return false
+  end
+
+  local file, open_error = atomic_file_writer(DATABASE_FILE)
+  if not file then
+    Jobs.finish(job_token, false, open_error)
+    set_status("无法保存索引：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+
+  local next_generation =
+    math.floor(tonumber(state.database_generation) or 0) + 1
+  local header_ok = file:write(
+    persistence_schema_header(
+      "database",
+      PERSISTENCE_SCHEMAS[DATABASE_FILE].version,
+      next_generation
+    )
+  )
+  if header_ok then
+    header_ok = file:write(table.concat(DB_FIELDS, "\t"), "\n")
+  end
+  if not header_ok then
+    file:abort()
+    Jobs.finish(job_token, false, "header write failed")
+    set_status("无法保存索引", true)
+    return false
+  end
+
+  local captured_changes = state.database_changes
+  state.database_changes = new_asset_change_set()
+  local assets = state.database_ordered_assets or state.assets
+  state.database_snapshot_session = {
+    writer = file,
+    assets = assets,
+    total = #assets,
+    index = 1,
+    next_generation = next_generation,
+    captured_changes = captured_changes,
+    job_token = job_token,
+    started = reaper.time_precise(),
+    last_status = 0,
+  }
+  state.db_dirty = true
+  set_status(string.format("正在后台保存索引：0 / %d", #assets))
+  return true
+end
+
+function fail_database_snapshot(session, message)
+  if session.writer and session.writer.abort then
+    session.writer:abort()
+  end
+  restore_database_snapshot_changes(session)
+  state.database_snapshot_session = nil
+  Jobs.finish(session.job_token, false, message)
+  set_status("无法保存索引：" .. tostring(message or "写入失败"), true)
+end
+
+function process_database_snapshot()
+  local session = state.database_snapshot_session
+  if not session then return end
+  if session.job_token.cancel_requested then
+    cancel_database_snapshot("canceled")
+    return
+  end
+
+  local deadline = reaper.time_precise()
+    + DATABASE_SNAPSHOT_FRAME_BUDGET
+  local last = math.min(
+    session.total,
+    session.index + DATABASE_SNAPSHOT_ASSETS_PER_FRAME - 1
+  )
+  while session.index <= last do
+    local asset = session.assets[session.index]
+    if asset and not write_database_asset_line(session.writer, asset) then
+      fail_database_snapshot(session, "写入素材记录失败")
+      return
+    end
+    session.index = session.index + 1
+    if reaper.time_precise() >= deadline then break end
+  end
+
+  local now = reaper.time_precise()
+  if now - session.last_status >= 0.5 then
+    session.last_status = now
+    set_status(string.format(
+      "正在后台保存索引：%d / %d",
+      math.min(session.index - 1, session.total),
+      session.total
+    ))
+  end
+  if session.index <= session.total then return end
+
+  local closed, close_error = session.writer:close()
+  if not closed then
+    fail_database_snapshot(session, close_error or "提交临时文件失败")
+    return
+  end
+
+  state.database_generation = session.next_generation
+  os.remove(DATABASE_JOURNAL_FILE)
+  if state.clear_scan_checkpoint_after_database_save then
+    clear_scan_checkpoint()
+    state.clear_scan_checkpoint_after_database_save = false
+  end
+  state.database_snapshot_session = nil
+  state.db_dirty = (state.database_changes.count or 0) > 0
+    or state.database_changes.requires_snapshot == true
+  Jobs.finish(session.job_token, true)
+  set_status(string.format(
+    "索引已后台保存：%d 条，耗时 %.1f 秒",
+    session.total,
+    now - session.started
+  ))
+end
+
+function save_database()
+  if state.database_snapshot_session then
+    cancel_database_snapshot("synchronous save requested")
+  end
+  return save_database_now()
 end
 
 
@@ -2472,6 +2627,7 @@ function draw_artwork_cover(
 end
 
 function clear_artwork_cache()
+  cancel_database_snapshot("artwork cache reset")
   for key in pairs(state.artwork_images) do
     release_artwork_image(key)
   end
@@ -2870,7 +3026,6 @@ function finish_scan()
 end
 
 function complete_scan_finalize(scan)
-  clear_scan_checkpoint()
   local pending = scan.pending
   local removed = scan.removed or 0
   state.scan = nil
@@ -2903,6 +3058,7 @@ function complete_scan_finalize(scan)
       )
     end
   else
+    clear_scan_checkpoint()
     Jobs.finish(scan.job_token, true)
     if scan.silent then
       if removed > 0 then
@@ -4569,11 +4725,11 @@ function finish_import_session()
   state.import_cancel_requested = false
   state.results_dirty = true
   mark_database_snapshot_dirty()
+  state.clear_scan_checkpoint_after_database_save = true
 
-  save_database()
-  save_failed_tasks()
-  clear_scan_checkpoint()
   Jobs.finish(session.job_token, true)
+  save_database_changes()
+  save_failed_tasks()
 
   if session.silent then
     set_status(
@@ -4622,9 +4778,10 @@ function cancel_import_session()
   state.import_session = nil
   state.import_cancel_requested = false
   mark_database_snapshot_dirty()
-  save_database()
+  state.clear_scan_checkpoint_after_database_save = true
   Jobs.cancel(session.job_token)
   Jobs.finish(session.job_token, true, "canceled")
+  save_database_changes()
   set_status("已取消导入；已完成的素材保留")
 end
 
@@ -7796,6 +7953,8 @@ function remove_root(root)
     return
   end
 
+  cancel_database_snapshot("catalog changed")
+
   root = record.path
   if state.import_session then
     local touches_import = false
@@ -9046,6 +9205,7 @@ end
 
 function cancel_catalog_jobs(reason)
   reason = tostring(reason or "canceled")
+  cancel_database_snapshot(reason)
 
   if state.transfer_job then
     finish_transfer_job(state.transfer_job, true)
@@ -9124,6 +9284,7 @@ function reset_database_keep_roots()
   os.remove(HISTORY_FILE)
   os.remove(LAST_PLAYED_SESSION_FILE)
   os.remove(SCAN_CHECKPOINT_FILE)
+  state.clear_scan_checkpoint_after_database_save = false
   os.remove(FAILED_TASKS_FILE)
   state.failed_tasks = {}
   state.failed_tasks_dirty = false
@@ -9209,6 +9370,7 @@ function factory_reset()
   os.remove(REGIONS_FILE)
   os.remove(LOUDNESS_FILE)
   os.remove(SCAN_CHECKPOINT_FILE)
+  state.clear_scan_checkpoint_after_database_save = false
   os.remove(FAILED_TASKS_FILE)
   os.remove(BACKUP_STATE_FILE)
   os.remove(PROJECT_USAGE_FILE)
@@ -11416,7 +11578,7 @@ function draw_library_manager_popup()
     if answer == 6 then
       remove_root(remove_root_record)
       save_libraries()
-      save_database()
+      save_database_changes()
     end
   end
 
@@ -11433,7 +11595,7 @@ function draw_library_manager_popup()
     if answer == 6 then
       remove_library(remove_library_id)
       save_libraries()
-      save_database()
+      save_database_changes()
     end
   end
 
@@ -20326,7 +20488,7 @@ function draw_settings_maintenance()
   if dark_button("立即创建备份", 150) then
     if state.config_dirty then save_config() end
     if state.libraries_dirty then save_libraries() end
-    if state.db_dirty and not state.scan and not state.import_session then save_database_changes() end
+    if state.db_dirty and not state.scan and not state.import_session then save_database() end
     if state.collections_dirty then save_collections() end
     if state.searches_dirty then save_saved_searches() end
     if state.history_dirty then save_history() end
@@ -21273,7 +21435,8 @@ function autosave()
   if state.db_dirty
     and not state.scan
     and not state.import_session
-    and not state.asset_binding_refresh then
+    and not state.asset_binding_refresh
+    and not state.database_snapshot_session then
     save_database_changes()
   end
 
@@ -21317,6 +21480,7 @@ function watch_folders()
     or not state.watch_enabled
     or state.scan
     or state.import_session
+    or state.database_snapshot_session
     or state.precache_session
     or state.transfer_running then
     return
@@ -21337,6 +21501,7 @@ end
 
 function cleanup()
   Jobs.stop_accepting()
+  cancel_database_snapshot("shutdown")
   stop_preview()
   cleanup_retired_preview_sources(true)
   if state.wave_active
@@ -21442,7 +21607,7 @@ function cleanup()
   end
 
   if state.db_dirty then
-    save_database_changes()
+    save_database()
   end
 
   if state.collections_dirty then
@@ -21579,6 +21744,8 @@ function loop()
     process_transfer_job()
   elseif state.relink_plan_session then
     process_relink_plan()
+  elseif state.database_snapshot_session then
+    process_database_snapshot()
   else
     process_scan()
     process_import_session()

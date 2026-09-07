@@ -849,6 +849,16 @@ function atomic_file_writer(target_path)
     return true
   end
 
+  function writer:abort()
+    if self.closed then
+      return false
+    end
+    self.closed = true
+    pcall(function() self.raw:close() end)
+    os.remove(self.temporary_path)
+    return true
+  end
+
   return writer
 end
 

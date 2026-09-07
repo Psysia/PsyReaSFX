@@ -99,6 +99,14 @@ assert(copy_file_streaming(source, target))
 assert(read_all(target) == "new-generation")
 assert(not exists(target .. ".bak"))
 
+local aborted_target = path_join(root, "aborted.tsv")
+write_all(aborted_target, "committed")
+local aborted_writer = assert(atomic_file_writer(aborted_target))
+assert(aborted_writer:write("not-committed"))
+assert(aborted_writer:abort())
+assert(read_all(aborted_target) == "committed")
+assert(not exists(aborted_target .. ".tmp"))
+
 local backup = path_join(root, "backup")
 local first = CONFIG_FILE
 local second = LIBRARIES_FILE
