@@ -9852,24 +9852,10 @@ function save_database_now()
   )
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
-  local ordered = state.database_ordered_assets
-
-  if not ordered then
-    ordered = {}
-    for _, asset in ipairs(state.assets) do
-      ordered[#ordered + 1] = asset
-      asset_path_sort_key(asset)
-    end
-    table.sort(
-      ordered,
-      function(a, b)
-        return asset_path_sort_key(a) < asset_path_sort_key(b)
-      end
-    )
-    state.database_ordered_assets = ordered
-  end
-
-  for _, asset in ipairs(ordered) do
+  -- Catalog order has no persistence semantics; result views perform their
+  -- own deterministic sort. Avoid a second 500k-entry array and O(n log n)
+  -- sort in the rare synchronous durability fallback.
+  for _, asset in ipairs(state.assets) do
     if not write_database_asset_line(file, asset) then
       file:close()
       set_status("无法保存索引", true)
@@ -10047,6 +10033,15 @@ end
 function save_database()
   if state.database_snapshot_session then
     cancel_database_snapshot("synchronous save requested")
+  end
+  local changes = state.database_changes
+  if (changes.count or 0) > 0
+    and not asset_changes_require_snapshot(
+      changes,
+      reaper.file_exists(DATABASE_FILE),
+      DATABASE_JOURNAL_COMPACT_COUNT
+    ) then
+    return save_database_journal()
   end
   return save_database_now()
 end
