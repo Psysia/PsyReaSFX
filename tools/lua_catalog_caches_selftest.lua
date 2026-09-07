@@ -121,6 +121,36 @@ for index = 1, prune_count do
   assert((removed_keys[tostring(index)] == true) == (index % 2 == 0))
 end
 
+local artwork_count = math.min(asset_count, 25000)
+local artwork_assets = {}
+local expected_artwork_changes = 0
+for index = 1, artwork_count do
+  local asset = { artwork_path = "", artwork_checked = false }
+  if index % 5 == 0 then
+    asset.artwork_path = "-"
+    asset.artwork_checked = true
+  elseif index % 3 == 0 then
+    asset.artwork_path = "C:/Artwork/cover.jpg"
+    asset.artwork_checked = true
+    expected_artwork_changes = expected_artwork_changes + 1
+  end
+  artwork_assets[index] = asset
+end
+local artwork_job = new_artwork_reset_job(artwork_assets)
+local artwork_steps = 0
+repeat
+  artwork_steps = artwork_steps + 1
+until step_artwork_reset_job(artwork_job, 4000)
+assert(artwork_steps == math.ceil(artwork_count / 4000))
+assert(artwork_job.changed == expected_artwork_changes)
+for index, asset in ipairs(artwork_assets) do
+  if index % 5 == 0 then
+    assert(asset.artwork_path == "-" and asset.artwork_checked)
+  else
+    assert(asset.artwork_path == "" and not asset.artwork_checked)
+  end
+end
+
 print(string.format(
   "Lua catalog cache self-test OK: assets=%d steps=%d history=%d memory=%.1fMiB",
   asset_count,

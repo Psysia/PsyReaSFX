@@ -495,6 +495,7 @@ local PRECACHE_CACHE_PROBES_PER_FRAME = 8
 local PRECACHE_FRAME_BUDGET = 0.0025
 local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
 local IMPORT_FINALIZE_ASSETS_PER_FRAME = 4000
+local ARTWORK_RESET_ASSETS_PER_FRAME = 4000
 local ASSET_BINDINGS_PER_FRAME = 4000
 local ASSET_BINDING_CHANGES_PER_FRAME = 250
 local SCAN_FINALIZE_ASSETS_PER_FRAME = 4000
@@ -1015,6 +1016,7 @@ local state = {
   artwork_image_limit = 96,
   artwork_queue = {},
   artwork_queued = {},
+  artwork_reset_session = nil,
   artwork_next_job = 0,
   layout_notice = "",
 
@@ -7850,6 +7852,36 @@ function step_catalog_prune_job(
   return job.next_key == nil
 end
 
+function new_artwork_reset_job(assets)
+  assets = type(assets) == "table" and assets or {}
+  return {
+    assets = assets,
+    index = 1,
+    total = #assets,
+    changed = 0,
+  }
+end
+
+function step_artwork_reset_job(job, batch_size)
+  if type(job) ~= "table" or type(job.assets) ~= "table" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(job.total, job.index + batch_size - 1)
+  for index = job.index, last do
+    local asset = job.assets[index]
+    if asset and asset.artwork_path ~= "-" then
+      if asset.artwork_path ~= "" or asset.artwork_checked then
+        job.changed = job.changed + 1
+      end
+      asset.artwork_path = ""
+      asset.artwork_checked = false
+    end
+  end
+  job.index = last + 1
+  return job.index > job.total
+end
+
 function asset_regions(asset)
   if not asset then
     return {}
@@ -11856,7 +11888,26 @@ function draw_artwork_cover(
 end
 
 function clear_artwork_cache()
+  if state.artwork_reset_session then
+    set_status("Artwork 缓存正在清理")
+    return false
+  end
   cancel_database_snapshot("artwork cache reset")
+  local job_token, job_error = Jobs.begin(
+    "artwork_reset",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status(
+      job_error == "resource_busy"
+        and "请等待当前目录维护任务完成"
+        or "无法启动 Artwork 缓存清理",
+      true
+    )
+    return false
+  end
+
   for key in pairs(state.artwork_images) do
     release_artwork_image(key)
   end
@@ -11875,15 +11926,45 @@ function clear_artwork_cache()
     end
   end
 
-  for _, asset in ipairs(state.assets) do
-    if asset.artwork_path ~= "-" then
-      asset.artwork_path = ""
-      asset.artwork_checked = false
-    end
+  mark_database_snapshot_dirty()
+  state.artwork_reset_session = new_artwork_reset_job(state.assets)
+  state.artwork_reset_session.job_token = job_token
+  set_status(string.format(
+    "正在清空 Artwork 缓存：0 / %d",
+    #state.assets
+  ))
+  return true
+end
+
+function process_artwork_cache_reset()
+  local session = state.artwork_reset_session
+  if not session then return end
+  if session.job_token.cancel_requested then
+    state.artwork_reset_session = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    set_status("已停止 Artwork 缓存清理；已完成部分仍会保存")
+    return
   end
 
-  mark_database_snapshot_dirty()
-  set_status("已清空 Artwork 缓存；可见素材将重新查找封面")
+  local complete = step_artwork_reset_job(
+    session,
+    ARTWORK_RESET_ASSETS_PER_FRAME
+  )
+  if not complete then
+    set_status(string.format(
+      "正在清空 Artwork 缓存：%d / %d",
+      math.min(session.index - 1, session.total),
+      session.total
+    ))
+    return
+  end
+
+  state.artwork_reset_session = nil
+  Jobs.finish(session.job_token, true)
+  set_status(string.format(
+    "已清空 Artwork 缓存：重置 %d 条；可见素材将重新查找封面",
+    session.changed
+  ))
 end
 
 ----------------------------------------------------------------
@@ -18512,6 +18593,7 @@ function cancel_catalog_jobs(reason)
   state.import_cancel_requested = false
 
   local maintenance_fields = {
+    "artwork_reset_session",
     "cache_verify_session",
     "missing_audit",
     "duplicate_scan",
@@ -22715,11 +22797,13 @@ function draw_import_progress()
     state.import_session
     and not state.import_session.silent
   local visible_relink = state.relink_plan_session
+  local visible_artwork_reset = state.artwork_reset_session
 
   if not visible_scan
     and not visible_import
     and not state.precache_session
-    and not visible_relink then
+    and not visible_relink
+    and not visible_artwork_reset then
     return
   end
 
@@ -22736,7 +22820,28 @@ function draw_import_progress()
     72,
     ImGui.ChildFlags_Borders
   ) then
-    if visible_relink then
+    if visible_artwork_reset then
+      local completed = math.min(
+        math.max(0, (visible_artwork_reset.index or 1) - 1),
+        visible_artwork_reset.total or 0
+      )
+      local total = visible_artwork_reset.total or 0
+      local fraction = total > 0 and completed / total or 1
+      ImGui.Text(ctx, string.format(
+        "正在清空 Artwork 缓存  %d / %d  已重置 %d",
+        completed,
+        total,
+        visible_artwork_reset.changed or 0
+      ))
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(ctx, "只清理 PsyReaSFX 缓存，不会删除源图片")
+    elseif visible_relink then
       local completed = math.min(
         math.max(0, (visible_relink.index or 1) - 1),
         visible_relink.total or 0
@@ -22957,7 +23062,9 @@ function draw_import_progress()
     ImGui.SameLine(ctx)
 
     if dark_button("取消", 72) then
-      if visible_relink then
+      if visible_artwork_reset then
+        Jobs.cancel(visible_artwork_reset.job_token)
+      elseif visible_relink then
         Jobs.cancel(visible_relink.job_token)
         set_status("正在取消来源重定位计划…")
       elseif state.precache_session then
@@ -30745,6 +30852,7 @@ function autosave()
     and not state.scan
     and not state.import_session
     and not state.asset_binding_refresh
+    and not state.artwork_reset_session
     and not state.database_snapshot_session then
     save_database_changes()
   end
@@ -30789,6 +30897,7 @@ function watch_folders()
     or not state.watch_enabled
     or state.scan
     or state.import_session
+    or state.artwork_reset_session
     or state.database_snapshot_session
     or state.precache_session
     or state.transfer_running then
@@ -30874,6 +30983,7 @@ function cleanup()
   end
 
   local maintenance_sessions = {
+    state.artwork_reset_session,
     state.cache_verify_session,
     state.missing_audit,
     state.duplicate_scan,
@@ -31053,6 +31163,8 @@ function loop()
     process_transfer_job()
   elseif state.relink_plan_session then
     process_relink_plan()
+  elseif state.artwork_reset_session then
+    process_artwork_cache_reset()
   elseif state.database_snapshot_session then
     process_database_snapshot()
   else

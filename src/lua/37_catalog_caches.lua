@@ -146,3 +146,33 @@ function step_catalog_prune_job(
   end
   return job.next_key == nil
 end
+
+function new_artwork_reset_job(assets)
+  assets = type(assets) == "table" and assets or {}
+  return {
+    assets = assets,
+    index = 1,
+    total = #assets,
+    changed = 0,
+  }
+end
+
+function step_artwork_reset_job(job, batch_size)
+  if type(job) ~= "table" or type(job.assets) ~= "table" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(job.total, job.index + batch_size - 1)
+  for index = job.index, last do
+    local asset = job.assets[index]
+    if asset and asset.artwork_path ~= "-" then
+      if asset.artwork_path ~= "" or asset.artwork_checked then
+        job.changed = job.changed + 1
+      end
+      asset.artwork_path = ""
+      asset.artwork_checked = false
+    end
+  end
+  job.index = last + 1
+  return job.index > job.total
+end

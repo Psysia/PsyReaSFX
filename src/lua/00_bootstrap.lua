@@ -495,6 +495,7 @@ local PRECACHE_CACHE_PROBES_PER_FRAME = 8
 local PRECACHE_FRAME_BUDGET = 0.0025
 local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
 local IMPORT_FINALIZE_ASSETS_PER_FRAME = 4000
+local ARTWORK_RESET_ASSETS_PER_FRAME = 4000
 local ASSET_BINDINGS_PER_FRAME = 4000
 local ASSET_BINDING_CHANGES_PER_FRAME = 250
 local SCAN_FINALIZE_ASSETS_PER_FRAME = 4000
@@ -1015,6 +1016,7 @@ local state = {
   artwork_image_limit = 96,
   artwork_queue = {},
   artwork_queued = {},
+  artwork_reset_session = nil,
   artwork_next_job = 0,
   layout_notice = "",
 
