@@ -222,3 +222,148 @@ function step_catalog_filter_job(
   end
   return job.index > job.total
 end
+
+-- Rebuild an ordered path set without mutating the live collection. The
+-- second map pass repairs legacy entries that were missing from `order` and
+-- also guarantees that duplicate order entries collapse to one item.
+function new_ordered_path_filter_job(order, items)
+  order = type(order) == "table" and order or {}
+  items = type(items) == "table" and items or {}
+  return {
+    order = order,
+    items = items,
+    phase = "order",
+    index = 1,
+    next_key = nil,
+    kept_order = {},
+    kept_items = {},
+    rejected = {},
+    processed = 0,
+    removed = 0,
+    repaired = 0,
+  }
+end
+
+function step_ordered_path_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.order) ~= "table"
+    or type(job.items) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    if job.phase == "order" then
+      local ordered_path = job.order[job.index]
+      if ordered_path == nil then
+        job.phase = "items"
+        job.next_key = next(job.items)
+      else
+        job.index = job.index + 1
+        local key = key_function(ordered_path)
+        local stored_path = job.items[key]
+        if stored_path ~= nil then
+          if should_remove(stored_path, key) then
+            if not job.rejected[key] then
+              job.rejected[key] = true
+              job.removed = job.removed + 1
+            end
+          elseif job.kept_items[key] == nil then
+            job.kept_items[key] = stored_path
+            job.kept_order[#job.kept_order + 1] = stored_path
+          else
+            job.repaired = job.repaired + 1
+          end
+        else
+          job.repaired = job.repaired + 1
+        end
+        job.processed = job.processed + 1
+        processed = processed + 1
+      end
+    elseif job.phase == "items" then
+      local key = job.next_key
+      if key == nil then
+        job.phase = "done"
+        return true
+      end
+      local stored_path = job.items[key]
+      job.next_key = next(job.items, key)
+      local canonical_key = key_function(stored_path)
+      if job.kept_items[canonical_key] == nil
+        and not job.rejected[canonical_key] then
+        if should_remove(stored_path, canonical_key) then
+          job.rejected[canonical_key] = true
+          job.removed = job.removed + 1
+        else
+          job.kept_items[canonical_key] = stored_path
+          job.kept_order[#job.kept_order + 1] = stored_path
+          job.repaired = job.repaired + 1
+        end
+      end
+      job.processed = job.processed + 1
+      processed = processed + 1
+    else
+      return true
+    end
+    if deadline and type(time_function) == "function"
+      and processed % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.phase == "done"
+end
+
+-- Filter a path-keyed map into a detached result. Values are intentionally
+-- shared because the removal transaction never mutates the surviving entry.
+function new_path_map_filter_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  return {
+    entries = entries,
+    next_key = next(entries),
+    kept = {},
+    processed = 0,
+    removed = 0,
+  }
+end
+
+function step_path_map_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  path_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.entries) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(path_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    local entry = job.entries[key]
+    job.next_key = next(job.entries, key)
+    if entry ~= nil and should_remove(path_function(entry, key), key) then
+      job.removed = job.removed + 1
+    elseif entry ~= nil then
+      job.kept[key] = entry
+    end
+    job.processed = job.processed + 1
+    processed = processed + 1
+    if deadline and type(time_function) == "function"
+      and processed % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.next_key == nil
+end

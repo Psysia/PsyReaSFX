@@ -7934,6 +7934,151 @@ function step_catalog_filter_job(
   return job.index > job.total
 end
 
+-- Rebuild an ordered path set without mutating the live collection. The
+-- second map pass repairs legacy entries that were missing from `order` and
+-- also guarantees that duplicate order entries collapse to one item.
+function new_ordered_path_filter_job(order, items)
+  order = type(order) == "table" and order or {}
+  items = type(items) == "table" and items or {}
+  return {
+    order = order,
+    items = items,
+    phase = "order",
+    index = 1,
+    next_key = nil,
+    kept_order = {},
+    kept_items = {},
+    rejected = {},
+    processed = 0,
+    removed = 0,
+    repaired = 0,
+  }
+end
+
+function step_ordered_path_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.order) ~= "table"
+    or type(job.items) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    if job.phase == "order" then
+      local ordered_path = job.order[job.index]
+      if ordered_path == nil then
+        job.phase = "items"
+        job.next_key = next(job.items)
+      else
+        job.index = job.index + 1
+        local key = key_function(ordered_path)
+        local stored_path = job.items[key]
+        if stored_path ~= nil then
+          if should_remove(stored_path, key) then
+            if not job.rejected[key] then
+              job.rejected[key] = true
+              job.removed = job.removed + 1
+            end
+          elseif job.kept_items[key] == nil then
+            job.kept_items[key] = stored_path
+            job.kept_order[#job.kept_order + 1] = stored_path
+          else
+            job.repaired = job.repaired + 1
+          end
+        else
+          job.repaired = job.repaired + 1
+        end
+        job.processed = job.processed + 1
+        processed = processed + 1
+      end
+    elseif job.phase == "items" then
+      local key = job.next_key
+      if key == nil then
+        job.phase = "done"
+        return true
+      end
+      local stored_path = job.items[key]
+      job.next_key = next(job.items, key)
+      local canonical_key = key_function(stored_path)
+      if job.kept_items[canonical_key] == nil
+        and not job.rejected[canonical_key] then
+        if should_remove(stored_path, canonical_key) then
+          job.rejected[canonical_key] = true
+          job.removed = job.removed + 1
+        else
+          job.kept_items[canonical_key] = stored_path
+          job.kept_order[#job.kept_order + 1] = stored_path
+          job.repaired = job.repaired + 1
+        end
+      end
+      job.processed = job.processed + 1
+      processed = processed + 1
+    else
+      return true
+    end
+    if deadline and type(time_function) == "function"
+      and processed % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.phase == "done"
+end
+
+-- Filter a path-keyed map into a detached result. Values are intentionally
+-- shared because the removal transaction never mutates the surviving entry.
+function new_path_map_filter_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  return {
+    entries = entries,
+    next_key = next(entries),
+    kept = {},
+    processed = 0,
+    removed = 0,
+  }
+end
+
+function step_path_map_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  path_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.entries) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(path_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    local entry = job.entries[key]
+    job.next_key = next(job.entries, key)
+    if entry ~= nil and should_remove(path_function(entry, key), key) then
+      job.removed = job.removed + 1
+    elseif entry ~= nil then
+      job.kept[key] = entry
+    end
+    job.processed = job.processed + 1
+    processed = processed + 1
+    if deadline and type(time_function) == "function"
+      and processed % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.next_key == nil
+end
+
 function asset_regions(asset)
   if not asset then
     return {}
@@ -10049,6 +10194,10 @@ function save_project_usage()
 end
 
 function bind_project_bin(collection, project_path)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改项目素材箱", true)
+    return false
+  end
   if not collection or collection.kind ~= "project" then
     return false
   end
@@ -10095,7 +10244,7 @@ function ensure_current_project_bin(create_if_missing)
 end
 
 function record_project_usage(asset, action)
-  if not asset then
+  if not asset or state.root_removal_session then
     return
   end
 
@@ -10245,6 +10394,10 @@ function save_collections()
 end
 
 function create_collection(kind)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再新建集合", true)
+    return nil
+  end
   kind =
     kind == "project"
     and "project"
@@ -10362,6 +10515,10 @@ function rename_collection(collection)
 end
 
 function delete_collection(collection)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再删除集合", true)
+    return
+  end
   if not collection then
     return
   end
@@ -10405,6 +10562,10 @@ function add_assets_to_collection(
   collection,
   assets
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改集合", true)
+    return 0
+  end
   if not collection or not assets then
     return 0
   end
@@ -10448,6 +10609,10 @@ function remove_assets_from_collection(
   collection,
   assets
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改集合", true)
+    return 0
+  end
   if not collection or not assets then
     return 0
   end
@@ -14621,6 +14786,10 @@ function play_preview(
   start_percent,
   use_selection
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再试听", true)
+    return
+  end
   asset = asset or selected_asset()
 
   if not asset then
@@ -15088,6 +15257,10 @@ function select_result_with_modifiers(
 end
 
 function set_assets_marked(assets, marked)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改素材", true)
+    return false
+  end
   local changed = false
 
   for _, asset in ipairs(assets or {}) do
@@ -15123,6 +15296,10 @@ function toggle_mark(asset)
 end
 
 function toggle_favorite(asset)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改收藏", true)
+    return
+  end
   if not asset then
     return
   end
@@ -15145,6 +15322,9 @@ function toggle_favorite(asset)
 end
 
 function push_recent(asset, project_action)
+  if state.root_removal_session then
+    return false
+  end
   local key = path_key(asset.path)
   local updated = { asset.path }
 
@@ -15257,6 +15437,10 @@ function apply_insert_settings(asset)
 end
 
 function insert_asset(asset, new_track, bwf)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再插入素材", true)
+    return
+  end
   asset = asset or selected_asset()
 
   if not asset then
@@ -16796,6 +16980,9 @@ function insert_asset_at(
   start_percent,
   end_percent
 )
+  if state.root_removal_session then
+    return false
+  end
   if not asset or not reaper.file_exists(asset.path) then
     return false
   end
@@ -16847,6 +17034,10 @@ function insert_selected_stack(
   start_percent,
   end_percent
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再插入素材", true)
+    return
+  end
   local assets = selected_assets()
 
   if #assets == 0 then
@@ -17440,6 +17631,8 @@ function start_root_removal(records, library_id)
     library_id = library_id,
     label = library and library.name or basename(roots[1] or ""),
     filter_job = filter_job,
+    collections = state.collections,
+    project_usage = state.project_usage,
     cleanup_index = 1,
     cleanup_records = {},
     changed = {},
@@ -17474,7 +17667,7 @@ end
 function cancel_root_removal(session, reason)
   session = session or state.root_removal_session
   if not session then return false end
-  if session.phase == "filter" then
+  if session.phase ~= "cleanup" then
     state.root_removal_session = nil
     Jobs.cancel(session.job_token)
     Jobs.finish(session.job_token, true, reason or "canceled")
@@ -17548,10 +17741,140 @@ function capture_root_removal_record(session, asset)
   state.last_session_played[key] = nil
 end
 
+function begin_root_removal_collection_filter(session)
+  session.phase = "collections"
+  session.collection_index = 1
+  session.collection_job = nil
+  session.collection_updates = {}
+  session.collection_processed = 0
+  session.collection_total = 0
+  for _, collection in ipairs(session.collections or {}) do
+    session.collection_total = session.collection_total
+      + #(collection.order or {})
+      + collection_item_count(collection)
+  end
+end
+
+function step_root_removal_collection_filter(session, deadline)
+  local frame_processed = 0
+  while session.collection_index <= #(session.collections or {}) do
+    local collection = session.collections[session.collection_index]
+    if not session.collection_job then
+      session.collection_job = new_ordered_path_filter_job(
+        collection.order,
+        collection.items
+      )
+    end
+    local job = session.collection_job
+    local before = job.processed
+    local complete = step_ordered_path_filter_job(
+      job,
+      ROOT_REMOVAL_ASSETS_PER_FRAME - frame_processed,
+      function(path)
+        return path_is_in_removed_roots(path, session.roots)
+      end,
+      path_key,
+      deadline,
+      reaper.time_precise
+    )
+    local delta = job.processed - before
+    frame_processed = frame_processed + delta
+    session.collection_processed = session.collection_processed + delta
+    if not complete then return false end
+
+    session.collection_updates[#session.collection_updates + 1] = {
+      collection = collection,
+      items = job.kept_items,
+      order = job.kept_order,
+      count = #job.kept_order,
+    }
+    if job.removed > 0 or job.repaired > 0 then
+      session.changed.collections = true
+    end
+    session.collection_job = nil
+    session.collection_index = session.collection_index + 1
+    if frame_processed >= ROOT_REMOVAL_ASSETS_PER_FRAME
+      or reaper.time_precise() >= deadline then
+      return false
+    end
+  end
+  return true
+end
+
+function begin_root_removal_project_usage_filter(session)
+  session.phase = "project_usage"
+  session.project_keys = {}
+  for key in pairs(session.project_usage or {}) do
+    session.project_keys[#session.project_keys + 1] = key
+  end
+  table.sort(session.project_keys)
+  session.project_index = 1
+  session.project_job = nil
+  session.project_usage_filtered = {}
+  session.project_usage_processed = 0
+end
+
+function step_root_removal_project_usage_filter(session, deadline)
+  local frame_processed = 0
+  while session.project_index <= #session.project_keys do
+    local project_key = session.project_keys[session.project_index]
+    local bucket = session.project_usage[project_key]
+    if not session.project_job then
+      session.project_job = new_path_map_filter_job(
+        bucket and bucket.assets or {}
+      )
+    end
+    local job = session.project_job
+    local before = job.processed
+    local complete = step_path_map_filter_job(
+      job,
+      ROOT_REMOVAL_ASSETS_PER_FRAME - frame_processed,
+      function(path)
+        return path_is_in_removed_roots(path, session.roots)
+      end,
+      function(entry) return entry.path end,
+      deadline,
+      reaper.time_precise
+    )
+    local delta = job.processed - before
+    frame_processed = frame_processed + delta
+    session.project_usage_processed = session.project_usage_processed + delta
+    if not complete then return false end
+
+    local filtered_bucket = {}
+    for field, value in pairs(bucket or {}) do
+      if field ~= "assets" then filtered_bucket[field] = value end
+    end
+    filtered_bucket.assets = job.kept
+    session.project_usage_filtered[project_key] = filtered_bucket
+    if job.removed > 0 then session.changed.project_usage = true end
+    session.project_job = nil
+    session.project_index = session.project_index + 1
+    if frame_processed >= ROOT_REMOVAL_ASSETS_PER_FRAME
+      or reaper.time_precise() >= deadline then
+      return false
+    end
+  end
+  return true
+end
+
 function commit_root_removal(session)
   state.assets = session.filter_job.kept
   state.by_path = session.filter_job.kept_by_key
   state.database_ordered_assets = nil
+
+  for _, update in ipairs(session.collection_updates or {}) do
+    update.collection.items = update.items
+    update.collection.order = update.order
+    update.collection.count = update.count
+  end
+  if session.project_usage_filtered then
+    state.project_usage = session.project_usage_filtered
+  end
+  if session.changed.collections then state.collections_dirty = true end
+  if session.changed.project_usage then state.project_usage_dirty = true end
+  rebuild_collection_index()
+  refresh_current_project_binding()
 
   for index = #state.root_records, 1, -1 do
     if session.root_ids[state.root_records[index].id] then
@@ -17671,6 +17994,16 @@ function process_root_removal()
       reaper.time_precise
     )
     if not complete then return end
+    begin_root_removal_collection_filter(session)
+  end
+
+  local deadline = reaper.time_precise() + ROOT_REMOVAL_FRAME_BUDGET
+  if session.phase == "collections" then
+    if not step_root_removal_collection_filter(session, deadline) then return end
+    begin_root_removal_project_usage_filter(session)
+  end
+  if session.phase == "project_usage" then
+    if not step_root_removal_project_usage_filter(session, deadline) then return end
     session.phase = "cleanup"
     session.cleanup_index = 1
   end
@@ -23107,17 +23440,35 @@ function draw_import_progress()
           (visible_root_removal.filter_job.index or 1) - 1
         )
         total = visible_root_removal.filter_job.total or 0
+      elseif phase == "collections" then
+        label = "清理集合引用"
+        completed = visible_root_removal.collection_processed or 0
+        total = visible_root_removal.collection_total or 0
+      elseif phase == "project_usage" then
+        label = string.format(
+          "清理工程使用记录（已检查 %d 条）",
+          visible_root_removal.project_usage_processed or 0
+        )
+        completed = math.max(
+          0,
+          (visible_root_removal.project_index or 1) - 1
+        )
+        total = #(visible_root_removal.project_keys or {})
       elseif phase == "cleanup" then
         label = "清理素材引用"
         completed = math.max(0, (visible_root_removal.cleanup_index or 1) - 1)
         total = #visible_root_removal.filter_job.removed
-      else
+      elseif phase == "rollback" then
         label = "回滚已清理引用"
         total = #visible_root_removal.cleanup_records
         completed = math.max(
           0,
           total - (visible_root_removal.rollback_index or 0)
         )
+      else
+        label = "完成事务"
+        completed = 1
+        total = 1
       end
       completed = math.min(completed, total)
       local fraction = total > 0 and completed / total or 1
@@ -24015,13 +24366,17 @@ function row_popup(asset)
   end
 
   if bulk and ImGui.MenuItem(ctx, "收藏全部所选") then
-    for _, selected_item in ipairs(bulk_assets) do
-      state.favorites[path_key(selected_item.path)] = true
-    end
+    if state.root_removal_session then
+      set_status("请等待来源移除完成后再修改收藏", true)
+    else
+      for _, selected_item in ipairs(bulk_assets) do
+        state.favorites[path_key(selected_item.path)] = true
+      end
 
-    state.config_dirty = true
-    state.results_dirty = true
-    set_status("已收藏所选素材")
+      state.config_dirty = true
+      state.results_dirty = true
+      set_status("已收藏所选素材")
+    end
   end
 
   if ImGui.MenuItem(
@@ -30536,6 +30891,9 @@ function keyboard()
   if state.keyboard_consumed
     or state.parameter_edit
     or ImGui.IsAnyItemActive(ctx) then
+    return
+  end
+  if state.root_removal_session then
     return
   end
 

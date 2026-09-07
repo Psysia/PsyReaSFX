@@ -189,6 +189,53 @@ else
   assert(timed_complete)
 end
 
+local ordered_items = {
+  [key("C:/Keep/a.wav")] = "C:/Keep/a.wav",
+  [key("C:/Remove/b.wav")] = "C:/Remove/b.wav",
+  [key("C:/Keep/c.wav")] = "C:/Keep/c.wav",
+}
+local ordered_job = new_ordered_path_filter_job({
+  "C:/Keep/a.wav",
+  "C:/Remove/b.wav",
+  "C:/Keep/a.wav",
+  "C:/Missing/d.wav",
+}, ordered_items)
+local ordered_steps = 0
+repeat
+  ordered_steps = ordered_steps + 1
+until step_ordered_path_filter_job(
+  ordered_job,
+  2,
+  function(path) return path:find("/Remove/", 1, true) ~= nil end,
+  key
+)
+assert(ordered_steps >= 3)
+assert(#ordered_job.kept_order == 2)
+assert(ordered_job.kept_order[1] == "C:/Keep/a.wav")
+assert(ordered_job.kept_order[2] == "C:/Keep/c.wav")
+assert(ordered_job.kept_items[key("C:/Remove/b.wav")] == nil)
+assert(ordered_job.repaired == 3)
+
+local usage_job = new_path_map_filter_job({
+  a = { path = "C:/Keep/a.wav" },
+  b = { path = "C:/Remove/b.wav" },
+  c = { path = "C:/Keep/c.wav" },
+})
+assert(not step_path_map_filter_job(
+  usage_job,
+  2,
+  function(path) return path:find("/Remove/", 1, true) ~= nil end,
+  function(entry) return entry.path end
+))
+assert(step_path_map_filter_job(
+  usage_job,
+  2,
+  function(path) return path:find("/Remove/", 1, true) ~= nil end,
+  function(entry) return entry.path end
+))
+assert(usage_job.processed == 3 and usage_job.removed == 1)
+assert(usage_job.kept.a and usage_job.kept.c and not usage_job.kept.b)
+
 print(string.format(
   "Lua catalog cache self-test OK: assets=%d steps=%d history=%d memory=%.1fMiB",
   asset_count,
