@@ -11125,17 +11125,10 @@ function remember_root_artwork(record, path)
 end
 
 function invalidate_root_artwork_assets(record)
-  if not record then
-    return
-  end
-
-  for _, asset in ipairs(state.assets) do
-    if asset.root_id == record.id
-      and tostring(asset.artwork_path or "") == "" then
-      asset.artwork_checked = false
-    end
-  end
-
+  if not record then return end
+  -- Artwork queue eligibility also checks the source record's shared path and
+  -- checked state. Changing that record therefore invalidates visible assets
+  -- lazily without touching every catalog row here.
   state.results_dirty = true
 end
 
