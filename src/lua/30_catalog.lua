@@ -823,6 +823,7 @@ function load_config()
 end
 
 function save_config()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(CONFIG_FILE)

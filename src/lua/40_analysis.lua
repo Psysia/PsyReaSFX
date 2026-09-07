@@ -94,6 +94,7 @@ function load_regions()
 end
 
 function save_regions()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(REGIONS_FILE)
@@ -411,6 +412,7 @@ function load_loudness_cache()
 end
 
 function save_loudness_cache()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(LOUDNESS_FILE)

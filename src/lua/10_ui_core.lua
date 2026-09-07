@@ -637,6 +637,7 @@ function load_last_played_session()
 end
 
 function save_last_played_session()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file =

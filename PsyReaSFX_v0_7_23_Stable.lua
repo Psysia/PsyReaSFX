@@ -496,6 +496,8 @@ local PRECACHE_FRAME_BUDGET = 0.0025
 local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
 local IMPORT_FINALIZE_ASSETS_PER_FRAME = 4000
 local ARTWORK_RESET_ASSETS_PER_FRAME = 4000
+local ROOT_REMOVAL_ASSETS_PER_FRAME = 4000
+local ROOT_REMOVAL_FRAME_BUDGET = 0.003
 local ASSET_BINDINGS_PER_FRAME = 4000
 local ASSET_BINDING_CHANGES_PER_FRAME = 250
 local SCAN_FINALIZE_ASSETS_PER_FRAME = 4000
@@ -694,6 +696,7 @@ local state = {
   database_ordered_assets = nil,
   database_generation = 0,
   database_snapshot_session = nil,
+  root_removal_session = nil,
   clear_scan_checkpoint_after_database_save = false,
   database_changes = {
     by_key = {},
@@ -2848,6 +2851,7 @@ function load_last_played_session()
 end
 
 function save_last_played_session()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file =
@@ -5393,6 +5397,7 @@ function load_failed_tasks()
 end
 
 function save_failed_tasks()
+  if state.root_removal_session then return false end
   ensure_dirs()
   local file = atomic_file_writer(FAILED_TASKS_FILE)
 
@@ -6625,6 +6630,7 @@ function load_config()
 end
 
 function save_config()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(CONFIG_FILE)
@@ -7882,6 +7888,52 @@ function step_artwork_reset_job(job, batch_size)
   return job.index > job.total
 end
 
+function new_catalog_filter_job(assets)
+  assets = type(assets) == "table" and assets or {}
+  return {
+    assets = assets,
+    index = 1,
+    total = #assets,
+    kept = {},
+    removed = {},
+    kept_by_key = {},
+  }
+end
+
+function step_catalog_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.assets) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(job.total, job.index + batch_size - 1)
+  while job.index <= last do
+    local asset = job.assets[job.index]
+    if asset then
+      if should_remove(asset) then
+        job.removed[#job.removed + 1] = asset
+      else
+        job.kept[#job.kept + 1] = asset
+        job.kept_by_key[key_function(asset)] = asset
+      end
+    end
+    job.index = job.index + 1
+    if deadline and type(time_function) == "function"
+      and job.index % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.index > job.total
+end
+
 function asset_regions(asset)
   if not asset then
     return {}
@@ -7978,6 +8030,7 @@ function load_regions()
 end
 
 function save_regions()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(REGIONS_FILE)
@@ -8295,6 +8348,7 @@ function load_loudness_cache()
 end
 
 function save_loudness_cache()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(LOUDNESS_FILE)
@@ -10674,6 +10728,7 @@ function load_history()
 end
 
 function save_history()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
   local file = atomic_file_writer(HISTORY_FILE)
@@ -11888,6 +11943,10 @@ function draw_artwork_cover(
 end
 
 function clear_artwork_cache()
+  if state.persistence_read_only then
+    set_status("只读保护模式下不能修改 Artwork 缓存状态", true)
+    return false
+  end
   if state.artwork_reset_session then
     set_status("Artwork 缓存正在清理")
     return false
@@ -17306,108 +17365,335 @@ function add_root(library_id, supplied_path)
   return added
 end
 
-function remove_root(root)
-  local record = type(root) == "table"
-    and root
-    or root_record_for_path(root)
-
-  if not record then
-    return
+function path_is_in_removed_roots(path, roots)
+  for _, root in ipairs(roots or {}) do
+    if path_is_inside(path, root) then return true end
   end
+  return false
+end
+
+function asset_is_in_removed_roots(asset, roots)
+  return asset and path_is_in_removed_roots(asset.path, roots) or false
+end
+
+function start_root_removal(records, library_id)
+  if state.persistence_read_only then
+    set_status("只读保护模式下不能移除来源", true)
+    return false
+  end
+  if state.root_removal_session then
+    set_status("已有来源移除任务正在运行", true)
+    return false
+  end
+  local roots = {}
+  local root_ids = {}
+  for _, record in ipairs(records or {}) do
+    if record and state.root_by_id[record.id] == record then
+      roots[#roots + 1] = record.path
+      root_ids[record.id] = true
+    end
+  end
+  if #roots == 0 and not library_id then return false end
 
   cancel_database_snapshot("catalog changed")
-
-  root = record.path
-  if state.import_session then
-    local touches_import = false
-
-    for _, import_root in ipairs(
-      state.import_session.roots or {}
-    ) do
-      if path_key(import_root) == path_key(root) then
-        touches_import = true
-        break
-      end
-    end
-
-    if touches_import then
-      if state.import_session.current
-        and state.import_session.current.wave_job then
-        destroy_wave_job(
-          state.import_session.current.wave_job
-        )
-      end
-
-      Jobs.cancel(state.import_session.job_token)
-      Jobs.finish(
-        state.import_session.job_token,
-        true,
-        "source removed"
-      )
-      state.import_session = nil
-    end
+  local job_token, job_error = Jobs.begin(
+    "root_removal",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status(
+      job_error == "resource_busy"
+        and "请等待当前目录维护任务完成后再移除来源"
+        or "无法启动来源移除任务",
+      true
+    )
+    return false
   end
 
-  if state.scan then
-    for _, scan_root in ipairs(state.scan.roots or {}) do
-      if path_key(scan_root) == path_key(root) then
-        Jobs.cancel(state.scan.job_token)
-        Jobs.finish(
-          state.scan.job_token,
-          true,
-          "source removed"
-        )
-        state.scan = nil
-        break
-      end
+  if state.wave_active then
+    local wave_token = state.wave_active.job_token
+    destroy_wave_job(state.wave_active)
+    if wave_token then
+      Jobs.cancel(wave_token)
+      Jobs.finish(wave_token, true, "catalog changed")
     end
+    state.wave_active = nil
   end
+  destroy_loudness_job(state.loudness_active)
+  state.loudness_active = nil
+  state.meta_queue = {}
+  state.meta_queued = {}
+  state.wave_queue = {}
+  state.wave_queued = {}
+  state.artwork_queue = {}
+  state.artwork_queued = {}
+  state.loudness_queue = {}
+  state.loudness_queued = {}
+
+  local library = library_id and state.library_by_id[library_id] or nil
+  local filter_job = new_catalog_filter_job(state.assets)
+  state.root_removal_session = {
+    phase = "filter",
+    roots = roots,
+    root_ids = root_ids,
+    library_id = library_id,
+    label = library and library.name or basename(roots[1] or ""),
+    filter_job = filter_job,
+    cleanup_index = 1,
+    cleanup_records = {},
+    changed = {},
+    job_token = job_token,
+  }
+  set_status(string.format(
+    "正在准备移除来源：0 / %d",
+    filter_job.total
+  ))
+  return true
+end
+
+function restore_root_removal_record(record)
+  local key = record.key
+  local asset_id = record.asset_id
+  if record.favorite ~= nil then state.favorites[key] = record.favorite end
+  if record.selected ~= nil then state.selected_set[key] = record.selected end
+  if record.history ~= nil then
+    state.preview_history_assets[asset_id] = record.history
+  end
+  if record.regions ~= nil then state.regions_by_path[key] = record.regions end
+  if record.loudness ~= nil then state.loudness_cache[key] = record.loudness end
+  if record.failed ~= nil then state.failed_tasks[key] = record.failed end
+  if record.session_played ~= nil then
+    state.session_played[key] = record.session_played
+  end
+  if record.last_session_played ~= nil then
+    state.last_session_played[key] = record.last_session_played
+  end
+end
+
+function cancel_root_removal(session, reason)
+  session = session or state.root_removal_session
+  if not session then return false end
+  if session.phase == "filter" then
+    state.root_removal_session = nil
+    Jobs.cancel(session.job_token)
+    Jobs.finish(session.job_token, true, reason or "canceled")
+    set_status("已取消来源移除")
+    return true
+  end
+  session.phase = "rollback"
+  session.rollback_index = #session.cleanup_records
+  session.cancel_reason = reason or "canceled"
+  set_status("正在回滚来源移除…")
+  return true
+end
+
+function finish_root_removal_rollback(session)
+  local first = math.max(
+    1,
+    session.rollback_index - ROOT_REMOVAL_ASSETS_PER_FRAME + 1
+  )
+  for index = session.rollback_index, first, -1 do
+    restore_root_removal_record(session.cleanup_records[index])
+  end
+  session.rollback_index = first - 1
+  if session.rollback_index > 0 then return end
+  state.root_removal_session = nil
+  Jobs.finish(session.job_token, true, session.cancel_reason)
+  set_status("已取消来源移除并恢复原状态")
+end
+
+function capture_root_removal_record(session, asset)
+  local key = path_key(asset.path)
+  local asset_id = asset.asset_id or ""
+  local record = {
+    key = key,
+    asset_id = asset_id,
+    favorite = state.favorites[key],
+    selected = state.selected_set[key],
+    history = state.preview_history_assets[asset_id],
+    regions = state.regions_by_path[key],
+    loudness = state.loudness_cache[key],
+    failed = state.failed_tasks[key],
+    session_played = state.session_played[key],
+    last_session_played = state.last_session_played[key],
+  }
+  local referenced = record.favorite ~= nil
+    or record.selected ~= nil
+    or record.history ~= nil
+    or record.regions ~= nil
+    or record.loudness ~= nil
+    or record.failed ~= nil
+    or record.session_played ~= nil
+    or record.last_session_played ~= nil
+  if referenced then
+    session.cleanup_records[#session.cleanup_records + 1] = record
+  end
+  if record.favorite ~= nil then session.changed.config = true end
+  if record.history ~= nil then session.changed.history = true end
+  if record.regions ~= nil then session.changed.regions = true end
+  if record.loudness ~= nil then session.changed.loudness = true end
+  if record.failed ~= nil then session.changed.failed = true end
+  if record.session_played ~= nil
+    or record.last_session_played ~= nil then
+    session.changed.session_played = true
+  end
+  state.favorites[key] = nil
+  state.selected_set[key] = nil
+  state.preview_history_assets[asset_id] = nil
+  state.regions_by_path[key] = nil
+  state.loudness_cache[key] = nil
+  state.failed_tasks[key] = nil
+  state.session_played[key] = nil
+  state.last_session_played[key] = nil
+end
+
+function commit_root_removal(session)
+  state.assets = session.filter_job.kept
+  state.by_path = session.filter_job.kept_by_key
+  state.database_ordered_assets = nil
 
   for index = #state.root_records, 1, -1 do
-    if state.root_records[index].id == record.id then
+    if session.root_ids[state.root_records[index].id] then
+      state.expanded_source_folders[state.root_records[index].id] = nil
       table.remove(state.root_records, index)
+    end
+  end
+  if session.library_id then
+    for index = #state.libraries, 1, -1 do
+      if state.libraries[index].id == session.library_id then
+        table.remove(state.libraries, index)
+        break
+      end
+    end
+  end
+  rebuild_library_indexes()
+  refresh_all_asset_library_bindings()
+
+  for _, saved in ipairs(state.saved_searches) do
+    local changed = false
+    if saved.root and saved.root ~= ""
+      and path_is_in_removed_roots(saved.root, session.roots) then
+      saved.root = ""
+      changed = true
+    end
+    if session.library_id and saved.library_id == session.library_id then
+      saved.library_id = nil
+      changed = true
+    end
+    if changed then state.searches_dirty = true end
+  end
+
+  local recent = {}
+  for _, path in ipairs(state.recent) do
+    if not path_is_in_removed_roots(path, session.roots) then
+      recent[#recent + 1] = path
+    end
+  end
+  if #recent ~= #state.recent then session.changed.config = true end
+  state.recent = recent
+
+  for _, root in ipairs(session.roots) do
+    if state.root_filter and path_is_inside(state.root_filter, root) then
+      state.root_filter = nil
       break
     end
   end
-
-  rebuild_library_indexes()
-
-  for key, asset in pairs(state.by_path) do
-    if path_is_inside(asset.path, root) then
-      state.by_path[key] = nil
-      state.favorites[key] = nil
-      state.preview_history_assets[asset.asset_id or ""] = nil
-
-      if state.regions_by_path[key] then
-        state.regions_by_path[key] = nil
-        state.regions_dirty = true
-      end
-
-      if state.loudness_cache[key] then
-        state.loudness_cache[key] = nil
-        state.loudness_dirty = true
-      end
-    end
-  end
-
-  if state.root_filter
-    and path_is_inside(state.root_filter, root) then
-    state.root_filter = nil
-  end
-
-  if state.library_filter_id == record.library_id then
-    local owner = state.library_by_id[record.library_id]
-
-    if not owner or #owner.roots == 0 then
+  if session.library_id
+    and state.library_filter_id == session.library_id then
+    state.library_filter_id = nil
+  elseif state.library_filter_id then
+    local active_library = state.library_by_id[state.library_filter_id]
+    if not active_library or #active_library.roots == 0 then
       state.library_filter_id = nil
     end
   end
 
   clear_row_selection()
-  rebuild_assets()
+  state.duplicate_groups = {}
+  state.duplicate_lookup = {}
+  state.duplicate_group_count = 0
+  state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
+  state.missing_assets = {}
+  state.missing_asset_count = 0
   state.libraries_dirty = true
+  state.config_dirty = state.config_dirty or session.changed.config == true
+  state.history_dirty = state.history_dirty or session.changed.history == true
+  state.session_played_dirty = state.session_played_dirty
+    or session.changed.session_played == true
+  state.regions_dirty = state.regions_dirty or session.changed.regions == true
+  state.loudness_dirty = state.loudness_dirty or session.changed.loudness == true
+  state.failed_tasks_dirty = state.failed_tasks_dirty
+    or session.changed.failed == true
+  state.results_dirty = true
+  invalidate_library_counts()
+  invalidate_folder_navigation()
   mark_database_snapshot_dirty()
-  set_status("已移除来源路径：" .. basename(root))
+
+  state.root_removal_session = nil
+  Jobs.finish(session.job_token, true)
+  save_libraries()
+  save_database_changes()
+  set_status(string.format(
+    "已移除%s：%s（%d 个素材）",
+    session.library_id and "音效库" or "来源路径",
+    session.label,
+    #session.filter_job.removed
+  ))
+end
+
+function process_root_removal()
+  local session = state.root_removal_session
+  if not session then return end
+  if session.phase == "rollback" then
+    finish_root_removal_rollback(session)
+    return
+  end
+  if session.job_token.cancel_requested then
+    cancel_root_removal(session, "canceled")
+    return
+  end
+
+  if session.phase == "filter" then
+    local complete = step_catalog_filter_job(
+      session.filter_job,
+      ROOT_REMOVAL_ASSETS_PER_FRAME,
+      function(asset)
+        return asset_is_in_removed_roots(asset, session.roots)
+      end,
+      function(asset) return path_key(asset.path) end,
+      reaper.time_precise() + ROOT_REMOVAL_FRAME_BUDGET,
+      reaper.time_precise
+    )
+    if not complete then return end
+    session.phase = "cleanup"
+    session.cleanup_index = 1
+  end
+
+  local removed = session.filter_job.removed
+  local last = math.min(
+    #removed,
+    session.cleanup_index + ROOT_REMOVAL_ASSETS_PER_FRAME - 1
+  )
+  for index = session.cleanup_index, last do
+    capture_root_removal_record(session, removed[index])
+  end
+  session.cleanup_index = last + 1
+  if session.cleanup_index <= #removed then return end
+  commit_root_removal(session)
+end
+
+function remove_root(root)
+  local record = type(root) == "table"
+    and root
+    or root_record_for_path(root)
+  if not record then return false end
+  return start_root_removal({ record }, nil)
 end
 
 function relative_path_from_root(path, root)
@@ -17846,6 +18132,7 @@ end
 function relink_root(record, supplied_path)
   if not record then return false end
   if state.relink_plan_session or state.scan or state.import_session
+    or state.root_removal_session or state.artwork_reset_session
     or state.precache_session or state.duplicate_scan
     or state.duplicate_confirmation or state.missing_audit then
     set_status("请等待当前后台任务完成后再重新定位来源", true)
@@ -18358,7 +18645,7 @@ function remove_library(library_id)
   local library = state.library_by_id[library_id]
 
   if not library then
-    return
+    return false
   end
 
   local roots = {}
@@ -18367,25 +18654,7 @@ function remove_library(library_id)
     roots[#roots + 1] = record
   end
 
-  for _, record in ipairs(roots) do
-    remove_root(record)
-  end
-
-  for index = #state.libraries, 1, -1 do
-    if state.libraries[index].id == library_id then
-      table.remove(state.libraries, index)
-      break
-    end
-  end
-
-  if state.library_filter_id == library_id then
-    state.library_filter_id = nil
-  end
-
-  rebuild_library_indexes()
-  refresh_all_asset_library_bindings()
-  state.libraries_dirty = true
-  set_status("已移除逻辑音效库：" .. library.name)
+  return start_root_removal(roots, library_id)
 end
 
 function roots_for_library(library_id)
@@ -18568,6 +18837,15 @@ end
 function cancel_catalog_jobs(reason)
   reason = tostring(reason or "canceled")
   cancel_database_snapshot(reason)
+  if state.root_removal_session then
+    local removal = state.root_removal_session
+    for index = #removal.cleanup_records, 1, -1 do
+      restore_root_removal_record(removal.cleanup_records[index])
+    end
+    Jobs.cancel(removal.job_token)
+    Jobs.finish(removal.job_token, true, reason)
+    state.root_removal_session = nil
+  end
 
   if state.transfer_job then
     finish_transfer_job(state.transfer_job, true)
@@ -20940,8 +21218,6 @@ function draw_library_manager_popup()
 
     if answer == 6 then
       remove_root(remove_root_record)
-      save_libraries()
-      save_database_changes()
     end
   end
 
@@ -20957,8 +21233,6 @@ function draw_library_manager_popup()
 
     if answer == 6 then
       remove_library(remove_library_id)
-      save_libraries()
-      save_database_changes()
     end
   end
 
@@ -22798,12 +23072,14 @@ function draw_import_progress()
     and not state.import_session.silent
   local visible_relink = state.relink_plan_session
   local visible_artwork_reset = state.artwork_reset_session
+  local visible_root_removal = state.root_removal_session
 
   if not visible_scan
     and not visible_import
     and not state.precache_session
     and not visible_relink
-    and not visible_artwork_reset then
+    and not visible_artwork_reset
+    and not visible_root_removal then
     return
   end
 
@@ -22820,7 +23096,47 @@ function draw_import_progress()
     72,
     ImGui.ChildFlags_Borders
   ) then
-    if visible_artwork_reset then
+    if visible_root_removal then
+      local phase = visible_root_removal.phase
+      local completed = 0
+      local total = 0
+      local label = "筛选目录素材"
+      if phase == "filter" then
+        completed = math.max(
+          0,
+          (visible_root_removal.filter_job.index or 1) - 1
+        )
+        total = visible_root_removal.filter_job.total or 0
+      elseif phase == "cleanup" then
+        label = "清理素材引用"
+        completed = math.max(0, (visible_root_removal.cleanup_index or 1) - 1)
+        total = #visible_root_removal.filter_job.removed
+      else
+        label = "回滚已清理引用"
+        total = #visible_root_removal.cleanup_records
+        completed = math.max(
+          0,
+          total - (visible_root_removal.rollback_index or 0)
+        )
+      end
+      completed = math.min(completed, total)
+      local fraction = total > 0 and completed / total or 1
+      ImGui.Text(ctx, string.format(
+        "正在%s：%s  %d / %d",
+        visible_root_removal.library_id and "移除音效库" or "移除来源",
+        label,
+        completed,
+        total
+      ))
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(ctx, compact(visible_root_removal.label, 80))
+    elseif visible_artwork_reset then
       local completed = math.min(
         math.max(0, (visible_artwork_reset.index or 1) - 1),
         visible_artwork_reset.total or 0
@@ -23062,7 +23378,11 @@ function draw_import_progress()
     ImGui.SameLine(ctx)
 
     if dark_button("取消", 72) then
-      if visible_artwork_reset then
+      if visible_root_removal then
+        if visible_root_removal.phase ~= "rollback" then
+          Jobs.cancel(visible_root_removal.job_token)
+        end
+      elseif visible_artwork_reset then
         Jobs.cancel(visible_artwork_reset.job_token)
       elseif visible_relink then
         Jobs.cancel(visible_relink.job_token)
@@ -29902,17 +30222,21 @@ function draw_settings_maintenance()
   end
 
   if dark_button("立即创建备份", 150) then
-    if state.config_dirty then save_config() end
-    if state.libraries_dirty then save_libraries() end
-    if state.db_dirty and not state.scan and not state.import_session then save_database() end
-    if state.collections_dirty then save_collections() end
-    if state.searches_dirty then save_saved_searches() end
-    if state.history_dirty then save_history() end
-    if state.regions_dirty then save_regions() end
-    if state.loudness_dirty then save_loudness_cache() end
-    if state.failed_tasks_dirty then save_failed_tasks() end
-    if state.project_usage_dirty then save_project_usage() end
-    create_data_backup("manual", false)
+    if state.root_removal_session then
+      set_status("请等待来源移除或回滚完成后再创建备份", true)
+    else
+      if state.config_dirty then save_config() end
+      if state.libraries_dirty then save_libraries() end
+      if state.db_dirty and not state.scan and not state.import_session then save_database() end
+      if state.collections_dirty then save_collections() end
+      if state.searches_dirty then save_saved_searches() end
+      if state.history_dirty then save_history() end
+      if state.regions_dirty then save_regions() end
+      if state.loudness_dirty then save_loudness_cache() end
+      if state.failed_tasks_dirty then save_failed_tasks() end
+      if state.project_usage_dirty then save_project_usage() end
+      create_data_backup("manual", false)
+    end
   end
 
   ImGui.SameLine(ctx)
@@ -30832,6 +31156,9 @@ function autosave()
   if state.persistence_read_only then
     return
   end
+  if state.root_removal_session then
+    return
+  end
 
   local now = reaper.time_precise()
 
@@ -30898,6 +31225,7 @@ function watch_folders()
     or state.scan
     or state.import_session
     or state.artwork_reset_session
+    or state.root_removal_session
     or state.database_snapshot_session
     or state.precache_session
     or state.transfer_running then
@@ -30919,6 +31247,14 @@ end
 
 function cleanup()
   Jobs.stop_accepting()
+  if state.root_removal_session then
+    local removal = state.root_removal_session
+    for index = #removal.cleanup_records, 1, -1 do
+      restore_root_removal_record(removal.cleanup_records[index])
+    end
+    state.root_removal_session = nil
+    Jobs.finish(removal.job_token, true, "shutdown rollback")
+  end
   cancel_database_snapshot("shutdown")
   stop_preview()
   cleanup_retired_preview_sources(true)
@@ -31163,6 +31499,8 @@ function loop()
     process_transfer_job()
   elseif state.relink_plan_session then
     process_relink_plan()
+  elseif state.root_removal_session then
+    process_root_removal()
   elseif state.artwork_reset_session then
     process_artwork_cache_reset()
   elseif state.database_snapshot_session then

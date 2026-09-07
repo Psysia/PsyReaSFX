@@ -151,6 +151,44 @@ for index, asset in ipairs(artwork_assets) do
   end
 end
 
+local filter_job = new_catalog_filter_job(assets)
+local filter_steps = 0
+repeat
+  filter_steps = filter_steps + 1
+until step_catalog_filter_job(
+  filter_job,
+  4000,
+  function(asset)
+    return tonumber(asset.path:match("(%d+)%.wav$")) % 4 == 0
+  end,
+  function(asset) return key(asset.path) end
+)
+assert(filter_steps == math.ceil(asset_count / 4000))
+assert(#filter_job.removed == math.floor(asset_count / 4))
+assert(#filter_job.kept == asset_count - #filter_job.removed)
+assert(filter_job.kept_by_key[key(assets[1].path)] == assets[1])
+if asset_count >= 4 then
+  assert(filter_job.kept_by_key[key(assets[4].path)] == nil)
+end
+
+local timed_total = math.min(asset_count, 1000)
+local timed_assets = {}
+for index = 1, timed_total do timed_assets[index] = assets[index] end
+local timed_job = new_catalog_filter_job(timed_assets)
+local timed_complete = step_catalog_filter_job(
+  timed_job,
+  timed_total,
+  function() return false end,
+  function(asset) return key(asset.path) end,
+  0,
+  function() return 1 end
+)
+if timed_total >= 64 then
+  assert(not timed_complete and timed_job.index == 64)
+else
+  assert(timed_complete)
+end
+
 print(string.format(
   "Lua catalog cache self-test OK: assets=%d steps=%d history=%d memory=%.1fMiB",
   asset_count,

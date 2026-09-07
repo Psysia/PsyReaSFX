@@ -176,3 +176,49 @@ function step_artwork_reset_job(job, batch_size)
   job.index = last + 1
   return job.index > job.total
 end
+
+function new_catalog_filter_job(assets)
+  assets = type(assets) == "table" and assets or {}
+  return {
+    assets = assets,
+    index = 1,
+    total = #assets,
+    kept = {},
+    removed = {},
+    kept_by_key = {},
+  }
+end
+
+function step_catalog_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.assets) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(job.total, job.index + batch_size - 1)
+  while job.index <= last do
+    local asset = job.assets[job.index]
+    if asset then
+      if should_remove(asset) then
+        job.removed[#job.removed + 1] = asset
+      else
+        job.kept[#job.kept + 1] = asset
+        job.kept_by_key[key_function(asset)] = asset
+      end
+    end
+    job.index = job.index + 1
+    if deadline and type(time_function) == "function"
+      and job.index % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.index > job.total
+end

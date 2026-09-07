@@ -1421,6 +1421,7 @@ function load_failed_tasks()
 end
 
 function save_failed_tasks()
+  if state.root_removal_session then return false end
   ensure_dirs()
   local file = atomic_file_writer(FAILED_TASKS_FILE)
 
