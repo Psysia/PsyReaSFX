@@ -236,6 +236,28 @@ assert(step_path_map_filter_job(
 assert(usage_job.processed == 3 and usage_job.removed == 1)
 assert(usage_job.kept.a and usage_job.kept.c and not usage_job.kept.b)
 
+local indexed_assets = { sample[1], sample[2], sample[3], sample[4] }
+local positions = {}
+for index, asset in ipairs(indexed_assets) do
+  positions[key(asset.path)] = index
+end
+assert(remove_indexed_array_entry(
+  indexed_assets,
+  positions,
+  key(sample[2].path),
+  function(asset) return key(asset.path) end
+))
+assert(#indexed_assets == 3)
+assert(positions[key(sample[2].path)] == nil)
+assert(indexed_assets[2] == sample[4])
+assert(positions[key(sample[4].path)] == 2)
+assert(not remove_indexed_array_entry(
+  indexed_assets,
+  positions,
+  key(sample[2].path),
+  function(asset) return key(asset.path) end
+))
+
 print(string.format(
   "Lua catalog cache self-test OK: assets=%d steps=%d history=%d memory=%.1fMiB",
   asset_count,

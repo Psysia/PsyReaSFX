@@ -38,6 +38,9 @@ function load_database()
   end
 
   local ignored = 0
+  local journal_probe = io.open(DATABASE_JOURNAL_FILE, "rb")
+  local asset_positions = journal_probe and {} or nil
+  if journal_probe then journal_probe:close() end
 
   for line in file:lines() do
     local values = split_tsv(line)
@@ -51,7 +54,12 @@ function load_database()
     end
 
     if asset then
+      local key = asset_positions and path_key(asset.path) or nil
+      local existed = key and state.by_path[key] ~= nil
       add_or_update_asset(asset)
+      if key and not existed then
+        asset_positions[key] = #state.assets
+      end
     elseif raw_path ~= "" then
       ignored = ignored + 1
     end
@@ -59,7 +67,7 @@ function load_database()
 
   file:close()
 
-  local journal_ok = replay_database_journal()
+  local journal_ok = replay_database_journal(asset_positions)
 
   if ignored > 0 then
     mark_database_snapshot_dirty()
@@ -226,7 +234,7 @@ function replace_database_asset(asset)
   existing._sort_path_value = nil
 end
 
-function replay_database_journal()
+function replay_database_journal(asset_positions)
   local probe = io.open(DATABASE_JOURNAL_FILE, "rb")
   if not probe then return true end
   probe:close()
@@ -285,11 +293,23 @@ function replay_database_journal()
   for _, action in ipairs(actions) do
     local key = action.key
     if action.op == "delete" then
+      if asset_positions then
+        remove_indexed_array_entry(
+          state.assets,
+          asset_positions,
+          key,
+          function(asset) return path_key(asset.path) end
+        )
+      end
       state.by_path[key] = nil
       state.favorites[key] = nil
       state.selected_set[key] = nil
     else
+      local existed = state.by_path[key] ~= nil
       replace_database_asset(action.asset)
+      if asset_positions and not existed then
+        asset_positions[key] = #state.assets
+      end
     end
     record_asset_change(
       state.database_changes,
@@ -301,7 +321,11 @@ function replay_database_journal()
     )
   end
   if #actions > 0 then
-    rebuild_assets()
+    -- `asset_positions` is built while the snapshot is already being read,
+    -- so journal deletes do not require a second full catalog rebuild.
+    if not asset_positions then
+      rebuild_assets()
+    end
     if (state.database_changes.count or 0)
       >= DATABASE_JOURNAL_COMPACT_COUNT then
       state.db_dirty = true

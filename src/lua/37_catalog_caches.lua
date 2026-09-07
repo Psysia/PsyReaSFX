@@ -367,3 +367,32 @@ function step_path_map_filter_job(
   end
   return job.next_key == nil
 end
+
+-- Remove one catalog entry in O(1) while keeping a temporary key-to-position
+-- index valid. Ordering is intentionally not preserved; result views apply
+-- their own deterministic sort after startup.
+function remove_indexed_array_entry(
+  assets,
+  positions,
+  key,
+  key_function
+)
+  if type(assets) ~= "table" or type(positions) ~= "table"
+    or type(key_function) ~= "function" then
+    return false
+  end
+  local index = positions[key]
+  if type(index) ~= "number" or index < 1 or index > #assets then
+    positions[key] = nil
+    return false
+  end
+  local last_index = #assets
+  local last_asset = assets[last_index]
+  assets[index] = last_asset
+  assets[last_index] = nil
+  positions[key] = nil
+  if index < last_index and last_asset then
+    positions[key_function(last_asset)] = index
+  end
+  return true
+end

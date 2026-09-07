@@ -8079,6 +8079,35 @@ function step_path_map_filter_job(
   return job.next_key == nil
 end
 
+-- Remove one catalog entry in O(1) while keeping a temporary key-to-position
+-- index valid. Ordering is intentionally not preserved; result views apply
+-- their own deterministic sort after startup.
+function remove_indexed_array_entry(
+  assets,
+  positions,
+  key,
+  key_function
+)
+  if type(assets) ~= "table" or type(positions) ~= "table"
+    or type(key_function) ~= "function" then
+    return false
+  end
+  local index = positions[key]
+  if type(index) ~= "number" or index < 1 or index > #assets then
+    positions[key] = nil
+    return false
+  end
+  local last_index = #assets
+  local last_asset = assets[last_index]
+  assets[index] = last_asset
+  assets[last_index] = nil
+  positions[key] = nil
+  if index < last_index and last_asset then
+    positions[key_function(last_asset)] = index
+  end
+  return true
+end
+
 function asset_regions(asset)
   if not asset then
     return {}
@@ -9498,6 +9527,9 @@ function load_database()
   end
 
   local ignored = 0
+  local journal_probe = io.open(DATABASE_JOURNAL_FILE, "rb")
+  local asset_positions = journal_probe and {} or nil
+  if journal_probe then journal_probe:close() end
 
   for line in file:lines() do
     local values = split_tsv(line)
@@ -9511,7 +9543,12 @@ function load_database()
     end
 
     if asset then
+      local key = asset_positions and path_key(asset.path) or nil
+      local existed = key and state.by_path[key] ~= nil
       add_or_update_asset(asset)
+      if key and not existed then
+        asset_positions[key] = #state.assets
+      end
     elseif raw_path ~= "" then
       ignored = ignored + 1
     end
@@ -9519,7 +9556,7 @@ function load_database()
 
   file:close()
 
-  local journal_ok = replay_database_journal()
+  local journal_ok = replay_database_journal(asset_positions)
 
   if ignored > 0 then
     mark_database_snapshot_dirty()
@@ -9592,6 +9629,15 @@ end
 function mark_asset_database_change(asset)
   if not asset or not asset.path or asset.path == "" then
     return false
+  end
+  if state.root_removal_session then
+    local pending = state.root_removal_session.concurrent_asset_changes
+    if not pending then
+      pending = {}
+      state.root_removal_session.concurrent_asset_changes = pending
+    end
+    pending[path_key(asset.path)] = asset
+    return true
   end
   state.db_dirty = true
   return record_asset_change(
@@ -9677,7 +9723,7 @@ function replace_database_asset(asset)
   existing._sort_path_value = nil
 end
 
-function replay_database_journal()
+function replay_database_journal(asset_positions)
   local probe = io.open(DATABASE_JOURNAL_FILE, "rb")
   if not probe then return true end
   probe:close()
@@ -9736,11 +9782,23 @@ function replay_database_journal()
   for _, action in ipairs(actions) do
     local key = action.key
     if action.op == "delete" then
+      if asset_positions then
+        remove_indexed_array_entry(
+          state.assets,
+          asset_positions,
+          key,
+          function(asset) return path_key(asset.path) end
+        )
+      end
       state.by_path[key] = nil
       state.favorites[key] = nil
       state.selected_set[key] = nil
     else
+      local existed = state.by_path[key] ~= nil
       replace_database_asset(action.asset)
+      if asset_positions and not existed then
+        asset_positions[key] = #state.assets
+      end
     end
     record_asset_change(
       state.database_changes,
@@ -9752,7 +9810,11 @@ function replay_database_journal()
     )
   end
   if #actions > 0 then
-    rebuild_assets()
+    -- `asset_positions` is built while the snapshot is already being read,
+    -- so journal deletes do not require a second full catalog rebuild.
+    if not asset_positions then
+      rebuild_assets()
+    end
     if (state.database_changes.count or 0)
       >= DATABASE_JOURNAL_COMPACT_COUNT then
       state.db_dirty = true
@@ -17633,6 +17695,7 @@ function start_root_removal(records, library_id)
     filter_job = filter_job,
     collections = state.collections,
     project_usage = state.project_usage,
+    concurrent_asset_changes = {},
     cleanup_index = 1,
     cleanup_records = {},
     changed = {},
@@ -17664,10 +17727,27 @@ function restore_root_removal_record(record)
   end
 end
 
+function flush_root_removal_asset_changes(session, kept_only)
+  for key, asset in pairs(session.concurrent_asset_changes or {}) do
+    if not kept_only
+      or session.filter_job.kept_by_key[key] == asset then
+      state.db_dirty = true
+      record_asset_change(
+        state.database_changes,
+        key,
+        "upsert",
+        database_asset_values(asset)
+      )
+    end
+  end
+  session.concurrent_asset_changes = {}
+end
+
 function cancel_root_removal(session, reason)
   session = session or state.root_removal_session
   if not session then return false end
   if session.phase ~= "cleanup" then
+    flush_root_removal_asset_changes(session, false)
     state.root_removal_session = nil
     Jobs.cancel(session.job_token)
     Jobs.finish(session.job_token, true, reason or "canceled")
@@ -17691,6 +17771,7 @@ function finish_root_removal_rollback(session)
   end
   session.rollback_index = first - 1
   if session.rollback_index > 0 then return end
+  flush_root_removal_asset_changes(session, false)
   state.root_removal_session = nil
   Jobs.finish(session.job_token, true, session.cancel_reason)
   set_status("已取消来源移除并恢复原状态")
@@ -17957,6 +18038,7 @@ function commit_root_removal(session)
   invalidate_library_counts()
   invalidate_folder_navigation()
   mark_database_snapshot_dirty()
+  flush_root_removal_asset_changes(session, true)
 
   state.root_removal_session = nil
   Jobs.finish(session.job_token, true)
@@ -19175,6 +19257,7 @@ function cancel_catalog_jobs(reason)
     for index = #removal.cleanup_records, 1, -1 do
       restore_root_removal_record(removal.cleanup_records[index])
     end
+    flush_root_removal_asset_changes(removal, false)
     Jobs.cancel(removal.job_token)
     Jobs.finish(removal.job_token, true, reason)
     state.root_removal_session = nil
@@ -31610,6 +31693,7 @@ function cleanup()
     for index = #removal.cleanup_records, 1, -1 do
       restore_root_removal_record(removal.cleanup_records[index])
     end
+    flush_root_removal_asset_changes(removal, false)
     state.root_removal_session = nil
     Jobs.finish(removal.job_token, true, "shutdown rollback")
   end
