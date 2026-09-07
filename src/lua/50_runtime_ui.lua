@@ -2858,47 +2858,24 @@ end
 
 function finish_scan()
   local scan = state.scan
-
-  if not scan then
-    return
+  if not scan or scan.phase then return end
+  scan.phase = "finalize_prune"
+  scan.prune_job = new_catalog_prune_job(state.by_path)
+  scan.finalize_total = #state.assets
+  scan.removed = 0
+  scan.finalize_removed_so_far = 0
+  scan.pending = {}
+  scan.pending_seen = {}
+  scan.pending_index = 1
+  if not scan.silent then
+    set_status(scan.reason .. "：扫描完成，正在整理索引…")
   end
+end
 
-  local removed = 0
-
+function complete_scan_finalize(scan)
   clear_scan_checkpoint()
-
-  for key, asset in pairs(state.by_path) do
-    local belongs =
-      scan.root_keys[path_key(asset.root or "")] == true
-
-    if belongs and not scan.seen[key] then
-      state.by_path[key] = nil
-      state.favorites[key] = nil
-      state.selected_set[key] = nil
-      state.preview_history_assets[asset.asset_id or ""] = nil
-      removed = removed + 1
-    end
-  end
-
-  if removed > 0 then
-    rebuild_assets()
-    state.config_dirty = true
-    mark_database_snapshot_dirty()
-  end
-
-  local pending = {}
-  local pending_seen = {}
-
-  for _, asset in ipairs(scan.new_assets) do
-    local key = path_key(asset.path)
-
-    if not pending_seen[key] and not asset.ready then
-      pending_seen[key] = true
-      asset.pending_batch = true
-      pending[#pending + 1] = asset
-    end
-  end
-
+  local pending = scan.pending
+  local removed = scan.removed or 0
   state.scan = nil
 
   if #pending > 0 then
@@ -2964,6 +2941,125 @@ function finish_scan()
   state.results_dirty = true
 end
 
+function process_scan_finalize(scan)
+  if scan.phase == "finalize_prune" then
+    local complete = step_catalog_prune_job(
+      scan.prune_job,
+      SCAN_FINALIZE_ASSETS_PER_FRAME,
+      function(key, asset)
+        local belongs =
+          scan.root_keys[path_key(asset.root or "")] == true
+        return belongs and not scan.seen[key]
+      end,
+      function(key, asset)
+        state.favorites[key] = nil
+        state.selected_set[key] = nil
+        state.preview_history_assets[asset.asset_id or ""] = nil
+        scan.finalize_removed_so_far =
+          scan.finalize_removed_so_far + 1
+      end
+    )
+    if complete then
+      scan.removed = scan.prune_job.removed
+      if scan.removed > 0 then
+        state.assets = scan.prune_job.kept
+        state.database_ordered_assets = nil
+        state.config_dirty = true
+        mark_database_snapshot_dirty()
+        invalidate_library_counts()
+        invalidate_folder_navigation()
+      end
+      scan.prune_job = nil
+      scan.phase = "finalize_pending"
+    end
+    return
+  end
+
+  local last = math.min(
+    #scan.new_assets,
+    scan.pending_index + SCAN_FINALIZE_ASSETS_PER_FRAME - 1
+  )
+  for index = scan.pending_index, last do
+    local asset = scan.new_assets[index]
+    local key = asset and path_key(asset.path) or ""
+    if asset and key ~= "" and not scan.pending_seen[key]
+      and not asset.ready then
+      scan.pending_seen[key] = true
+      asset.pending_batch = true
+      scan.pending[#scan.pending + 1] = asset
+    end
+  end
+  scan.pending_index = last + 1
+  if scan.pending_index > #scan.new_assets then
+    scan.pending_seen = nil
+    complete_scan_finalize(scan)
+  end
+end
+
+function begin_scan_cancel(scan)
+  if scan.phase == "cancel_collect"
+    or scan.phase == "cancel_prune" then
+    return
+  end
+  scan.phase = "cancel_collect"
+  scan.cancel_index = 1
+  scan.cancel_keys = {}
+  scan.prune_job = nil
+  set_status("正在取消扫描并清理未完成素材…")
+end
+
+function process_scan_cancel(scan)
+  if scan.phase == "cancel_collect" then
+    local last = math.min(
+      #scan.new_assets,
+      scan.cancel_index + SCAN_FINALIZE_ASSETS_PER_FRAME - 1
+    )
+    for index = scan.cancel_index, last do
+      local asset = scan.new_assets[index]
+      if asset and not asset.ready then
+        scan.cancel_keys[path_key(asset.path)] = true
+      end
+    end
+    scan.cancel_index = last + 1
+    if scan.cancel_index > #scan.new_assets then
+      scan.phase = "cancel_prune"
+      scan.prune_job = new_catalog_prune_job(state.by_path)
+      scan.cancel_total = #state.assets
+    end
+    return
+  end
+
+  local complete = step_catalog_prune_job(
+    scan.prune_job,
+    SCAN_FINALIZE_ASSETS_PER_FRAME,
+    function(key)
+      return scan.cancel_keys[key] == true
+    end,
+    function(key, asset)
+      state.favorites[key] = nil
+      state.selected_set[key] = nil
+      state.preview_history_assets[asset.asset_id or ""] = nil
+    end
+  )
+  if not complete then return end
+
+  local removed = scan.prune_job.removed
+  local catalog_changed = removed > 0
+    or (scan.finalize_removed_so_far or 0) > 0
+  if catalog_changed then
+    state.assets = scan.prune_job.kept
+    state.database_ordered_assets = nil
+    mark_database_snapshot_dirty()
+    invalidate_library_counts()
+    invalidate_folder_navigation()
+  end
+  state.scan = nil
+  clear_scan_checkpoint()
+  Jobs.finish(scan.job_token, true, "user canceled")
+  state.results_dirty = true
+  set_status("已取消扫描")
+end
+
 function process_scan()
   local scan = state.scan
 
@@ -2973,9 +3069,14 @@ function process_scan()
 
   if scan.job_token
     and scan.job_token.cancel_requested then
-    clear_scan_checkpoint()
-    state.scan = nil
-    Jobs.finish(scan.job_token, true, "canceled")
+    begin_scan_cancel(scan)
+    process_scan_cancel(scan)
+    return
+  end
+
+  if scan.phase == "finalize_prune"
+    or scan.phase == "finalize_pending" then
+    process_scan_finalize(scan)
     return
   end
 
@@ -13137,23 +13238,26 @@ function draw_import_progress()
         and session.current.progress
         or 0
 
-      local completed =
-        session.generated
-        + session.cached
-        + session.failed
+      local collecting = session.phase == "collect"
+      local completed = collecting
+        and math.max(0, (session.collect_index or 1) - 1)
+        or session.generated + session.cached + session.failed
+      local total = collecting
+        and (session.source_total or 0) or (session.total or 0)
 
       local fraction =
-        session.total > 0
+        total > 0
         and clamp(
           (completed + current_progress)
-            / session.total,
+            / total,
           0,
           1
         )
-        or 1
+        or 0
 
       local current_name =
-        session.current
+        collecting and "正在整理预缓存范围"
+        or session.current
         and session.current.asset
         and session.current.asset.name
         or "检查现有缓存"
@@ -13161,10 +13265,11 @@ function draw_import_progress()
       ImGui.Text(
         ctx,
         string.format(
-          "高精度预缓存 %d 点  %d / %d  新生成 %d  已有 %d  失败 %d",
+          "%s %d 点  %d / %d  新生成 %d  已有 %d  失败 %d",
+          collecting and "整理高精度预缓存" or "高精度预缓存",
           session.points,
           completed,
-          session.total,
+          total,
           session.generated,
           session.cached,
           session.failed
@@ -13184,26 +13289,64 @@ function draw_import_progress()
         compact(current_name, 80)
       )
     elseif visible_scan then
-      local animated =
-        (reaper.time_precise() * 0.28) % 1
-
-      ImGui.Text(
-        ctx,
-        string.format(
-          "%s：正在扫描文件…  已发现 %d 个音频 / %d 个目录",
-          state.scan.reason,
-          state.scan.files,
-          state.scan.directories
+      local scan = state.scan
+      if scan.phase then
+        local label = "整理扫描结果"
+        local completed = 0
+        local total = 0
+        if scan.phase == "finalize_prune" then
+          label = "整理索引"
+          completed = scan.prune_job and scan.prune_job.processed or 0
+          total = scan.finalize_total or 0
+        elseif scan.phase == "finalize_pending" then
+          label = "整理待分析素材"
+          completed = math.max(0, (scan.pending_index or 1) - 1)
+          total = #scan.new_assets
+        elseif scan.phase == "cancel_collect" then
+          label = "收集待清理素材"
+          completed = math.max(0, (scan.cancel_index or 1) - 1)
+          total = #scan.new_assets
+        else
+          label = "取消并清理扫描"
+          completed = scan.prune_job and scan.prune_job.processed or 0
+          total = scan.cancel_total or 0
+        end
+        completed = math.min(completed, total)
+        local fraction = total > 0 and completed / total or 1
+        ImGui.Text(ctx, string.format(
+          "%s：%s  %d / %d",
+          scan.reason,
+          label,
+          completed,
+          total
+        ))
+        ImGui.ProgressBar(
+          ctx,
+          fraction,
+          -100,
+          18,
+          string.format("%.1f%%", fraction * 100)
         )
-      )
-
-      ImGui.ProgressBar(
-        ctx,
-        animated,
-        -100,
-        18,
-        "扫描中"
-      )
+      else
+        local animated =
+          (reaper.time_precise() * 0.28) % 1
+        ImGui.Text(
+          ctx,
+          string.format(
+            "%s：正在扫描文件…  已发现 %d 个音频 / %d 个目录",
+            scan.reason,
+            scan.files,
+            scan.directories
+          )
+        )
+        ImGui.ProgressBar(
+          ctx,
+          animated,
+          -100,
+          18,
+          "扫描中"
+        )
+      end
     else
       local session = visible_import
       local current_progress =
@@ -13259,20 +13402,8 @@ function draw_import_progress()
         state.precache_cancel_requested = true
       elseif visible_scan then
         local scan = state.scan
-
-        for _, asset in ipairs(scan.new_assets or {}) do
-          if not asset.ready then
-            state.by_path[path_key(asset.path)] = nil
-          end
-        end
-
-        state.scan = nil
         Jobs.cancel(scan.job_token)
-        Jobs.finish(scan.job_token, true, "user canceled")
-        clear_scan_checkpoint()
-        rebuild_assets()
-        mark_database_snapshot_dirty()
-        set_status("已取消扫描")
+        set_status("正在取消扫描…")
       else
         state.import_cancel_requested = true
       end

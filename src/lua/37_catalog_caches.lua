@@ -101,3 +101,48 @@ function add_duplicate_fingerprint_asset(
   lookup[path_key_function(asset.path)] = fingerprint
   return true
 end
+
+-- Incrementally filter a path-indexed catalog while allowing the caller to
+-- remove the current entry safely. The next key is captured before deletion,
+-- avoiding Lua's invalid-key-to-next failure mode.
+function new_catalog_prune_job(by_path)
+  by_path = type(by_path) == "table" and by_path or {}
+  return {
+    by_path = by_path,
+    next_key = next(by_path),
+    kept = {},
+    processed = 0,
+    removed = 0,
+  }
+end
+
+function step_catalog_prune_job(
+  job,
+  batch_size,
+  should_remove,
+  on_remove
+)
+  if type(job) ~= "table" or type(job.by_path) ~= "table"
+    or type(should_remove) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    local asset = job.by_path[key]
+    job.next_key = next(job.by_path, key)
+    if asset and should_remove(key, asset) then
+      job.by_path[key] = nil
+      job.removed = job.removed + 1
+      if type(on_remove) == "function" then
+        on_remove(key, asset)
+      end
+    elseif asset then
+      job.kept[#job.kept + 1] = asset
+    end
+    job.processed = job.processed + 1
+    processed = processed + 1
+  end
+  return job.next_key == nil
+end

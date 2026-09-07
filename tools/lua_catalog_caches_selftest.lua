@@ -89,6 +89,38 @@ assert(duplicate_lookup[key(sample[3].path)] == "one")
 assert(duplicate_lookup[key(sample[4].path)] == "one")
 assert(duplicate_lookup[key(sample[2].path)] == nil)
 
+local prune_count = math.min(asset_count, 25000)
+local prune_map = {}
+for index = 1, prune_count do
+  prune_map[tostring(index)] = assets[index]
+end
+local removed_keys = {}
+local prune_job = new_catalog_prune_job(prune_map)
+local prune_steps = 0
+local prune_complete
+repeat
+  prune_complete = step_catalog_prune_job(
+    prune_job,
+    4000,
+    function(prune_key)
+      return tonumber(prune_key) % 2 == 0
+    end,
+    function(prune_key)
+      removed_keys[prune_key] = true
+    end
+  )
+  prune_steps = prune_steps + 1
+until prune_complete
+assert(prune_steps == math.ceil(prune_count / 4000))
+assert(prune_job.processed == prune_count)
+assert(prune_job.removed == math.floor(prune_count / 2))
+assert(#prune_job.kept == prune_count - prune_job.removed)
+for index = 1, prune_count do
+  local present = prune_map[tostring(index)] ~= nil
+  assert(present == (index % 2 == 1))
+  assert((removed_keys[tostring(index)] == true) == (index % 2 == 0))
+end
+
 print(string.format(
   "Lua catalog cache self-test OK: assets=%d steps=%d history=%d memory=%.1fMiB",
   asset_count,
