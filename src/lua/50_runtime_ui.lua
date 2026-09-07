@@ -4717,10 +4717,6 @@ function finish_import_session()
   local elapsed =
     reaper.time_precise() - session.started
 
-  for _, asset in ipairs(session.assets) do
-    asset.pending_batch = nil
-  end
-
   state.import_session = nil
   state.import_cancel_requested = false
   state.results_dirty = true
@@ -4761,28 +4757,77 @@ function cancel_import_session()
     return
   end
 
-  if session.current and session.current.wave_job then
-    destroy_wave_job(session.current.wave_job)
-  end
-
-  -- 未完成的素材保持隐藏，并从本轮数据库中移除，避免“读取中”残留。
-  for _, asset in ipairs(session.assets) do
-    if not asset.ready then
-      state.by_path[path_key(asset.path)] = nil
-    else
-      asset.pending_batch = nil
+  if session.phase ~= "cancel_cleanup"
+    and session.phase ~= "cancel_rebuild" then
+    if session.current and session.current.wave_job then
+      destroy_wave_job(session.current.wave_job)
     end
+    session.current = nil
+    session.phase = "cancel_cleanup"
+    session.cleanup_index = 1
+    Jobs.cancel(session.job_token)
+    set_status("正在取消导入并整理索引…")
   end
 
-  rebuild_assets()
+  if session.phase == "cancel_cleanup" then
+    local last = math.min(
+      #session.assets,
+      session.cleanup_index + IMPORT_FINALIZE_ASSETS_PER_FRAME - 1
+    )
+    for index = session.cleanup_index, last do
+      local asset = session.assets[index]
+      if asset then
+        if not asset.ready then
+          state.by_path[path_key(asset.path)] = nil
+        else
+          asset.pending_batch = nil
+        end
+      end
+    end
+    session.cleanup_index = last + 1
+    if session.cleanup_index <= #session.assets then return end
+    session.phase = "cancel_rebuild"
+    session.prune_job = new_catalog_prune_job(state.by_path)
+    session.cancel_rebuild_total = #state.assets
+  end
+
+  local complete = step_catalog_prune_job(
+    session.prune_job,
+    IMPORT_FINALIZE_ASSETS_PER_FRAME,
+    function() return false end
+  )
+  if not complete then return end
+
+  state.assets = session.prune_job.kept
+  state.database_ordered_assets = nil
+  state.results_dirty = true
+  invalidate_library_counts()
+  invalidate_folder_navigation()
   state.import_session = nil
   state.import_cancel_requested = false
   mark_database_snapshot_dirty()
   state.clear_scan_checkpoint_after_database_save = true
-  Jobs.cancel(session.job_token)
   Jobs.finish(session.job_token, true, "canceled")
   save_database_changes()
   set_status("已取消导入；已完成的素材保留")
+end
+
+function process_import_finalize(session)
+  session.finalize_index = session.finalize_index or 1
+  local last = math.min(
+    #session.assets,
+    session.finalize_index + IMPORT_FINALIZE_ASSETS_PER_FRAME - 1
+  )
+  for index = session.finalize_index, last do
+    local asset = session.assets[index]
+    if asset then asset.pending_batch = nil end
+  end
+  session.finalize_index = last + 1
+  if session.finalize_index <= #session.assets then
+    return false
+  end
+  finish_import_session()
+  return true
 end
 
 function process_import_session()
@@ -4812,6 +4857,11 @@ function process_import_session()
     return
   end
 
+  if session.phase == "finalize" then
+    process_import_finalize(session)
+    return
+  end
+
   if not can_run_heavy_job() then
     return
   end
@@ -4821,7 +4871,9 @@ function process_import_session()
       session.assets[session.done + 1]
 
     if not asset then
-      finish_import_session()
+      session.phase = "finalize"
+      session.finalize_index = 1
+      set_status("导入分析完成，正在整理索引…")
       return
     end
 
@@ -13604,8 +13656,24 @@ function draw_import_progress()
         and session.current.progress
         or 0
 
+      local cleanup_phase = session.phase == "finalize"
+        or session.phase == "cancel_cleanup"
+        or session.phase == "cancel_rebuild"
+      local cleanup_completed = session.phase == "finalize"
+          and math.max(0, (session.finalize_index or 1) - 1)
+        or session.phase == "cancel_cleanup"
+          and math.max(0, (session.cleanup_index or 1) - 1)
+        or session.phase == "cancel_rebuild"
+          and (session.prune_job and session.prune_job.processed or 0)
+        or 0
+      local cleanup_total = session.phase == "cancel_rebuild"
+          and (session.cancel_rebuild_total or 0)
+        or #session.assets
+
       local fraction =
-        session.total > 0
+        cleanup_phase and cleanup_total > 0
+          and clamp(cleanup_completed / cleanup_total, 0, 1)
+        or session.total > 0
         and clamp(
           (session.done + current_progress)
             / session.total,
@@ -13622,13 +13690,25 @@ function draw_import_progress()
 
       ImGui.Text(
         ctx,
-        string.format(
-          "%s：分析元数据并建立波形  %d / %d  失败 %d",
-          session.label,
-          session.done,
-          session.total,
-          session.failed
-        )
+        cleanup_phase
+          and string.format(
+            "%s：%s  %d / %d",
+            session.label,
+            session.phase == "finalize"
+                and "整理已完成素材"
+              or session.phase == "cancel_cleanup"
+                and "清理未完成素材"
+              or "重建可用索引",
+            cleanup_completed,
+            cleanup_total
+          )
+          or string.format(
+            "%s：分析元数据并建立波形  %d / %d  失败 %d",
+            session.label,
+            session.done,
+            session.total,
+            session.failed
+          )
       )
 
       ImGui.ProgressBar(
