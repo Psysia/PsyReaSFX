@@ -715,6 +715,10 @@ function load_project_usage()
 end
 
 function save_project_usage()
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "project_usage" then
+    cancel_auxiliary_save("synchronous project usage save")
+  end
   ensure_dirs()
   local file = atomic_file_writer(PROJECT_USAGE_FILE)
 
@@ -758,6 +762,33 @@ function save_project_usage()
   end
 
   state.project_usage_dirty = false
+  return true
+end
+
+function apply_project_usage_record(
+  project_path,
+  asset_path,
+  action,
+  used_at
+)
+  local bucket = project_usage_bucket(project_path, true)
+  if not bucket then return false end
+  local asset_key = path_key(asset_path)
+  local entry = bucket.assets[asset_key]
+  if not entry then
+    entry = {
+      path = asset_path,
+      count = 0,
+      last_used = 0,
+      action = action or "insert",
+    }
+    bucket.assets[asset_key] = entry
+  end
+  entry.path = asset_path
+  entry.count = (tonumber(entry.count) or 0) + 1
+  entry.last_used = used_at or os.time()
+  entry.action = action or "insert"
+  state.project_usage_dirty = true
   return true
 end
 
@@ -822,20 +853,23 @@ function record_project_usage(asset, action)
     return
   end
 
-  local bucket = project_usage_bucket(state.current_project_path, true)
   local asset_key = path_key(asset.path)
-  local entry = bucket.assets[asset_key]
-
-  if not entry then
-    entry = { path = asset.path, count = 0, last_used = 0, action = action or "insert" }
-    bucket.assets[asset_key] = entry
+  local save_session = state.auxiliary_save_session
+  if save_session and save_session.kind == "project_usage" then
+    save_session.pending_usage[#save_session.pending_usage + 1] = {
+      project_path = state.current_project_path,
+      asset_path = asset.path,
+      action = action or "insert",
+      used_at = os.time(),
+    }
+  else
+    apply_project_usage_record(
+      state.current_project_path,
+      asset.path,
+      action,
+      os.time()
+    )
   end
-
-  entry.path = asset.path
-  entry.count = (tonumber(entry.count) or 0) + 1
-  entry.last_used = os.time()
-  entry.action = action or "insert"
-  state.project_usage_dirty = true
 
   if state.auto_collect_project_usage then
     local collection = ensure_current_project_bin(true)
@@ -916,6 +950,10 @@ function load_collections()
 end
 
 function save_collections()
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "collections" then
+    cancel_auxiliary_save("synchronous collection save")
+  end
   ensure_dirs()
 
   local file = atomic_file_writer(COLLECTIONS_FILE)
@@ -959,6 +997,159 @@ function save_collections()
   end
   state.collections_dirty = false
   return true
+end
+
+function replay_pending_project_usage(session)
+  for _, pending in ipairs(session and session.pending_usage or {}) do
+    apply_project_usage_record(
+      pending.project_path,
+      pending.asset_path,
+      pending.action,
+      pending.used_at
+    )
+  end
+  if session then session.pending_usage = {} end
+end
+
+function cancel_auxiliary_save(reason)
+  local session = state.auxiliary_save_session
+  if not session then return false end
+  if session.writer and session.writer.abort then
+    session.writer:abort()
+  end
+  state.auxiliary_save_session = nil
+  if session.kind == "collections" then
+    state.collections_dirty = true
+  else
+    state.project_usage_dirty = true
+    replay_pending_project_usage(session)
+  end
+  return true
+end
+
+function fail_auxiliary_save(session, message)
+  if state.auxiliary_save_session ~= session then return end
+  cancel_auxiliary_save("write failed")
+  set_status(
+    session.kind == "collections"
+      and "无法后台保存播放列表：" .. tostring(message or "写入失败")
+      or "无法后台保存工程使用记录：" .. tostring(message or "写入失败"),
+    true
+  )
+end
+
+function start_collections_save()
+  if state.auxiliary_save_session or not state.collections_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(COLLECTIONS_FILE)
+  if not writer then
+    set_status("无法后台保存播放列表：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, COLLECTIONS_FILE) then
+    writer:abort()
+    set_status("无法后台保存播放列表：无法写入文件头", true)
+    return false
+  end
+
+  state.collections_dirty = false
+  state.auxiliary_save_session = {
+    kind = "collections",
+    writer = writer,
+    job = new_collections_persistence_job(state.collections),
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function start_project_usage_save()
+  if state.auxiliary_save_session or not state.project_usage_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(PROJECT_USAGE_FILE)
+  if not writer then
+    set_status("无法后台保存工程使用记录：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, PROJECT_USAGE_FILE) then
+    writer:abort()
+    set_status("无法后台保存工程使用记录：无法写入文件头", true)
+    return false
+  end
+
+  state.project_usage_dirty = false
+  state.auxiliary_save_session = {
+    kind = "project_usage",
+    writer = writer,
+    job = new_project_usage_persistence_job(state.project_usage),
+    pending_usage = {},
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function finish_auxiliary_save(session)
+  local closed, close_error = session.writer:close()
+  if not closed then
+    fail_auxiliary_save(session, close_error or "提交临时文件失败")
+    return false
+  end
+  state.auxiliary_save_session = nil
+  if session.kind == "project_usage" then
+    replay_pending_project_usage(session)
+  end
+  return true
+end
+
+function process_collections_save(session, deadline)
+  local complete, failure = step_collections_persistence_job(
+    session.job,
+    session.writer,
+    AUXILIARY_SAVE_RECORDS_PER_FRAME,
+    escape_tsv,
+    path_key,
+    deadline,
+    reaper.time_precise
+  )
+  if failure then
+    fail_auxiliary_save(session, failure)
+    return false
+  end
+  return complete
+end
+
+function process_project_usage_save(session, deadline)
+  local complete, failure = step_project_usage_persistence_job(
+    session.job,
+    session.writer,
+    AUXILIARY_SAVE_RECORDS_PER_FRAME,
+    escape_tsv,
+    deadline,
+    reaper.time_precise
+  )
+  if failure then
+    fail_auxiliary_save(session, failure)
+    return false
+  end
+  return complete
+end
+
+function process_auxiliary_save()
+  local session = state.auxiliary_save_session
+  if not session then return end
+  local deadline = reaper.time_precise() + AUXILIARY_SAVE_FRAME_BUDGET
+  local complete
+  if session.kind == "collections" then
+    complete = process_collections_save(session, deadline)
+  else
+    complete = process_project_usage_save(session, deadline)
+  end
+  if complete and state.auxiliary_save_session == session then
+    finish_auxiliary_save(session)
+  end
 end
 
 function create_collection(kind)
@@ -8154,6 +8345,7 @@ function start_root_removal(records, library_id)
   end
   if #roots == 0 and not library_id then return false end
 
+  cancel_auxiliary_save("catalog changed")
   cancel_database_snapshot("catalog changed")
   local job_token, job_error = Jobs.begin(
     "root_removal",
@@ -9074,6 +9266,8 @@ function relink_root(record, supplied_path)
     return false
   end
 
+  cancel_auxiliary_save("source relink")
+
   local job_token = Jobs.begin(
     "relink_plan",
     "catalog_exclusive",
@@ -9757,6 +9951,7 @@ end
 
 function cancel_catalog_jobs(reason)
   reason = tostring(reason or "canceled")
+  cancel_auxiliary_save(reason)
   cancel_database_snapshot(reason)
   if state.root_removal_session then
     local removal = state.root_removal_session
@@ -21169,6 +21364,7 @@ function draw_settings_maintenance()
     if state.root_removal_session then
       set_status("请等待来源移除或回滚完成后再创建备份", true)
     else
+      cancel_auxiliary_save("manual backup")
       if state.config_dirty then save_config() end
       if state.libraries_dirty then save_libraries() end
       if state.db_dirty and not state.scan and not state.import_session then save_database() end
@@ -22131,8 +22327,8 @@ function autosave()
     save_database_changes()
   end
 
-  if state.collections_dirty then
-    save_collections()
+  if state.collections_dirty and not state.auxiliary_save_session then
+    start_collections_save()
   end
 
   if state.searches_dirty then
@@ -22159,8 +22355,8 @@ function autosave()
     save_failed_tasks()
   end
 
-  if state.project_usage_dirty then
-    save_project_usage()
+  if state.project_usage_dirty and not state.auxiliary_save_session then
+    start_project_usage_save()
   end
 
   state.last_save = now
@@ -22194,6 +22390,7 @@ end
 
 function cleanup()
   Jobs.stop_accepting()
+  cancel_auxiliary_save("shutdown")
   if state.root_removal_session then
     local removal = state.root_removal_session
     for index = #removal.cleanup_records, 1, -1 do
@@ -22469,6 +22666,7 @@ function loop()
     process_loudness_queue()
   end
   process_library_count_rebuild()
+  process_auxiliary_save()
   cleanup_retired_preview_sources(false)
   poll_preview()
   poll_current_project_binding()

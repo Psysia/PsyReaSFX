@@ -18,6 +18,7 @@ $modules = @(
     "35_incremental_results.lua",
     "36_asset_journal.lua",
     "37_catalog_caches.lua",
+    "38_incremental_persistence.lua",
     "40_analysis.lua",
     "45_duplicate_confirmation.lua",
     "50_runtime_ui.lua"

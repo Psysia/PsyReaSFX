@@ -100,6 +100,11 @@ jobs:
         run: |
           lua tools/lua_catalog_caches_selftest.lua (Resolve-Path 'src/lua/37_catalog_caches.lua') 25000
 
+      - name: Run Lua incremental persistence capacity smoke test
+        shell: pwsh
+        run: |
+          lua tools/lua_incremental_persistence_selftest.lua (Resolve-Path 'src/lua/38_incremental_persistence.lua') 25000
+
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
 
