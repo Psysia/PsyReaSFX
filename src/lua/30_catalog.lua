@@ -1,3 +1,6 @@
+-- Catalog identity, metadata, configuration and library persistence.
+local HostApi = Host or reaper
+
 function parse_ucs_filename(filename)
   local stem = strip_extension(filename)
   local tokens = {}
@@ -58,7 +61,7 @@ function ensure_asset_identity(asset)
     )
   end
 
-  if reaper.file_exists(asset.path or "") then
+  if HostApi.file_exists(asset.path or "") then
     asset.last_seen = os.time()
   else
     asset.last_seen = tonumber(asset.last_seen) or 0

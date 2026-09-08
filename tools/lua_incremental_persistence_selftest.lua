@@ -132,11 +132,133 @@ local saved_count = 0
 for _ in pairs(played_job.saved) do saved_count = saved_count + 1 end
 assert(saved_count == item_count)
 
+writer = nil
+collection = nil
+usage = nil
+history_by_id = nil
+history_by_path = nil
+played = nil
+collection_job = nil
+usage_job = nil
+failed_job = nil
+timed_job = nil
+timed_writer = nil
+history_job = nil
+played_job = nil
+collectgarbage("collect")
+
+local regions = {}
+for index = 1, item_count do
+  local path = string.format("C:/Regions/%07d.wav", index)
+  regions[key(path)] = {
+    {
+      path = path,
+      start = 0.1,
+      finish = 0.9,
+      name = "Region " .. index,
+      source = "manual",
+      batch_id = index,
+    },
+  }
+end
+writer = new_writer()
+local regions_job = new_regions_persistence_job(regions)
+local regions_steps = 0
+repeat
+  regions_steps = regions_steps + 1
+until step_regions_persistence_job(
+  regions_job, writer, 4000, escape
+)
+assert(regions_steps == math.ceil(item_count / 4000))
+assert(#writer.lines == item_count)
+
+-- Removing the retained next() cursor between frames must not crash or loop.
+local changing_regions = {
+  a = { { path = "a.wav", start = 0, finish = 1 } },
+  b = { { path = "b.wav", start = 0, finish = 1 } },
+  c = { { path = "c.wav", start = 0, finish = 1 } },
+}
+local changing_job = new_regions_persistence_job(changing_regions)
+local changing_writer = new_writer()
+step_regions_persistence_job(changing_job, changing_writer, 1, escape)
+if changing_job.next_key then
+  changing_regions[changing_job.next_key] = nil
+end
+local guard = 0
+repeat
+  guard = guard + 1
+  assert(guard < 10, "mutable region map did not finish")
+until step_regions_persistence_job(
+  changing_job, changing_writer, 1, escape
+)
+
+writer = nil
+regions = nil
+regions_job = nil
+collectgarbage("collect")
+local loudness = {}
+for index = 1, item_count do
+  local path = string.format("C:/Loudness/%07d.wav", index)
+  loudness[key(path)] = {
+    path = path,
+    size = index,
+    lufs_i = -23,
+    lufs_m = -22,
+    lufs_s = -21,
+    true_peak = -1,
+  }
+end
+writer = new_writer()
+local loudness_job = new_loudness_persistence_job(loudness)
+local loudness_steps = 0
+repeat
+  loudness_steps = loudness_steps + 1
+until step_loudness_persistence_job(
+  loudness_job, writer, 4000, escape
+)
+assert(loudness_steps == math.ceil(item_count / 4000))
+assert(#writer.lines == item_count)
+
+writer = nil
+loudness = nil
+loudness_job = nil
+collectgarbage("collect")
+local failed_tasks = {}
+for index = 1, item_count do
+  local path = string.format("C:/Failed/%07d.wav", index)
+  failed_tasks[key(path)] = {
+    path = path,
+    stage = "metadata",
+    reason = "fixture",
+    attempts = 1,
+    updated = index,
+  }
+end
+writer = new_writer()
+local failed_tasks_job = new_failed_tasks_persistence_job(failed_tasks)
+local failed_tasks_steps = 0
+repeat
+  failed_tasks_steps = failed_tasks_steps + 1
+until step_failed_tasks_persistence_job(
+  failed_tasks_job, writer, 4000, escape
+)
+assert(failed_tasks_steps == math.ceil(item_count / 4000))
+assert(#writer.lines == item_count)
+
+local failed_catalog_writer = new_writer(0)
+local failed_catalog_job = new_failed_tasks_persistence_job(failed_tasks)
+local catalog_complete, catalog_failure = step_failed_tasks_persistence_job(
+  failed_catalog_job, failed_catalog_writer, 4000, escape
+)
+assert(not catalog_complete and catalog_failure == "write_failed_task")
+
 local failed_history_writer = new_writer(0)
 local failed_history_job = new_history_persistence_job(
-  history_by_id,
-  history_by_path
+  { one = { path = "C:/History/failure.wav", last_previewed = 1 } },
+  { [key("C:/History/failure.wav")] = { path = "unused" } }
 )
+failed_history_job.by_path[key("C:/History/failure.wav")] =
+  failed_history_job.entries.one
 local history_complete, history_failure = step_history_persistence_job(
   failed_history_job,
   failed_history_writer,
@@ -147,11 +269,14 @@ local history_complete, history_failure = step_history_persistence_job(
 assert(not history_complete and history_failure == "write_history")
 
 print(string.format(
-  "Lua incremental persistence self-test OK: records=%d collection_steps=%d usage_steps=%d history_steps=%d played_steps=%d memory=%.1fMiB",
+  "Lua incremental persistence self-test OK: records=%d collection_steps=%d usage_steps=%d history_steps=%d played_steps=%d regions_steps=%d loudness_steps=%d failed_steps=%d memory=%.1fMiB",
   item_count,
   collection_steps,
   usage_steps,
   history_steps,
   played_steps,
+  regions_steps,
+  loudness_steps,
+  failed_tasks_steps,
   collectgarbage("count") / 1024
 ))

@@ -1,3 +1,6 @@
+-- Background jobs, atomic storage, recovery and cache maintenance.
+local HostApi = Host or reaper
+
 function Jobs.begin(
   kind,
   resource,
@@ -37,7 +40,7 @@ function Jobs.begin(
     priority = tonumber(priority) or 50,
     state = "running",
     cancel_requested = false,
-    started = reaper.time_precise(),
+    started = HostApi.time_precise(),
   }
 
   Jobs.active[kind] = token
@@ -69,7 +72,7 @@ function Jobs.finish(token, success, message)
     return
   end
 
-  token.finished = reaper.time_precise()
+  token.finished = HostApi.time_precise()
   token.message = tostring(message or "")
   token.state = token.cancel_requested
     and "canceled"
@@ -146,7 +149,7 @@ function find_project_url_in_sibling_scripts()
 
   while true do
     local filename =
-      reaper.EnumerateFiles(
+      HostApi.EnumerateFiles(
         SCRIPT_DIR,
         index
       )
@@ -309,7 +312,7 @@ function commit_atomic_temporary(
   keep_backup
 )
   backup_path = backup_path or (target_path .. ".bak")
-  local had_original = reaper.file_exists(target_path)
+  local had_original = HostApi.file_exists(target_path)
   os.remove(backup_path)
 
   if had_original
@@ -736,7 +739,7 @@ function append_schema_migration_log(
     return false
   end
 
-  local existed = reaper.file_exists(MIGRATION_LOG_FILE)
+  local existed = HostApi.file_exists(MIGRATION_LOG_FILE)
   local file = io.open(MIGRATION_LOG_FILE, "ab")
 
   if not file then
@@ -866,7 +869,7 @@ function recover_atomic_data_files()
   local files = persistent_data_files()
   local unresolved = {}
   local restore_committed =
-    reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+    HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
   files[#files + 1] = SCAN_CHECKPOINT_FILE
   for _, target_path in ipairs(files) do
     local backup_path = target_path .. ".bak"
@@ -885,20 +888,20 @@ function recover_atomic_data_files()
         restore_temporary_path,
         restore_new_path,
       }) do
-        if reaper.file_exists(artifact_path)
+        if HostApi.file_exists(artifact_path)
           and not os.remove(artifact_path) then
           restore_pending = true
         end
       end
-    elseif reaper.file_exists(restore_backup_path) then
-      local removed = not reaper.file_exists(target_path)
+    elseif HostApi.file_exists(restore_backup_path) then
+      local removed = not HostApi.file_exists(target_path)
         or os.remove(target_path) ~= nil
       if not removed
         or not os.rename(restore_backup_path, target_path) then
         restore_pending = true
       end
-    elseif reaper.file_exists(restore_new_path) then
-      if reaper.file_exists(target_path)
+    elseif HostApi.file_exists(restore_new_path) then
+      if HostApi.file_exists(target_path)
         and not os.remove(target_path) then
         restore_pending = true
       end
@@ -914,11 +917,11 @@ function recover_atomic_data_files()
     end
 
     if not restore_pending
-      and not reaper.file_exists(target_path)
-      and reaper.file_exists(backup_path) then
+      and not HostApi.file_exists(target_path)
+      and HostApi.file_exists(backup_path) then
       os.rename(backup_path, target_path)
     elseif not restore_pending
-      and reaper.file_exists(target_path) then
+      and HostApi.file_exists(target_path) then
       os.remove(backup_path)
     end
 
@@ -928,7 +931,7 @@ function recover_atomic_data_files()
   end
   if restore_committed and #unresolved == 0 then
     os.remove(RESTORE_TRANSACTION_COMMIT_FILE)
-    if reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE) then
+    if HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE) then
       unresolved[#unresolved + 1] =
         basename(RESTORE_TRANSACTION_COMMIT_FILE)
     end
@@ -941,7 +944,7 @@ end
 
 function remove_shallow_directory(path)
   while true do
-    local filename = reaper.EnumerateFiles(path, 0)
+    local filename = HostApi.EnumerateFiles(path, 0)
 
     if not filename then
       break
@@ -990,7 +993,7 @@ function backup_directories()
   local index = 0
 
   while true do
-    local name = reaper.EnumerateSubdirectories(BACKUP_DIR, index)
+    local name = HostApi.EnumerateSubdirectories(BACKUP_DIR, index)
 
     if not name then
       break
@@ -1036,7 +1039,7 @@ function create_data_backup(reason, quiet)
     suffix = suffix + 1
   end
 
-  if reaper.RecursiveCreateDirectory(directory, 0) <= 0 then
+  if HostApi.RecursiveCreateDirectory(directory, 0) <= 0 then
     if not quiet then
       set_status("无法创建数据备份目录", true)
     end
@@ -1048,7 +1051,7 @@ function create_data_backup(reason, quiet)
   local failed = 0
 
   for _, source_path in ipairs(persistent_data_files()) do
-    if reaper.file_exists(source_path) then
+    if HostApi.file_exists(source_path) then
       expected = expected + 1
       local inject_partial =
         state.persistence_fault_injection
@@ -1109,7 +1112,7 @@ end
 
 function restore_data_backup_transaction(directory)
   local plan = {}
-  if reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+  if HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
     and not os.remove(RESTORE_TRANSACTION_COMMIT_FILE) then
     return false, 0, "stale_commit_marker"
   end
@@ -1117,7 +1120,7 @@ function restore_data_backup_transaction(directory)
   for _, target_path in ipairs(persistent_data_files()) do
     local source_path = join_path(directory, basename(target_path))
 
-    if reaper.file_exists(source_path) then
+    if HostApi.file_exists(source_path) then
       local temporary_path = target_path .. ".restore.tmp"
       os.remove(temporary_path)
       if not stream_file_to_temporary(
@@ -1139,7 +1142,7 @@ function restore_data_backup_transaction(directory)
         had_original = false,
       }
     elseif target_path == DATABASE_JOURNAL_FILE
-      and reaper.file_exists(target_path) then
+      and HostApi.file_exists(target_path) then
       -- Backups created before incremental persistence have no journal.
       -- Removing the current one is part of the same rollback-safe restore,
       -- otherwise post-backup edits could reappear over the restored snapshot.
@@ -1160,7 +1163,7 @@ function restore_data_backup_transaction(directory)
 
   local committed = 0
   for index, item in ipairs(plan) do
-    item.had_original = reaper.file_exists(item.target_path)
+    item.had_original = HostApi.file_exists(item.target_path)
     local marker_ok = true
     if not item.had_original and not item.delete_only then
       local marker = io.open(item.new_marker_path, "wb")
@@ -1208,7 +1211,7 @@ function restore_data_backup_transaction(directory)
       for rollback = committed, 1, -1 do
         local previous = plan[rollback]
         local target_removed =
-          not reaper.file_exists(previous.target_path)
+          not HostApi.file_exists(previous.target_path)
           or os.remove(previous.target_path) ~= nil
         if previous.had_original then
           os.rename(
@@ -1256,7 +1259,7 @@ function restore_data_backup_transaction(directory)
     os.remove(commit_marker_temporary)
     for rollback = #plan, 1, -1 do
       local previous = plan[rollback]
-      if reaper.file_exists(previous.target_path) then
+      if HostApi.file_exists(previous.target_path) then
         os.remove(previous.target_path)
       end
       if previous.had_original then
@@ -1286,7 +1289,7 @@ function restore_latest_data_backup()
     return
   end
 
-  local answer = reaper.MB(
+  local answer = HostApi.MB(
     "将恢复最近的数据备份：\n\n"
       .. name
       .. "\n\n恢复后 PsyReaSFX 会关闭，请重新运行脚本。继续吗？",
@@ -1316,7 +1319,7 @@ function restore_latest_data_backup()
 
   state.skip_persistence_on_cleanup = true
   state.open = false
-  reaper.MB(
+  HostApi.MB(
     "已恢复 " .. tostring(restored) .. " 个数据文件。\n\n请重新运行 PsyReaSFX。",
     SCRIPT_NAME,
     0
@@ -1432,23 +1435,21 @@ function save_failed_tasks()
 
   write_persistence_schema(file, FAILED_TASKS_FILE)
 
-  local tasks = {}
-
-  for _, task in pairs(state.failed_tasks) do
-    tasks[#tasks + 1] = task
-  end
-
-  table.sort(tasks, function(a, b) return path_key(a.path) < path_key(b.path) end)
-
-  for _, task in ipairs(tasks) do
-    file:write(
-      escape_tsv(task.path), "\t",
-      escape_tsv(task.stage), "\t",
-      escape_tsv(task.reason), "\t",
-      tostring(task.attempts or 1), "\t",
-      tostring(task.updated or os.time()), "\n"
+  local job = new_failed_tasks_persistence_job(state.failed_tasks)
+  local complete, failure
+  repeat
+    complete, failure = step_failed_tasks_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
     )
-  end
+    if failure then
+      file:abort()
+      set_status("无法保存失败任务：" .. tostring(failure), true)
+      return false
+    end
+  until complete
 
   if not file:close() then
     set_status("无法保存失败任务", true)
@@ -1503,7 +1504,7 @@ function retry_failed_tasks()
   local assets = {}
 
   for key, task in pairs(state.failed_tasks) do
-    if reaper.file_exists(task.path) then
+    if HostApi.file_exists(task.path) then
       local asset = state.by_path[key]
 
       if not asset then
@@ -1544,7 +1545,7 @@ function retry_failed_tasks()
     done = 0,
     failed = 0,
     current = nil,
-    started = reaper.time_precise(),
+    started = HostApi.time_precise(),
     phase = "prepare",
     job_token = job_token,
   }
@@ -1611,7 +1612,7 @@ function move_wave_cache_files(
     return 0, 0
   end
 
-  reaper.RecursiveCreateDirectory(
+  HostApi.RecursiveCreateDirectory(
     new_directory,
     0
   )
@@ -1621,7 +1622,7 @@ function move_wave_cache_files(
 
   while true do
     local filename =
-      reaper.EnumerateFiles(
+      HostApi.EnumerateFiles(
         old_directory,
         index
       )
@@ -1652,7 +1653,7 @@ function move_wave_cache_files(
         filename
       )
 
-    if reaper.file_exists(target_path) then
+    if HostApi.file_exists(target_path) then
       os.remove(source_path)
       moved = moved + 1
     elseif copy_file_streaming(
@@ -1716,7 +1717,7 @@ function switch_wave_cache_directory(
         new_directory
       )
   else
-    reaper.RecursiveCreateDirectory(
+    HostApi.RecursiveCreateDirectory(
       new_directory,
       0
     )
@@ -1749,7 +1750,7 @@ end
 
 function prompt_wave_cache_directory()
   local ok, input =
-    reaper.GetUserInputs(
+    HostApi.GetUserInputs(
       "更改波形缓存目录",
       1,
       "新缓存目录路径:",
@@ -1765,7 +1766,7 @@ function prompt_wave_cache_directory()
     normalized_cache_directory(input)
 
   local answer =
-    reaper.MB(
+    HostApi.MB(
       "是否将现有波形缓存移动到新目录？\n\n"
         .. "是：移动已有缓存并切换。\n"
         .. "否：直接切换，旧目录保持不变。\n"
@@ -1797,7 +1798,7 @@ function restore_default_wave_cache_directory()
   end
 
   local answer =
-    reaper.MB(
+    HostApi.MB(
       "恢复默认缓存目录，并移动现有缓存？\n\n"
         .. target,
       SCRIPT_NAME,
@@ -1817,8 +1818,8 @@ end
 function migrate_legacy_data()
   ensure_dirs()
 
-  if not reaper.file_exists(CONFIG_FILE)
-    and reaper.file_exists(LEGACY_CONFIG_FILE) then
+  if not HostApi.file_exists(CONFIG_FILE)
+    and HostApi.file_exists(LEGACY_CONFIG_FILE) then
     if copy_file_streaming(LEGACY_CONFIG_FILE, CONFIG_FILE) then
       set_status("已迁移旧版音效库路径与偏好设置")
     end

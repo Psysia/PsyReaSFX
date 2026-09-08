@@ -1,3 +1,6 @@
+-- Region, loudness, channel and transient analysis services.
+local HostApi = Host or reaper
+
 function asset_regions(asset)
   if not asset then
     return {}
@@ -106,24 +109,21 @@ function save_regions()
 
   write_persistence_schema(file, REGIONS_FILE)
 
-  for _, regions in pairs(state.regions_by_path) do
-    for _, region in ipairs(regions) do
-      file:write(
-        escape_tsv(region.path or ""),
-        "\t",
-        tostring(region.start or 0),
-        "\t",
-        tostring(region.finish or 0),
-        "\t",
-        escape_tsv(region.name or ""),
-        "\t",
-        escape_tsv(region.source or "manual"),
-        "\t",
-        tostring(region.batch_id or 0),
-        "\n"
-      )
+  local job = new_regions_persistence_job(state.regions_by_path)
+  local complete, failure
+  repeat
+    complete, failure = step_regions_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
+    )
+    if failure then
+      file:abort()
+      set_status("无法保存 Region 数据：" .. tostring(failure), true)
+      return false
     end
-  end
+  until complete
 
   if not file:close() then
     set_status("无法保存 Region 数据", true)
@@ -211,7 +211,7 @@ function save_current_selection_as_region(asset)
     )
 
   local ok, name =
-    reaper.GetUserInputs(
+    HostApi.GetUserInputs(
       "保存当前选区为 Region",
       1,
       "名称:",
@@ -424,22 +424,21 @@ function save_loudness_cache()
 
   write_persistence_schema(file, LOUDNESS_FILE)
 
-  for _, entry in pairs(state.loudness_cache) do
-    file:write(
-      escape_tsv(entry.path or ""),
-      "\t",
-      tostring(entry.size or 0),
-      "\t",
-      tostring(entry.lufs_i or ""),
-      "\t",
-      tostring(entry.lufs_m or ""),
-      "\t",
-      tostring(entry.lufs_s or ""),
-      "\t",
-      tostring(entry.true_peak or ""),
-      "\n"
+  local job = new_loudness_persistence_job(state.loudness_cache)
+  local complete, failure
+  repeat
+    complete, failure = step_loudness_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
     )
-  end
+    if failure then
+      file:abort()
+      set_status("无法保存响度缓存：" .. tostring(failure), true)
+      return false
+    end
+  until complete
 
   if not file:close() then
     set_status("无法保存响度缓存", true)
@@ -525,8 +524,8 @@ end
 function request_loudness_analysis(asset, force)
   if not state.show_loudness_metrics
     or not asset
-    or not reaper.file_exists(asset.path)
-    or type(reaper.CalculateNormalization) ~= "function" then
+    or not HostApi.file_exists(asset.path)
+    or type(HostApi.CalculateNormalization) ~= "function" then
     return
   end
 
@@ -566,7 +565,7 @@ end
 
 function destroy_loudness_job(job, completed)
   if job and job.source then
-    reaper.PCM_Source_Destroy(job.source)
+    HostApi.PCM_Source_Destroy(job.source)
     job.source = nil
   end
 
@@ -591,7 +590,7 @@ function process_loudness_queue()
     return
   end
 
-  local now = reaper.time_precise()
+  local now = HostApi.time_precise()
 
   if now < state.next_loudness_job then
     return
@@ -608,7 +607,7 @@ function process_loudness_queue()
     state.loudness_queued[queued.key] = nil
 
     local source =
-      reaper.PCM_Source_CreateFromFile(
+      HostApi.PCM_Source_CreateFromFile(
         queued.asset.path
       )
 
@@ -636,7 +635,7 @@ function process_loudness_queue()
     end
 
     if #pending == 0 then
-      reaper.PCM_Source_Destroy(source)
+      HostApi.PCM_Source_Destroy(source)
       return
     end
 
@@ -669,7 +668,7 @@ function process_loudness_queue()
 
   local ok, gain =
     pcall(
-      reaper.CalculateNormalization,
+      HostApi.CalculateNormalization,
       job.source,
       metric.mode,
       0,
@@ -944,7 +943,7 @@ function apply_preview_channel_mode(preview, mono_output_channel)
   end
 
   pcall(
-    reaper.CF_Preview_SetValue,
+    HostApi.CF_Preview_SetValue,
     preview,
     "D_PAN",
     pan
@@ -956,7 +955,7 @@ function apply_preview_channel_mode(preview, mono_output_channel)
       or state.preview_channel_mode == "mono"
 
   pcall(
-    reaper.CF_Preview_SetValue,
+    HostApi.CF_Preview_SetValue,
     preview,
     "I_OUTCHAN",
     use_centered_mono

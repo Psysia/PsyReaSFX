@@ -1076,6 +1076,10 @@ local state = {
 -- Localization
 ----------------------------------------------------------------
 
+I18N_MISSING = {}
+I18N_MISSING_UNIQUE = 0
+I18N_MISSING_LIMIT = 256
+
 I18N_EN = {
   ["音效库"] = "Libraries",
   ["传输"] = "Transfer",
@@ -1439,6 +1443,9 @@ I18N_EN = {
   ["请等待当前后台任务完成"] = "Wait for the current background task to finish",
   ["波形缓存检查已经在运行"] = "Waveform cache verification is already running",
   ["无法保存失败任务"] = "Unable to save failed tasks",
+  ["Region 数据"] = "Region data",
+  ["响度缓存"] = "loudness cache",
+  ["失败任务"] = "failed tasks",
   ["没有可重试的失败任务"] = "There are no failed tasks that can be retried",
   ["无法创建数据备份目录"] = "Unable to create the data-backup folder",
   ["没有可备份的数据文件"] = "There are no data files to back up",
@@ -1972,6 +1979,18 @@ I18N_EN["请先保存当前 REAPER 工程，再绑定项目素材箱"] =
 I18N_EN["无法保存工程使用记录"] = "Unable to save project usage history"
 
 I18N_PATTERNS_EN = {
+  {
+    "^无法后台保存Region 数据：(.+)$",
+    "Unable to save Region data: %1",
+  },
+  {
+    "^无法后台保存响度缓存：(.+)$",
+    "Unable to save loudness cache: %1",
+  },
+  {
+    "^无法后台保存失败任务：(.+)$",
+    "Unable to save failed tasks: %1",
+  },
   {
     "^未能回滚中断的备份恢复：(.+)$",
     "Could not roll back an interrupted backup restore: %1",

@@ -1076,6 +1076,10 @@ local state = {
 -- Localization
 ----------------------------------------------------------------
 
+I18N_MISSING = {}
+I18N_MISSING_UNIQUE = 0
+I18N_MISSING_LIMIT = 256
+
 I18N_EN = {
   ["音效库"] = "Libraries",
   ["传输"] = "Transfer",
@@ -1439,6 +1443,9 @@ I18N_EN = {
   ["请等待当前后台任务完成"] = "Wait for the current background task to finish",
   ["波形缓存检查已经在运行"] = "Waveform cache verification is already running",
   ["无法保存失败任务"] = "Unable to save failed tasks",
+  ["Region 数据"] = "Region data",
+  ["响度缓存"] = "loudness cache",
+  ["失败任务"] = "failed tasks",
   ["没有可重试的失败任务"] = "There are no failed tasks that can be retried",
   ["无法创建数据备份目录"] = "Unable to create the data-backup folder",
   ["没有可备份的数据文件"] = "There are no data files to back up",
@@ -1973,6 +1980,18 @@ I18N_EN["无法保存工程使用记录"] = "Unable to save project usage histor
 
 I18N_PATTERNS_EN = {
   {
+    "^无法后台保存Region 数据：(.+)$",
+    "Unable to save Region data: %1",
+  },
+  {
+    "^无法后台保存响度缓存：(.+)$",
+    "Unable to save loudness cache: %1",
+  },
+  {
+    "^无法后台保存失败任务：(.+)$",
+    "Unable to save failed tasks: %1",
+  },
+  {
     "^未能回滚中断的备份恢复：(.+)$",
     "Could not roll back an interrupted backup restore: %1",
   },
@@ -2243,7 +2262,20 @@ function translate_ui_text(value)
     end
   end
 
+  if text:find("[\228-\233][\128-\191][\128-\191]") then
+    if I18N_MISSING[text] then
+      I18N_MISSING[text] = I18N_MISSING[text] + 1
+    elseif (I18N_MISSING_UNIQUE or 0) < (I18N_MISSING_LIMIT or 256) then
+      I18N_MISSING[text] = 1
+      I18N_MISSING_UNIQUE = (I18N_MISSING_UNIQUE or 0) + 1
+    end
+  end
+
   return text
+end
+
+function missing_translation_count()
+  return I18N_MISSING_UNIQUE or 0
 end
 
 function translate_ui_label(value)
@@ -3990,6 +4022,77 @@ Jobs = {
   history = {},
 }
 
+-- Controlled mutation boundary for new modules. Legacy UI code still reads
+-- the shared table directly, but new services can update it through this API
+-- and tests can inject an isolated table without booting ReaImGui.
+
+function new_state_store(initial_state)
+  assert(type(initial_state) == "table", "state table is required")
+  local store = { raw = initial_state }
+
+  function store.get(name)
+    return initial_state[name]
+  end
+
+  function store.set(name, value)
+    assert(type(name) == "string" and name ~= "", "state key is required")
+    initial_state[name] = value
+    return value
+  end
+
+  function store.update(name, updater)
+    assert(type(updater) == "function", "state updater is required")
+    return store.set(name, updater(initial_state[name]))
+  end
+
+  function store.mark_dirty(name)
+    return store.set(name, true)
+  end
+
+  function store.apply(values)
+    assert(type(values) == "table", "state values are required")
+    for name, value in pairs(values) do
+      store.set(name, value)
+    end
+  end
+
+  return store
+end
+
+AppState = new_state_store(state)
+
+-- Injectable boundary for REAPER, SWS and ReaImGui host APIs. Runtime code
+-- uses the real global table; command-line tests can supply a small stub.
+
+function new_reaper_host_adapter(api)
+  assert(type(api) == "table", "host API table is required")
+  local adapter = { raw = api }
+  return setmetatable(adapter, {
+    __index = function(target, name)
+      local value = api[name]
+      if type(value) ~= "function" then
+        return value
+      end
+      local wrapper = function(...)
+        return value(...)
+      end
+      rawset(target, name, wrapper)
+      return wrapper
+    end,
+  })
+end
+
+function host_api_available(api, name)
+  local target = api or Host
+  return type(target) == "table"
+    and type(target[name]) == "function"
+end
+
+Host = new_reaper_host_adapter(reaper)
+
+-- Background jobs, atomic storage, recovery and cache maintenance.
+local HostApi = Host or reaper
+
 function Jobs.begin(
   kind,
   resource,
@@ -4029,7 +4132,7 @@ function Jobs.begin(
     priority = tonumber(priority) or 50,
     state = "running",
     cancel_requested = false,
-    started = reaper.time_precise(),
+    started = HostApi.time_precise(),
   }
 
   Jobs.active[kind] = token
@@ -4061,7 +4164,7 @@ function Jobs.finish(token, success, message)
     return
   end
 
-  token.finished = reaper.time_precise()
+  token.finished = HostApi.time_precise()
   token.message = tostring(message or "")
   token.state = token.cancel_requested
     and "canceled"
@@ -4138,7 +4241,7 @@ function find_project_url_in_sibling_scripts()
 
   while true do
     local filename =
-      reaper.EnumerateFiles(
+      HostApi.EnumerateFiles(
         SCRIPT_DIR,
         index
       )
@@ -4301,7 +4404,7 @@ function commit_atomic_temporary(
   keep_backup
 )
   backup_path = backup_path or (target_path .. ".bak")
-  local had_original = reaper.file_exists(target_path)
+  local had_original = HostApi.file_exists(target_path)
   os.remove(backup_path)
 
   if had_original
@@ -4728,7 +4831,7 @@ function append_schema_migration_log(
     return false
   end
 
-  local existed = reaper.file_exists(MIGRATION_LOG_FILE)
+  local existed = HostApi.file_exists(MIGRATION_LOG_FILE)
   local file = io.open(MIGRATION_LOG_FILE, "ab")
 
   if not file then
@@ -4858,7 +4961,7 @@ function recover_atomic_data_files()
   local files = persistent_data_files()
   local unresolved = {}
   local restore_committed =
-    reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+    HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
   files[#files + 1] = SCAN_CHECKPOINT_FILE
   for _, target_path in ipairs(files) do
     local backup_path = target_path .. ".bak"
@@ -4877,20 +4980,20 @@ function recover_atomic_data_files()
         restore_temporary_path,
         restore_new_path,
       }) do
-        if reaper.file_exists(artifact_path)
+        if HostApi.file_exists(artifact_path)
           and not os.remove(artifact_path) then
           restore_pending = true
         end
       end
-    elseif reaper.file_exists(restore_backup_path) then
-      local removed = not reaper.file_exists(target_path)
+    elseif HostApi.file_exists(restore_backup_path) then
+      local removed = not HostApi.file_exists(target_path)
         or os.remove(target_path) ~= nil
       if not removed
         or not os.rename(restore_backup_path, target_path) then
         restore_pending = true
       end
-    elseif reaper.file_exists(restore_new_path) then
-      if reaper.file_exists(target_path)
+    elseif HostApi.file_exists(restore_new_path) then
+      if HostApi.file_exists(target_path)
         and not os.remove(target_path) then
         restore_pending = true
       end
@@ -4906,11 +5009,11 @@ function recover_atomic_data_files()
     end
 
     if not restore_pending
-      and not reaper.file_exists(target_path)
-      and reaper.file_exists(backup_path) then
+      and not HostApi.file_exists(target_path)
+      and HostApi.file_exists(backup_path) then
       os.rename(backup_path, target_path)
     elseif not restore_pending
-      and reaper.file_exists(target_path) then
+      and HostApi.file_exists(target_path) then
       os.remove(backup_path)
     end
 
@@ -4920,7 +5023,7 @@ function recover_atomic_data_files()
   end
   if restore_committed and #unresolved == 0 then
     os.remove(RESTORE_TRANSACTION_COMMIT_FILE)
-    if reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE) then
+    if HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE) then
       unresolved[#unresolved + 1] =
         basename(RESTORE_TRANSACTION_COMMIT_FILE)
     end
@@ -4933,7 +5036,7 @@ end
 
 function remove_shallow_directory(path)
   while true do
-    local filename = reaper.EnumerateFiles(path, 0)
+    local filename = HostApi.EnumerateFiles(path, 0)
 
     if not filename then
       break
@@ -4982,7 +5085,7 @@ function backup_directories()
   local index = 0
 
   while true do
-    local name = reaper.EnumerateSubdirectories(BACKUP_DIR, index)
+    local name = HostApi.EnumerateSubdirectories(BACKUP_DIR, index)
 
     if not name then
       break
@@ -5028,7 +5131,7 @@ function create_data_backup(reason, quiet)
     suffix = suffix + 1
   end
 
-  if reaper.RecursiveCreateDirectory(directory, 0) <= 0 then
+  if HostApi.RecursiveCreateDirectory(directory, 0) <= 0 then
     if not quiet then
       set_status("无法创建数据备份目录", true)
     end
@@ -5040,7 +5143,7 @@ function create_data_backup(reason, quiet)
   local failed = 0
 
   for _, source_path in ipairs(persistent_data_files()) do
-    if reaper.file_exists(source_path) then
+    if HostApi.file_exists(source_path) then
       expected = expected + 1
       local inject_partial =
         state.persistence_fault_injection
@@ -5101,7 +5204,7 @@ end
 
 function restore_data_backup_transaction(directory)
   local plan = {}
-  if reaper.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+  if HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
     and not os.remove(RESTORE_TRANSACTION_COMMIT_FILE) then
     return false, 0, "stale_commit_marker"
   end
@@ -5109,7 +5212,7 @@ function restore_data_backup_transaction(directory)
   for _, target_path in ipairs(persistent_data_files()) do
     local source_path = join_path(directory, basename(target_path))
 
-    if reaper.file_exists(source_path) then
+    if HostApi.file_exists(source_path) then
       local temporary_path = target_path .. ".restore.tmp"
       os.remove(temporary_path)
       if not stream_file_to_temporary(
@@ -5131,7 +5234,7 @@ function restore_data_backup_transaction(directory)
         had_original = false,
       }
     elseif target_path == DATABASE_JOURNAL_FILE
-      and reaper.file_exists(target_path) then
+      and HostApi.file_exists(target_path) then
       -- Backups created before incremental persistence have no journal.
       -- Removing the current one is part of the same rollback-safe restore,
       -- otherwise post-backup edits could reappear over the restored snapshot.
@@ -5152,7 +5255,7 @@ function restore_data_backup_transaction(directory)
 
   local committed = 0
   for index, item in ipairs(plan) do
-    item.had_original = reaper.file_exists(item.target_path)
+    item.had_original = HostApi.file_exists(item.target_path)
     local marker_ok = true
     if not item.had_original and not item.delete_only then
       local marker = io.open(item.new_marker_path, "wb")
@@ -5200,7 +5303,7 @@ function restore_data_backup_transaction(directory)
       for rollback = committed, 1, -1 do
         local previous = plan[rollback]
         local target_removed =
-          not reaper.file_exists(previous.target_path)
+          not HostApi.file_exists(previous.target_path)
           or os.remove(previous.target_path) ~= nil
         if previous.had_original then
           os.rename(
@@ -5248,7 +5351,7 @@ function restore_data_backup_transaction(directory)
     os.remove(commit_marker_temporary)
     for rollback = #plan, 1, -1 do
       local previous = plan[rollback]
-      if reaper.file_exists(previous.target_path) then
+      if HostApi.file_exists(previous.target_path) then
         os.remove(previous.target_path)
       end
       if previous.had_original then
@@ -5278,7 +5381,7 @@ function restore_latest_data_backup()
     return
   end
 
-  local answer = reaper.MB(
+  local answer = HostApi.MB(
     "将恢复最近的数据备份：\n\n"
       .. name
       .. "\n\n恢复后 PsyReaSFX 会关闭，请重新运行脚本。继续吗？",
@@ -5308,7 +5411,7 @@ function restore_latest_data_backup()
 
   state.skip_persistence_on_cleanup = true
   state.open = false
-  reaper.MB(
+  HostApi.MB(
     "已恢复 " .. tostring(restored) .. " 个数据文件。\n\n请重新运行 PsyReaSFX。",
     SCRIPT_NAME,
     0
@@ -5424,23 +5527,21 @@ function save_failed_tasks()
 
   write_persistence_schema(file, FAILED_TASKS_FILE)
 
-  local tasks = {}
-
-  for _, task in pairs(state.failed_tasks) do
-    tasks[#tasks + 1] = task
-  end
-
-  table.sort(tasks, function(a, b) return path_key(a.path) < path_key(b.path) end)
-
-  for _, task in ipairs(tasks) do
-    file:write(
-      escape_tsv(task.path), "\t",
-      escape_tsv(task.stage), "\t",
-      escape_tsv(task.reason), "\t",
-      tostring(task.attempts or 1), "\t",
-      tostring(task.updated or os.time()), "\n"
+  local job = new_failed_tasks_persistence_job(state.failed_tasks)
+  local complete, failure
+  repeat
+    complete, failure = step_failed_tasks_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
     )
-  end
+    if failure then
+      file:abort()
+      set_status("无法保存失败任务：" .. tostring(failure), true)
+      return false
+    end
+  until complete
 
   if not file:close() then
     set_status("无法保存失败任务", true)
@@ -5495,7 +5596,7 @@ function retry_failed_tasks()
   local assets = {}
 
   for key, task in pairs(state.failed_tasks) do
-    if reaper.file_exists(task.path) then
+    if HostApi.file_exists(task.path) then
       local asset = state.by_path[key]
 
       if not asset then
@@ -5536,7 +5637,7 @@ function retry_failed_tasks()
     done = 0,
     failed = 0,
     current = nil,
-    started = reaper.time_precise(),
+    started = HostApi.time_precise(),
     phase = "prepare",
     job_token = job_token,
   }
@@ -5603,7 +5704,7 @@ function move_wave_cache_files(
     return 0, 0
   end
 
-  reaper.RecursiveCreateDirectory(
+  HostApi.RecursiveCreateDirectory(
     new_directory,
     0
   )
@@ -5613,7 +5714,7 @@ function move_wave_cache_files(
 
   while true do
     local filename =
-      reaper.EnumerateFiles(
+      HostApi.EnumerateFiles(
         old_directory,
         index
       )
@@ -5644,7 +5745,7 @@ function move_wave_cache_files(
         filename
       )
 
-    if reaper.file_exists(target_path) then
+    if HostApi.file_exists(target_path) then
       os.remove(source_path)
       moved = moved + 1
     elseif copy_file_streaming(
@@ -5708,7 +5809,7 @@ function switch_wave_cache_directory(
         new_directory
       )
   else
-    reaper.RecursiveCreateDirectory(
+    HostApi.RecursiveCreateDirectory(
       new_directory,
       0
     )
@@ -5741,7 +5842,7 @@ end
 
 function prompt_wave_cache_directory()
   local ok, input =
-    reaper.GetUserInputs(
+    HostApi.GetUserInputs(
       "更改波形缓存目录",
       1,
       "新缓存目录路径:",
@@ -5757,7 +5858,7 @@ function prompt_wave_cache_directory()
     normalized_cache_directory(input)
 
   local answer =
-    reaper.MB(
+    HostApi.MB(
       "是否将现有波形缓存移动到新目录？\n\n"
         .. "是：移动已有缓存并切换。\n"
         .. "否：直接切换，旧目录保持不变。\n"
@@ -5789,7 +5890,7 @@ function restore_default_wave_cache_directory()
   end
 
   local answer =
-    reaper.MB(
+    HostApi.MB(
       "恢复默认缓存目录，并移动现有缓存？\n\n"
         .. target,
       SCRIPT_NAME,
@@ -5809,8 +5910,8 @@ end
 function migrate_legacy_data()
   ensure_dirs()
 
-  if not reaper.file_exists(CONFIG_FILE)
-    and reaper.file_exists(LEGACY_CONFIG_FILE) then
+  if not HostApi.file_exists(CONFIG_FILE)
+    and HostApi.file_exists(LEGACY_CONFIG_FILE) then
     if copy_file_streaming(LEGACY_CONFIG_FILE, CONFIG_FILE) then
       set_status("已迁移旧版音效库路径与偏好设置")
     end
@@ -5820,6 +5921,9 @@ end
 ----------------------------------------------------------------
 -- UCS and placeholder assets
 ----------------------------------------------------------------
+
+-- Catalog identity, metadata, configuration and library persistence.
+local HostApi = Host or reaper
 
 function parse_ucs_filename(filename)
   local stem = strip_extension(filename)
@@ -5881,7 +5985,7 @@ function ensure_asset_identity(asset)
     )
   end
 
-  if reaper.file_exists(asset.path or "") then
+  if HostApi.file_exists(asset.path or "") then
     asset.last_seen = os.time()
   else
     asset.last_seen = tonumber(asset.last_seen) or 0
@@ -8381,6 +8485,196 @@ function step_path_set_persistence_job(
   return job.next_key == nil
 end
 
+-- Map-backed catalogs can change between UI frames. Lua's next() raises an
+-- error when its cursor key was removed, so retain a visited set and recover
+-- from a deleted cursor by finding the first unvisited live key. Normal saves
+-- stay O(n); the recovery scan is only paid when a concurrent deletion occurs.
+local function take_next_live_map_entry(job)
+  while job.next_key ~= nil do
+    local entry_key = job.next_key
+    local value = job.entries[entry_key]
+    if value ~= nil then
+      job.visited[entry_key] = true
+      job.next_key = next(job.entries, entry_key)
+      return entry_key, value
+    end
+
+    local candidate = next(job.entries)
+    while candidate ~= nil and job.visited[candidate] do
+      candidate = next(job.entries, candidate)
+    end
+    job.next_key = candidate
+  end
+  return nil
+end
+
+local function new_live_map_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  return {
+    entries = entries,
+    next_key = next(entries),
+    visited = {},
+    processed = 0,
+    written = 0,
+  }
+end
+
+local function persistence_deadline_reached(processed, deadline, time_function)
+  return processed > 0 and processed % 64 == 0 and deadline
+    and type(time_function) == "function"
+    and time_function() >= deadline
+end
+
+function new_regions_persistence_job(regions_by_path)
+  local job = new_live_map_job(regions_by_path)
+  job.current_regions = nil
+  job.region_index = 1
+  return job
+end
+
+function step_regions_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    if not job.current_regions then
+      local _, regions = take_next_live_map_entry(job)
+      if not regions then return true end
+      job.current_regions = regions
+      job.region_index = 1
+      if #regions == 0 then
+        job.current_regions = nil
+        processed = processed + 1
+        job.processed = job.processed + 1
+      end
+    else
+      local region = job.current_regions[job.region_index]
+      if not region then
+        job.current_regions = nil
+      else
+        job.region_index = job.region_index + 1
+        if not writer:write(
+          escape_function(region.path or ""), "\t",
+          tostring(region.start or 0), "\t",
+          tostring(region.finish or 0), "\t",
+          escape_function(region.name or ""), "\t",
+          escape_function(region.source or "manual"), "\t",
+          tostring(region.batch_id or 0), "\n"
+        ) then
+          return false, "write_region"
+        end
+        processed = processed + 1
+        job.processed = job.processed + 1
+        job.written = job.written + 1
+        if job.current_regions[job.region_index] == nil then
+          job.current_regions = nil
+        end
+      end
+    end
+    if persistence_deadline_reached(processed, deadline, time_function) then
+      return false
+    end
+  end
+  return job.current_regions == nil and job.next_key == nil
+end
+
+function new_loudness_persistence_job(loudness_cache)
+  return new_live_map_job(loudness_cache)
+end
+
+function step_loudness_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    local _, entry = take_next_live_map_entry(job)
+    if not entry then return true end
+    if not writer:write(
+      escape_function(entry.path or ""), "\t",
+      tostring(entry.size or 0), "\t",
+      tostring(entry.lufs_i or ""), "\t",
+      tostring(entry.lufs_m or ""), "\t",
+      tostring(entry.lufs_s or ""), "\t",
+      tostring(entry.true_peak or ""), "\n"
+    ) then
+      return false, "write_loudness"
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    job.written = job.written + 1
+    if persistence_deadline_reached(processed, deadline, time_function) then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+function new_failed_tasks_persistence_job(failed_tasks)
+  return new_live_map_job(failed_tasks)
+end
+
+function step_failed_tasks_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    local _, task = take_next_live_map_entry(job)
+    if not task then return true end
+    if not writer:write(
+      escape_function(task.path or ""), "\t",
+      escape_function(task.stage or "unknown"), "\t",
+      escape_function(task.reason or ""), "\t",
+      tostring(task.attempts or 1), "\t",
+      tostring(task.updated or 0), "\n"
+    ) then
+      return false, "write_failed_task"
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    job.written = job.written + 1
+    if persistence_deadline_reached(processed, deadline, time_function) then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+-- Region, loudness, channel and transient analysis services.
+local HostApi = Host or reaper
+
 function asset_regions(asset)
   if not asset then
     return {}
@@ -8489,24 +8783,21 @@ function save_regions()
 
   write_persistence_schema(file, REGIONS_FILE)
 
-  for _, regions in pairs(state.regions_by_path) do
-    for _, region in ipairs(regions) do
-      file:write(
-        escape_tsv(region.path or ""),
-        "\t",
-        tostring(region.start or 0),
-        "\t",
-        tostring(region.finish or 0),
-        "\t",
-        escape_tsv(region.name or ""),
-        "\t",
-        escape_tsv(region.source or "manual"),
-        "\t",
-        tostring(region.batch_id or 0),
-        "\n"
-      )
+  local job = new_regions_persistence_job(state.regions_by_path)
+  local complete, failure
+  repeat
+    complete, failure = step_regions_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
+    )
+    if failure then
+      file:abort()
+      set_status("无法保存 Region 数据：" .. tostring(failure), true)
+      return false
     end
-  end
+  until complete
 
   if not file:close() then
     set_status("无法保存 Region 数据", true)
@@ -8594,7 +8885,7 @@ function save_current_selection_as_region(asset)
     )
 
   local ok, name =
-    reaper.GetUserInputs(
+    HostApi.GetUserInputs(
       "保存当前选区为 Region",
       1,
       "名称:",
@@ -8807,22 +9098,21 @@ function save_loudness_cache()
 
   write_persistence_schema(file, LOUDNESS_FILE)
 
-  for _, entry in pairs(state.loudness_cache) do
-    file:write(
-      escape_tsv(entry.path or ""),
-      "\t",
-      tostring(entry.size or 0),
-      "\t",
-      tostring(entry.lufs_i or ""),
-      "\t",
-      tostring(entry.lufs_m or ""),
-      "\t",
-      tostring(entry.lufs_s or ""),
-      "\t",
-      tostring(entry.true_peak or ""),
-      "\n"
+  local job = new_loudness_persistence_job(state.loudness_cache)
+  local complete, failure
+  repeat
+    complete, failure = step_loudness_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
     )
-  end
+    if failure then
+      file:abort()
+      set_status("无法保存响度缓存：" .. tostring(failure), true)
+      return false
+    end
+  until complete
 
   if not file:close() then
     set_status("无法保存响度缓存", true)
@@ -8908,8 +9198,8 @@ end
 function request_loudness_analysis(asset, force)
   if not state.show_loudness_metrics
     or not asset
-    or not reaper.file_exists(asset.path)
-    or type(reaper.CalculateNormalization) ~= "function" then
+    or not HostApi.file_exists(asset.path)
+    or type(HostApi.CalculateNormalization) ~= "function" then
     return
   end
 
@@ -8949,7 +9239,7 @@ end
 
 function destroy_loudness_job(job, completed)
   if job and job.source then
-    reaper.PCM_Source_Destroy(job.source)
+    HostApi.PCM_Source_Destroy(job.source)
     job.source = nil
   end
 
@@ -8974,7 +9264,7 @@ function process_loudness_queue()
     return
   end
 
-  local now = reaper.time_precise()
+  local now = HostApi.time_precise()
 
   if now < state.next_loudness_job then
     return
@@ -8991,7 +9281,7 @@ function process_loudness_queue()
     state.loudness_queued[queued.key] = nil
 
     local source =
-      reaper.PCM_Source_CreateFromFile(
+      HostApi.PCM_Source_CreateFromFile(
         queued.asset.path
       )
 
@@ -9019,7 +9309,7 @@ function process_loudness_queue()
     end
 
     if #pending == 0 then
-      reaper.PCM_Source_Destroy(source)
+      HostApi.PCM_Source_Destroy(source)
       return
     end
 
@@ -9052,7 +9342,7 @@ function process_loudness_queue()
 
   local ok, gain =
     pcall(
-      reaper.CalculateNormalization,
+      HostApi.CalculateNormalization,
       job.source,
       metric.mode,
       0,
@@ -9327,7 +9617,7 @@ function apply_preview_channel_mode(preview, mono_output_channel)
   end
 
   pcall(
-    reaper.CF_Preview_SetValue,
+    HostApi.CF_Preview_SetValue,
     preview,
     "D_PAN",
     pan
@@ -9339,7 +9629,7 @@ function apply_preview_channel_mode(preview, mono_output_channel)
       or state.preview_channel_mode == "mono"
 
   pcall(
-    reaper.CF_Preview_SetValue,
+    HostApi.CF_Preview_SetValue,
     preview,
     "I_OUTCHAN",
     use_centered_mono
@@ -9600,6 +9890,9 @@ end
 
 local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024
 local DUPLICATE_FINGERPRINT_VERSION = "sample-fnv1a-head-mid-tail-v1"
+local function duplicate_host_api()
+  return Host or reaper
+end
 
 function duplicate_file_stat(path, fallback_size)
   local result = {
@@ -9607,10 +9900,11 @@ function duplicate_file_stat(path, fallback_size)
     modified = "",
     source = "unavailable",
   }
-  if not reaper or type(reaper.JS_File_Stat) ~= "function" then
+  local host = duplicate_host_api()
+  if not host or type(host.JS_File_Stat) ~= "function" then
     return result
   end
-  local values = { pcall(reaper.JS_File_Stat, path) }
+  local values = { pcall(host.JS_File_Stat, path) }
   if not values[1] or tonumber(values[2]) ~= 0 then
     return result
   end
@@ -10792,6 +11086,9 @@ function auxiliary_save_label(kind)
   if kind == "project_usage" then return "工程使用记录" end
   if kind == "history" then return "试听历史" end
   if kind == "session_played" then return "本次试听高亮" end
+  if kind == "regions" then return "Region 数据" end
+  if kind == "loudness" then return "响度缓存" end
+  if kind == "failed_tasks" then return "失败任务" end
   return "辅助数据"
 end
 
@@ -10801,7 +11098,7 @@ function cancel_auxiliary_save(reason)
   if session.writer and session.writer.abort then
     session.writer:abort()
   end
-  state.auxiliary_save_session = nil
+  AppState.set("auxiliary_save_session", nil)
   if session.kind == "collections" then
     state.collections_dirty = true
   elseif session.kind == "project_usage" then
@@ -10813,6 +11110,12 @@ function cancel_auxiliary_save(reason)
   elseif session.kind == "session_played" then
     state.session_played_dirty = true
     replay_pending_session_played(session)
+  elseif session.kind == "regions" then
+    AppState.mark_dirty("regions_dirty")
+  elseif session.kind == "loudness" then
+    AppState.mark_dirty("loudness_dirty")
+  elseif session.kind == "failed_tasks" then
+    AppState.mark_dirty("failed_tasks_dirty")
   end
   return true
 end
@@ -10880,6 +11183,65 @@ function start_project_usage_save()
   return true
 end
 
+function start_catalog_auxiliary_save(kind, path, dirty_flag, job)
+  if state.auxiliary_save_session or not state[dirty_flag] then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(path)
+  if not writer then
+    set_status(
+      "无法后台保存" .. auxiliary_save_label(kind) .. "："
+        .. tostring(open_error or "无法创建临时文件"),
+      true
+    )
+    return false
+  end
+  if not write_persistence_schema(writer, path) then
+    writer:abort()
+    set_status(
+      "无法后台保存" .. auxiliary_save_label(kind) .. "：无法写入文件头",
+      true
+    )
+    return false
+  end
+  AppState.set(dirty_flag, false)
+  AppState.set("auxiliary_save_session", {
+    kind = kind,
+    writer = writer,
+    job = job,
+    started = reaper.time_precise(),
+  })
+  return true
+end
+
+function start_regions_save()
+  return start_catalog_auxiliary_save(
+    "regions",
+    REGIONS_FILE,
+    "regions_dirty",
+    new_regions_persistence_job(state.regions_by_path)
+  )
+end
+
+function start_loudness_save()
+  return start_catalog_auxiliary_save(
+    "loudness",
+    LOUDNESS_FILE,
+    "loudness_dirty",
+    new_loudness_persistence_job(state.loudness_cache)
+  )
+end
+
+function start_failed_tasks_save()
+  return start_catalog_auxiliary_save(
+    "failed_tasks",
+    FAILED_TASKS_FILE,
+    "failed_tasks_dirty",
+    new_failed_tasks_persistence_job(state.failed_tasks)
+  )
+end
+
 function finish_auxiliary_save(session)
   local closed, close_error = session.writer:close()
   if not closed then
@@ -10896,7 +11258,9 @@ function finish_auxiliary_save(session)
     replay_pending_session_played(session)
   end
   if state.collections_dirty or state.history_dirty
-    or state.session_played_dirty or state.project_usage_dirty then
+    or state.session_played_dirty or state.project_usage_dirty
+    or state.regions_dirty or state.loudness_dirty
+    or state.failed_tasks_dirty then
     state.last_save = 0
   end
   return true
@@ -10956,6 +11320,33 @@ function process_auxiliary_save()
     )
   elseif session.kind == "session_played" then
     complete, failure = step_path_set_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "regions" then
+    complete, failure = step_regions_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "loudness" then
+    complete, failure = step_loudness_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "failed_tasks" then
+    complete, failure = step_failed_tasks_persistence_job(
       session.job,
       session.writer,
       AUXILIARY_SAVE_RECORDS_PER_FRAME,
@@ -11583,6 +11974,9 @@ function schedule_auxiliary_save()
   if state.history_dirty then return start_history_save() end
   if state.session_played_dirty then return start_session_played_save() end
   if state.project_usage_dirty then return start_project_usage_save() end
+  if state.failed_tasks_dirty then return start_failed_tasks_save() end
+  if state.regions_dirty then return start_regions_save() end
+  if state.loudness_dirty then return start_loudness_save() end
   return false
 end
 
@@ -14925,7 +15319,7 @@ function finish_import_session()
 
   Jobs.finish(session.job_token, true)
   save_database_changes()
-  save_failed_tasks()
+  start_failed_tasks_save()
 
   if session.silent then
     set_status(
@@ -15048,7 +15442,7 @@ function process_import_session()
   if checkpoint_now - (state.import_checkpoint_last_at or 0)
       >= IMPORT_CHECKPOINT_INTERVAL then
     save_database_changes()
-    save_failed_tasks()
+    start_failed_tasks_save()
     state.import_checkpoint_last_at = checkpoint_now
   end
 
@@ -29241,6 +29635,8 @@ function build_diagnostics_text()
         .. tostring(session_played_count()),
       "Previous-session highlights: "
         .. tostring(last_session_played_count()),
+      "Missing English translations seen: "
+        .. tostring(missing_translation_count()),
       "Data directory: " .. DATA_DIR,
       "Wave cache directory: "
         .. tostring(
@@ -31233,7 +31629,8 @@ function draw_settings_maintenance()
     if dark_button("清除失败记录", 140) then
       state.failed_tasks = {}
       state.failed_tasks_dirty = true
-      save_failed_tasks()
+      state.last_save = 0
+      schedule_auxiliary_save()
       set_status("失败任务记录已清除")
     end
   else
@@ -32236,18 +32633,6 @@ function autosave()
 
   if state.searches_dirty then
     save_saved_searches()
-  end
-
-  if state.regions_dirty then
-    save_regions()
-  end
-
-  if state.loudness_dirty then
-    save_loudness_cache()
-  end
-
-  if state.failed_tasks_dirty then
-    save_failed_tasks()
   end
 
   schedule_auxiliary_save()

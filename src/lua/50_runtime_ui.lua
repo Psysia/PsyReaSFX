@@ -1030,6 +1030,9 @@ function auxiliary_save_label(kind)
   if kind == "project_usage" then return "工程使用记录" end
   if kind == "history" then return "试听历史" end
   if kind == "session_played" then return "本次试听高亮" end
+  if kind == "regions" then return "Region 数据" end
+  if kind == "loudness" then return "响度缓存" end
+  if kind == "failed_tasks" then return "失败任务" end
   return "辅助数据"
 end
 
@@ -1039,7 +1042,7 @@ function cancel_auxiliary_save(reason)
   if session.writer and session.writer.abort then
     session.writer:abort()
   end
-  state.auxiliary_save_session = nil
+  AppState.set("auxiliary_save_session", nil)
   if session.kind == "collections" then
     state.collections_dirty = true
   elseif session.kind == "project_usage" then
@@ -1051,6 +1054,12 @@ function cancel_auxiliary_save(reason)
   elseif session.kind == "session_played" then
     state.session_played_dirty = true
     replay_pending_session_played(session)
+  elseif session.kind == "regions" then
+    AppState.mark_dirty("regions_dirty")
+  elseif session.kind == "loudness" then
+    AppState.mark_dirty("loudness_dirty")
+  elseif session.kind == "failed_tasks" then
+    AppState.mark_dirty("failed_tasks_dirty")
   end
   return true
 end
@@ -1118,6 +1127,65 @@ function start_project_usage_save()
   return true
 end
 
+function start_catalog_auxiliary_save(kind, path, dirty_flag, job)
+  if state.auxiliary_save_session or not state[dirty_flag] then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(path)
+  if not writer then
+    set_status(
+      "无法后台保存" .. auxiliary_save_label(kind) .. "："
+        .. tostring(open_error or "无法创建临时文件"),
+      true
+    )
+    return false
+  end
+  if not write_persistence_schema(writer, path) then
+    writer:abort()
+    set_status(
+      "无法后台保存" .. auxiliary_save_label(kind) .. "：无法写入文件头",
+      true
+    )
+    return false
+  end
+  AppState.set(dirty_flag, false)
+  AppState.set("auxiliary_save_session", {
+    kind = kind,
+    writer = writer,
+    job = job,
+    started = reaper.time_precise(),
+  })
+  return true
+end
+
+function start_regions_save()
+  return start_catalog_auxiliary_save(
+    "regions",
+    REGIONS_FILE,
+    "regions_dirty",
+    new_regions_persistence_job(state.regions_by_path)
+  )
+end
+
+function start_loudness_save()
+  return start_catalog_auxiliary_save(
+    "loudness",
+    LOUDNESS_FILE,
+    "loudness_dirty",
+    new_loudness_persistence_job(state.loudness_cache)
+  )
+end
+
+function start_failed_tasks_save()
+  return start_catalog_auxiliary_save(
+    "failed_tasks",
+    FAILED_TASKS_FILE,
+    "failed_tasks_dirty",
+    new_failed_tasks_persistence_job(state.failed_tasks)
+  )
+end
+
 function finish_auxiliary_save(session)
   local closed, close_error = session.writer:close()
   if not closed then
@@ -1134,7 +1202,9 @@ function finish_auxiliary_save(session)
     replay_pending_session_played(session)
   end
   if state.collections_dirty or state.history_dirty
-    or state.session_played_dirty or state.project_usage_dirty then
+    or state.session_played_dirty or state.project_usage_dirty
+    or state.regions_dirty or state.loudness_dirty
+    or state.failed_tasks_dirty then
     state.last_save = 0
   end
   return true
@@ -1194,6 +1264,33 @@ function process_auxiliary_save()
     )
   elseif session.kind == "session_played" then
     complete, failure = step_path_set_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "regions" then
+    complete, failure = step_regions_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "loudness" then
+    complete, failure = step_loudness_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "failed_tasks" then
+    complete, failure = step_failed_tasks_persistence_job(
       session.job,
       session.writer,
       AUXILIARY_SAVE_RECORDS_PER_FRAME,
@@ -1821,6 +1918,9 @@ function schedule_auxiliary_save()
   if state.history_dirty then return start_history_save() end
   if state.session_played_dirty then return start_session_played_save() end
   if state.project_usage_dirty then return start_project_usage_save() end
+  if state.failed_tasks_dirty then return start_failed_tasks_save() end
+  if state.regions_dirty then return start_regions_save() end
+  if state.loudness_dirty then return start_loudness_save() end
   return false
 end
 
@@ -5163,7 +5263,7 @@ function finish_import_session()
 
   Jobs.finish(session.job_token, true)
   save_database_changes()
-  save_failed_tasks()
+  start_failed_tasks_save()
 
   if session.silent then
     set_status(
@@ -5286,7 +5386,7 @@ function process_import_session()
   if checkpoint_now - (state.import_checkpoint_last_at or 0)
       >= IMPORT_CHECKPOINT_INTERVAL then
     save_database_changes()
-    save_failed_tasks()
+    start_failed_tasks_save()
     state.import_checkpoint_last_at = checkpoint_now
   end
 
@@ -19479,6 +19579,8 @@ function build_diagnostics_text()
         .. tostring(session_played_count()),
       "Previous-session highlights: "
         .. tostring(last_session_played_count()),
+      "Missing English translations seen: "
+        .. tostring(missing_translation_count()),
       "Data directory: " .. DATA_DIR,
       "Wave cache directory: "
         .. tostring(
@@ -21471,7 +21573,8 @@ function draw_settings_maintenance()
     if dark_button("清除失败记录", 140) then
       state.failed_tasks = {}
       state.failed_tasks_dirty = true
-      save_failed_tasks()
+      state.last_save = 0
+      schedule_auxiliary_save()
       set_status("失败任务记录已清除")
     end
   else
@@ -22474,18 +22577,6 @@ function autosave()
 
   if state.searches_dirty then
     save_saved_searches()
-  end
-
-  if state.regions_dirty then
-    save_regions()
-  end
-
-  if state.loudness_dirty then
-    save_loudness_cache()
-  end
-
-  if state.failed_tasks_dirty then
-    save_failed_tasks()
   end
 
   schedule_auxiliary_save()

@@ -26,7 +26,20 @@ function translate_ui_text(value)
     end
   end
 
+  if text:find("[\228-\233][\128-\191][\128-\191]") then
+    if I18N_MISSING[text] then
+      I18N_MISSING[text] = I18N_MISSING[text] + 1
+    elseif (I18N_MISSING_UNIQUE or 0) < (I18N_MISSING_LIMIT or 256) then
+      I18N_MISSING[text] = 1
+      I18N_MISSING_UNIQUE = (I18N_MISSING_UNIQUE or 0) + 1
+    end
+  end
+
   return text
+end
+
+function missing_translation_count()
+  return I18N_MISSING_UNIQUE or 0
 end
 
 function translate_ui_label(value)

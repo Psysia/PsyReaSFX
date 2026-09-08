@@ -1,5 +1,8 @@
 local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024
 local DUPLICATE_FINGERPRINT_VERSION = "sample-fnv1a-head-mid-tail-v1"
+local function duplicate_host_api()
+  return Host or reaper
+end
 
 function duplicate_file_stat(path, fallback_size)
   local result = {
@@ -7,10 +10,11 @@ function duplicate_file_stat(path, fallback_size)
     modified = "",
     source = "unavailable",
   }
-  if not reaper or type(reaper.JS_File_Stat) ~= "function" then
+  local host = duplicate_host_api()
+  if not host or type(host.JS_File_Stat) ~= "function" then
     return result
   end
-  local values = { pcall(reaper.JS_File_Stat, path) }
+  local values = { pcall(host.JS_File_Stat, path) }
   if not values[1] or tonumber(values[2]) ~= 0 then
     return result
   end

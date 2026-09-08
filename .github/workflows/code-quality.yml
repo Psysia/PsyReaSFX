@@ -105,6 +105,29 @@ jobs:
         run: |
           lua tools/lua_incremental_persistence_selftest.lua (Resolve-Path 'src/lua/38_incremental_persistence.lua') 25000
 
+      - name: Run Lua host adapter self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_host_adapter_selftest.lua (Resolve-Path 'src/lua/15_host_adapter.lua')
+
+      - name: Run Lua state store self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_state_store_selftest.lua (Resolve-Path 'src/lua/12_state_store.lua')
+
+      - name: Run Lua i18n self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_i18n_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua')
+
+      - name: Run Lua job coordinator self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_jobs_selftest.lua (Resolve-Path 'src/lua/20_jobs_storage.lua')
+
+      - name: Audit Lua architecture boundaries
+        run: python tools/audit_lua_architecture.py
+
       - name: Build Desktop Release
         run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
 

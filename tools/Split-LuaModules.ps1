@@ -17,12 +17,15 @@ $source = $source.Replace("`r`n", "`n").Replace("`r", "`n")
 $boundaries = @(
     @{ File = "00_bootstrap.lua"; Marker = "" },
     @{ File = "10_ui_core.lua"; Marker = "function translate_ui_text(value)" },
-    @{ File = "20_jobs_storage.lua"; Marker = "function Jobs.begin(" },
-    @{ File = "30_catalog.lua"; Marker = "function parse_ucs_filename(filename)" },
+    @{ File = "12_state_store.lua"; Marker = "-- Controlled mutation boundary for new modules." },
+    @{ File = "15_host_adapter.lua"; Marker = "-- Injectable boundary for REAPER, SWS and ReaImGui host APIs." },
+    @{ File = "20_jobs_storage.lua"; Marker = "-- Background jobs, atomic storage, recovery and cache maintenance." },
+    @{ File = "30_catalog.lua"; Marker = "-- Catalog identity, metadata, configuration and library persistence." },
     @{ File = "35_incremental_results.lua"; Marker = "-- Incremental result construction keeps large catalogs out of a single UI" },
     @{ File = "36_asset_journal.lua"; Marker = "-- Generation-bound asset journal codec. Decoding validates the complete" },
     @{ File = "37_catalog_caches.lua"; Marker = "-- Sparse activity indexes and frame-budgeted aggregate caches for large" },
-    @{ File = "40_analysis.lua"; Marker = "function asset_regions(asset)" },
+    @{ File = "38_incremental_persistence.lua"; Marker = "-- Frame-budgeted serializers for large auxiliary catalogs." },
+    @{ File = "40_analysis.lua"; Marker = "-- Region, loudness, channel and transient analysis services." },
     @{ File = "45_duplicate_confirmation.lua"; Marker = "local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024" },
     @{ File = "50_runtime_ui.lua"; Marker = "function load_database()" }
 )

@@ -13,6 +13,13 @@
 - Coalesces repeated changes to the same asset and compacts at 10,000 distinct assets.
 - Rebuilds sidebar library counts across bounded frames and saves preview history from
   its sparse played-asset index instead of scanning the whole catalog after one preview.
+- Saves Regions, loudness cache entries, and failed-task records through the same
+  frame-budgeted atomic scheduler. Each 500,000-record catalog completes in 125 steps.
+- Adds injectable `AppState` and `Host` boundaries. Core storage, catalog, analysis,
+  and duplicate-confirmation modules no longer call the global REAPER API directly,
+  and CI prevents new legacy global-state writes.
+- Tracks untranslated Chinese UI text encountered in English mode and exposes the
+  missing-translation count in copied diagnostics.
 
 ### Missing assets and source relink
 
