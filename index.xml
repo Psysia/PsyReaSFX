@@ -9,6 +9,18 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.8.1" author="Psysia" time="2026-09-08T07:20:09Z">
+        <changelog><![CDATA[
+- Fixes valid Windows folders being rejected by drag-and-drop directory classification.
+- Adds native REAPER enumeration fallback for long and UNC directory paths.
+- Normalizes external payload paths and adds Windows directory regression coverage.
+- Promotes the hardened Lua line from the 0.8.0 beta series to stable 0.8.1.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/assets/fonts/OFL.txt</source>
+      </version>
       <version name="0.8.0-beta4.2" author="Psysia" time="2026-09-08T06:53:56Z">
         <changelog><![CDATA[
 - Fixes the scan-finalization progress crash caused by indexing a boolean import session.

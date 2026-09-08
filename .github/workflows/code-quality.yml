@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.8.0-beta4.2 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.8.1 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -119,6 +119,19 @@ jobs:
         shell: pwsh
         run: |
           lua tools/lua_i18n_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua')
+
+      - name: Run Lua directory classification self-test
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-directory-classification'
+          $directory = Join-Path $fixture 'folder'
+          $unicodeDirectory = Join-Path $fixture '声音库'
+          $file = Join-Path $fixture 'sample.wav'
+          $missing = Join-Path $fixture 'missing'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          New-Item -ItemType Directory -Path $unicodeDirectory -Force | Out-Null
+          New-Item -ItemType File -Path $file -Force | Out-Null
+          lua tools/lua_directory_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua') $directory $unicodeDirectory $file $missing
 
       - name: Run Lua job coordinator self-test
         shell: pwsh
