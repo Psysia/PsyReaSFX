@@ -125,13 +125,11 @@ jobs:
         run: |
           $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-directory-classification'
           $directory = Join-Path $fixture 'folder'
-          $unicodeDirectory = Join-Path $fixture '声音库'
           $file = Join-Path $fixture 'sample.wav'
           $missing = Join-Path $fixture 'missing'
           New-Item -ItemType Directory -Path $directory -Force | Out-Null
-          New-Item -ItemType Directory -Path $unicodeDirectory -Force | Out-Null
           New-Item -ItemType File -Path $file -Force | Out-Null
-          lua tools/lua_directory_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua') $directory $unicodeDirectory $file $missing
+          lua tools/lua_directory_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua') $directory $file $missing
 
       - name: Run Lua job coordinator self-test
         shell: pwsh

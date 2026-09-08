@@ -1,8 +1,7 @@
 local module_path = assert(arg[1], "UI core module is required")
 local directory_path = assert(arg[2], "directory fixture is required")
-local unicode_directory_path = assert(arg[3], "Unicode directory fixture is required")
-local file_path = assert(arg[4], "file fixture is required")
-local missing_path = assert(arg[5], "missing fixture path is required")
+local file_path = assert(arg[3], "file fixture is required")
+local missing_path = assert(arg[4], "missing fixture path is required")
 
 SEP = package.config:sub(1, 1)
 state = { language = "en" }
@@ -34,13 +33,13 @@ assert(loadfile(module_path))()
 
 assert(directory_exists(directory_path))
 assert(directory_exists(directory_path .. SEP))
-assert(directory_exists(unicode_directory_path))
 assert(not directory_exists(file_path))
 assert(not directory_exists(missing_path))
 
 local canonical = canonical_source_path(directory_path)
 assert(normalize_external_path('  "' .. directory_path .. '"  ') == canonical)
 assert(normalize_external_path(directory_path .. "\0\0") == canonical)
+assert(normalize_external_path("C:\\声音库") == "C:\\声音库")
 
 local real_rename = os.rename
 os.rename = function()

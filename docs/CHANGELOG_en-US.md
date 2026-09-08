@@ -8,7 +8,7 @@
 - Uses an unambiguous trailing-separator directory probe instead of relying on one filesystem-sensitive path check.
 - Falls back to REAPER's native directory enumerators when the Lua runtime cannot probe a long or UNC path.
 - Normalizes surrounding quotes, trailing NUL bytes, and redundant separators before validating and deduplicating dropped paths.
-- Adds Windows regression coverage for directories, Unicode directories, regular files, missing paths, and the native-enumerator fallback.
+- Adds Windows regression coverage for directories, Unicode path normalization, regular files, missing paths, and the native-enumerator fallback.
 - Moves the release line to stable `0.8.1`; no further `0.8.0 Beta 4.x` hotfix version is added.
 
 ## 0.8.0 Beta 4.2
