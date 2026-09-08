@@ -9,7 +9,7 @@ is inherently required, through the optional Bridge.
 | Catalog | Logical libraries with multiple source folders | Alpha 2 complete |
 | Catalog | Incremental scan, Watch Folder, failure recovery | Alpha 7 complete: enabled roots are monitored recursively with a configurable debounce; interrupted scans resume; individual failures persist and can be retried or cleared |
 | Catalog | SQLite large-library persistence and full-text index | Foundation complete |
-| Compatibility | Import existing Lua libraries and all asset fields | Complete |
+| Compatibility | Import existing Lua libraries and supported asset fields | Complete: fields are matched by name, and additive internal Lua columns are safely ignored |
 | Compatibility | Import collections, searches, history, Regions, loudness and settings | Complete |
 | Browse | Virtualized results, configurable pinned columns, folder hierarchy | Complete: virtualized results, persistent column chooser/widths and logical/source folder navigation |
 | Search | Filename, path, metadata, UCS, field filters, exclusions | Complete for the Lua 0.7.23 field syntax and Category/Format/Channel facets |

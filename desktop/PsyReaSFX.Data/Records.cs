@@ -14,11 +14,17 @@ public sealed record SourceRecord(
     bool Enabled = true,
     string ArtworkPath = "",
     bool ArtworkChecked = false,
-    int ArtworkScanVersion = 0);
+    int ArtworkScanVersion = 0,
+    string CanonicalPath = "",
+    string VolumeLabel = "",
+    string VolumeSerial = "",
+    long LastSeenUtc = 0);
 
 public sealed record AssetRecord
 {
+    public string AssetId { get; init; } = "";
     public string Path { get; init; } = "";
+    public string RelativePath { get; init; } = "";
     public string Name { get; init; } = "";
     public string Folder { get; init; } = "";
     public string Root { get; init; } = "";
@@ -45,6 +51,7 @@ public sealed record AssetRecord
     public double LastUsed { get; init; }
     public string RootId { get; init; } = "";
     public string LibraryId { get; init; } = "";
+    public long LastSeenUtc { get; init; }
 }
 
 public sealed record CollectionRecord(string Id, string Name, string Kind);
@@ -73,6 +80,16 @@ public sealed record ProjectUsageRecord(
     int TrackIndex,
     double Position,
     long CreatedUtc);
+
+public sealed record SnapshotWriteStats(int ChangedAssets, int UnchangedAssets, int RemovedAssets);
+
+public sealed record SnapshotWriteTimings(
+    double ExistingLoadMs,
+    double RelocationMs,
+    double WorkspaceMs,
+    double AssetsMs,
+    double OrganizationMs,
+    double CommitMs);
 
 public sealed class CatalogSnapshot
 {

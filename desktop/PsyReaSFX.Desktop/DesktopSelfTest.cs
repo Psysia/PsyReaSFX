@@ -5,10 +5,12 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Microsoft.Data.Sqlite;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using PsyReaSFX.Desktop.Controls;
 using PsyReaSFX.Desktop.Services;
+using PsyReaSFX.Desktop.ViewModels;
 using PsyReaSFX.Data;
 using PsyAudioFileReader = PsyReaSFX.Desktop.Services.AudioFileReader;
 
@@ -27,23 +29,100 @@ internal static class DesktopSelfTest
             AppendWaveChunk(wavPath, "iXML", Encoding.UTF8.GetBytes("<BWFXML><PROJECT>PsyReaSFX self test</PROJECT></BWFXML>"));
             var info = PsyAudioFileReader.ReadInfo(wavPath);
             var waveform = PsyAudioFileReader.ReadWaveform(wavPath, 256);
+            var jobCoordinatorPassed = await VerifyJobCoordinatorAsync();
+            var previewControllerPassed = await VerifyPreviewControllerAsync();
+            var architectureBoundariesPassed = VerifyArchitectureBoundaries();
             var library = new LibraryDefinition { Name = "Self Test" };
             library.Sources.Add(new LibrarySource { Path = working });
             var indexed = await new LibraryIndexer().BuildAsync(
                 [library], [], new InlineProgress<(int Count, string File)>(), CancellationToken.None);
+            var pathIdentityPassed = await VerifyPathIdentityAsync(working);
+            var storageQueue = await VerifyStorageQueueAsync(working);
+            var storageQueuePassed = storageQueue.Passed;
 
             var database = new PsyReaSFXDatabase(Path.Combine(working, "database"));
             await database.InitializeAsync();
-            var luaDirectory = LuaDataLocator.Find();
-            var migration = await database.ImportLuaIfNeededAsync(luaDirectory);
-            var catalog = await database.LoadSnapshotAsync();
-            var migrationPassed = luaDirectory is null ||
-                                  (migration.Imported && catalog.Libraries.Count > 0 && catalog.Assets.Count > 0);
+            var schemaMigrationPassed = await database.GetSchemaVersionAsync()
+                                        == PsyReaSFXDatabase.SupportedSchemaVersion;
+
+            var futureDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-future"));
+            await futureDatabase.InitializeAsync();
+            await using (var futureConnection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = futureDatabase.DatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false
+            }.ToString()))
+            {
+                await futureConnection.OpenAsync();
+                var futureMarker = futureConnection.CreateCommand();
+                futureMarker.CommandText = "DELETE FROM schema_info; INSERT INTO schema_info(version) VALUES(999)";
+                await futureMarker.ExecuteNonQueryAsync();
+            }
+            var futureSchemaRejected = false;
+            try { await new PsyReaSFXDatabase(futureDatabase.DataDirectory).InitializeAsync(); }
+            catch (InvalidDataException) { futureSchemaRejected = true; }
+            schemaMigrationPassed = schemaMigrationPassed
+                                    && futureSchemaRejected
+                                    && await futureDatabase.GetSchemaVersionAsync() == 999;
+
+            var luaSchemaDirectory = Path.Combine(working, "lua-schema-v1");
+            Directory.CreateDirectory(luaSchemaDirectory);
+            await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "libraries_v2.tsv"),
+                "psyreasfx_schema\tlibraries\t2\nversion\t3\nlibrary\tlib-self\tSchema library\t\t1\n" +
+                $"root\troot-self\tlib-self\t{working}\t\t1\t\t0\t0\t{working}\t\tSELF0001\t1\n");
+            const string luaAssetHeader = "asset_id\tpath\trelative_path\tname\tfolder\troot\tlibrary\tduration\tchannels\tsample_rate\tbit_depth\tsource_type\tsize\tdescription\tkeywords\tcatid\tcategory\tsubcategory\tartwork_path\tworkflow_status\tmarked\tpreview_count\tlast_previewed\tindexed\tready\tused_count\tlast_used\troot_id\tlibrary_id\tfingerprint\tfingerprint_size\tfingerprint_version\tfingerprint_modified\tfingerprint_stat_source\tlast_seen";
+            var luaAssetValues = string.Join('\t', new[]
+            {
+                "asset_schema_self", wavPath, Path.GetFileName(wavPath), Path.GetFileName(wavPath), working, working, "Schema library", "0.5", "2", "48000", "16",
+                "WAVE", new FileInfo(wavPath).Length.ToString(), "schema fixture", "test", "", "TEST", "FIXTURE", "",
+                "none", "0", "0", "0", "1", "1", "0", "0", "root-self", "lib-self",
+                "sample-fingerprint", new FileInfo(wavPath).Length.ToString(), "sample-fnv1a-head-mid-tail-v1",
+                "2026.09.02 10:00:00", "js_file_stat", "1"
+            });
+            await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "index_v3.tsv"),
+                $"psyreasfx_schema\tdatabase\t3\n{luaAssetHeader}\n{luaAssetValues}\n");
+            await File.WriteAllTextAsync(Path.Combine(luaSchemaDirectory, "config.tsv"),
+                "psyreasfx_schema\tconfig\t1\nversion\t0.8\nsetting\tlanguage\tzh\n");
+            var luaSchemaDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-lua-schema"));
+            await luaSchemaDatabase.InitializeAsync();
+            var luaSchemaMigration = await luaSchemaDatabase.ImportLuaIfNeededAsync(luaSchemaDirectory);
+            var luaSchemaSnapshot = await luaSchemaDatabase.LoadSnapshotAsync();
+
+            var futureLuaDirectory = Path.Combine(working, "lua-schema-future");
+            Directory.CreateDirectory(futureLuaDirectory);
+            await File.WriteAllTextAsync(Path.Combine(futureLuaDirectory, "config.tsv"),
+                "psyreasfx_schema\tconfig\t999\n");
+            var futureLuaRejected = false;
+            try { await luaSchemaDatabase.ImportLuaIfNeededAsync(futureLuaDirectory); }
+            catch (InvalidDataException) { futureLuaRejected = true; }
+            var luaSchemaImportPassed = luaSchemaMigration.Imported
+                                        && luaSchemaSnapshot.Libraries.Count == 1
+                                        && luaSchemaSnapshot.Assets.Count == 1
+                                        && luaSchemaSnapshot.Sources.Single().VolumeSerial == "SELF0001"
+                                        && luaSchemaSnapshot.Assets.Single().AssetId == "asset_schema_self"
+                                        && futureLuaRejected;
+
+            // The self-test must never discover or import a developer's real Lua data.
+            // Reuse the isolated schema fixture above so local and CI runs exercise
+            // exactly the same migration, waveform, and thumbnail paths.
+            var luaDirectory = luaSchemaDirectory;
+            var migration = luaSchemaMigration;
+            var catalog = luaSchemaSnapshot;
+            var migrationPassed = migration.Imported
+                                  && catalog.Libraries.Count == 1
+                                  && catalog.Assets.Count == 1;
 
             var detailDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-details"));
             await detailDatabase.InitializeAsync();
             var detailSnapshot = new CatalogSnapshot();
-            detailSnapshot.Assets.Add(new AssetRecord { Path = wavPath, Name = Path.GetFileName(wavPath), Description = "before", Ready = true, Indexed = true });
+            detailSnapshot.Assets.Add(new AssetRecord
+            {
+                Path = wavPath, Name = Path.GetFileName(wavPath), Description = "before",
+                PreviewCount = 7, LastPreviewed = 1_777_777_777.25,
+                Ready = true, Indexed = true
+            });
+            detailSnapshot.Favorites.Add(wavPath);
             detailSnapshot.Collections.Add(new CollectionRecord("collection-a4", "A4 playlist", "playlist"));
             detailSnapshot.CollectionItems.Add(new CollectionItemRecord("collection-a4", wavPath, 0));
             detailSnapshot.SavedSearches.Add(new SavedSearchRecord("search-a4", "Impacts", "category:impact", "All", "", "Name", false, null, "collection-a4", null));
@@ -63,7 +142,10 @@ internal static class DesktopSelfTest
                                      && savedDetails.WorkflowStatus == "approved" && savedDetails.Marked;
             var organizationPassed = organizationSnapshot.Collections.Count == 1 && organizationSnapshot.CollectionItems.Count == 1
                                      && organizationSnapshot.SavedSearches.Count == 1
-                                     && organizationSnapshot.SessionPlayed.Contains(wavPath);
+                                     && organizationSnapshot.SessionPlayed.Contains(wavPath)
+                                     && organizationSnapshot.Favorites.Contains(wavPath);
+            var activityRoundTripPassed = savedDetails.PreviewCount == 7
+                                          && Math.Abs(savedDetails.LastPreviewed - 1_777_777_777.25) < .001;
             var usageRecord = new ProjectUsageRecord(
                 "usage-a8", wavPath, Path.Combine(working, "SelfTest.rpp"), "SelfTest", "insert_current",
                 wavPath, "SFX", 1, 1.25, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
@@ -502,8 +584,12 @@ internal static class DesktopSelfTest
                 [new TransferRequest(transferAsset, -1, -1, flacVariant, 1)], flacOptions,
                 new InlineProgress<TransferProgress>(), CancellationToken.None);
             var flacPath = flacResult.LastOutput;
-            var flacPassed = flacResult.SuccessCount == 1 && flacResult.FailedCount == 0
-                             && flacPath != null && File.Exists(flacPath) && new FileInfo(flacPath).Length > 100;
+            var flacEncoderAvailable = TransferEngine.IsFlacEncoderAvailable();
+            var flacPassed = flacEncoderAvailable
+                ? flacResult.SuccessCount == 1 && flacResult.FailedCount == 0
+                  && flacPath != null && File.Exists(flacPath) && new FileInfo(flacPath).Length > 100
+                : flacResult.SuccessCount == 0 && flacResult.FailedCount == 1
+                  && flacResult.Items.Single().Message.Contains("requires ffmpeg.exe", StringComparison.OrdinalIgnoreCase);
 
             var reliability = new CatalogReliabilityService(Path.Combine(working, "reliability-data"));
             reliability.BeginScan();
@@ -522,6 +608,34 @@ internal static class DesktopSelfTest
             await File.WriteAllBytesAsync(rwfValidPath, Encoding.ASCII.GetBytes("RWF2 2\n\0\0\xff\xff"));
             var cacheValidationPassed = LuaWaveCache.ValidateFile(rwfValidPath)
                                         && !LuaWaveCache.ValidateFile(Path.Combine(working, "missing.rwf"));
+            var cacheTrimDirectory = Path.Combine(working, "wave-cache-trim");
+            Directory.CreateDirectory(cacheTrimDirectory);
+            for (var index = 0; index < 3; index++)
+            {
+                var path = Path.Combine(cacheTrimDirectory, $"cache-{index}.rwf");
+                await File.WriteAllBytesAsync(path, new byte[128]);
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddMinutes(index - 10));
+            }
+            var cacheSentinel = Path.Combine(cacheTrimDirectory, "keep.txt");
+            await File.WriteAllTextAsync(cacheSentinel, "not a waveform cache");
+            var cacheTrim = await LuaWaveCache.TrimToSizeAsync(cacheTrimDirectory, 150);
+            var cacheLimitPassed = cacheTrim.BytesBefore == 384
+                                   && cacheTrim.BytesAfter <= 150
+                                   && cacheTrim.Removed == 2
+                                   && cacheTrim.Failed == 0
+                                   && File.Exists(cacheSentinel);
+
+            var loudnessPruneDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-loudness-prune"));
+            await loudnessPruneDatabase.InitializeAsync();
+            var loudnessPruneSnapshot = new CatalogSnapshot();
+            loudnessPruneSnapshot.Assets.Add(new AssetRecord
+            {
+                Path = wavPath, Name = Path.GetFileName(wavPath), Root = working, RootId = "prune-root", Ready = true
+            });
+            await loudnessPruneDatabase.SaveDesktopSnapshotAsync(loudnessPruneSnapshot);
+            await loudnessPruneDatabase.UpsertLoudnessAsync(new LoudnessRecord(wavPath, new FileInfo(wavPath).Length, -20, -18, -19, -2));
+            await loudnessPruneDatabase.SaveDesktopSnapshotAsync(new CatalogSnapshot());
+            var loudnessCachePrunePassed = await loudnessPruneDatabase.LoadLoudnessAsync(wavPath) is null;
             var channelSource = new FiniteChannelProvider(48000, 4,
                 [.1f, .2f, .3f, .4f, .15f, .25f, .35f, .45f]);
             var isolatedChannel = new AuditionChannelSampleProvider(channelSource, [2]);
@@ -560,11 +674,19 @@ internal static class DesktopSelfTest
                          && info.SampleRate == 48000
                          && waveform.Length == 1
                          && waveform.All(channel => channel.Length == 256 && channel.Max() > .1f)
+                         && jobCoordinatorPassed
+                         && previewControllerPassed
+                         && architectureBoundariesPassed
+                         && pathIdentityPassed
+                         && storageQueuePassed
                          && indexed.Count == 1
                          && indexed[0].DurationSeconds > .45
                          && migrationPassed
+                         && schemaMigrationPassed
+                         && luaSchemaImportPassed
                          && assetDetailsPassed
                          && organizationPassed
+                         && activityRoundTripPassed
                          && projectUsagePassed
                          && regionPersistencePassed
                          && selectionDragPassed
@@ -583,6 +705,8 @@ internal static class DesktopSelfTest
                            && backupPassed
                            && restoreStagingPassed
                            && cacheValidationPassed
+                           && cacheLimitPassed
+                           && loudnessCachePrunePassed
                            && channelIsolationPassed
                            && channelWaveformStatePassed
                            && customCachePassed
@@ -596,6 +720,12 @@ internal static class DesktopSelfTest
                 audio = new { info.Duration, info.Channels, info.SampleRate, info.BitDepth },
                 waveformChannels = waveform.Length,
                 waveformBuckets = waveform.FirstOrDefault()?.Length ?? 0,
+                jobCoordinatorPassed,
+                previewControllerPassed,
+                architectureBoundariesPassed,
+                pathIdentityPassed,
+                storageQueuePassed,
+                storageQueueProbe = storageQueue.Probe,
                 indexedAssets = indexed.Count,
                 uiSmokePassed,
                 panelCollapsePassed,
@@ -615,7 +745,10 @@ internal static class DesktopSelfTest
                 themeSwitchPassed,
                 themeProbeColors,
                 assetDetailsPassed,
+                schemaMigrationPassed,
+                luaSchemaImportPassed,
                 organizationPassed,
+                activityRoundTripPassed,
                 projectUsagePassed,
                 regionPersistencePassed,
                 selectionDragPassed,
@@ -631,6 +764,7 @@ internal static class DesktopSelfTest
                 autoVariantSuffixPassed,
                 wideVariantRangePassed,
                 waveMetadataPassed,
+                flacEncoderAvailable,
                 flacPassed,
                 reliability = new
                 {
@@ -639,6 +773,9 @@ internal static class DesktopSelfTest
                     backupPassed,
                     restoreStagingPassed,
                     cacheValidationPassed,
+                    cacheLimitPassed,
+                    cacheTrim,
+                    loudnessCachePrunePassed,
                     channelIsolationPassed,
                     channelWaveformStatePassed,
                     customCachePassed
@@ -688,6 +825,350 @@ internal static class DesktopSelfTest
         {
             try { Directory.Delete(working, true); } catch { }
         }
+    }
+
+    private static async Task<bool> VerifyJobCoordinatorAsync()
+    {
+        var jobs = new BackgroundJobCoordinator();
+        var leases = new List<BackgroundJobLease>();
+        try
+        {
+            var first = jobs.StartReplacing(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine);
+            leases.Add(first);
+            var firstToken = first.Token;
+            var second = jobs.StartReplacing(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine);
+            leases.Add(second);
+            if (!firstToken.IsCancellationRequested || first.IsCurrent || !second.IsCurrent) return false;
+
+            var scan = jobs.TryStart(BackgroundJobKind.CatalogScan, BackgroundJobResource.CatalogWriter, false);
+            if (scan == null) return false;
+            leases.Add(scan);
+            if (jobs.TryStart(BackgroundJobKind.CatalogScan, BackgroundJobResource.CatalogWriter, false) != null) return false;
+            if (jobs.TryStart(BackgroundJobKind.Maintenance, BackgroundJobResource.CatalogWriter, false) != null) return false;
+
+            for (var index = 0; index < 250; index++)
+                leases.Add(jobs.StartReplacing(BackgroundJobKind.Preview, BackgroundJobResource.PreviewEngine));
+
+            var stop = jobs.StopAcceptingAndCancelAsync(TimeSpan.FromSeconds(2));
+            if (jobs.TryStart(BackgroundJobKind.Maintenance, BackgroundJobResource.Maintenance, false) != null) return false;
+            if (leases.Any(lease => !lease.Token.IsCancellationRequested)) return false;
+            if (stop.IsCompleted) return false;
+
+            for (var index = leases.Count - 1; index >= 0; index--) leases[index].Dispose();
+            leases.Clear();
+            await stop;
+
+            var snapshots = jobs.Snapshot();
+            return snapshots.Count > 0
+                   && snapshots.All(snapshot => snapshot.State is BackgroundJobState.Cancelled or BackgroundJobState.Completed)
+                   && snapshots.Select(snapshot => snapshot.Generation).Distinct().Count() == snapshots.Count;
+        }
+        finally
+        {
+            foreach (var lease in leases) lease.Dispose();
+        }
+    }
+
+    private static async Task<bool> VerifyPreviewControllerAsync()
+    {
+        var jobs = new BackgroundJobCoordinator();
+        var engine = new BlockingPreviewEngine();
+        using var preview = new PreviewController(jobs, engine);
+        var first = preview.OpenAsync("first.wav", 0, true);
+        await engine.FirstOpenStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var second = await preview.OpenAsync("second.wav", 0, true);
+        var firstResult = await first;
+        return !firstResult
+               && second
+               && engine.CancelledOpenCount == 1
+               && engine.Path == "second.wav"
+               && !jobs.IsActive(BackgroundJobKind.Preview);
+    }
+
+    private sealed class BlockingPreviewEngine : IPreviewEngine
+    {
+        public TaskCompletionSource FirstOpenStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int CancelledOpenCount { get; private set; }
+        public event EventHandler? PlaybackEnded { add { } remove { } }
+        public event EventHandler<Exception>? PlaybackFailed { add { } remove { } }
+        public bool IsOpen => Path.Length > 0;
+        public bool IsPlaying { get; private set; }
+        public string Path { get; private set; } = "";
+        public double Duration => 1;
+        public double Position { get; set; }
+        public double Rate { get; set; } = 1;
+        public double PitchSemitones { get; set; }
+        public double GainDb { get; set; }
+        public bool PreservePitch { get; set; } = true;
+        public bool Reverse { get; private set; }
+        public IReadOnlyList<int> AuditionChannels { get; private set; } = [];
+
+        public void SetAuditionChannels(IReadOnlyList<int>? auditionChannels) =>
+            AuditionChannels = auditionChannels?.ToArray() ?? [];
+
+        public async Task OpenAsync(string path, double sourcePosition, bool autoplay, CancellationToken cancellationToken = default)
+        {
+            if (path == "first.wav")
+            {
+                FirstOpenStarted.TrySetResult();
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken); }
+                catch (OperationCanceledException) { CancelledOpenCount++; throw; }
+            }
+            Path = path;
+            Position = sourcePosition;
+            IsPlaying = autoplay;
+        }
+
+        public Task ReconfigureAsync(bool reverse, IReadOnlyList<int>? auditionChannels = null, CancellationToken cancellationToken = default)
+        {
+            Reverse = reverse;
+            SetAuditionChannels(auditionChannels);
+            return Task.CompletedTask;
+        }
+
+        public void Play() => IsPlaying = true;
+        public Task PauseAsync(CancellationToken cancellationToken = default) { IsPlaying = false; return Task.CompletedTask; }
+        public Task StopAsync(CancellationToken cancellationToken = default) { IsPlaying = false; Position = 0; return Task.CompletedTask; }
+        public void Dispose() { }
+    }
+
+    private static bool VerifyArchitectureBoundaries()
+    {
+        IStorageService storage = new StateStore();
+        ICatalogIndexer catalog = new LibraryIndexer();
+        IJobCoordinator jobs = new BackgroundJobCoordinator();
+        using IPreviewController preview = new PreviewController(jobs, new LowLatencyPreviewEngine());
+        IArtworkService artwork = new ArtworkService();
+        IPathIdentityService paths = new PathIdentityService();
+        ITransferService transfer = new TransferEngine();
+        IOrganizationService organization = new OrganizationService();
+        var organized = organization.CreateCollection("playlist", "Boundary", [
+            new AudioAsset { FilePath = @"C:\Audio\A.wav" },
+            new AudioAsset { FilePath = @"c:\audio\a.wav" }
+        ]);
+        var organizationPassed = organized.Items.Count == 1
+                                 && organization.BuildSavedQuery("impact", "HIT", "WAVE", 2)
+                                     == "impact category:\"HIT\" format:WAVE channels:2";
+        var catalogView = new CatalogViewModel();
+        catalogView.Replace([
+            new AudioAsset { FileName = "B.wav", Ready = false },
+            new AudioAsset { FileName = "A.wav", Ready = true }
+        ]);
+        catalogView.SetFilter(item => item is AudioAsset asset && asset.Ready);
+        catalogView.ApplySort(nameof(AudioAsset.FileName), System.ComponentModel.ListSortDirection.Ascending);
+        var catalogViewPassed = catalogView.RefreshAndCount() == 1
+                                && catalogView.View.Cast<AudioAsset>().Single().FileName == "A.wav";
+
+        var panels = new WindowStateController();
+        var collapsed = panels.SetNavigation(false, 318);
+        var focus = panels.SetFocusMode(true, 0, 344);
+        var restored = panels.SetFocusMode(false);
+
+        return storage.DataDirectory.Length > 0
+               && catalog.LastFailures.Count == 0
+               && jobs.Snapshot().Count == 0
+               && !preview.IsOpen
+               && artwork.FindForSource(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))) == ""
+               && paths.Normalize(Path.GetTempPath()).Length > 0
+               && transfer is TransferEngine
+               && catalogViewPassed
+               && organizationPassed
+               && !collapsed.NavigationVisible
+               && Math.Abs(collapsed.NavigationWidth - 318) < .1
+               && focus.FocusMode && !focus.NavigationVisible && !focus.InspectorVisible
+               && !restored.FocusMode && restored.NavigationVisible && restored.InspectorVisible
+               && Math.Abs(restored.NavigationWidth - 318) < .1
+               && Math.Abs(restored.InspectorWidth - 344) < .1;
+    }
+
+    private static async Task<(bool Passed, string Probe)> VerifyStorageQueueAsync(string working)
+    {
+        var database = new PsyReaSFXDatabase(Path.Combine(working, "database-storage-queue"));
+        var store = new StateStore(database);
+        await database.InitializeAsync();
+        var state = new PersistedState();
+        state.Libraries.Add(new LibraryDefinition { Id = "queue-library", Name = "Queue 0" });
+
+        var saves = new List<Task>();
+        for (var i = 1; i <= 64; i++)
+        {
+            state.Libraries[0].Name = $"Queue {i}";
+            saves.Add(store.SaveWorkspaceAsync(state));
+        }
+        await Task.WhenAll(saves);
+
+        var loaded = await database.LoadSnapshotAsync();
+        var finalName = loaded.Libraries.Single().Name;
+        var passed = finalName == "Queue 64"
+                     && store.WorkspaceWritesExecuted < saves.Count
+                     && store.WorkspaceWritesCoalesced > 0
+                     && store.WorkspaceWritesExecuted + store.WorkspaceWritesCoalesced <= saves.Count;
+        return (passed,
+            $"final={finalName}; requested={saves.Count}; executed={store.WorkspaceWritesExecuted}; coalesced={store.WorkspaceWritesCoalesced}");
+    }
+
+    private static async Task<bool> VerifyPathIdentityAsync(string working)
+    {
+        var oldRoot = Path.Combine(working, "identity-old");
+        var newRoot = Path.Combine(working, "identity-new");
+        Directory.CreateDirectory(Path.Combine(oldRoot, "Nested"));
+        Directory.CreateDirectory(Path.Combine(newRoot, "Nested"));
+        var oldPath = Path.Combine(oldRoot, "Nested", "identity.wav");
+        var newPath = Path.Combine(newRoot, "Nested", "identity.wav");
+        WriteTestWave(oldPath);
+        File.Copy(oldPath, newPath, true);
+
+        const string libraryId = "identity-library";
+        const string sourceId = "identity-source";
+        var oldLibrary = new LibraryDefinition { Id = libraryId, Name = "Identity" };
+        oldLibrary.Sources.Add(new LibrarySource { Id = sourceId, Path = oldRoot });
+        var indexer = new LibraryIndexer();
+        var first = await indexer.BuildAsync([oldLibrary], [], new InlineProgress<(int Count, string File)>(), CancellationToken.None);
+        var firstAsset = first.Single();
+        firstAsset.Description = "identity metadata";
+        firstAsset.IsFavorite = true;
+        firstAsset.IsSessionPlayed = true;
+
+        var identityDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-identity"));
+        await identityDatabase.InitializeAsync();
+        var initial = IdentitySnapshot(oldLibrary, firstAsset, oldPath);
+        await identityDatabase.SaveDesktopSnapshotAsync(initial);
+        await identityDatabase.SaveDesktopSnapshotAsync(initial);
+        var unchangedWriteSkipped = identityDatabase.LastSnapshotWriteStats is
+            { ChangedAssets: 0, UnchangedAssets: 1, RemovedAssets: 0 };
+        await identityDatabase.UpsertRegionAsync(new RegionRecord(oldPath, .1, .2, "identity", "manual", "identity"));
+        await identityDatabase.UpsertLoudnessAsync(new LoudnessRecord(oldPath, firstAsset.FileSize, -20, -18, -19, -2));
+        await identityDatabase.AddProjectUsageAsync(new ProjectUsageRecord(
+            "identity-usage", oldPath, "identity.rpp", "Identity", "insert_current", oldPath, "SFX", 0, 0,
+            DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+
+        var newLibrary = new LibraryDefinition { Id = libraryId, Name = "Identity" };
+        newLibrary.Sources.Add(new LibrarySource { Id = sourceId, Path = newRoot });
+        var moved = await indexer.BuildAsync([newLibrary], first, new InlineProgress<(int Count, string File)>(), CancellationToken.None);
+        var movedAsset = moved.Single();
+        var movedSnapshot = IdentitySnapshot(newLibrary, movedAsset, newPath);
+        await identityDatabase.SaveDesktopSnapshotAsync(movedSnapshot);
+
+        var loaded = await identityDatabase.LoadSnapshotAsync();
+        var regions = await identityDatabase.LoadRegionsAsync(newPath);
+        var loudness = await identityDatabase.LoadLoudnessAsync(newPath);
+        var usage = await identityDatabase.LoadProjectUsageAsync();
+        var conflictRejected = false;
+        var conflicting = IdentitySnapshot(newLibrary, movedAsset, newPath);
+        conflicting.Assets.Add(conflicting.Assets[0] with { Path = Path.Combine(newRoot, "identity-conflict.wav") });
+        try { await identityDatabase.SaveDesktopSnapshotAsync(conflicting); }
+        catch (SqliteException) { conflictRejected = true; }
+        var afterConflict = await identityDatabase.LoadSnapshotAsync();
+        File.Delete(newPath);
+        var missing = await indexer.BuildAsync([newLibrary], moved, new InlineProgress<(int Count, string File)>(), CancellationToken.None);
+        var sourceIdentity = PathIdentity.CaptureSource(newRoot);
+        var trailingIdentity = PathIdentity.CaptureSource(newRoot + Path.DirectorySeparatorChar);
+        var extendedIdentity = PathIdentity.CaptureSource(@"\\?\" + newRoot);
+        var junctionPath = Path.Combine(working, "identity-junction");
+        var junctionCreated = TryCreateJunction(junctionPath, newRoot);
+        var junctionIdentity = junctionCreated
+            ? PathIdentity.CaptureSource(junctionPath)
+            : null;
+        var reassignedFirst = new SourcePathIdentity(
+            @"X:\Sound Library", @"X:\Sound Library", "", "A1B2C3D4", 0);
+        var reassignedSecond = new SourcePathIdentity(
+            @"Y:\Sound Library", @"Y:\Sound Library", "", "A1B2C3D4", 0);
+        var differentFolder = new SourcePathIdentity(
+            @"Y:\Other Library", @"Y:\Other Library", "", "A1B2C3D4", 0);
+
+        return firstAsset.AssetId.Length == 32
+               && unchangedWriteSkipped
+               && movedAsset.AssetId == firstAsset.AssetId
+               && movedAsset.FilePath.Equals(newPath, StringComparison.OrdinalIgnoreCase)
+               && movedAsset.Description == "identity metadata"
+               && loaded.Assets.Single().AssetId == firstAsset.AssetId
+               && loaded.Favorites.Contains(newPath)
+               && loaded.SessionPlayed.Contains(newPath)
+               && loaded.CollectionItems.Single().Path.Equals(newPath, StringComparison.OrdinalIgnoreCase)
+               && regions.Count == 1
+               && loudness?.LufsI == -20
+               && usage.Single(row => row.Id == "identity-usage").AssetPath.Equals(newPath, StringComparison.OrdinalIgnoreCase)
+               && conflictRejected
+               && afterConflict.Assets.Single().Path.Equals(newPath, StringComparison.OrdinalIgnoreCase)
+               && (await identityDatabase.LoadRegionsAsync(newPath)).Count == 1
+               && missing.Count == 1 && !missing[0].Ready && missing[0].AssetId == firstAsset.AssetId
+               && !string.IsNullOrWhiteSpace(sourceIdentity.CanonicalPath)
+               && sourceIdentity.LastSeenUtc > 0
+               && PathIdentity.SamePhysicalSource(sourceIdentity, trailingIdentity)
+               && PathIdentity.SamePhysicalSource(sourceIdentity, extendedIdentity)
+               && junctionCreated && junctionIdentity != null
+               && PathIdentity.SamePhysicalSource(sourceIdentity, junctionIdentity)
+               && PathIdentity.SamePhysicalSource(reassignedFirst, reassignedSecond)
+               && !PathIdentity.SamePhysicalSource(reassignedFirst, differentFolder)
+               && !PathIdentity.SamePhysicalSource(
+                   new SourcePathIdentity("", "", "", "", 0),
+                   new SourcePathIdentity("", "", "", "", 0))
+               && PathIdentity.NormalizeRelative(@"Folder\.\Nested\..\File.wav")
+                   == Path.Combine("Folder", "File.wav");
+    }
+
+    private static bool TryCreateJunction(string junctionPath, string targetPath)
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            var startInfo = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add("/d");
+            startInfo.ArgumentList.Add("/c");
+            startInfo.ArgumentList.Add("mklink");
+            startInfo.ArgumentList.Add("/J");
+            startInfo.ArgumentList.Add(junctionPath);
+            startInfo.ArgumentList.Add(targetPath);
+            using var process = System.Diagnostics.Process.Start(startInfo);
+            if (process == null) return false;
+            process.WaitForExit();
+            return process.ExitCode == 0 && Directory.Exists(junctionPath);
+        }
+        catch { return false; }
+    }
+
+    private static CatalogSnapshot IdentitySnapshot(LibraryDefinition library, AudioAsset asset, string path)
+    {
+        var source = library.Sources.Single();
+        var identity = PathIdentity.CaptureSource(source.Path);
+        var snapshot = new CatalogSnapshot();
+        snapshot.Libraries.Add(new LibraryRecord(library.Id, library.Name));
+        snapshot.Sources.Add(new SourceRecord(source.Id, library.Id, source.Path, CanonicalPath: identity.CanonicalPath,
+            VolumeLabel: identity.VolumeLabel, VolumeSerial: identity.VolumeSerial, LastSeenUtc: identity.LastSeenUtc));
+        snapshot.Assets.Add(new AssetRecord
+        {
+            AssetId = asset.AssetId,
+            Path = path,
+            RelativePath = asset.RelativePath,
+            Name = asset.FileName,
+            Folder = asset.RelativeFolder,
+            Root = source.Path,
+            Library = library.Name,
+            Duration = asset.DurationSeconds,
+            Channels = asset.Channels,
+            SampleRate = asset.SampleRate,
+            BitDepth = asset.BitDepth,
+            SourceType = asset.Format,
+            Size = asset.FileSize,
+            Description = asset.Description,
+            Ready = asset.Ready,
+            Indexed = asset.Indexed,
+            RootId = source.Id,
+            LibraryId = library.Id,
+            LastSeenUtc = asset.LastSeenUtc
+        });
+        snapshot.Favorites.Add(path);
+        snapshot.SessionPlayed.Add(path);
+        snapshot.Collections.Add(new CollectionRecord("identity-collection", "Identity", "playlist"));
+        snapshot.CollectionItems.Add(new CollectionItemRecord("identity-collection", path, 0));
+        return snapshot;
     }
 
     private static void TryWriteReport(string path, object value)

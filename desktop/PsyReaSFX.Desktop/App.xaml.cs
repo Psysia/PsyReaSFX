@@ -38,6 +38,47 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (e.Args.Length >= 1 && e.Args[0].Equals("--hardening-benchmark", StringComparison.OrdinalIgnoreCase))
+        {
+            if (e.Args.Length < 2 || string.IsNullOrWhiteSpace(e.Args[1]))
+            {
+                AppDiagnostics.Write("Hardening benchmark requires a source directory.");
+                Shutdown(2);
+                return;
+            }
+            var reportPath = e.Args.Length >= 3 && !string.IsNullOrWhiteSpace(e.Args[2])
+                ? e.Args[2]
+                : Path.Combine(Path.GetTempPath(), "PsyReaSFX-Hardening-benchmark.json");
+            try { Shutdown(await HardeningBenchmark.RunAsync(e.Args[1], reportPath)); }
+            catch (Exception exception)
+            {
+                AppDiagnostics.Write("Hardening benchmark failed outside its safety boundary.", exception);
+                Shutdown(1);
+            }
+            return;
+        }
+
+        if (e.Args.Length >= 1 && e.Args[0].Equals("--hardening-capacity-benchmark", StringComparison.OrdinalIgnoreCase))
+        {
+            if (e.Args.Length < 2 || !int.TryParse(e.Args[1], out var count)
+                || count < 1 || count > HardeningBenchmark.MaximumCapacityAssets)
+            {
+                AppDiagnostics.Write($"Capacity benchmark requires an asset count from 1 to {HardeningBenchmark.MaximumCapacityAssets:N0}.");
+                Shutdown(2);
+                return;
+            }
+            var reportPath = e.Args.Length >= 3 && !string.IsNullOrWhiteSpace(e.Args[2])
+                ? e.Args[2]
+                : Path.Combine(Path.GetTempPath(), "PsyReaSFX-Hardening-capacity-benchmark.json");
+            try { Shutdown(await HardeningBenchmark.RunCapacityAsync(count, reportPath)); }
+            catch (Exception exception)
+            {
+                AppDiagnostics.Write("Hardening capacity benchmark failed outside its safety boundary.", exception);
+                Shutdown(1);
+            }
+            return;
+        }
+
         DispatcherUnhandledException += (_, args) =>
         {
             AppDiagnostics.Write("Unhandled dispatcher exception.", args.Exception);

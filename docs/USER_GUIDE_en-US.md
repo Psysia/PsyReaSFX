@@ -515,6 +515,7 @@ Important data includes:
 | `config.tsv` | interface, language, theme and column settings |
 | `libraries_v2.tsv` | logical libraries and source relationships |
 | `index_v3.tsv` | asset index and database metadata |
+| `index_v3.journal` | asset-level changes relative to the current index snapshot; compacted automatically |
 | `wave_cache_v3/` | multi-resolution waveform data |
 | `collections_v1.tsv` | playlists and project bins |
 | `saved_searches_v1.tsv` | saved search state |
@@ -532,7 +533,15 @@ Back up the entire data directory. Starting with 0.8, `Settings →
 Maintenance` can create one automatic snapshot per day, create a manual backup,
 set retention, or restore the newest backup. Waveform caches and source audio
 are deliberately excluded. PsyReaSFX closes after restoration; run the script
-again to load the restored state.
+again to load the restored state. All backup files are staged before a grouped
+commit. If any file fails, already committed files are rolled back so settings,
+the catalog, and collections cannot be left at mixed generations. If REAPER
+stops during restoration, startup checks the transaction marker: a fully
+committed restore keeps the new generation and finishes cleanup; otherwise all
+touched files return to their retained rollback generation.
+The index snapshot and journal share a generation check. Startup validates the
+whole journal before replay, so an old-generation or partially written record
+is never applied to only part of the catalog.
 
 The same page can move the waveform cache or switch to an empty destination.
 `Verify waveform cache` checks cached files in bounded batches and moves damaged
@@ -572,11 +581,20 @@ drive or folder, expand its logical library, right-click that source and choose
 `Relink source folder…`. PsyReaSFX updates the index and related records without
 moving media, then incrementally scans the new location.
 
-### Duplicate review
+### Duplicate-candidate review
 
-`Check duplicates` first groups by file size, then samples equal-size candidates.
-The Duplicate assets view keeps matching groups together. PsyReaSFX never
-deletes duplicates automatically; review licensing, naming and path intent
+`Check candidates` first groups by file size, then samples equal-size files.
+The Duplicate candidates view keeps matching groups together. These are
+high-confidence candidates, not proof that the complete file contents match.
+`Confirm full contents` performs a frame-budgeted byte-for-byte comparison,
+separates confirmed matches from read failures, and rejects files detectably
+changed during confirmation. Every explicit candidate check
+resamples files instead of trusting an old size-only result. The index format
+stores the fingerprint algorithm version, file size, modification time and the
+source of that metadata. Algorithm changes invalidate old records automatically.
+When the optional js_ReaScriptAPI extension is unavailable, checks still work
+but a persisted fingerprint is not reused across sessions. PsyReaSFX never
+deletes source files automatically; review licensing, naming and path intent
 before changing source media.
 
 ### Current-project usage

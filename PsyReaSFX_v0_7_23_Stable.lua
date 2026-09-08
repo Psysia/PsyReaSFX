@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.0-beta3
+-- @version 0.8.0-beta4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -150,6 +150,10 @@
 --   - 指纹写入主索引并按文件大小失效，避免大型库重复读取全部文件
 --   - 项目素材箱可绑定当前已保存的 RPP，插入素材时自动记录并收集
 --   - 项目使用记录独立持久化，可按工程查看素材、次数和最近使用时间
+--   - 0.8.0 Beta 4：完成全仓库稳定化与 50 万条目录容量治理
+--   - 核心数据采用 schema、原子事务、代次快照与增量日志保护
+--   - 大型目录的保存、扫描收尾、缓存、维护与关联数据均按帧预算执行
+--   - 建立 AppState、Host、模块化发布源、架构审计和完整 CI 门禁
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -158,7 +162,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.0 Beta 3"
+local VERSION = "0.8.0 Beta 4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -284,6 +288,9 @@ local PROJECT_URL_FILE =
 local DATABASE_FILE =
   DATA_DIR .. SEP .. "index_v3.tsv"
 
+local DATABASE_JOURNAL_FILE =
+  DATA_DIR .. SEP .. "index_v3.journal"
+
 local SCAN_CHECKPOINT_FILE =
   DATA_DIR .. SEP .. "scan_checkpoint_v1.tsv"
 
@@ -293,8 +300,14 @@ local FAILED_TASKS_FILE =
 local BACKUP_STATE_FILE =
   DATA_DIR .. SEP .. "backup_state_v1.tsv"
 
+local MIGRATION_LOG_FILE =
+  DATA_DIR .. SEP .. "migration_log_v1.tsv"
+
 local BACKUP_DIR =
   DATA_DIR .. SEP .. "backups"
+
+local RESTORE_TRANSACTION_COMMIT_FILE =
+  DATA_DIR .. SEP .. "restore_transaction.commit"
 
 local CACHE_QUARANTINE_DIR =
   DATA_DIR .. SEP .. "cache_quarantine"
@@ -471,9 +484,31 @@ local META_INTERVAL = 0.075
 local WAVE_INTERVAL = 0.012
 local SAVE_INTERVAL = 8
 local WATCH_INTERVAL = 60
+local DATABASE_JOURNAL_COMPACT_COUNT = 10000
+local DATABASE_SNAPSHOT_ASSETS_PER_FRAME = 2000
+local DATABASE_SNAPSHOT_FRAME_BUDGET = 0.004
+local LIBRARY_COUNT_ASSETS_PER_FRAME = 4000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
+local DUPLICATE_STAT_FILES_PER_FRAME = 64
+local DUPLICATE_STAT_FRAME_BUDGET = 0.0025
+local DUPLICATE_SORT_ITEMS_PER_FRAME = 4000
+local PRECACHE_COLLECT_FILES_PER_FRAME = 64
+local PRECACHE_CACHE_PROBES_PER_FRAME = 8
+local PRECACHE_FRAME_BUDGET = 0.0025
+local IMPORT_RECOVERY_ASSETS_PER_FRAME = 4000
+local IMPORT_FINALIZE_ASSETS_PER_FRAME = 4000
+local ARTWORK_RESET_ASSETS_PER_FRAME = 4000
+local ROOT_REMOVAL_ASSETS_PER_FRAME = 4000
+local ROOT_REMOVAL_FRAME_BUDGET = 0.003
+local AUXILIARY_SAVE_RECORDS_PER_FRAME = 4000
+local AUXILIARY_SAVE_FRAME_BUDGET = 0.003
+local ASSET_BINDINGS_PER_FRAME = 4000
+local ASSET_BINDING_CHANGES_PER_FRAME = 250
+local SCAN_FINALIZE_ASSETS_PER_FRAME = 4000
+local RELINK_PLAN_FILES_PER_FRAME = 48
+local RELINK_PLAN_FRAME_BUDGET = 0.0025
 
 local MINI_WAVE_DEFAULT_POINTS = 256
 local MINI_WAVE_MAX_POINTS = 512
@@ -631,6 +666,14 @@ local APPEARANCE_PRESETS = {
 local state = {
   open = true,
 
+  -- Persistence is preflighted before any user data is loaded. Unknown or
+  -- future schemas keep the application usable for browsing, but every
+  -- writer is disabled so a newer catalog cannot be silently downgraded.
+  persistence_read_only = false,
+  persistence_read_only_reason = "",
+  persistence_schema_versions = {},
+  persistence_schema_legacy = {},
+
   roots = {},
   legacy_roots = {},
   libraries = {},
@@ -641,6 +684,7 @@ local state = {
   libraries_dirty = false,
   library_asset_counts = {},
   library_counts_dirty = true,
+  library_counts_job = nil,
   library_filter_id = nil,
   expanded_libraries = {},
   expanded_source_folders = {},
@@ -655,6 +699,17 @@ local state = {
   pending_folder_drop = nil,
   assets = {},
   by_path = {},
+  database_ordered_assets = nil,
+  database_generation = 0,
+  database_snapshot_session = nil,
+  auxiliary_save_session = nil,
+  root_removal_session = nil,
+  clear_scan_checkpoint_after_database_save = false,
+  database_changes = {
+    by_key = {},
+    count = 0,
+    requires_snapshot = false,
+  },
   favorites = {},
   recent = {},
 
@@ -668,6 +723,7 @@ local state = {
   searches_dirty = false,
 
   history_dirty = false,
+  preview_history_assets = {},
 
   -- 当前启动会话的已播放颜色。完整历史仍保存到 history_v1.tsv。
   session_played = {},
@@ -686,6 +742,8 @@ local state = {
   sort_mode = "name",
   sort_desc = false,
   results_dirty = true,
+  results_job = nil,
+  asset_binding_refresh = nil,
 
   selected_index = 0,
   selected_path = nil,
@@ -695,6 +753,7 @@ local state = {
   -- 导入阶段的素材保持隐藏，直到元数据与缩略波形全部准备完成。
   import_session = nil,
   import_cancel_requested = false,
+  import_recovery_audit = nil,
 
   -- 从列表/大波形拖到 REAPER 编排区。
   external_drag = nil,
@@ -730,6 +789,13 @@ local state = {
   duplicate_group_count = 0,
   duplicate_asset_count = 0,
   duplicate_lookup = {},
+  duplicate_confirmation = nil,
+  duplicate_confirmed_groups = {},
+  duplicate_confirmed_lookup = {},
+  duplicate_confirmed_asset_count = 0,
+  duplicate_confirmation_failures = {},
+  duplicate_confirmation_failure_count = 0,
+  relink_plan_session = nil,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
@@ -960,6 +1026,7 @@ local state = {
   artwork_image_limit = 96,
   artwork_queue = {},
   artwork_queued = {},
+  artwork_reset_session = nil,
   artwork_next_job = 0,
   layout_notice = "",
 
@@ -1012,6 +1079,10 @@ local state = {
 ----------------------------------------------------------------
 -- Localization
 ----------------------------------------------------------------
+
+I18N_MISSING = {}
+I18N_MISSING_UNIQUE = 0
+I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
   ["音效库"] = "Libraries",
@@ -1376,11 +1447,17 @@ I18N_EN = {
   ["请等待当前后台任务完成"] = "Wait for the current background task to finish",
   ["波形缓存检查已经在运行"] = "Waveform cache verification is already running",
   ["无法保存失败任务"] = "Unable to save failed tasks",
+  ["Region 数据"] = "Region data",
+  ["响度缓存"] = "loudness cache",
+  ["失败任务"] = "failed tasks",
   ["没有可重试的失败任务"] = "There are no failed tasks that can be retried",
   ["无法创建数据备份目录"] = "Unable to create the data-backup folder",
   ["没有可备份的数据文件"] = "There are no data files to back up",
+  ["无法完整创建数据备份"] = "Unable to create a complete data backup",
   ["没有可恢复的数据备份"] = "There is no data backup to restore",
   ["备份中没有可恢复的数据"] = "The backup contains no restorable data",
+  ["备份恢复失败，原数据已回滚"] = "Backup restore failed; the original data was rolled back",
+  ["备份恢复未能完整提交，请重启 PsyReaSFX"] = "Backup restore could not be committed completely; restart PsyReaSFX",
   ["拖拽到 REAPER 编排区"] = "Drag to the REAPER arrange view",
   ["播放或停止"] = "Play or stop",
   ["收藏或取消收藏"] = "Toggle favorite",
@@ -1718,6 +1795,10 @@ I18N_EN = {
   ["恢复默认缓存目录，并移动现有缓存？"] = "Restore the default cache directory and move the existing cache?",
   ["无法保存 Region 数据"] = "Unable to save Region data",
   ["无法保存响度缓存"] = "Unable to save loudness cache",
+  ["索引快照代次无效，已进入只读保护"] =
+    "The catalog snapshot generation is invalid; read-only protection is active",
+  ["素材增量日志损坏，已进入只读保护"] =
+    "The asset journal is damaged; read-only protection is active",
   ["已设置 Artwork"] = "Artwork set",
   ["瞬态检测设置…"] = "Transient detection settings…",
   ["拖到编排区需要 SWS Extension"] = "Dragging to the arrange view requires SWS Extension",
@@ -1739,6 +1820,7 @@ I18N_PREFIX_EN = {
     "Migrated legacy library paths and preferences",
   ["无法保存配置"] = "Unable to save configuration",
   ["无法保存索引"] = "Unable to save database index",
+  ["无法保存素材增量日志："] = "Unable to save the asset journal: ",
   ["无法保存播放列表"] = "Unable to save playlists",
   ["无法保存搜索条件"] = "Unable to save saved searches",
   ["无法保存试听历史"] = "Unable to save preview history",
@@ -1874,11 +1956,13 @@ I18N_EN["检查缺失文件"] = "Check missing files"
 I18N_EN["查看缺失素材"] = "Show missing assets"
 I18N_EN["重新定位来源路径…"] = "Relink source folder…"
 I18N_EN["重新定位…"] = "Relink…"
-I18N_EN["重复素材"] = "Duplicate assets"
-I18N_EN["仅对大小相同的候选文件读取头部、中部和尾部采样块；不会修改或删除源文件。"] =
-  "Only equal-size candidates are sampled at the beginning, middle and end. Source files are never changed or deleted."
-I18N_EN["检查重复素材"] = "Check duplicates"
-I18N_EN["查看重复素材"] = "Show duplicates"
+I18N_EN["重复候选"] = "Duplicate candidates"
+I18N_EN["仅对大小相同的文件读取头部、中部和尾部采样块；结果尚未经过完整内容确认，不会修改或删除源文件。"] =
+  "Equal-size files are sampled at the beginning, middle and end. Results are not yet confirmed against complete contents; source files are never changed or deleted."
+I18N_EN["检查重复候选"] = "Check candidates"
+I18N_EN["查看重复候选"] = "Show candidates"
+I18N_EN["完整确认候选"] = "Confirm full contents"
+I18N_EN["正在逐字节确认重复候选"] = "Confirming candidate contents byte by byte"
 I18N_EN["当前 REAPER 工程"] = "Current REAPER project"
 I18N_EN["记录插入和 Transfer 后插入的素材，并可自动收集到绑定的项目素材箱。"] =
   "Tracks inserted assets, including Transfer inserts, and can collect them in a bound project bin."
@@ -1900,12 +1984,28 @@ I18N_EN["无法保存工程使用记录"] = "Unable to save project usage histor
 
 I18N_PATTERNS_EN = {
   {
+    "^无法后台保存Region 数据：(.+)$",
+    "Unable to save Region data: %1",
+  },
+  {
+    "^无法后台保存响度缓存：(.+)$",
+    "Unable to save loudness cache: %1",
+  },
+  {
+    "^无法后台保存失败任务：(.+)$",
+    "Unable to save failed tasks: %1",
+  },
+  {
+    "^未能回滚中断的备份恢复：(.+)$",
+    "Could not roll back an interrupted backup restore: %1",
+  },
+  {
     "^缺失素材  (%d+)$",
     "Missing assets  %1",
   },
   {
-    "^重复素材  (%d+)$",
-    "Duplicate assets  %1",
+    "^重复候选  (%d+)$",
+    "Duplicate candidates  %1",
   },
   {
     "^当前工程已用  (%d+)$",
@@ -1916,12 +2016,40 @@ I18N_PATTERNS_EN = {
     "Missing-file check complete: %1 offline sources, %2 missing assets",
   },
   {
-    "^正在检查重复素材：(%d+) 个同尺寸候选$",
-    "Checking duplicates: %1 equal-size candidates",
+    "^正在检查重复候选：(%d+) 个同尺寸文件$",
+    "Checking candidates: %1 equal-size files",
   },
   {
-    "^重复检查完成：(%d+) 组，(%d+) 个素材$",
-    "Duplicate check complete: %1 groups, %2 assets",
+    "^候选检查完成：(%d+) 组，(%d+) 个素材$",
+    "Candidate check complete: %1 groups, %2 assets",
+  },
+  {
+    "^重复检查 (%d+) / (%d+) · 失败 (%d+)$",
+    "Candidate check %1 / %2 · failed %3",
+  },
+  {
+    "^候选组 (%d+) · 涉及素材 (%d+)$",
+    "Candidate groups %1 · assets %2",
+  },
+  {
+    "^已确认相同  (%d+)$",
+    "Confirmed identical  %1",
+  },
+  {
+    "^确认读取失败  (%d+)$",
+    "Confirmation read failures  %1",
+  },
+  {
+    "^完整确认第 (%d+) / (%d+) 组 · 当前组已处理 (%d+)$",
+    "Full confirmation group %1 / %2 · processed %3 in current group",
+  },
+  {
+    "^已确认相同 (%d+) · 读取失败 (%d+)$",
+    "Confirmed identical %1 · read failures %2",
+  },
+  {
+    "^完整确认完成：(%d+) 组，(%d+) 个素材，读取失败 (%d+)$",
+    "Full confirmation complete: %1 groups, %2 assets, %3 read failures",
   },
   {
     "^来源已重定位：迁移 (%d+) 条路径，待重新扫描 (%d+) 条$",
@@ -2138,7 +2266,20 @@ function translate_ui_text(value)
     end
   end
 
+  if text:find("[\228-\233][\128-\191][\128-\191]") then
+    if I18N_MISSING[text] then
+      I18N_MISSING[text] = I18N_MISSING[text] + 1
+    elseif (I18N_MISSING_UNIQUE or 0) < (I18N_MISSING_LIMIT or 256) then
+      I18N_MISSING[text] = 1
+      I18N_MISSING_UNIQUE = (I18N_MISSING_UNIQUE or 0) + 1
+    end
+  end
+
   return text
+end
+
+function missing_translation_count()
+  return I18N_MISSING_UNIQUE or 0
 end
 
 function translate_ui_label(value)
@@ -2749,12 +2890,16 @@ function load_last_played_session()
 end
 
 function save_last_played_session()
+  if state.root_removal_session then return false end
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "session_played" then
+    cancel_auxiliary_save("synchronous session history save")
+  end
   ensure_dirs()
 
   local file =
-    io.open(
-      LAST_PLAYED_SESSION_FILE,
-      "wb"
+    atomic_file_writer(
+      LAST_PLAYED_SESSION_FILE
     )
 
   if not file then
@@ -2765,6 +2910,8 @@ function save_last_played_session()
     return false
   end
 
+  write_persistence_schema(file, LAST_PLAYED_SESSION_FILE)
+
   for key in pairs(state.session_played) do
     file:write(
       "played\t",
@@ -2773,7 +2920,10 @@ function save_last_played_session()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存上次浏览高亮", true)
+    return false
+  end
 
   state.last_session_played =
     copy_path_set(
@@ -2784,7 +2934,35 @@ function save_last_played_session()
   return true
 end
 
+function migrate_last_played_session_schema()
+  ensure_dirs()
+
+  local file = atomic_file_writer(
+    LAST_PLAYED_SESSION_FILE
+  )
+
+  if not file then
+    return false
+  end
+
+  write_persistence_schema(file, LAST_PLAYED_SESSION_FILE)
+
+  for key in pairs(state.last_session_played) do
+    file:write(
+      "played\t",
+      escape_tsv(key),
+      "\n"
+    )
+  end
+
+  return file:close()
+end
+
 function restore_last_session_played_highlights(silent)
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "session_played" then
+    cancel_auxiliary_save("restore session highlights")
+  end
   local count =
     last_session_played_count()
 
@@ -2829,8 +3007,13 @@ function clear_session_played_highlights()
 end
 
 function clear_saved_session_played_highlights()
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "session_played" then
+    cancel_auxiliary_save("clear saved session highlights")
+  end
   state.last_session_played = {}
   os.remove(LAST_PLAYED_SESSION_FILE)
+  state.session_played_dirty = false
 
   if state.restore_played_on_start then
     state.restore_played_on_start = false
@@ -3256,6 +3439,48 @@ function unique_library_name(base)
   return base .. " " .. tostring(number)
 end
 
+function refresh_source_identity(record)
+  if not record then
+    return
+  end
+
+  record.path = canonical_source_path(record.path)
+  record.canonical_path = canonical_source_path(
+    tostring(record.canonical_path or "") ~= ""
+      and record.canonical_path
+      or record.path
+  )
+  record.volume_label = tostring(record.volume_label or "")
+  record.volume_serial = tostring(record.volume_serial or "")
+  record.last_seen = tonumber(record.last_seen) or 0
+
+  if not directory_exists(record.path) then
+    return
+  end
+
+  record.canonical_path = record.path
+  record.last_seen = os.time()
+
+  if reaper.GetOS():match("Win") then
+    local drive = record.path:match("^([A-Za-z]:)")
+
+    if drive and type(reaper.ExecProcess) == "function" then
+      local ok, output = pcall(
+        reaper.ExecProcess,
+        "cmd.exe /d /c vol " .. drive,
+        1000
+      )
+
+      if ok and type(output) == "string" then
+        local serial = output:match("(%x%x%x%x%-%x%x%x%x)")
+        if serial then
+          record.volume_serial = serial:upper()
+        end
+      end
+    end
+  end
+end
+
 function rebuild_library_indexes()
   state.library_by_id = {}
   state.root_by_id = {}
@@ -3272,7 +3497,7 @@ function rebuild_library_indexes()
   end
 
   for _, record in ipairs(state.root_records) do
-    record.path = canonical_source_path(record.path)
+    refresh_source_identity(record)
     record.enabled = record.enabled ~= false
     record.artwork_path =
       tostring(record.artwork_path or "")
@@ -3372,8 +3597,16 @@ function library_for_path(path, root)
   return library and library.name or basename(root)
 end
 
+function invalidate_library_counts()
+  state.library_counts_dirty = true
+  state.library_counts_job = nil
+end
 
 function refresh_asset_library_binding(asset)
+  local previous_root = tostring(asset.root or "")
+  local previous_root_id = tostring(asset.root_id or "")
+  local previous_library_id = tostring(asset.library_id or "")
+  local previous_library = tostring(asset.library or "")
   local root, record = root_for_path(asset.path)
   local library = library_for_root_record(record)
 
@@ -3383,17 +3616,104 @@ function refresh_asset_library_binding(asset)
   asset.library = library and library.name
     or library_for_path(asset.path, root)
   asset._search_blob = nil
-  state.library_counts_dirty = true
+  return previous_root ~= tostring(asset.root or "")
+    or previous_root_id ~= tostring(asset.root_id or "")
+    or previous_library_id ~= tostring(asset.library_id or "")
+    or previous_library ~= tostring(asset.library or "")
 end
 
 function refresh_all_asset_library_bindings()
-  for _, asset in ipairs(state.assets) do
-    refresh_asset_library_binding(asset)
+  local previous = state.asset_binding_refresh
+  if previous and (previous.changed_count or 0) > 0 then
+    -- Some objects may already have been changed by the superseded pass.
+    -- A snapshot request guarantees they cannot become an untracked partial
+    -- update when a second library edit restarts the job.
+    mark_database_snapshot_dirty()
   end
 
   invalidate_folder_navigation()
+  invalidate_library_counts()
+  state.asset_binding_refresh = {
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    phase = "bindings",
+    changed_assets = {},
+    changed_count = 0,
+    persist_index = 1,
+    requires_snapshot = false,
+  }
+end
+
+function finish_asset_library_binding_refresh(session)
+  state.asset_binding_refresh = nil
+  invalidate_folder_navigation()
+  invalidate_library_counts()
   state.results_dirty = true
-  state.db_dirty = true
+  if session.requires_snapshot then
+    mark_database_snapshot_dirty()
+  end
+end
+
+function process_asset_library_binding_refresh()
+  local session = state.asset_binding_refresh
+  if not session or not can_run_heavy_job() then return end
+
+  for _, token in pairs(Jobs.active) do
+    if token.resource == "catalog_exclusive"
+      and not token.finished then
+      return
+    end
+  end
+
+  if session.assets ~= state.assets then
+    if (session.changed_count or 0) > 0 then
+      mark_database_snapshot_dirty()
+    end
+    refresh_all_asset_library_bindings()
+    return
+  end
+
+  if session.phase == "bindings" then
+    local last = math.min(
+      session.total,
+      session.index + ASSET_BINDINGS_PER_FRAME - 1
+    )
+    for index = session.index, last do
+      local asset = session.assets[index]
+      if asset and refresh_asset_library_binding(asset) then
+        session.changed_count = session.changed_count + 1
+        if not session.requires_snapshot
+          and session.changed_count <= DATABASE_JOURNAL_COMPACT_COUNT then
+          session.changed_assets[#session.changed_assets + 1] = asset
+        else
+          session.requires_snapshot = true
+          session.changed_assets = nil
+        end
+      end
+    end
+    session.index = last + 1
+    if session.index > session.total then
+      if session.requires_snapshot or session.changed_count == 0 then
+        finish_asset_library_binding_refresh(session)
+      else
+        session.phase = "persist"
+      end
+    end
+    return
+  end
+
+  local last = math.min(
+    #session.changed_assets,
+    session.persist_index + ASSET_BINDING_CHANGES_PER_FRAME - 1
+  )
+  for index = session.persist_index, last do
+    mark_asset_database_change(session.changed_assets[index])
+  end
+  session.persist_index = last + 1
+  if session.persist_index > #session.changed_assets then
+    finish_asset_library_binding_refresh(session)
+  end
 end
 
 function db_to_amp(db)
@@ -3684,9 +4004,8 @@ function write_project_url_file(url)
   )
 
   local file =
-    io.open(
-      PROJECT_URL_FILE,
-      "wb"
+    atomic_file_writer(
+      PROJECT_URL_FILE
     )
 
   if not file then
@@ -3694,8 +4013,189 @@ function write_project_url_file(url)
   end
 
   file:write(url, "\n")
-  file:close()
+  return file:close()
+end
+
+-- One owner for background generations and exclusive resources. Operations
+-- keep their token until all per-frame work has unwound; cancellation only
+-- flips the token and never releases a newer generation by mistake.
+Jobs = {
+  generation = 0,
+  accepting = true,
+  active = {},
+  history = {},
+}
+
+-- Controlled mutation boundary for new modules. Legacy UI code still reads
+-- the shared table directly, but new services can update it through this API
+-- and tests can inject an isolated table without booting ReaImGui.
+
+function new_state_store(initial_state)
+  assert(type(initial_state) == "table", "state table is required")
+  local store = { raw = initial_state }
+
+  function store.get(name)
+    return initial_state[name]
+  end
+
+  function store.set(name, value)
+    assert(type(name) == "string" and name ~= "", "state key is required")
+    initial_state[name] = value
+    return value
+  end
+
+  function store.update(name, updater)
+    assert(type(updater) == "function", "state updater is required")
+    return store.set(name, updater(initial_state[name]))
+  end
+
+  function store.mark_dirty(name)
+    return store.set(name, true)
+  end
+
+  function store.apply(values)
+    assert(type(values) == "table", "state values are required")
+    for name, value in pairs(values) do
+      store.set(name, value)
+    end
+  end
+
+  return store
+end
+
+AppState = new_state_store(state)
+
+-- Injectable boundary for REAPER, SWS and ReaImGui host APIs. Runtime code
+-- uses the real global table; command-line tests can supply a small stub.
+
+function new_reaper_host_adapter(api)
+  assert(type(api) == "table", "host API table is required")
+  local adapter = { raw = api }
+  return setmetatable(adapter, {
+    __index = function(target, name)
+      local value = api[name]
+      if type(value) ~= "function" then
+        return value
+      end
+      local wrapper = function(...)
+        return value(...)
+      end
+      rawset(target, name, wrapper)
+      return wrapper
+    end,
+  })
+end
+
+function host_api_available(api, name)
+  local target = api or Host
+  return type(target) == "table"
+    and type(target[name]) == "function"
+end
+
+Host = new_reaper_host_adapter(reaper)
+
+-- Background jobs, atomic storage, recovery and cache maintenance.
+local HostApi = Host or reaper
+
+function Jobs.begin(
+  kind,
+  resource,
+  replace_same_kind,
+  priority
+)
+  if not Jobs.accepting then
+    return nil, "shutting_down"
+  end
+
+  local previous = Jobs.active[kind]
+
+  if previous then
+    if not replace_same_kind then
+      return nil, "already_running"
+    end
+
+    previous.cancel_requested = true
+    previous.state = "canceling"
+  end
+
+  for active_kind, token in pairs(Jobs.active) do
+    if active_kind ~= kind
+      and token.state ~= "completed"
+      and token.state ~= "failed"
+      and token.resource == resource then
+      return nil, "resource_busy"
+    end
+  end
+
+  Jobs.generation = Jobs.generation + 1
+
+  local token = {
+    kind = kind,
+    resource = resource,
+    generation = Jobs.generation,
+    priority = tonumber(priority) or 50,
+    state = "running",
+    cancel_requested = false,
+    started = HostApi.time_precise(),
+  }
+
+  Jobs.active[kind] = token
+  return token
+end
+
+function Jobs.is_current(token)
+  return token
+    and Jobs.active[token.kind] == token
+    and not token.cancel_requested
+end
+
+function Jobs.cancel(token_or_kind)
+  local token = type(token_or_kind) == "table"
+    and token_or_kind
+    or Jobs.active[token_or_kind]
+
+  if not token or token.finished then
+    return false
+  end
+
+  token.cancel_requested = true
+  token.state = "canceling"
   return true
+end
+
+function Jobs.finish(token, success, message)
+  if not token or token.finished then
+    return
+  end
+
+  token.finished = HostApi.time_precise()
+  token.message = tostring(message or "")
+  token.state = token.cancel_requested
+    and "canceled"
+    or success == false and "failed"
+    or "completed"
+
+  if Jobs.active[token.kind] == token then
+    Jobs.active[token.kind] = nil
+  end
+
+  Jobs.history[#Jobs.history + 1] = token
+
+  while #Jobs.history > 64 do
+    table.remove(Jobs.history, 1)
+  end
+end
+
+function Jobs.active_kind(kind)
+  return Jobs.active[kind] ~= nil
+end
+
+function Jobs.stop_accepting()
+  Jobs.accepting = false
+
+  for _, token in pairs(Jobs.active) do
+    Jobs.cancel(token)
+  end
 end
 
 function extract_project_url_from_text(content)
@@ -3745,7 +4245,7 @@ function find_project_url_in_sibling_scripts()
 
   while true do
     local filename =
-      reaper.EnumerateFiles(
+      HostApi.EnumerateFiles(
         SCRIPT_DIR,
         index
       )
@@ -3827,43 +4327,38 @@ function load_or_migrate_project_url()
   end
 end
 
-function copy_file(source_path, target_path)
+function copy_file_streaming(
+  source_path,
+  target_path
+)
+  local temporary_path =
+    target_path .. ".psyreasfx_tmp"
+  os.remove(temporary_path)
+
+  if not stream_file_to_temporary(
+    source_path,
+    temporary_path
+  ) then
+    return false
+  end
+
+  return commit_atomic_temporary(
+    target_path,
+    temporary_path
+  )
+end
+
+function stream_file_to_temporary(
+  source_path,
+  temporary_path
+)
   local input = io.open(source_path, "rb")
 
   if not input then
     return false
   end
 
-  local content = input:read("*a")
-  input:close()
-
-  local output = io.open(target_path, "wb")
-
-  if not output then
-    return false
-  end
-
-  output:write(content or "")
-  output:close()
-  return true
-end
-
-function copy_file_streaming(
-  source_path,
-  target_path
-)
-  local input =
-    io.open(source_path, "rb")
-
-  if not input then
-    return false
-  end
-
-  local temporary_path =
-    target_path .. ".psyreasfx_tmp"
-
-  local output =
-    io.open(temporary_path, "wb")
+  local output = io.open(temporary_path, "wb")
 
   if not output then
     input:close()
@@ -3873,32 +4368,32 @@ function copy_file_streaming(
   local ok = true
 
   while true do
-    local chunk = input:read(1024 * 1024)
+    local chunk, read_error = input:read(1024 * 1024)
 
     if not chunk then
+      if read_error then
+        ok = false
+      end
       break
     end
 
-    if not output:write(chunk) then
+    if state.persistence_fault_injection == "write"
+      or not output:write(chunk) then
       ok = false
       break
     end
   end
 
   input:close()
-  output:close()
+  local flushed = output:flush()
+  local closed = output:close()
 
-  if not ok then
+  if not ok or not flushed or not closed then
     os.remove(temporary_path)
     return false
   end
 
-  os.remove(target_path)
-
-  if not os.rename(
-    temporary_path,
-    target_path
-  ) then
+  if state.persistence_fault_injection == "after_close" then
     os.remove(temporary_path)
     return false
   end
@@ -3906,11 +4401,53 @@ function copy_file_streaming(
   return true
 end
 
+function commit_atomic_temporary(
+  target_path,
+  temporary_path,
+  backup_path,
+  keep_backup
+)
+  backup_path = backup_path or (target_path .. ".bak")
+  local had_original = HostApi.file_exists(target_path)
+  os.remove(backup_path)
+
+  if had_original
+    and not os.rename(target_path, backup_path) then
+    os.remove(temporary_path)
+    return false, had_original
+  end
+
+  if state.persistence_fault_injection == "after_backup" then
+    if had_original then
+      os.rename(backup_path, target_path)
+    end
+    os.remove(temporary_path)
+    return false, had_original
+  end
+
+  if not os.rename(
+    temporary_path,
+    target_path
+  ) then
+    if had_original then
+      os.rename(backup_path, target_path)
+    end
+    os.remove(temporary_path)
+    return false, had_original
+  end
+
+  if not keep_backup then
+    os.remove(backup_path)
+  end
+  return true, had_original
+end
+
 function persistent_data_files()
   return {
     CONFIG_FILE,
     LIBRARIES_FILE,
     DATABASE_FILE,
+    DATABASE_JOURNAL_FILE,
     COLLECTIONS_FILE,
     PROJECT_USAGE_FILE,
     SAVED_SEARCHES_FILE,
@@ -3920,13 +4457,590 @@ function persistent_data_files()
     LOUDNESS_FILE,
     FAILED_TASKS_FILE,
     BACKUP_STATE_FILE,
+    MIGRATION_LOG_FILE,
     PROJECT_URL_FILE,
   }
 end
 
+local PERSISTENCE_SCHEMA_MAGIC = "psyreasfx_schema"
+local PERSISTENCE_SCHEMAS = {
+  [CONFIG_FILE] = {
+    kind = "config",
+    version = 1,
+    dirty_flag = "config_dirty",
+  },
+  [LIBRARIES_FILE] = {
+    kind = "libraries",
+    version = 2,
+    dirty_flag = "libraries_dirty",
+  },
+  [DATABASE_FILE] = {
+    kind = "database",
+    version = 3,
+    dirty_flag = "db_dirty",
+  },
+  [COLLECTIONS_FILE] = {
+    kind = "collections",
+    version = 1,
+    dirty_flag = "collections_dirty",
+  },
+  [PROJECT_USAGE_FILE] = {
+    kind = "project_usage",
+    version = 1,
+    dirty_flag = "project_usage_dirty",
+  },
+  [SAVED_SEARCHES_FILE] = {
+    kind = "saved_searches",
+    version = 1,
+    dirty_flag = "searches_dirty",
+  },
+  [HISTORY_FILE] = {
+    kind = "history",
+    version = 1,
+    dirty_flag = "history_dirty",
+  },
+  [LAST_PLAYED_SESSION_FILE] = {
+    kind = "last_played",
+    version = 1,
+  },
+  [REGIONS_FILE] = {
+    kind = "regions",
+    version = 1,
+    dirty_flag = "regions_dirty",
+  },
+  [LOUDNESS_FILE] = {
+    kind = "loudness",
+    version = 1,
+    dirty_flag = "loudness_dirty",
+  },
+  [FAILED_TASKS_FILE] = {
+    kind = "failed_tasks",
+    version = 1,
+    dirty_flag = "failed_tasks_dirty",
+  },
+  [BACKUP_STATE_FILE] = {
+    kind = "backup_state",
+    version = 1,
+  },
+  [MIGRATION_LOG_FILE] = {
+    kind = "migration_log",
+    version = 1,
+  },
+}
+
+-- Every published format advances one version at a time. Loaders normalize
+-- older rows into the current in-memory model; these explicit edges are the
+-- audit contract that authorizes the final atomic rewrite. A missing edge is a
+-- hard stop rather than permission to jump directly to the newest schema.
+local PERSISTENCE_MIGRATIONS = {
+  [CONFIG_FILE] = { [0] = 1 },
+  [LIBRARIES_FILE] = { [0] = 1, [1] = 2 },
+  [DATABASE_FILE] = { [0] = 1, [1] = 2, [2] = 3 },
+  [COLLECTIONS_FILE] = { [0] = 1 },
+  [PROJECT_USAGE_FILE] = { [0] = 1 },
+  [SAVED_SEARCHES_FILE] = { [0] = 1 },
+  [HISTORY_FILE] = { [0] = 1 },
+  [LAST_PLAYED_SESSION_FILE] = { [0] = 1 },
+  [REGIONS_FILE] = { [0] = 1 },
+  [LOUDNESS_FILE] = { [0] = 1 },
+  [FAILED_TASKS_FILE] = { [0] = 1 },
+  [BACKUP_STATE_FILE] = { [0] = 1 },
+}
+
+function persistence_migration_path(target_path, from_version)
+  local schema = PERSISTENCE_SCHEMAS[target_path]
+  local registered = PERSISTENCE_MIGRATIONS[target_path]
+  local current = tonumber(from_version)
+  if not schema or not registered or not current
+    or current < 0 or current % 1 ~= 0
+    or current > schema.version then
+    return nil, "invalid_start"
+  end
+
+  local steps = {}
+  while current < schema.version do
+    local next_version = registered[current]
+    if next_version ~= current + 1 then
+      return nil, "missing_step_" .. tostring(current)
+    end
+    steps[#steps + 1] = {
+      from = current,
+      to = next_version,
+    }
+    current = next_version
+  end
+  return steps
+end
+
+function persistence_schema_header(kind, version, generation)
+  local fields = {
+    PERSISTENCE_SCHEMA_MAGIC,
+    kind,
+    tostring(version),
+  }
+  if generation ~= nil then
+    fields[#fields + 1] = "generation"
+    fields[#fields + 1] = tostring(generation)
+  end
+  return table.concat(fields, "\t") .. "\n"
+end
+
+function persistence_schema_generation(fields)
+  if not is_persistence_schema_fields(fields) then return 0 end
+  for index = 4, #fields - 1 do
+    if fields[index] == "generation" then
+      local generation = tonumber(fields[index + 1])
+      if generation and generation >= 0 and generation % 1 == 0 then
+        return generation
+      end
+      return nil, "invalid_generation"
+    end
+  end
+  return 0
+end
+
+function write_persistence_schema(file, target_path)
+  local schema = PERSISTENCE_SCHEMAS[target_path]
+
+  if not schema then
+    return true
+  end
+
+  return file:write(
+    persistence_schema_header(
+      schema.kind,
+      schema.version
+    )
+  ) ~= nil
+end
+
+function is_persistence_schema_fields(fields)
+  return fields
+    and fields[1] == PERSISTENCE_SCHEMA_MAGIC
+end
+
+function preflight_persistence_schemas()
+  state.persistence_read_only = false
+  state.persistence_read_only_reason = ""
+  state.persistence_schema_versions = {}
+  state.persistence_schema_legacy = {}
+
+  local problems = {}
+  if state.persistence_recovery_problem
+    and state.persistence_recovery_problem ~= "" then
+    problems[#problems + 1] =
+      state.persistence_recovery_problem
+  end
+
+  for target_path, schema in pairs(PERSISTENCE_SCHEMAS) do
+    local file = io.open(target_path, "rb")
+
+    if file then
+      local first_line = file:read("*l") or ""
+      file:close()
+
+      local fields = split_tsv(first_line)
+
+      if is_persistence_schema_fields(fields) then
+        local kind = fields[2] or ""
+        local version = tonumber(fields[3])
+
+        if kind ~= schema.kind then
+          problems[#problems + 1] = string.format(
+            "%s 的数据类型为 %s，预期为 %s",
+            basename(target_path),
+            kind ~= "" and kind or "未知",
+            schema.kind
+          )
+        elseif not version
+          or version < 1
+          or version % 1 ~= 0 then
+          problems[#problems + 1] = string.format(
+            "%s 的格式版本无效",
+            basename(target_path)
+          )
+        elseif version > schema.version then
+          problems[#problems + 1] = string.format(
+            "%s 使用未来格式 v%d（当前支持 v%d）",
+            basename(target_path),
+            version,
+            schema.version
+          )
+        else
+          state.persistence_schema_versions[target_path] =
+            version
+        end
+      else
+        -- All formats published before the hardening branch are schema 0.
+        -- They remain readable and are rewritten atomically after startup.
+        state.persistence_schema_versions[target_path] = 0
+        state.persistence_schema_legacy[target_path] = true
+      end
+    end
+  end
+
+  if #problems > 0 then
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      table.concat(problems, "；")
+    set_status(
+      "检测到不兼容的数据格式，已进入只读保护："
+        .. state.persistence_read_only_reason,
+      true
+    )
+    return false
+  end
+
+  return true
+end
+
+function schedule_legacy_schema_migrations()
+  if state.persistence_read_only then
+    return false
+  end
+
+  local pending = {}
+
+  for target_path, schema in pairs(PERSISTENCE_SCHEMAS) do
+    local current = state.persistence_schema_versions[target_path]
+
+    if current ~= nil
+      and current < schema.version
+      and target_path ~= MIGRATION_LOG_FILE then
+      local steps, path_error =
+        persistence_migration_path(target_path, current)
+      if not steps then
+        state.persistence_read_only = true
+        state.persistence_read_only_reason = string.format(
+          "缺少数据迁移步骤：%s v%d（%s）",
+          basename(target_path),
+          current,
+          tostring(path_error or "unknown")
+        )
+        set_status(
+          state.persistence_read_only_reason
+            .. "；已停止后续写入",
+          true
+        )
+        return false
+      end
+      pending[#pending + 1] = {
+        path = target_path,
+        from = current,
+        steps = steps,
+      }
+    end
+  end
+
+  if #pending == 0 then
+    return true
+  end
+
+  table.sort(pending, function(a, b)
+    return a.path < b.path
+  end)
+
+  if not create_data_backup("schema_migration", true) then
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      "旧数据迁移前无法创建安全快照"
+    set_status(
+      "无法创建迁移快照，已进入只读保护",
+      true
+    )
+    return false
+  end
+
+  local savers = {
+    [CONFIG_FILE] = save_config,
+    [LIBRARIES_FILE] = save_libraries,
+    [DATABASE_FILE] = save_database,
+    [COLLECTIONS_FILE] = save_collections,
+    [PROJECT_USAGE_FILE] = save_project_usage,
+    [SAVED_SEARCHES_FILE] = save_saved_searches,
+    [HISTORY_FILE] = save_history,
+    [LAST_PLAYED_SESSION_FILE] =
+      migrate_last_played_session_schema,
+    [REGIONS_FILE] = save_regions,
+    [LOUDNESS_FILE] = save_loudness_cache,
+    [FAILED_TASKS_FILE] = save_failed_tasks,
+    [BACKUP_STATE_FILE] = save_backup_state,
+  }
+
+  for _, migration in ipairs(pending) do
+    local target_path = migration.path
+    local schema = PERSISTENCE_SCHEMAS[target_path]
+    local saver = savers[target_path]
+    local ok = true
+
+    if schema and schema.dirty_flag then
+      state[schema.dirty_flag] = true
+    end
+
+    if saver then
+      ok = saver() ~= false
+    end
+
+    local kind = schema and schema.kind or basename(target_path)
+    if ok then
+      for _, step in ipairs(migration.steps) do
+        if not append_schema_migration_log(
+          kind,
+          step.from,
+          step.to,
+          "completed"
+        ) then
+          ok = false
+          break
+        end
+      end
+    else
+      local first_step = migration.steps[1]
+      append_schema_migration_log(
+        kind,
+        first_step and first_step.from or migration.from,
+        first_step and first_step.to or (schema and schema.version or 0),
+        "failed"
+      )
+    end
+
+    if not ok then
+      state.persistence_read_only = true
+      state.persistence_read_only_reason =
+        "数据格式迁移失败：" .. basename(target_path)
+      set_status(
+        state.persistence_read_only_reason
+          .. "；已停止后续写入",
+        true
+      )
+      return false
+    end
+
+    state.persistence_schema_legacy[target_path] = nil
+    state.persistence_schema_versions[target_path] =
+      schema and schema.version or 0
+  end
+
+
+  return true
+end
+
+function append_schema_migration_log(
+  kind,
+  from_version,
+  to_version,
+  result
+)
+  if state.persistence_read_only then
+    return false
+  end
+
+  local existed = HostApi.file_exists(MIGRATION_LOG_FILE)
+  local file = io.open(MIGRATION_LOG_FILE, "ab")
+
+  if not file then
+    return false
+  end
+
+  if not existed then
+    file:write(
+      persistence_schema_header("migration_log", 1)
+    )
+  end
+
+  file:write(
+    "migration\t",
+    escape_tsv(os.date("%Y-%m-%d %H:%M:%S")),
+    "\t",
+    escape_tsv(kind or "unknown"),
+    "\t",
+    tostring(from_version or 0),
+    "\t",
+    tostring(to_version or 0),
+    "\t",
+    escape_tsv(result or "unknown"),
+    "\n"
+  )
+  file:flush()
+  file:close()
+  return true
+end
+
+-- Persistent TSV/config files used to be written directly to their final
+-- path. A REAPER crash or power loss during file:write() could therefore
+-- replace valid data with a truncated file. Keep the previous generation as
+-- a short-lived rollback and only expose a fully closed temporary file.
+function atomic_file_writer(target_path)
+  if state.persistence_read_only then
+    return nil,
+      state.persistence_read_only_reason ~= ""
+        and state.persistence_read_only_reason
+        or "persistence is read-only"
+  end
+
+  local temporary_path = target_path .. ".tmp"
+  local backup_path = target_path .. ".bak"
+  os.remove(temporary_path)
+
+  local raw, open_error = io.open(temporary_path, "wb")
+  if not raw then
+    return nil, open_error
+  end
+
+  local writer = {
+    raw = raw,
+    target_path = target_path,
+    temporary_path = temporary_path,
+    backup_path = backup_path,
+    failed = false,
+    failure = nil,
+    closed = false,
+  }
+
+  function writer:write(...)
+    if self.closed or self.failed then
+      return nil, self.failure or "writer is closed"
+    end
+
+    if state.persistence_fault_injection == "write" then
+      self.failed = true
+      self.failure = "injected write failure"
+      return nil, self.failure
+    end
+
+    local ok, message = self.raw:write(...)
+    if not ok then
+      self.failed = true
+      self.failure = message or "write failed"
+      return nil, self.failure
+    end
+    return self
+  end
+
+  function writer:close()
+    if self.closed then
+      return not self.failed, self.failure
+    end
+    self.closed = true
+
+    local flushed, flush_error = self.raw:flush()
+    local closed, close_error = self.raw:close()
+    if self.failed or not flushed or not closed then
+      os.remove(self.temporary_path)
+      self.failure = self.failure or flush_error or close_error
+        or "could not finish temporary file"
+      return false, self.failure
+    end
+
+    if state.persistence_fault_injection == "after_close" then
+      os.remove(self.temporary_path)
+      return false, "injected failure after temporary close"
+    end
+
+    local committed = commit_atomic_temporary(
+      self.target_path,
+      self.temporary_path,
+      self.backup_path
+    )
+    if not committed then
+      return false, "could not install completed file"
+    end
+    return true
+  end
+
+  function writer:abort()
+    if self.closed then
+      return false
+    end
+    self.closed = true
+    pcall(function() self.raw:close() end)
+    os.remove(self.temporary_path)
+    return true
+  end
+
+  return writer
+end
+
+function recover_atomic_data_files()
+  local files = persistent_data_files()
+  local unresolved = {}
+  local restore_committed =
+    HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+  files[#files + 1] = SCAN_CHECKPOINT_FILE
+  for _, target_path in ipairs(files) do
+    local backup_path = target_path .. ".bak"
+    local temporary_path = target_path .. ".tmp"
+    local restore_backup_path = target_path .. ".restore.bak"
+    local restore_temporary_path = target_path .. ".restore.tmp"
+    local restore_new_path = target_path .. ".restore.new"
+
+    -- A transaction marker is installed only after every restored file has
+    -- committed. With the marker, finish cleanup and retain the new generation;
+    -- without it, roll every touched file back to its previous generation.
+    local restore_pending = false
+    if restore_committed then
+      for _, artifact_path in ipairs({
+        restore_backup_path,
+        restore_temporary_path,
+        restore_new_path,
+      }) do
+        if HostApi.file_exists(artifact_path)
+          and not os.remove(artifact_path) then
+          restore_pending = true
+        end
+      end
+    elseif HostApi.file_exists(restore_backup_path) then
+      local removed = not HostApi.file_exists(target_path)
+        or os.remove(target_path) ~= nil
+      if not removed
+        or not os.rename(restore_backup_path, target_path) then
+        restore_pending = true
+      end
+    elseif HostApi.file_exists(restore_new_path) then
+      if HostApi.file_exists(target_path)
+        and not os.remove(target_path) then
+        restore_pending = true
+      end
+    end
+    if not restore_committed then
+      os.remove(restore_temporary_path)
+      if not restore_pending then
+        os.remove(restore_new_path)
+      end
+    end
+    if restore_pending then
+      unresolved[#unresolved + 1] = basename(target_path)
+    end
+
+    if not restore_pending
+      and not HostApi.file_exists(target_path)
+      and HostApi.file_exists(backup_path) then
+      os.rename(backup_path, target_path)
+    elseif not restore_pending
+      and HostApi.file_exists(target_path) then
+      os.remove(backup_path)
+    end
+
+    -- A .tmp without a rollback may have been interrupted while writing and
+    -- is never trusted as user data.
+    os.remove(temporary_path)
+  end
+  if restore_committed and #unresolved == 0 then
+    os.remove(RESTORE_TRANSACTION_COMMIT_FILE)
+    if HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE) then
+      unresolved[#unresolved + 1] =
+        basename(RESTORE_TRANSACTION_COMMIT_FILE)
+    end
+  end
+  state.persistence_recovery_problem = #unresolved > 0
+    and ("未能回滚中断的备份恢复："
+      .. table.concat(unresolved, ", "))
+    or ""
+end
+
 function remove_shallow_directory(path)
   while true do
-    local filename = reaper.EnumerateFiles(path, 0)
+    local filename = HostApi.EnumerateFiles(path, 0)
 
     if not filename then
       break
@@ -3941,15 +5055,15 @@ end
 function save_backup_state()
   ensure_dirs()
 
-  local file = io.open(BACKUP_STATE_FILE, "wb")
+  local file = atomic_file_writer(BACKUP_STATE_FILE)
 
   if not file then
     return false
   end
 
+  write_persistence_schema(file, BACKUP_STATE_FILE)
   file:write("last_date\t", escape_tsv(state.backup_last_date or ""), "\n")
-  file:close()
-  return true
+  return file:close()
 end
 
 function load_backup_state()
@@ -3975,7 +5089,7 @@ function backup_directories()
   local index = 0
 
   while true do
-    local name = reaper.EnumerateSubdirectories(BACKUP_DIR, index)
+    local name = HostApi.EnumerateSubdirectories(BACKUP_DIR, index)
 
     if not name then
       break
@@ -4021,7 +5135,7 @@ function create_data_backup(reason, quiet)
     suffix = suffix + 1
   end
 
-  if reaper.RecursiveCreateDirectory(directory, 0) <= 0 then
+  if HostApi.RecursiveCreateDirectory(directory, 0) <= 0 then
     if not quiet then
       set_status("无法创建数据备份目录", true)
     end
@@ -4029,32 +5143,54 @@ function create_data_backup(reason, quiet)
   end
 
   local copied = 0
+  local expected = 0
+  local failed = 0
 
   for _, source_path in ipairs(persistent_data_files()) do
-    if reaper.file_exists(source_path) then
-      if copy_file_streaming(
+    if HostApi.file_exists(source_path) then
+      expected = expected + 1
+      local inject_partial =
+        state.persistence_fault_injection
+          == "backup_after_first"
+        and copied > 0
+      if not inject_partial
+        and copy_file_streaming(
         source_path,
         join_path(directory, basename(source_path))
       ) then
         copied = copied + 1
+      else
+        failed = failed + 1
       end
     end
   end
 
-  local manifest = io.open(join_path(directory, "manifest.tsv"), "wb")
+  local manifest_path = join_path(directory, "manifest.tsv")
+  local manifest = io.open(manifest_path, "wb")
+  local manifest_ok = false
 
   if manifest then
-    manifest:write("version\t", VERSION, "\n")
-    manifest:write("created\t", os.date("%Y-%m-%d %H:%M:%S"), "\n")
-    manifest:write("reason\t", reason or "manual", "\n")
-    manifest:write("files\t", tostring(copied), "\n")
-    manifest:close()
+    local wrote = manifest:write("version\t", VERSION, "\n")
+      and manifest:write("created\t", os.date("%Y-%m-%d %H:%M:%S"), "\n")
+      and manifest:write("reason\t", reason or "manual", "\n")
+      and manifest:write("files\t", tostring(copied), "\n")
+    local flushed = manifest:flush()
+    local closed = manifest:close()
+    manifest_ok = wrote ~= nil and flushed ~= nil and closed ~= nil
   end
 
-  if copied <= 0 then
+  if expected <= 0 then
     remove_shallow_directory(directory)
     if not quiet then
       set_status("没有可备份的数据文件", true)
+    end
+    return false
+  end
+
+  if copied ~= expected or failed > 0 or not manifest_ok then
+    remove_shallow_directory(directory)
+    if not quiet then
+      set_status("无法完整创建数据备份", true)
     end
     return false
   end
@@ -4070,6 +5206,176 @@ function create_data_backup(reason, quiet)
   return true
 end
 
+function restore_data_backup_transaction(directory)
+  local plan = {}
+  if HostApi.file_exists(RESTORE_TRANSACTION_COMMIT_FILE)
+    and not os.remove(RESTORE_TRANSACTION_COMMIT_FILE) then
+    return false, 0, "stale_commit_marker"
+  end
+
+  for _, target_path in ipairs(persistent_data_files()) do
+    local source_path = join_path(directory, basename(target_path))
+
+    if HostApi.file_exists(source_path) then
+      local temporary_path = target_path .. ".restore.tmp"
+      os.remove(temporary_path)
+      if not stream_file_to_temporary(
+        source_path,
+        temporary_path
+      ) then
+        for _, item in ipairs(plan) do
+          if item.temporary_path then
+            os.remove(item.temporary_path)
+          end
+        end
+        return false, 0, "stage"
+      end
+      plan[#plan + 1] = {
+        target_path = target_path,
+        temporary_path = temporary_path,
+        backup_path = target_path .. ".restore.bak",
+        new_marker_path = target_path .. ".restore.new",
+        had_original = false,
+      }
+    elseif target_path == DATABASE_JOURNAL_FILE
+      and HostApi.file_exists(target_path) then
+      -- Backups created before incremental persistence have no journal.
+      -- Removing the current one is part of the same rollback-safe restore,
+      -- otherwise post-backup edits could reappear over the restored snapshot.
+      plan[#plan + 1] = {
+        target_path = target_path,
+        temporary_path = nil,
+        backup_path = target_path .. ".restore.bak",
+        new_marker_path = target_path .. ".restore.new",
+        had_original = true,
+        delete_only = true,
+      }
+    end
+  end
+
+  if #plan == 0 then
+    return false, 0, "empty"
+  end
+
+  local committed = 0
+  for index, item in ipairs(plan) do
+    item.had_original = HostApi.file_exists(item.target_path)
+    local marker_ok = true
+    if not item.had_original and not item.delete_only then
+      local marker = io.open(item.new_marker_path, "wb")
+      if marker then
+        marker_ok = marker:close() ~= nil
+      else
+        marker_ok = false
+      end
+    end
+    local ok = false
+    local had_original = item.had_original
+    if marker_ok and item.delete_only then
+      os.remove(item.backup_path)
+      ok = item.had_original
+        and os.rename(item.target_path, item.backup_path) ~= nil
+    elseif marker_ok then
+      ok, had_original = commit_atomic_temporary(
+        item.target_path,
+        item.temporary_path,
+        item.backup_path,
+        true
+      )
+    end
+    item.had_original = had_original == true
+    if ok then
+      committed = index
+    end
+
+    if ok
+      and state.persistence_fault_injection
+        == "restore_after_first"
+      and index == 1 then
+      ok = false
+    end
+    if ok
+      and item.delete_only
+      and state.persistence_fault_injection
+        == "restore_after_journal_delete" then
+      ok = false
+    end
+
+    if not ok then
+      if item.temporary_path then os.remove(item.temporary_path) end
+      os.remove(item.new_marker_path)
+      for rollback = committed, 1, -1 do
+        local previous = plan[rollback]
+        local target_removed =
+          not HostApi.file_exists(previous.target_path)
+          or os.remove(previous.target_path) ~= nil
+        if previous.had_original then
+          os.rename(
+            previous.backup_path,
+            previous.target_path
+          )
+        else
+          os.remove(previous.backup_path)
+          if target_removed then
+            os.remove(previous.new_marker_path)
+          end
+        end
+      end
+      for cleanup = index + 1, #plan do
+        if plan[cleanup].temporary_path then
+          os.remove(plan[cleanup].temporary_path)
+        end
+      end
+      return false, 0, "commit"
+    end
+  end
+
+  local commit_marker_temporary =
+    RESTORE_TRANSACTION_COMMIT_FILE .. ".tmp"
+  os.remove(commit_marker_temporary)
+  local marker = io.open(commit_marker_temporary, "wb")
+  local marker_ok = false
+  if marker then
+    local wrote = marker:write("committed\t1\n")
+    local flushed = marker:flush()
+    local closed = marker:close()
+    marker_ok = wrote ~= nil and flushed ~= nil and closed ~= nil
+  end
+  if state.persistence_fault_injection
+      == "restore_commit_marker" then
+    marker_ok = false
+  end
+  if marker_ok then
+    marker_ok = os.rename(
+      commit_marker_temporary,
+      RESTORE_TRANSACTION_COMMIT_FILE
+    ) ~= nil
+  end
+  if not marker_ok then
+    os.remove(commit_marker_temporary)
+    for rollback = #plan, 1, -1 do
+      local previous = plan[rollback]
+      if HostApi.file_exists(previous.target_path) then
+        os.remove(previous.target_path)
+      end
+      if previous.had_original then
+        os.rename(previous.backup_path, previous.target_path)
+      else
+        os.remove(previous.backup_path)
+        os.remove(previous.new_marker_path)
+      end
+    end
+    return false, 0, "commit_marker"
+  end
+
+  for _, item in ipairs(plan) do
+    os.remove(item.backup_path)
+    os.remove(item.new_marker_path)
+  end
+  os.remove(RESTORE_TRANSACTION_COMMIT_FILE)
+  return true, #plan
+end
+
 function restore_latest_data_backup()
   local names = backup_directories()
   local name = names[1]
@@ -4079,7 +5385,7 @@ function restore_latest_data_backup()
     return
   end
 
-  local answer = reaper.MB(
+  local answer = HostApi.MB(
     "将恢复最近的数据备份：\n\n"
       .. name
       .. "\n\n恢复后 PsyReaSFX 会关闭，请重新运行脚本。继续吗？",
@@ -4092,25 +5398,24 @@ function restore_latest_data_backup()
   end
 
   local directory = join_path(BACKUP_DIR, name)
-  local restored = 0
+  local restored_ok, restored, restore_error =
+    restore_data_backup_transaction(directory)
 
-  for _, target_path in ipairs(persistent_data_files()) do
-    local source_path = join_path(directory, basename(target_path))
-
-    if reaper.file_exists(source_path)
-      and copy_file_streaming(source_path, target_path) then
-      restored = restored + 1
+  if not restored_ok or restored <= 0 then
+    if restore_error == "empty" then
+      set_status("备份中没有可恢复的数据", true)
+      return
     end
-  end
-
-  if restored <= 0 then
-    set_status("备份中没有可恢复的数据", true)
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      "备份恢复未能完整提交，请重启 PsyReaSFX"
+    set_status("备份恢复失败，原数据已回滚", true)
     return
   end
 
   state.skip_persistence_on_cleanup = true
   state.open = false
-  reaper.MB(
+  HostApi.MB(
     "已恢复 " .. tostring(restored) .. " 个数据文件。\n\n请重新运行 PsyReaSFX。",
     SCRIPT_NAME,
     0
@@ -4123,16 +5428,20 @@ function write_scan_checkpoint(scan, phase)
   end
 
   ensure_dirs()
-  local temporary = SCAN_CHECKPOINT_FILE .. ".tmp"
-  local file = io.open(temporary, "wb")
+  local file = atomic_file_writer(SCAN_CHECKPOINT_FILE)
 
   if not file then
     return
   end
 
-  file:write("version\t1\n")
+  file:write("version\t2\n")
   file:write("phase\t", escape_tsv(phase or "scan"), "\n")
   file:write("reason\t", escape_tsv(scan.reason or "扫描"), "\n")
+  file:write(
+    "force_rebuild\t",
+    scan.force_rebuild and "1" or "0",
+    "\n"
+  )
   file:write("files\t", tostring(scan.files or 0), "\n")
   file:write("directories\t", tostring(scan.directories or 0), "\n")
 
@@ -4141,8 +5450,6 @@ function write_scan_checkpoint(scan, phase)
   end
 
   file:close()
-  os.remove(SCAN_CHECKPOINT_FILE)
-  os.rename(temporary, SCAN_CHECKPOINT_FILE)
 end
 
 function clear_scan_checkpoint()
@@ -4156,7 +5463,11 @@ function load_scan_checkpoint()
     return nil
   end
 
-  local checkpoint = { roots = {}, reason = "恢复中断扫描" }
+  local checkpoint = {
+    roots = {},
+    reason = "恢复中断扫描",
+    force_rebuild = false,
+  }
 
   for line in file:lines() do
     local fields = split_tsv(line)
@@ -4165,6 +5476,8 @@ function load_scan_checkpoint()
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
+    elseif fields[1] == "force_rebuild" then
+      checkpoint.force_rebuild = fields[2] == "1"
     end
   end
 
@@ -4188,7 +5501,9 @@ function load_failed_tasks()
 
   for line in file:lines() do
     local fields = split_tsv(line)
-    local path = fields[1] or ""
+    local path = is_persistence_schema_fields(fields)
+      and ""
+      or fields[1] or ""
 
     if path ~= "" then
       state.failed_tasks[path_key(path)] = {
@@ -4205,39 +5520,34 @@ function load_failed_tasks()
 end
 
 function save_failed_tasks()
+  if state.root_removal_session then return false end
   ensure_dirs()
-  local temporary_path = FAILED_TASKS_FILE .. ".tmp"
-  local file = io.open(temporary_path, "wb")
+  local file = atomic_file_writer(FAILED_TASKS_FILE)
 
   if not file then
     set_status("无法保存失败任务", true)
     return false
   end
 
-  local tasks = {}
+  write_persistence_schema(file, FAILED_TASKS_FILE)
 
-  for _, task in pairs(state.failed_tasks) do
-    tasks[#tasks + 1] = task
-  end
-
-  table.sort(tasks, function(a, b) return path_key(a.path) < path_key(b.path) end)
-
-  for _, task in ipairs(tasks) do
-    file:write(
-      escape_tsv(task.path), "\t",
-      escape_tsv(task.stage), "\t",
-      escape_tsv(task.reason), "\t",
-      tostring(task.attempts or 1), "\t",
-      tostring(task.updated or os.time()), "\n"
+  local job = new_failed_tasks_persistence_job(state.failed_tasks)
+  local complete, failure
+  repeat
+    complete, failure = step_failed_tasks_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
     )
-  end
+    if failure then
+      file:abort()
+      set_status("无法保存失败任务：" .. tostring(failure), true)
+      return false
+    end
+  until complete
 
-  file:close()
-
-  os.remove(FAILED_TASKS_FILE)
-
-  if not os.rename(temporary_path, FAILED_TASKS_FILE) then
-    os.remove(temporary_path)
+  if not file:close() then
     set_status("无法保存失败任务", true)
     return false
   end
@@ -4290,7 +5600,7 @@ function retry_failed_tasks()
   local assets = {}
 
   for key, task in pairs(state.failed_tasks) do
-    if reaper.file_exists(task.path) then
+    if HostApi.file_exists(task.path) then
       local asset = state.by_path[key]
 
       if not asset then
@@ -4311,6 +5621,18 @@ function retry_failed_tasks()
     return
   end
 
+  local job_token =
+    Jobs.begin(
+      "catalog_pipeline",
+      "catalog_exclusive",
+      false
+    )
+
+  if not job_token then
+    set_status("另一个目录写任务正在运行", true)
+    return
+  end
+
   state.import_session = {
     label = "重试失败任务",
     roots = {},
@@ -4319,14 +5641,26 @@ function retry_failed_tasks()
     done = 0,
     failed = 0,
     current = nil,
-    started = reaper.time_precise(),
+    started = HostApi.time_precise(),
     phase = "prepare",
+    job_token = job_token,
   }
   state.import_cancel_requested = false
   set_status(string.format("正在重试 %d 个失败任务", #assets))
 end
 
 function reset_wave_cache_runtime()
+  local precache = state.precache_session
+  if state.wave_active
+    and state.wave_active.job_token then
+    Jobs.cancel(state.wave_active.job_token)
+    Jobs.finish(
+      state.wave_active.job_token,
+      true,
+      "cache reset"
+    )
+    state.wave_active.job_token = nil
+  end
   destroy_wave_job(state.wave_active)
   state.wave_active = nil
 
@@ -4344,6 +5678,15 @@ function reset_wave_cache_runtime()
   state.wave_checked = {}
   state.wave_queue = {}
   state.wave_queued = {}
+
+  if precache and precache.job_token then
+    Jobs.cancel(precache.job_token)
+    Jobs.finish(
+      precache.job_token,
+      true,
+      "cache reset"
+    )
+  end
 end
 
 function move_wave_cache_files(
@@ -4365,7 +5708,7 @@ function move_wave_cache_files(
     return 0, 0
   end
 
-  reaper.RecursiveCreateDirectory(
+  HostApi.RecursiveCreateDirectory(
     new_directory,
     0
   )
@@ -4375,7 +5718,7 @@ function move_wave_cache_files(
 
   while true do
     local filename =
-      reaper.EnumerateFiles(
+      HostApi.EnumerateFiles(
         old_directory,
         index
       )
@@ -4406,7 +5749,7 @@ function move_wave_cache_files(
         filename
       )
 
-    if reaper.file_exists(target_path) then
+    if HostApi.file_exists(target_path) then
       os.remove(source_path)
       moved = moved + 1
     elseif copy_file_streaming(
@@ -4470,7 +5813,7 @@ function switch_wave_cache_directory(
         new_directory
       )
   else
-    reaper.RecursiveCreateDirectory(
+    HostApi.RecursiveCreateDirectory(
       new_directory,
       0
     )
@@ -4503,7 +5846,7 @@ end
 
 function prompt_wave_cache_directory()
   local ok, input =
-    reaper.GetUserInputs(
+    HostApi.GetUserInputs(
       "更改波形缓存目录",
       1,
       "新缓存目录路径:",
@@ -4519,7 +5862,7 @@ function prompt_wave_cache_directory()
     normalized_cache_directory(input)
 
   local answer =
-    reaper.MB(
+    HostApi.MB(
       "是否将现有波形缓存移动到新目录？\n\n"
         .. "是：移动已有缓存并切换。\n"
         .. "否：直接切换，旧目录保持不变。\n"
@@ -4551,7 +5894,7 @@ function restore_default_wave_cache_directory()
   end
 
   local answer =
-    reaper.MB(
+    HostApi.MB(
       "恢复默认缓存目录，并移动现有缓存？\n\n"
         .. target,
       SCRIPT_NAME,
@@ -4571,9 +5914,9 @@ end
 function migrate_legacy_data()
   ensure_dirs()
 
-  if not reaper.file_exists(CONFIG_FILE)
-    and reaper.file_exists(LEGACY_CONFIG_FILE) then
-    if copy_file(LEGACY_CONFIG_FILE, CONFIG_FILE) then
+  if not HostApi.file_exists(CONFIG_FILE)
+    and HostApi.file_exists(LEGACY_CONFIG_FILE) then
+    if copy_file_streaming(LEGACY_CONFIG_FILE, CONFIG_FILE) then
       set_status("已迁移旧版音效库路径与偏好设置")
     end
   end
@@ -4582,6 +5925,9 @@ end
 ----------------------------------------------------------------
 -- UCS and placeholder assets
 ----------------------------------------------------------------
+
+-- Catalog identity, metadata, configuration and library persistence.
+local HostApi = Host or reaper
 
 function parse_ucs_filename(filename)
   local stem = strip_extension(filename)
@@ -4605,6 +5951,51 @@ function parse_ucs_filename(filename)
   return result
 end
 
+function asset_relative_path(path, root)
+  path = canonical_source_path(path)
+  root = canonical_source_path(root)
+
+  if root == "" or not path_is_inside(path, root) then
+    return basename(path)
+  end
+
+  if path_key(path) == path_key(root) then
+    return ""
+  end
+
+  return normalize_slashes(path:sub(#root + 2))
+end
+
+function ensure_asset_identity(asset)
+  if not asset then
+    return
+  end
+
+  asset.relative_path = tostring(asset.relative_path or "")
+
+  if asset.relative_path == "" then
+    asset.relative_path = asset_relative_path(
+      asset.path or "",
+      asset.root or ""
+    )
+  end
+
+  if tostring(asset.asset_id or "") == "" then
+    asset.asset_id = stable_id(
+      "asset",
+      tostring(asset.root_id or "")
+        .. "|"
+        .. path_key(asset.relative_path)
+    )
+  end
+
+  if HostApi.file_exists(asset.path or "") then
+    asset.last_seen = os.time()
+  else
+    asset.last_seen = tonumber(asset.last_seen) or 0
+  end
+end
+
 function make_placeholder(path, known_root)
   local name = basename(path)
   local ucs = parse_ucs_filename(name)
@@ -4619,7 +6010,7 @@ function make_placeholder(path, known_root)
 
   local library = library_for_root_record(root_record)
 
-  return {
+  local asset = {
     path = normalize_slashes(path),
     name = name,
     folder = dirname(path),
@@ -4655,10 +6046,26 @@ function make_placeholder(path, known_root)
     last_used = 0,
     fingerprint = "",
     fingerprint_size = 0,
+    fingerprint_version = "",
+    fingerprint_modified = "",
+    fingerprint_stat_source = "",
   }
+
+  ensure_asset_identity(asset)
+  return asset
+end
+
+function asset_path_sort_key(asset)
+  local source = tostring(asset.path or "")
+  if asset._sort_path_source ~= source then
+    asset._sort_path_source = source
+    asset._sort_path_value = path_key(source)
+  end
+  return asset._sort_path_value
 end
 
 function add_or_update_asset(asset)
+  ensure_asset_identity(asset)
   local key = path_key(asset.path)
   local existing = state.by_path[key]
 
@@ -4676,6 +6083,7 @@ function add_or_update_asset(asset)
       existing.last_previewed or 0
     local artwork_path =
       existing.artwork_path or ""
+    local asset_id = tostring(existing.asset_id or "")
 
     for field, value in pairs(asset) do
       existing[field] = value
@@ -4704,11 +6112,15 @@ function add_or_update_asset(asset)
       existing.artwork_path = artwork_path
     end
 
+    if asset_id ~= "" then
+      existing.asset_id = asset_id
+    end
+
     existing.artwork_checked =
       tostring(existing.artwork_path or "") ~= ""
 
     existing._search_blob = nil
-    state.library_counts_dirty = true
+    invalidate_library_counts()
 
     if old_folder ~= path_key(existing.folder or "")
       or old_root_id ~= tostring(existing.root_id or "") then
@@ -4745,20 +6157,22 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
-  state.library_counts_dirty = true
+  state.database_ordered_assets = nil
+  invalidate_library_counts()
   invalidate_folder_navigation()
   return asset
 end
 
 function rebuild_assets()
   state.assets = {}
+  state.database_ordered_assets = nil
 
   for _, asset in pairs(state.by_path) do
     state.assets[#state.assets + 1] = asset
   end
 
   state.results_dirty = true
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
 end
 
@@ -4767,7 +6181,9 @@ end
 ----------------------------------------------------------------
 
 local DB_FIELDS = {
+  "asset_id",
   "path",
+  "relative_path",
   "name",
   "folder",
   "root",
@@ -4796,18 +6212,23 @@ local DB_FIELDS = {
   "library_id",
   "fingerprint",
   "fingerprint_size",
+  "fingerprint_version",
+  "fingerprint_modified",
+  "fingerprint_stat_source",
+  "last_seen",
 }
 
 function save_libraries()
   ensure_dirs()
 
-  local file = io.open(LIBRARIES_FILE, "wb")
+  local file = atomic_file_writer(LIBRARIES_FILE)
 
   if not file then
     set_status("无法保存音效库结构", true)
     return false
   end
 
+  write_persistence_schema(file, LIBRARIES_FILE)
   file:write("version\t3\n")
 
   for _, library in ipairs(state.libraries) do
@@ -4826,6 +6247,7 @@ function save_libraries()
   end
 
   for _, record in ipairs(state.root_records) do
+    refresh_source_identity(record)
     file:write(
       "root\t",
       escape_tsv(record.id),
@@ -4843,11 +6265,22 @@ function save_libraries()
       record.artwork_checked == true and "1" or "0",
       "\t",
       tostring(record.artwork_scan_version or 0),
+      "\t",
+      escape_tsv(record.canonical_path or ""),
+      "\t",
+      escape_tsv(record.volume_label or ""),
+      "\t",
+      escape_tsv(record.volume_serial or ""),
+      "\t",
+      tostring(record.last_seen or 0),
       "\n"
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存音效库结构", true)
+    return false
+  end
   state.libraries_dirty = false
   return true
 end
@@ -4888,6 +6321,10 @@ function load_or_migrate_libraries()
           artwork_path = fields[7] or "",
           artwork_checked = fields[8] == "1",
           artwork_scan_version = tonumber(fields[9]) or 0,
+          canonical_path = fields[10] or "",
+          volume_label = fields[11] or "",
+          volume_serial = fields[12] or "",
+          last_seen = tonumber(fields[13]) or 0,
         }
       end
     end
@@ -5317,15 +6754,17 @@ function load_config()
 end
 
 function save_config()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
-  local file = io.open(CONFIG_FILE, "wb")
+  local file = atomic_file_writer(CONFIG_FILE)
 
   if not file then
     set_status("无法保存配置", true)
     return
   end
 
+  write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
 
   for path in pairs(state.favorites) do
@@ -5927,9 +7366,1318 @@ function save_config()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存配置", true)
+    return false
+  end
   state.config_dirty = false
+  return true
 end
+
+-- Incremental result construction keeps large catalogs out of a single UI
+-- frame. The module is intentionally independent of REAPER/ImGui so the
+-- ordering contract can be exercised by the command-line Lua self-test.
+
+RESULT_BUILD_DEFAULT_BUDGET = 10000
+RESULT_SORT_CHUNK_SIZE = 4096
+
+function begin_incremental_result_job(
+  source,
+  predicate,
+  less,
+  key_selector,
+  selected_key
+)
+  return {
+    source = source or {},
+    predicate = predicate,
+    less = less,
+    key_selector = key_selector,
+    selected_key = selected_key,
+    index = 1,
+    total = #(source or {}),
+    matches = {},
+    sort_index = 1,
+    runs = {},
+    stage = "filter",
+    selected_index = 0,
+  }
+end
+
+local function begin_merge_round(job)
+  if #job.runs <= 1 then
+    job.result = job.runs[1] or {}
+    job.runs = nil
+    job.select_index = 1
+    job.stage = "select"
+    return
+  end
+
+  job.merge_input = job.runs
+  job.merge_output = {}
+  job.merge_pair_index = 1
+  job.merge = nil
+  job.runs = nil
+  job.stage = "merge"
+end
+
+local function prepare_merge_pair(job)
+  local left = job.merge_input[job.merge_pair_index]
+  local right = job.merge_input[job.merge_pair_index + 1]
+
+  if not left then
+    job.runs = job.merge_output
+    job.merge_input = nil
+    job.merge_output = nil
+    begin_merge_round(job)
+    return false
+  end
+
+  if not right then
+    job.merge_output[#job.merge_output + 1] = left
+    job.merge_pair_index = job.merge_pair_index + 2
+    return false
+  end
+
+  job.merge = {
+    left = left,
+    right = right,
+    left_index = 1,
+    right_index = 1,
+    output = {},
+  }
+  return true
+end
+
+local function append_merge_value(merge, value)
+  merge.output[#merge.output + 1] = value
+end
+
+local function step_merge(job, budget)
+  local processed = 0
+
+  while processed < budget and job.stage == "merge" do
+    if not job.merge then
+      if not prepare_merge_pair(job) then
+        if job.stage ~= "merge" then
+          break
+        end
+      end
+    end
+
+    local merge = job.merge
+    if merge then
+      local left_value = merge.left[merge.left_index]
+      local right_value = merge.right[merge.right_index]
+
+      if left_value and right_value then
+        if job.less(right_value, left_value) then
+          append_merge_value(merge, right_value)
+          merge.right_index = merge.right_index + 1
+        else
+          append_merge_value(merge, left_value)
+          merge.left_index = merge.left_index + 1
+        end
+      elseif left_value then
+        append_merge_value(merge, left_value)
+        merge.left_index = merge.left_index + 1
+      elseif right_value then
+        append_merge_value(merge, right_value)
+        merge.right_index = merge.right_index + 1
+      else
+        job.merge_output[#job.merge_output + 1] = merge.output
+        job.merge_pair_index = job.merge_pair_index + 2
+        job.merge = nil
+      end
+
+      processed = processed + 1
+    end
+  end
+end
+
+function step_incremental_result_job(job, budget)
+  -- Keep collection work moving alongside allocation-heavy merge rounds.
+  -- Small explicit steps avoid deferring all reclamation to one long UI frame.
+  collectgarbage("step", 16)
+  budget = math.max(
+    1,
+    math.floor(tonumber(budget) or RESULT_BUILD_DEFAULT_BUDGET)
+  )
+
+  if job.stage == "filter" then
+    local processed = 0
+    while job.index <= job.total and processed < budget do
+      local value = job.source[job.index]
+      if value and job.predicate(value) then
+        job.matches[#job.matches + 1] = value
+      end
+      job.index = job.index + 1
+      processed = processed + 1
+    end
+
+    if job.index > job.total then
+      job.source = nil
+      job.stage = "sort_chunks"
+    end
+  elseif job.stage == "sort_chunks" then
+    if job.sort_index <= #job.matches then
+      local run = {}
+      local last = math.min(
+        #job.matches,
+        job.sort_index + RESULT_SORT_CHUNK_SIZE - 1
+      )
+      for index = job.sort_index, last do
+        run[#run + 1] = job.matches[index]
+      end
+      table.sort(run, job.less)
+      job.runs[#job.runs + 1] = run
+      job.sort_index = last + 1
+    else
+      job.matches = nil
+      begin_merge_round(job)
+    end
+  elseif job.stage == "merge" then
+    step_merge(job, budget)
+  elseif job.stage == "select" then
+    if not job.selected_key or not job.key_selector then
+      job.stage = "complete"
+    else
+      local processed = 0
+      while job.select_index <= #job.result
+        and processed < budget do
+        if job.key_selector(job.result[job.select_index])
+          == job.selected_key then
+          job.selected_index = job.select_index
+          job.select_index = #job.result + 1
+          break
+        end
+        job.select_index = job.select_index + 1
+        processed = processed + 1
+      end
+      if job.select_index > #job.result then
+        job.stage = "complete"
+      end
+    end
+  end
+
+  if job.stage == "complete" then
+    return "complete", job.result or {}, job.selected_index or 0
+  end
+
+  return "pending"
+end
+
+-- Generation-bound asset journal codec. Decoding validates the complete
+-- payload before callers apply any entry, so a torn/corrupt journal cannot
+-- partially mutate the in-memory catalog.
+
+local ASSET_JOURNAL_MAGIC = "psyreasfx_asset_journal"
+local ASSET_JOURNAL_VERSION = 1
+
+function new_asset_change_set()
+  return { by_key = {}, count = 0, requires_snapshot = false }
+end
+
+function record_asset_change(change_set, key, operation, values)
+  if type(change_set) ~= "table" or type(change_set.by_key) ~= "table"
+    or (operation ~= "upsert" and operation ~= "delete") then
+    return false
+  end
+  key = tostring(key or "")
+  if key == "" or type(values) ~= "table" then return false end
+  if not change_set.by_key[key] then
+    change_set.count = (change_set.count or 0) + 1
+  end
+  local copied_values = {}
+  for index, value in ipairs(values) do
+    copied_values[index] = value
+  end
+  change_set.by_key[key] = {
+    op = operation,
+    values = copied_values,
+  }
+  return true
+end
+
+function asset_changes_require_snapshot(
+  change_set,
+  snapshot_exists,
+  compact_count
+)
+  if not snapshot_exists or type(change_set) ~= "table" then
+    return true
+  end
+  local count = math.floor(tonumber(change_set.count) or 0)
+  local threshold = math.max(
+    1,
+    math.floor(tonumber(compact_count) or 1)
+  )
+  return change_set.requires_snapshot == true
+    or count <= 0
+    or count >= threshold
+end
+
+function require_asset_snapshot(change_set)
+  if type(change_set) ~= "table" then return false end
+  change_set.requires_snapshot = true
+  return true
+end
+
+function ordered_asset_changes(change_set)
+  local keys = {}
+  for key in pairs(change_set and change_set.by_key or {}) do
+    keys[#keys + 1] = key
+  end
+  table.sort(keys)
+  local entries = {}
+  for _, key in ipairs(keys) do
+    entries[#entries + 1] = change_set.by_key[key]
+  end
+  return entries
+end
+
+function clear_asset_changes(change_set)
+  if type(change_set) ~= "table" then return false end
+  change_set.by_key = {}
+  change_set.count = 0
+  change_set.requires_snapshot = false
+  return true
+end
+
+function merge_asset_changes(target, source)
+  if type(target) ~= "table" or type(target.by_key) ~= "table"
+    or type(source) ~= "table" or type(source.by_key) ~= "table" then
+    return false
+  end
+  for key, entry in pairs(source.by_key) do
+    if type(entry) == "table" then
+      record_asset_change(target, key, entry.op, entry.values or {})
+    end
+  end
+  if source.requires_snapshot == true then
+    require_asset_snapshot(target)
+  end
+  return true
+end
+
+local function journal_escape(value)
+  return tostring(value or "")
+    :gsub("\\", "\\\\")
+    :gsub("\t", "\\t")
+    :gsub("\r", "\\r")
+    :gsub("\n", "\\n")
+end
+
+local function journal_split(line)
+  local fields = {}
+  local current = {}
+  local escaped = false
+  local text = tostring(line or "")
+  for index = 1, #text do
+    local character = text:sub(index, index)
+    if escaped then
+      current[#current + 1] = character == "t" and "\t"
+        or character == "r" and "\r"
+        or character == "n" and "\n"
+        or character
+      escaped = false
+    elseif character == "\\" then
+      escaped = true
+    elseif character == "\t" then
+      fields[#fields + 1] = table.concat(current)
+      current = {}
+    else
+      current[#current + 1] = character
+    end
+  end
+  if escaped then current[#current + 1] = "\\" end
+  fields[#fields + 1] = table.concat(current)
+  return fields
+end
+
+local function journal_checksum(text)
+  local first = 1
+  local second = 0
+  for index = 1, #text do
+    first = (first + text:byte(index)) % 65521
+    second = (second + first) % 65521
+  end
+  return string.format("%08x", second * 65536 + first)
+end
+
+local function journal_fields_equal(left, right)
+  if #left ~= #right then return false end
+  for index = 1, #left do
+    if left[index] ~= right[index] then return false end
+  end
+  return true
+end
+
+function encode_asset_journal(generation, fields, entries)
+  generation = tonumber(generation)
+  if not generation or generation < 0 or generation % 1 ~= 0 then
+    return nil, "invalid_generation"
+  end
+  if type(fields) ~= "table" or #fields == 0 then
+    return nil, "invalid_fields"
+  end
+
+  local lines = {
+    ASSET_JOURNAL_MAGIC .. "\t" .. tostring(ASSET_JOURNAL_VERSION),
+    "base_generation\t" .. tostring(generation),
+    "op\t" .. table.concat(fields, "\t"),
+  }
+  for _, entry in ipairs(entries or {}) do
+    local operation = entry.op
+    local values = entry.values
+    if (operation ~= "upsert" and operation ~= "delete")
+      or type(values) ~= "table" or #values ~= #fields then
+      return nil, "invalid_entry"
+    end
+    local encoded = { operation }
+    for index = 1, #fields do
+      encoded[#encoded + 1] = journal_escape(values[index])
+    end
+    local payload = table.concat(encoded, "\t")
+    lines[#lines + 1] = payload .. "\t" .. journal_checksum(payload)
+  end
+  return table.concat(lines, "\n") .. "\n"
+end
+
+function decode_asset_journal(text, expected_generation, expected_fields)
+  text = tostring(text or "")
+  if text == "" or text:sub(-1) ~= "\n" then
+    return nil, "truncated_payload"
+  end
+  local lines = {}
+  for line in text:gmatch("([^\n]*)\n") do
+    lines[#lines + 1] = line:gsub("\r$", "")
+  end
+  if #lines < 3 then return nil, "truncated_header" end
+
+  local magic = journal_split(lines[1])
+  if magic[1] ~= ASSET_JOURNAL_MAGIC
+    or tonumber(magic[2]) ~= ASSET_JOURNAL_VERSION then
+    return nil, "unsupported_schema"
+  end
+  local generation = journal_split(lines[2])
+  if generation[1] ~= "base_generation"
+    or tonumber(generation[2]) ~= tonumber(expected_generation) then
+    return nil, "generation_mismatch"
+  end
+  local header = journal_split(lines[3])
+  if header[1] ~= "op" then return nil, "invalid_header" end
+  table.remove(header, 1)
+  if not journal_fields_equal(header, expected_fields or {}) then
+    return nil, "field_mismatch"
+  end
+
+  local entries = {}
+  for index = 4, #lines do
+    local line = lines[index]
+    if line ~= "" then
+      local checksum_offset = line:match("^.*()\t")
+      if not checksum_offset then return nil, "missing_checksum" end
+      local payload = line:sub(1, checksum_offset - 1)
+      local checksum = line:sub(checksum_offset + 1)
+      if journal_checksum(payload) ~= checksum then
+        return nil, "checksum_mismatch"
+      end
+      local values = journal_split(payload)
+      local operation = table.remove(values, 1)
+      if (operation ~= "upsert" and operation ~= "delete")
+        or #values ~= #header then
+        return nil, "invalid_entry"
+      end
+      entries[#entries + 1] = { op = operation, values = values }
+    end
+  end
+  return entries
+end
+
+function read_asset_journal(path, expected_generation, expected_fields)
+  local file, open_error = io.open(path, "rb")
+  if not file then return nil, open_error or "missing" end
+  local text, read_error = file:read("*a")
+  local closed = file:close()
+  if not text or not closed then
+    return nil, read_error or "read_failed"
+  end
+  return decode_asset_journal(
+    text,
+    expected_generation,
+    expected_fields
+  )
+end
+
+function write_asset_journal_atomic(
+  path,
+  generation,
+  fields,
+  entries,
+  writer_factory
+)
+  local encoded, encode_error = encode_asset_journal(
+    generation,
+    fields,
+    entries
+  )
+  if not encoded then return false, encode_error end
+  local file, open_error = writer_factory(path)
+  if not file then return false, open_error or "open_failed" end
+  if not file:write(encoded) then
+    file:close()
+    return false, "write_failed"
+  end
+  if not file:close() then return false, "commit_failed" end
+  return true, #encoded
+end
+
+-- Sparse activity indexes and frame-budgeted aggregate caches for large
+-- catalogs. These helpers are REAPER-independent so capacity behavior can be
+-- tested without launching the UI.
+
+function new_library_count_job()
+  return { index = 1, counts = {} }
+end
+
+function step_library_count_job(job, assets, batch_size)
+  if type(job) ~= "table" or type(assets) ~= "table" then
+    return false, nil, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(#assets, job.index + batch_size - 1)
+  for index = job.index, last do
+    local id = tostring(assets[index].library_id or "")
+    if id ~= "" then
+      job.counts[id] = (job.counts[id] or 0) + 1
+    end
+  end
+  job.index = last + 1
+  return job.index > #assets, job.counts
+end
+
+function ordered_preview_history_assets(
+  history_assets,
+  by_path,
+  path_key_function,
+  sort_key_function
+)
+  local assets = {}
+  for _, asset in pairs(history_assets or {}) do
+    local key = asset and path_key_function(asset.path) or nil
+    if key and by_path[key] == asset
+      and (tonumber(asset.last_previewed) or 0) > 0 then
+      assets[#assets + 1] = asset
+    end
+  end
+  table.sort(assets, function(left, right)
+    return sort_key_function(left) < sort_key_function(right)
+  end)
+  return assets
+end
+
+-- Add a file to a size bucket without retaining every singleton in a second
+-- candidate array. The first item is emitted only when a second item proves
+-- that the size can contain duplicates.
+function add_duplicate_size_candidate(groups, candidates, size, asset)
+  if type(groups) ~= "table" or type(candidates) ~= "table"
+    or type(asset) ~= "table" or (tonumber(size) or 0) <= 0 then
+    return false
+  end
+  local key = tonumber(size)
+  local group = groups[key]
+  if not group then
+    groups[key] = { first = asset, count = 1 }
+    return false
+  end
+  group.count = group.count + 1
+  if group.count == 2 then
+    candidates[#candidates + 1] = group.first
+  end
+  candidates[#candidates + 1] = asset
+  return true
+end
+
+-- Build final fingerprint groups while fingerprints are produced. This avoids
+-- a second full pass over every candidate at the end of a large scan.
+function add_duplicate_fingerprint_asset(
+  groups,
+  duplicates,
+  lookup,
+  fingerprint,
+  asset,
+  path_key_function
+)
+  if type(groups) ~= "table" or type(duplicates) ~= "table"
+    or type(lookup) ~= "table" or type(asset) ~= "table"
+    or type(path_key_function) ~= "function" then
+    return false
+  end
+  fingerprint = tostring(fingerprint or "")
+  if fingerprint == "" then return false end
+
+  local group = groups[fingerprint]
+  if not group then
+    groups[fingerprint] = {
+      fingerprint = fingerprint,
+      assets = { asset },
+      count = 1,
+    }
+    return false
+  end
+
+  group.assets[#group.assets + 1] = asset
+  group.count = #group.assets
+  if group.count == 2 then
+    duplicates[#duplicates + 1] = group
+    lookup[path_key_function(group.assets[1].path)] = fingerprint
+  end
+  lookup[path_key_function(asset.path)] = fingerprint
+  return true
+end
+
+-- Incrementally filter a path-indexed catalog while allowing the caller to
+-- remove the current entry safely. The next key is captured before deletion,
+-- avoiding Lua's invalid-key-to-next failure mode.
+function new_catalog_prune_job(by_path)
+  by_path = type(by_path) == "table" and by_path or {}
+  return {
+    by_path = by_path,
+    next_key = next(by_path),
+    kept = {},
+    processed = 0,
+    removed = 0,
+  }
+end
+
+function step_catalog_prune_job(
+  job,
+  batch_size,
+  should_remove,
+  on_remove
+)
+  if type(job) ~= "table" or type(job.by_path) ~= "table"
+    or type(should_remove) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    local asset = job.by_path[key]
+    job.next_key = next(job.by_path, key)
+    if asset and should_remove(key, asset) then
+      job.by_path[key] = nil
+      job.removed = job.removed + 1
+      if type(on_remove) == "function" then
+        on_remove(key, asset)
+      end
+    elseif asset then
+      job.kept[#job.kept + 1] = asset
+    end
+    job.processed = job.processed + 1
+    processed = processed + 1
+  end
+  return job.next_key == nil
+end
+
+function new_artwork_reset_job(assets)
+  assets = type(assets) == "table" and assets or {}
+  return {
+    assets = assets,
+    index = 1,
+    total = #assets,
+    changed = 0,
+  }
+end
+
+function step_artwork_reset_job(job, batch_size)
+  if type(job) ~= "table" or type(job.assets) ~= "table" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(job.total, job.index + batch_size - 1)
+  for index = job.index, last do
+    local asset = job.assets[index]
+    if asset and asset.artwork_path ~= "-" then
+      if asset.artwork_path ~= "" or asset.artwork_checked then
+        job.changed = job.changed + 1
+      end
+      asset.artwork_path = ""
+      asset.artwork_checked = false
+    end
+  end
+  job.index = last + 1
+  return job.index > job.total
+end
+
+function new_catalog_filter_job(assets)
+  assets = type(assets) == "table" and assets or {}
+  return {
+    assets = assets,
+    index = 1,
+    total = #assets,
+    kept = {},
+    removed = {},
+    kept_by_key = {},
+  }
+end
+
+function step_catalog_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.assets) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(job.total, job.index + batch_size - 1)
+  while job.index <= last do
+    local asset = job.assets[job.index]
+    if asset then
+      if should_remove(asset) then
+        job.removed[#job.removed + 1] = asset
+      else
+        job.kept[#job.kept + 1] = asset
+        job.kept_by_key[key_function(asset)] = asset
+      end
+    end
+    job.index = job.index + 1
+    if deadline and type(time_function) == "function"
+      and job.index % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.index > job.total
+end
+
+-- Rebuild an ordered path set without mutating the live collection. The
+-- second map pass repairs legacy entries that were missing from `order` and
+-- also guarantees that duplicate order entries collapse to one item.
+function new_ordered_path_filter_job(order, items)
+  order = type(order) == "table" and order or {}
+  items = type(items) == "table" and items or {}
+  return {
+    order = order,
+    items = items,
+    phase = "order",
+    index = 1,
+    next_key = nil,
+    kept_order = {},
+    kept_items = {},
+    rejected = {},
+    processed = 0,
+    removed = 0,
+    repaired = 0,
+  }
+end
+
+function step_ordered_path_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.order) ~= "table"
+    or type(job.items) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    if job.phase == "order" then
+      local ordered_path = job.order[job.index]
+      if ordered_path == nil then
+        job.phase = "items"
+        job.next_key = next(job.items)
+      else
+        job.index = job.index + 1
+        local key = key_function(ordered_path)
+        local stored_path = job.items[key]
+        if stored_path ~= nil then
+          if should_remove(stored_path, key) then
+            if not job.rejected[key] then
+              job.rejected[key] = true
+              job.removed = job.removed + 1
+            end
+          elseif job.kept_items[key] == nil then
+            job.kept_items[key] = stored_path
+            job.kept_order[#job.kept_order + 1] = stored_path
+          else
+            job.repaired = job.repaired + 1
+          end
+        else
+          job.repaired = job.repaired + 1
+        end
+        job.processed = job.processed + 1
+        processed = processed + 1
+      end
+    elseif job.phase == "items" then
+      local key = job.next_key
+      if key == nil then
+        job.phase = "done"
+        return true
+      end
+      local stored_path = job.items[key]
+      job.next_key = next(job.items, key)
+      local canonical_key = key_function(stored_path)
+      if job.kept_items[canonical_key] == nil
+        and not job.rejected[canonical_key] then
+        if should_remove(stored_path, canonical_key) then
+          job.rejected[canonical_key] = true
+          job.removed = job.removed + 1
+        else
+          job.kept_items[canonical_key] = stored_path
+          job.kept_order[#job.kept_order + 1] = stored_path
+          job.repaired = job.repaired + 1
+        end
+      end
+      job.processed = job.processed + 1
+      processed = processed + 1
+    else
+      return true
+    end
+    if deadline and type(time_function) == "function"
+      and processed % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.phase == "done"
+end
+
+-- Filter a path-keyed map into a detached result. Values are intentionally
+-- shared because the removal transaction never mutates the surviving entry.
+function new_path_map_filter_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  return {
+    entries = entries,
+    next_key = next(entries),
+    kept = {},
+    processed = 0,
+    removed = 0,
+  }
+end
+
+function step_path_map_filter_job(
+  job,
+  batch_size,
+  should_remove,
+  path_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(job.entries) ~= "table"
+    or type(should_remove) ~= "function"
+    or type(path_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    local entry = job.entries[key]
+    job.next_key = next(job.entries, key)
+    if entry ~= nil and should_remove(path_function(entry, key), key) then
+      job.removed = job.removed + 1
+    elseif entry ~= nil then
+      job.kept[key] = entry
+    end
+    job.processed = job.processed + 1
+    processed = processed + 1
+    if deadline and type(time_function) == "function"
+      and processed % 64 == 0 and time_function() >= deadline then
+      break
+    end
+  end
+  return job.next_key == nil
+end
+
+-- Remove one catalog entry in O(1) while keeping a temporary key-to-position
+-- index valid. Ordering is intentionally not preserved; result views apply
+-- their own deterministic sort after startup.
+function remove_indexed_array_entry(
+  assets,
+  positions,
+  key,
+  key_function
+)
+  if type(assets) ~= "table" or type(positions) ~= "table"
+    or type(key_function) ~= "function" then
+    return false
+  end
+  local index = positions[key]
+  if type(index) ~= "number" or index < 1 or index > #assets then
+    positions[key] = nil
+    return false
+  end
+  local last_index = #assets
+  local last_asset = assets[last_index]
+  assets[index] = last_asset
+  assets[last_index] = nil
+  positions[key] = nil
+  if index < last_index and last_asset then
+    positions[key_function(last_asset)] = index
+  end
+  return true
+end
+
+-- Frame-budgeted serializers for large auxiliary catalogs. Callers own the
+-- atomic writer and pass escaping/path-key functions so this module remains
+-- independent from REAPER and can be capacity-tested from the command line.
+
+function new_collections_persistence_job(collections)
+  local snapshots = {}
+  for _, collection in ipairs(collections or {}) do
+    local order = collection.order or {}
+    snapshots[#snapshots + 1] = {
+      id = collection.id or "",
+      name = collection.name or "",
+      kind = collection.kind or "playlist",
+      project_path = collection.project_path or "",
+      items = collection.items or {},
+      order = order,
+      total = #order,
+      header_written = false,
+      item_index = 1,
+    }
+  end
+  return {
+    collections = snapshots,
+    collection_index = 1,
+    processed = 0,
+  }
+end
+
+function step_collections_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    local snapshot = job.collections[job.collection_index]
+    if not snapshot then return true end
+    if not snapshot.header_written then
+      snapshot.header_written = true
+      if not writer:write(
+        "collection\t", escape_function(snapshot.id), "\t",
+        escape_function(snapshot.name), "\t",
+        escape_function(snapshot.kind), "\t",
+        escape_function(snapshot.project_path), "\n"
+      ) then
+        return false, "write_collection"
+      end
+      processed = processed + 1
+      job.processed = job.processed + 1
+    elseif snapshot.item_index <= snapshot.total then
+      local path = snapshot.order[snapshot.item_index]
+      snapshot.item_index = snapshot.item_index + 1
+      if snapshot.items[key_function(path)] then
+        if not writer:write(
+          "item\t", escape_function(snapshot.id), "\t",
+          escape_function(path), "\n"
+        ) then
+          return false, "write_item"
+        end
+      end
+      processed = processed + 1
+      job.processed = job.processed + 1
+    else
+      job.collection_index = job.collection_index + 1
+    end
+    if processed > 0 and processed % 64 == 0 and deadline
+      and type(time_function) == "function"
+      and time_function() >= deadline then
+      return false
+    end
+  end
+  local current = job.collections[job.collection_index]
+  if current and current.header_written
+    and current.item_index > current.total then
+    job.collection_index = job.collection_index + 1
+  end
+  return job.collections[job.collection_index] == nil
+end
+
+function new_project_usage_persistence_job(project_usage)
+  local projects = {}
+  for _, bucket in pairs(project_usage or {}) do
+    projects[#projects + 1] = {
+      path = bucket.path or "",
+      assets = bucket.assets or {},
+      started = false,
+      next_key = nil,
+    }
+  end
+  return {
+    projects = projects,
+    project_index = 1,
+    processed = 0,
+  }
+end
+
+function step_project_usage_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    local project = job.projects[job.project_index]
+    if not project then return true end
+    if not project.started then
+      project.started = true
+      project.next_key = next(project.assets)
+    elseif project.next_key == nil then
+      job.project_index = job.project_index + 1
+    else
+      local key = project.next_key
+      local entry = project.assets[key]
+      project.next_key = next(project.assets, key)
+      if entry and not writer:write(
+        "usage\t", escape_function(project.path), "\t",
+        escape_function(entry.path or ""), "\t",
+        tostring(entry.count or 1), "\t",
+        tostring(entry.last_used or 0), "\t",
+        escape_function(entry.action or "insert"), "\n"
+      ) then
+        return false, "write_usage"
+      end
+      processed = processed + 1
+      job.processed = job.processed + 1
+    end
+    if processed > 0 and processed % 64 == 0 and deadline
+      and type(time_function) == "function"
+      and time_function() >= deadline then
+      return false
+    end
+  end
+  local current = job.projects[job.project_index]
+  if current and current.started and current.next_key == nil then
+    job.project_index = job.project_index + 1
+  end
+  return job.projects[job.project_index] == nil
+end
+
+function new_history_persistence_job(history_assets, by_path)
+  history_assets = type(history_assets) == "table" and history_assets or {}
+  return {
+    entries = history_assets,
+    by_path = type(by_path) == "table" and by_path or {},
+    next_key = next(history_assets),
+    processed = 0,
+    written = 0,
+  }
+end
+
+function step_history_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  key_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function"
+    or type(key_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local id = job.next_key
+    local asset = job.entries[id]
+    job.next_key = next(job.entries, id)
+    if asset and job.by_path[key_function(asset.path)] == asset
+      and (tonumber(asset.last_previewed) or 0) > 0 then
+      if not writer:write(
+        "preview\t", escape_function(asset.path), "\t",
+        tostring(asset.preview_count or 0), "\t",
+        tostring(asset.last_previewed or 0), "\n"
+      ) then
+        return false, "write_history"
+      end
+      job.written = job.written + 1
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    if processed % 64 == 0 and deadline
+      and type(time_function) == "function"
+      and time_function() >= deadline then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+function new_path_set_persistence_job(path_set)
+  path_set = type(path_set) == "table" and path_set or {}
+  return {
+    entries = path_set,
+    next_key = next(path_set),
+    saved = {},
+    processed = 0,
+  }
+end
+
+function step_path_set_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while job.next_key ~= nil and processed < batch_size do
+    local key = job.next_key
+    job.next_key = next(job.entries, key)
+    if job.entries[key] then
+      if not writer:write("played\t", escape_function(key), "\n") then
+        return false, "write_played"
+      end
+      job.saved[key] = true
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    if processed % 64 == 0 and deadline
+      and type(time_function) == "function"
+      and time_function() >= deadline then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+-- Map-backed catalogs can change between UI frames. Lua's next() raises an
+-- error when its cursor key was removed, so retain a visited set and recover
+-- from a deleted cursor by finding the first unvisited live key. Normal saves
+-- stay O(n); the recovery scan is only paid when a concurrent deletion occurs.
+local function take_next_live_map_entry(job)
+  while job.next_key ~= nil do
+    local entry_key = job.next_key
+    local value = job.entries[entry_key]
+    if value ~= nil then
+      job.visited[entry_key] = true
+      job.next_key = next(job.entries, entry_key)
+      return entry_key, value
+    end
+
+    local candidate = next(job.entries)
+    while candidate ~= nil and job.visited[candidate] do
+      candidate = next(job.entries, candidate)
+    end
+    job.next_key = candidate
+  end
+  return nil
+end
+
+local function new_live_map_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  return {
+    entries = entries,
+    next_key = next(entries),
+    visited = {},
+    processed = 0,
+    written = 0,
+  }
+end
+
+local function persistence_deadline_reached(processed, deadline, time_function)
+  return processed > 0 and processed % 64 == 0 and deadline
+    and type(time_function) == "function"
+    and time_function() >= deadline
+end
+
+function new_regions_persistence_job(regions_by_path)
+  local job = new_live_map_job(regions_by_path)
+  job.current_regions = nil
+  job.region_index = 1
+  return job
+end
+
+function step_regions_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    if not job.current_regions then
+      local _, regions = take_next_live_map_entry(job)
+      if not regions then return true end
+      job.current_regions = regions
+      job.region_index = 1
+      if #regions == 0 then
+        job.current_regions = nil
+        processed = processed + 1
+        job.processed = job.processed + 1
+      end
+    else
+      local region = job.current_regions[job.region_index]
+      if not region then
+        job.current_regions = nil
+      else
+        job.region_index = job.region_index + 1
+        if not writer:write(
+          escape_function(region.path or ""), "\t",
+          tostring(region.start or 0), "\t",
+          tostring(region.finish or 0), "\t",
+          escape_function(region.name or ""), "\t",
+          escape_function(region.source or "manual"), "\t",
+          tostring(region.batch_id or 0), "\n"
+        ) then
+          return false, "write_region"
+        end
+        processed = processed + 1
+        job.processed = job.processed + 1
+        job.written = job.written + 1
+        if job.current_regions[job.region_index] == nil then
+          job.current_regions = nil
+        end
+      end
+    end
+    if persistence_deadline_reached(processed, deadline, time_function) then
+      return false
+    end
+  end
+  return job.current_regions == nil and job.next_key == nil
+end
+
+function new_loudness_persistence_job(loudness_cache)
+  return new_live_map_job(loudness_cache)
+end
+
+function step_loudness_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    local _, entry = take_next_live_map_entry(job)
+    if not entry then return true end
+    if not writer:write(
+      escape_function(entry.path or ""), "\t",
+      tostring(entry.size or 0), "\t",
+      tostring(entry.lufs_i or ""), "\t",
+      tostring(entry.lufs_m or ""), "\t",
+      tostring(entry.lufs_s or ""), "\t",
+      tostring(entry.true_peak or ""), "\n"
+    ) then
+      return false, "write_loudness"
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    job.written = job.written + 1
+    if persistence_deadline_reached(processed, deadline, time_function) then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+function new_failed_tasks_persistence_job(failed_tasks)
+  return new_live_map_job(failed_tasks)
+end
+
+function step_failed_tasks_persistence_job(
+  job,
+  writer,
+  batch_size,
+  escape_function,
+  deadline,
+  time_function
+)
+  if type(job) ~= "table" or type(writer) ~= "table"
+    or type(writer.write) ~= "function"
+    or type(escape_function) ~= "function" then
+    return false, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local processed = 0
+  while processed < batch_size do
+    local _, task = take_next_live_map_entry(job)
+    if not task then return true end
+    if not writer:write(
+      escape_function(task.path or ""), "\t",
+      escape_function(task.stage or "unknown"), "\t",
+      escape_function(task.reason or ""), "\t",
+      tostring(task.attempts or 1), "\t",
+      tostring(task.updated or 0), "\n"
+    ) then
+      return false, "write_failed_task"
+    end
+    processed = processed + 1
+    job.processed = job.processed + 1
+    job.written = job.written + 1
+    if persistence_deadline_reached(processed, deadline, time_function) then
+      return false
+    end
+  end
+  return job.next_key == nil
+end
+
+-- Region, loudness, channel and transient analysis services.
+local HostApi = Host or reaper
 
 function asset_regions(asset)
   if not asset then
@@ -5972,6 +8720,10 @@ function load_regions()
   for line in file:lines() do
     local fields = split_tsv(line)
     local path = fields[1]
+
+    if is_persistence_schema_fields(fields) then
+      path = ""
+    end
     local start_value = tonumber(fields[2])
     local finish_value = tonumber(fields[3])
     local name = fields[4] or ""
@@ -6023,36 +8775,40 @@ function load_regions()
 end
 
 function save_regions()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
-  local file = io.open(REGIONS_FILE, "wb")
+  local file = atomic_file_writer(REGIONS_FILE)
 
   if not file then
     set_status("无法保存 Region 数据", true)
     return
   end
 
-  for _, regions in pairs(state.regions_by_path) do
-    for _, region in ipairs(regions) do
-      file:write(
-        escape_tsv(region.path or ""),
-        "\t",
-        tostring(region.start or 0),
-        "\t",
-        tostring(region.finish or 0),
-        "\t",
-        escape_tsv(region.name or ""),
-        "\t",
-        escape_tsv(region.source or "manual"),
-        "\t",
-        tostring(region.batch_id or 0),
-        "\n"
-      )
-    end
-  end
+  write_persistence_schema(file, REGIONS_FILE)
 
-  file:close()
+  local job = new_regions_persistence_job(state.regions_by_path)
+  local complete, failure
+  repeat
+    complete, failure = step_regions_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
+    )
+    if failure then
+      file:abort()
+      set_status("无法保存 Region 数据：" .. tostring(failure), true)
+      return false
+    end
+  until complete
+
+  if not file:close() then
+    set_status("无法保存 Region 数据", true)
+    return false
+  end
   state.regions_dirty = false
+  return true
 end
 
 function add_saved_region(
@@ -6133,7 +8889,7 @@ function save_current_selection_as_region(asset)
     )
 
   local ok, name =
-    reaper.GetUserInputs(
+    HostApi.GetUserInputs(
       "保存当前选区为 Region",
       1,
       "名称:",
@@ -6312,6 +9068,10 @@ function load_loudness_cache()
   for line in file:lines() do
     local fields = split_tsv(line)
     local path = fields[1]
+
+    if is_persistence_schema_fields(fields) then
+      path = ""
+    end
     local size = tonumber(fields[2]) or 0
 
     if path and path ~= "" then
@@ -6330,34 +9090,40 @@ function load_loudness_cache()
 end
 
 function save_loudness_cache()
+  if state.root_removal_session then return false end
   ensure_dirs()
 
-  local file = io.open(LOUDNESS_FILE, "wb")
+  local file = atomic_file_writer(LOUDNESS_FILE)
 
   if not file then
     set_status("无法保存响度缓存", true)
     return
   end
 
-  for _, entry in pairs(state.loudness_cache) do
-    file:write(
-      escape_tsv(entry.path or ""),
-      "\t",
-      tostring(entry.size or 0),
-      "\t",
-      tostring(entry.lufs_i or ""),
-      "\t",
-      tostring(entry.lufs_m or ""),
-      "\t",
-      tostring(entry.lufs_s or ""),
-      "\t",
-      tostring(entry.true_peak or ""),
-      "\n"
-    )
-  end
+  write_persistence_schema(file, LOUDNESS_FILE)
 
-  file:close()
+  local job = new_loudness_persistence_job(state.loudness_cache)
+  local complete, failure
+  repeat
+    complete, failure = step_loudness_persistence_job(
+      job,
+      file,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv
+    )
+    if failure then
+      file:abort()
+      set_status("无法保存响度缓存：" .. tostring(failure), true)
+      return false
+    end
+  until complete
+
+  if not file:close() then
+    set_status("无法保存响度缓存", true)
+    return false
+  end
   state.loudness_dirty = false
+  return true
 end
 
 function valid_loudness_entry(asset)
@@ -6436,8 +9202,8 @@ end
 function request_loudness_analysis(asset, force)
   if not state.show_loudness_metrics
     or not asset
-    or not reaper.file_exists(asset.path)
-    or type(reaper.CalculateNormalization) ~= "function" then
+    or not HostApi.file_exists(asset.path)
+    or type(HostApi.CalculateNormalization) ~= "function" then
     return
   end
 
@@ -6475,10 +9241,22 @@ function request_loudness_analysis(asset, force)
   }
 end
 
-function destroy_loudness_job(job)
+function destroy_loudness_job(job, completed)
   if job and job.source then
-    reaper.PCM_Source_Destroy(job.source)
+    HostApi.PCM_Source_Destroy(job.source)
     job.source = nil
+  end
+
+  if job and job.job_token then
+    if not completed then
+      Jobs.cancel(job.job_token)
+    end
+    Jobs.finish(
+      job.job_token,
+      true,
+      completed and "" or "canceled"
+    )
+    job.job_token = nil
   end
 end
 
@@ -6490,7 +9268,7 @@ function process_loudness_queue()
     return
   end
 
-  local now = reaper.time_precise()
+  local now = HostApi.time_precise()
 
   if now < state.next_loudness_job then
     return
@@ -6507,7 +9285,7 @@ function process_loudness_queue()
     state.loudness_queued[queued.key] = nil
 
     local source =
-      reaper.PCM_Source_CreateFromFile(
+      HostApi.PCM_Source_CreateFromFile(
         queued.asset.path
       )
 
@@ -6535,7 +9313,7 @@ function process_loudness_queue()
     end
 
     if #pending == 0 then
-      reaper.PCM_Source_Destroy(source)
+      HostApi.PCM_Source_Destroy(source)
       return
     end
 
@@ -6546,6 +9324,12 @@ function process_loudness_queue()
       entry = entry,
       metrics = pending,
       index = 1,
+      job_token =
+        Jobs.begin(
+          "loudness",
+          "audio_analysis",
+          true
+        ),
     }
   end
 
@@ -6555,14 +9339,14 @@ function process_loudness_queue()
   if not metric then
     state.loudness_cache[job.key] = job.entry
     state.loudness_dirty = true
-    destroy_loudness_job(job)
+    destroy_loudness_job(job, true)
     state.loudness_active = nil
     return
   end
 
   local ok, gain =
     pcall(
-      reaper.CalculateNormalization,
+      HostApi.CalculateNormalization,
       job.source,
       metric.mode,
       0,
@@ -6837,7 +9621,7 @@ function apply_preview_channel_mode(preview, mono_output_channel)
   end
 
   pcall(
-    reaper.CF_Preview_SetValue,
+    HostApi.CF_Preview_SetValue,
     preview,
     "D_PAN",
     pan
@@ -6849,7 +9633,7 @@ function apply_preview_channel_mode(preview, mono_output_channel)
       or state.preview_channel_mode == "mono"
 
   pcall(
-    reaper.CF_Preview_SetValue,
+    HostApi.CF_Preview_SetValue,
     preview,
     "I_OUTCHAN",
     use_centered_mono
@@ -7108,6 +9892,172 @@ function process_pending_transient_detection()
   end
 end
 
+local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024
+local DUPLICATE_FINGERPRINT_VERSION = "sample-fnv1a-head-mid-tail-v1"
+local function duplicate_host_api()
+  return Host or reaper
+end
+
+function duplicate_file_stat(path, fallback_size)
+  local result = {
+    size = tonumber(fallback_size) or 0,
+    modified = "",
+    source = "unavailable",
+  }
+  local host = duplicate_host_api()
+  if not host or type(host.JS_File_Stat) ~= "function" then
+    return result
+  end
+  local values = { pcall(host.JS_File_Stat, path) }
+  if not values[1] or tonumber(values[2]) ~= 0 then
+    return result
+  end
+  result.size = tonumber(values[3]) or result.size
+  result.modified = tostring(values[5] or "")
+  result.source = result.modified ~= "" and "js_file_stat" or "unavailable"
+  return result
+end
+
+function clear_asset_fingerprint(asset)
+  asset.fingerprint = ""
+  asset.fingerprint_size = 0
+  asset.fingerprint_version = ""
+  asset.fingerprint_modified = ""
+  asset.fingerprint_stat_source = ""
+end
+
+function fingerprint_metadata_is_compatible(asset)
+  return tostring(asset.fingerprint or "") ~= ""
+    and tostring(asset.fingerprint_version or "")
+      == DUPLICATE_FINGERPRINT_VERSION
+    and (tonumber(asset.fingerprint_size) or 0) > 0
+    and tostring(asset.fingerprint_stat_source or "") == "js_file_stat"
+    and tostring(asset.fingerprint_modified or "") ~= ""
+end
+
+function fingerprint_metadata_is_current(asset, stat)
+  return fingerprint_metadata_is_compatible(asset)
+    and tonumber(asset.fingerprint_size) == tonumber(stat.size)
+    and stat.source == "js_file_stat"
+    and stat.modified ~= ""
+    and tostring(asset.fingerprint_modified or "") == stat.modified
+end
+
+function record_asset_fingerprint(asset, fingerprint, stat)
+  asset.fingerprint = tostring(fingerprint or "")
+  asset.fingerprint_size = tonumber(stat.size) or 0
+  asset.fingerprint_version = DUPLICATE_FINGERPRINT_VERSION
+  asset.fingerprint_modified = tostring(stat.modified or "")
+  asset.fingerprint_stat_source = tostring(stat.source or "unavailable")
+end
+
+function duplicate_file_stats_match(left, right)
+  return left.source == "js_file_stat"
+    and right.source == "js_file_stat"
+    and left.size == right.size
+    and left.modified == right.modified
+end
+
+function duplicate_file_changed_since(before, after)
+  return before.source == "js_file_stat"
+    and not duplicate_file_stats_match(before, after)
+end
+
+function close_duplicate_comparison(comparison)
+  if not comparison or comparison.closed then
+    return
+  end
+  comparison.closed = true
+  if comparison.left then
+    comparison.left:close()
+    comparison.left = nil
+  end
+  if comparison.right then
+    comparison.right:close()
+    comparison.right = nil
+  end
+end
+
+function begin_duplicate_comparison(left_path, right_path)
+  local left = io.open(left_path, "rb")
+  if not left then
+    return nil, "left_open"
+  end
+  local right = io.open(right_path, "rb")
+  if not right then
+    left:close()
+    return nil, "right_open"
+  end
+
+  local left_size = left:seek("end")
+  local right_size = right:seek("end")
+  if not left_size or not right_size then
+    left:close()
+    right:close()
+    return nil, "seek"
+  end
+  left:seek("set", 0)
+  right:seek("set", 0)
+
+  local comparison = {
+    left = left,
+    right = right,
+    left_path = left_path,
+    right_path = right_path,
+    left_stat = duplicate_file_stat(left_path, left_size),
+    right_stat = duplicate_file_stat(right_path, right_size),
+    bytes_compared = 0,
+    total_bytes = math.max(left_size, right_size),
+    closed = false,
+  }
+  if left_size ~= right_size then
+    close_duplicate_comparison(comparison)
+    comparison.result = "different"
+  end
+  return comparison
+end
+
+function step_duplicate_comparison(comparison, chunk_size)
+  if not comparison then
+    return "failed"
+  end
+  if comparison.result then
+    return comparison.result
+  end
+  if comparison.closed then
+    return "failed"
+  end
+
+  chunk_size = math.max(
+    4096,
+    math.floor(tonumber(chunk_size) or DUPLICATE_COMPARE_CHUNK_SIZE)
+  )
+  local left_chunk, left_error = comparison.left:read(chunk_size)
+  local right_chunk, right_error = comparison.right:read(chunk_size)
+  if left_error or right_error then
+    comparison.error = left_error or right_error or "read"
+    comparison.result = "failed"
+  elseif left_chunk ~= right_chunk then
+    comparison.result = "different"
+  elseif not left_chunk then
+    local left_changed = duplicate_file_changed_since(
+      comparison.left_stat,
+      duplicate_file_stat(comparison.left_path, comparison.bytes_compared)
+    )
+    local right_changed = duplicate_file_changed_since(
+      comparison.right_stat,
+      duplicate_file_stat(comparison.right_path, comparison.bytes_compared)
+    )
+    comparison.result = (left_changed or right_changed) and "failed" or "equal"
+  else
+    comparison.bytes_compared = comparison.bytes_compared + #left_chunk
+    return "pending"
+  end
+
+  close_duplicate_comparison(comparison)
+  return comparison.result
+end
+
 function load_database()
   local file = io.open(DATABASE_FILE, "rb")
 
@@ -7123,118 +10073,548 @@ function load_database()
   end
 
   local headers = split_tsv(header_line)
+  state.database_generation = 0
+
+  if is_persistence_schema_fields(headers) then
+    local generation, generation_error =
+      persistence_schema_generation(headers)
+    if generation == nil then
+      file:close()
+      state.persistence_read_only = true
+      state.persistence_read_only_reason =
+        "索引快照代次无效：" .. tostring(generation_error)
+      set_status("索引快照代次无效，已进入只读保护", true)
+      return
+    end
+    state.database_generation = generation
+    header_line = file:read("*l")
+
+    if not header_line then
+      file:close()
+      return
+    end
+
+    headers = split_tsv(header_line)
+  end
 
   local ignored = 0
+  local journal_probe = io.open(DATABASE_JOURNAL_FILE, "rb")
+  local asset_positions = journal_probe and {} or nil
+  if journal_probe then journal_probe:close() end
 
   for line in file:lines() do
     local values = split_tsv(line)
-    local asset = {}
-
+    local asset = database_asset_from_values(headers, values)
+    local raw_path = ""
     for index, field in ipairs(headers) do
-      asset[field] = values[index] or ""
+      if field == "path" then
+        raw_path = values[index] or ""
+        break
+      end
     end
 
-    if asset.path and asset.path ~= ""
-      and not is_ignored_media_path(asset.path) then
-      asset.duration = tonumber(asset.duration) or 0
-      asset.channels = tonumber(asset.channels) or 0
-      asset.sample_rate = tonumber(asset.sample_rate) or 0
-      asset.bit_depth = tonumber(asset.bit_depth) or 0
-      asset.size = tonumber(asset.size) or 0
-      asset.workflow_status =
-        WORKFLOW_STATUS[asset.workflow_status]
-        and asset.workflow_status
-        or "none"
-      asset.marked =
-        asset.marked == "1"
-        or asset.marked == "true"
-      asset.preview_count =
-        tonumber(asset.preview_count) or 0
-      asset.last_previewed =
-        tonumber(asset.last_previewed) or 0
-      asset.indexed =
-        asset.indexed == "1"
-        or asset.indexed == "true"
-        or asset.duration > 0
-      asset.ready =
-        asset.ready == "1"
-        or asset.ready == "true"
-      asset.used_count = tonumber(asset.used_count) or 0
-      asset.last_used = tonumber(asset.last_used) or 0
-      asset.fingerprint = tostring(asset.fingerprint or "")
-      asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
-
+    if asset then
+      local key = asset_positions and path_key(asset.path) or nil
+      local existed = key and state.by_path[key] ~= nil
       add_or_update_asset(asset)
-    elseif asset.path and asset.path ~= "" then
+      if key and not existed then
+        asset_positions[key] = #state.assets
+      end
+    elseif raw_path ~= "" then
       ignored = ignored + 1
     end
   end
 
   file:close()
 
+  local journal_ok = replay_database_journal(asset_positions)
+
   if ignored > 0 then
-    state.db_dirty = true
-    set_status(
-      string.format(
-        "已从索引自动忽略 %d 个系统元数据文件",
-        ignored
+    mark_database_snapshot_dirty()
+    if journal_ok then
+      set_status(
+        string.format(
+          "已从索引自动忽略 %d 个系统元数据文件",
+          ignored
+        )
       )
-    )
+    end
   end
 end
 
-function save_database()
+function database_asset_from_values(headers, values)
+  local asset = {}
+  for index, field in ipairs(headers or {}) do
+    asset[field] = values[index] or ""
+  end
+  if not asset.path or asset.path == ""
+    or is_ignored_media_path(asset.path) then
+    return nil
+  end
+  asset.duration = tonumber(asset.duration) or 0
+  asset.channels = tonumber(asset.channels) or 0
+  asset.sample_rate = tonumber(asset.sample_rate) or 0
+  asset.bit_depth = tonumber(asset.bit_depth) or 0
+  asset.size = tonumber(asset.size) or 0
+  asset.workflow_status = WORKFLOW_STATUS[asset.workflow_status]
+    and asset.workflow_status or "none"
+  asset.marked = asset.marked == "1" or asset.marked == "true"
+  asset.preview_count = tonumber(asset.preview_count) or 0
+  asset.last_previewed = tonumber(asset.last_previewed) or 0
+  asset.indexed = asset.indexed == "1" or asset.indexed == "true"
+    or asset.duration > 0
+  asset.ready = asset.ready == "1" or asset.ready == "true"
+  asset.used_count = tonumber(asset.used_count) or 0
+  asset.last_used = tonumber(asset.last_used) or 0
+  asset.fingerprint = tostring(asset.fingerprint or "")
+  asset.fingerprint_size = tonumber(asset.fingerprint_size) or 0
+  asset.fingerprint_version = tostring(asset.fingerprint_version or "")
+  asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
+  asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+  if asset.fingerprint ~= ""
+    and not fingerprint_metadata_is_compatible(asset) then
+    clear_asset_fingerprint(asset)
+    mark_database_snapshot_dirty()
+  end
+  asset.last_seen = tonumber(asset.last_seen) or 0
+  ensure_asset_identity(asset)
+  return asset
+end
+
+function database_asset_values(asset)
+  local values = {}
+  for _, field in ipairs(DB_FIELDS) do
+    local value = asset and asset[field] or ""
+    if field == "indexed" then
+      value = asset and asset.indexed and "1" or "0"
+    elseif field == "ready" then
+      value = asset and asset.ready and "1" or "0"
+    elseif field == "marked" then
+      value = asset and asset.marked and "1" or "0"
+    end
+    values[#values + 1] = value
+  end
+  return values
+end
+
+function mark_asset_database_change(asset)
+  if not asset or not asset.path or asset.path == "" then
+    return false
+  end
+  if state.root_removal_session then
+    local pending = state.root_removal_session.concurrent_asset_changes
+    if not pending then
+      pending = {}
+      state.root_removal_session.concurrent_asset_changes = pending
+    end
+    pending[path_key(asset.path)] = asset
+    return true
+  end
+  state.db_dirty = true
+  return record_asset_change(
+    state.database_changes,
+    path_key(asset.path),
+    "upsert",
+    database_asset_values(asset)
+  )
+end
+
+function mark_asset_database_delete(asset_or_path)
+  local path = type(asset_or_path) == "table"
+    and asset_or_path.path or asset_or_path
+  path = tostring(path or "")
+  if path == "" then return false end
+  local values = database_asset_values(nil)
+  for index, field in ipairs(DB_FIELDS) do
+    if field == "path" then
+      values[index] = path
+      break
+    end
+  end
+  state.db_dirty = true
+  return record_asset_change(
+    state.database_changes,
+    path_key(path),
+    "delete",
+    values
+  )
+end
+
+function mark_database_snapshot_dirty()
+  state.db_dirty = true
+  return require_asset_snapshot(state.database_changes)
+end
+
+function save_database_journal()
+  ensure_dirs()
+  local entries = ordered_asset_changes(state.database_changes)
+  if #entries == 0 then return start_database_snapshot() end
+  local written, write_error = write_asset_journal_atomic(
+    DATABASE_JOURNAL_FILE,
+    state.database_generation or 0,
+    DB_FIELDS,
+    entries,
+    atomic_file_writer
+  )
+  if not written then
+    set_status(
+      "无法保存素材增量日志：" .. tostring(write_error),
+      true
+    )
+    return false
+  end
+  state.db_dirty = false
+  return true
+end
+
+function save_database_changes()
+  local changes = state.database_changes
+  if asset_changes_require_snapshot(
+    changes,
+    reaper.file_exists(DATABASE_FILE),
+    DATABASE_JOURNAL_COMPACT_COUNT
+  ) then
+    return start_database_snapshot()
+  end
+  return save_database_journal()
+end
+
+function replace_database_asset(asset)
+  local key = path_key(asset.path)
+  local existing = state.by_path[key]
+  if not existing then
+    add_or_update_asset(asset)
+    return
+  end
+  for _, field in ipairs(DB_FIELDS) do
+    existing[field] = asset[field]
+  end
+  existing.artwork_checked = tostring(existing.artwork_path or "") ~= ""
+  existing._search_blob = nil
+  existing._sort_path_value = nil
+end
+
+function replay_database_journal(asset_positions)
+  local probe = io.open(DATABASE_JOURNAL_FILE, "rb")
+  if not probe then return true end
+  probe:close()
+
+  local entries, journal_error = read_asset_journal(
+    DATABASE_JOURNAL_FILE,
+    state.database_generation or 0,
+    DB_FIELDS
+  )
+  if not entries then
+    if journal_error == "generation_mismatch" then
+      os.remove(DATABASE_JOURNAL_FILE)
+      return true
+    end
+    state.persistence_read_only = true
+    state.persistence_read_only_reason =
+      "素材增量日志无法安全重放：" .. tostring(journal_error)
+    set_status("素材增量日志损坏，已进入只读保护", true)
+    return false
+  end
+
+  local path_field = nil
+  for index, field in ipairs(DB_FIELDS) do
+    if field == "path" then path_field = index break end
+  end
+  if not path_field then return false end
+
+  local actions = {}
+  for _, entry in ipairs(entries) do
+    local path = tostring(entry.values[path_field] or "")
+    if path == "" or is_ignored_media_path(path) then
+      state.persistence_read_only = true
+      state.persistence_read_only_reason =
+        "素材增量日志包含无效路径"
+      set_status("素材增量日志损坏，已进入只读保护", true)
+      return false
+    end
+    local action = {
+      op = entry.op,
+      key = path_key(path),
+      values = entry.values,
+    }
+    if entry.op == "upsert" then
+      action.asset = database_asset_from_values(DB_FIELDS, entry.values)
+      if not action.asset then
+        state.persistence_read_only = true
+        state.persistence_read_only_reason =
+          "素材增量日志包含无效素材"
+        set_status("素材增量日志损坏，已进入只读保护", true)
+        return false
+      end
+    end
+    actions[#actions + 1] = action
+  end
+
+  for _, action in ipairs(actions) do
+    local key = action.key
+    if action.op == "delete" then
+      if asset_positions then
+        remove_indexed_array_entry(
+          state.assets,
+          asset_positions,
+          key,
+          function(asset) return path_key(asset.path) end
+        )
+      end
+      state.by_path[key] = nil
+      state.favorites[key] = nil
+      state.selected_set[key] = nil
+    else
+      local existed = state.by_path[key] ~= nil
+      replace_database_asset(action.asset)
+      if asset_positions and not existed then
+        asset_positions[key] = #state.assets
+      end
+    end
+    record_asset_change(
+      state.database_changes,
+      action.key,
+      action.op,
+      action.op == "upsert"
+        and database_asset_values(action.asset)
+        or action.values
+    )
+  end
+  if #actions > 0 then
+    -- `asset_positions` is built while the snapshot is already being read,
+    -- so journal deletes do not require a second full catalog rebuild.
+    if not asset_positions then
+      rebuild_assets()
+    end
+    if (state.database_changes.count or 0)
+      >= DATABASE_JOURNAL_COMPACT_COUNT then
+      state.db_dirty = true
+    end
+  end
+  return true
+end
+
+function write_database_asset_line(file, asset)
+  local fields = database_asset_values(asset)
+  for index, value in ipairs(fields) do
+    fields[index] = escape_tsv(value)
+  end
+  return file:write(table.concat(fields, "\t"), "\n")
+end
+
+function save_database_now()
   ensure_dirs()
 
-  local file = io.open(DATABASE_FILE, "wb")
+  local file = atomic_file_writer(DATABASE_FILE)
 
   if not file then
     set_status("无法保存索引", true)
     return
   end
 
+  local next_generation =
+    math.floor(tonumber(state.database_generation) or 0) + 1
+  file:write(
+    persistence_schema_header(
+      "database",
+      PERSISTENCE_SCHEMAS[DATABASE_FILE].version,
+      next_generation
+    )
+  )
   file:write(table.concat(DB_FIELDS, "\t"), "\n")
 
-  local ordered = {}
-
+  -- Catalog order has no persistence semantics; result views perform their
+  -- own deterministic sort. Avoid a second 500k-entry array and O(n log n)
+  -- sort in the rare synchronous durability fallback.
   for _, asset in ipairs(state.assets) do
-    ordered[#ordered + 1] = asset
+    if not write_database_asset_line(file, asset) then
+      file:close()
+      set_status("无法保存索引", true)
+      return false
+    end
   end
 
-  table.sort(
-    ordered,
-    function(a, b)
-      return path_key(a.path)
-        < path_key(b.path)
-    end
-  )
-
-  for _, asset in ipairs(ordered) do
-    local fields = {}
-
-    for _, field in ipairs(DB_FIELDS) do
-      local value = asset[field]
-
-      if field == "indexed" then
-        value = asset.indexed and "1" or "0"
-      elseif field == "ready" then
-        value = asset.ready and "1" or "0"
-      elseif field == "marked" then
-        value = asset.marked and "1" or "0"
-      end
-
-      fields[#fields + 1] =
-        escape_tsv(value)
-    end
-
-    file:write(
-      table.concat(fields, "\t"),
-      "\n"
-    )
+  if not file:close() then
+    set_status("无法保存索引", true)
+    return false
   end
-
-  file:close()
+  state.database_generation = next_generation
+  clear_asset_changes(state.database_changes)
+  os.remove(DATABASE_JOURNAL_FILE)
+  if state.clear_scan_checkpoint_after_database_save then
+    clear_scan_checkpoint()
+    state.clear_scan_checkpoint_after_database_save = false
+  end
   state.db_dirty = false
+  return true
+end
+
+function restore_database_snapshot_changes(session)
+  if not session then return end
+  local captured = session.captured_changes or new_asset_change_set()
+  merge_asset_changes(captured, state.database_changes)
+  require_asset_snapshot(captured)
+  state.database_changes = captured
+  state.db_dirty = true
+end
+
+function cancel_database_snapshot(reason)
+  local session = state.database_snapshot_session
+  if not session then return false end
+  if session.writer and session.writer.abort then
+    session.writer:abort()
+  end
+  restore_database_snapshot_changes(session)
+  state.database_snapshot_session = nil
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, reason or "canceled")
+  return true
+end
+
+function start_database_snapshot()
+  if state.database_snapshot_session then return true end
+  if state.persistence_read_only then return false end
+
+  ensure_dirs()
+  local job_token, job_error = Jobs.begin(
+    "database_snapshot",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    if job_error ~= "resource_busy" then
+      set_status("无法启动索引保存任务", true)
+    end
+    return false
+  end
+
+  local file, open_error = atomic_file_writer(DATABASE_FILE)
+  if not file then
+    Jobs.finish(job_token, false, open_error)
+    set_status("无法保存索引：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+
+  local next_generation =
+    math.floor(tonumber(state.database_generation) or 0) + 1
+  local header_ok = file:write(
+    persistence_schema_header(
+      "database",
+      PERSISTENCE_SCHEMAS[DATABASE_FILE].version,
+      next_generation
+    )
+  )
+  if header_ok then
+    header_ok = file:write(table.concat(DB_FIELDS, "\t"), "\n")
+  end
+  if not header_ok then
+    file:abort()
+    Jobs.finish(job_token, false, "header write failed")
+    set_status("无法保存索引", true)
+    return false
+  end
+
+  local captured_changes = state.database_changes
+  state.database_changes = new_asset_change_set()
+  local assets = state.database_ordered_assets or state.assets
+  state.database_snapshot_session = {
+    writer = file,
+    assets = assets,
+    total = #assets,
+    index = 1,
+    next_generation = next_generation,
+    captured_changes = captured_changes,
+    job_token = job_token,
+    started = reaper.time_precise(),
+    last_status = 0,
+  }
+  state.db_dirty = true
+  set_status(string.format("正在后台保存索引：0 / %d", #assets))
+  return true
+end
+
+function fail_database_snapshot(session, message)
+  if session.writer and session.writer.abort then
+    session.writer:abort()
+  end
+  restore_database_snapshot_changes(session)
+  state.database_snapshot_session = nil
+  Jobs.finish(session.job_token, false, message)
+  set_status("无法保存索引：" .. tostring(message or "写入失败"), true)
+end
+
+function process_database_snapshot()
+  local session = state.database_snapshot_session
+  if not session then return end
+  if session.job_token.cancel_requested then
+    cancel_database_snapshot("canceled")
+    return
+  end
+
+  local deadline = reaper.time_precise()
+    + DATABASE_SNAPSHOT_FRAME_BUDGET
+  local last = math.min(
+    session.total,
+    session.index + DATABASE_SNAPSHOT_ASSETS_PER_FRAME - 1
+  )
+  while session.index <= last do
+    local asset = session.assets[session.index]
+    if asset and not write_database_asset_line(session.writer, asset) then
+      fail_database_snapshot(session, "写入素材记录失败")
+      return
+    end
+    session.index = session.index + 1
+    if reaper.time_precise() >= deadline then break end
+  end
+
+  local now = reaper.time_precise()
+  if now - session.last_status >= 0.5 then
+    session.last_status = now
+    set_status(string.format(
+      "正在后台保存索引：%d / %d",
+      math.min(session.index - 1, session.total),
+      session.total
+    ))
+  end
+  if session.index <= session.total then return end
+
+  local closed, close_error = session.writer:close()
+  if not closed then
+    fail_database_snapshot(session, close_error or "提交临时文件失败")
+    return
+  end
+
+  state.database_generation = session.next_generation
+  os.remove(DATABASE_JOURNAL_FILE)
+  if state.clear_scan_checkpoint_after_database_save then
+    clear_scan_checkpoint()
+    state.clear_scan_checkpoint_after_database_save = false
+  end
+  state.database_snapshot_session = nil
+  state.db_dirty = (state.database_changes.count or 0) > 0
+    or state.database_changes.requires_snapshot == true
+  Jobs.finish(session.job_token, true)
+  set_status(string.format(
+    "索引已后台保存：%d 条，耗时 %.1f 秒",
+    session.total,
+    now - session.started
+  ))
+end
+
+function save_database()
+  if state.database_snapshot_session then
+    cancel_database_snapshot("synchronous save requested")
+  end
+  local changes = state.database_changes
+  if (changes.count or 0) > 0
+    and not asset_changes_require_snapshot(
+      changes,
+      reaper.file_exists(DATABASE_FILE),
+      DATABASE_JOURNAL_COMPACT_COUNT
+    ) then
+    return save_database_journal()
+  end
+  return save_database_now()
 end
 
 
@@ -7395,14 +10775,19 @@ function load_project_usage()
 end
 
 function save_project_usage()
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "project_usage" then
+    cancel_auxiliary_save("synchronous project usage save")
+  end
   ensure_dirs()
-  local temporary_path = PROJECT_USAGE_FILE .. ".tmp"
-  local file = io.open(temporary_path, "wb")
+  local file = atomic_file_writer(PROJECT_USAGE_FILE)
 
   if not file then
     set_status("无法保存工程使用记录", true)
     return false
   end
+
+  write_persistence_schema(file, PROJECT_USAGE_FILE)
 
   local project_keys = {}
   for key in pairs(state.project_usage) do
@@ -7431,11 +10816,7 @@ function save_project_usage()
     end
   end
 
-  file:close()
-  os.remove(PROJECT_USAGE_FILE)
-
-  if not os.rename(temporary_path, PROJECT_USAGE_FILE) then
-    os.remove(temporary_path)
+  if not file:close() then
     set_status("无法保存工程使用记录", true)
     return false
   end
@@ -7444,7 +10825,38 @@ function save_project_usage()
   return true
 end
 
+function apply_project_usage_record(
+  project_path,
+  asset_path,
+  action,
+  used_at
+)
+  local bucket = project_usage_bucket(project_path, true)
+  if not bucket then return false end
+  local asset_key = path_key(asset_path)
+  local entry = bucket.assets[asset_key]
+  if not entry then
+    entry = {
+      path = asset_path,
+      count = 0,
+      last_used = 0,
+      action = action or "insert",
+    }
+    bucket.assets[asset_key] = entry
+  end
+  entry.path = asset_path
+  entry.count = (tonumber(entry.count) or 0) + 1
+  entry.last_used = used_at or os.time()
+  entry.action = action or "insert"
+  state.project_usage_dirty = true
+  return true
+end
+
 function bind_project_bin(collection, project_path)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改项目素材箱", true)
+    return false
+  end
   if not collection or collection.kind ~= "project" then
     return false
   end
@@ -7491,7 +10903,7 @@ function ensure_current_project_bin(create_if_missing)
 end
 
 function record_project_usage(asset, action)
-  if not asset then
+  if not asset or state.root_removal_session then
     return
   end
 
@@ -7501,20 +10913,23 @@ function record_project_usage(asset, action)
     return
   end
 
-  local bucket = project_usage_bucket(state.current_project_path, true)
   local asset_key = path_key(asset.path)
-  local entry = bucket.assets[asset_key]
-
-  if not entry then
-    entry = { path = asset.path, count = 0, last_used = 0, action = action or "insert" }
-    bucket.assets[asset_key] = entry
+  local save_session = state.auxiliary_save_session
+  if save_session and save_session.kind == "project_usage" then
+    save_session.pending_usage[#save_session.pending_usage + 1] = {
+      project_path = state.current_project_path,
+      asset_path = asset.path,
+      action = action or "insert",
+      used_at = os.time(),
+    }
+  else
+    apply_project_usage_record(
+      state.current_project_path,
+      asset.path,
+      action,
+      os.time()
+    )
   end
-
-  entry.path = asset.path
-  entry.count = (tonumber(entry.count) or 0) + 1
-  entry.last_used = os.time()
-  entry.action = action or "insert"
-  state.project_usage_dirty = true
 
   if state.auto_collect_project_usage then
     local collection = ensure_current_project_bin(true)
@@ -7595,14 +11010,20 @@ function load_collections()
 end
 
 function save_collections()
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "collections" then
+    cancel_auxiliary_save("synchronous collection save")
+  end
   ensure_dirs()
 
-  local file = io.open(COLLECTIONS_FILE, "wb")
+  local file = atomic_file_writer(COLLECTIONS_FILE)
 
   if not file then
     set_status("无法保存播放列表", true)
     return
   end
+
+  write_persistence_schema(file, COLLECTIONS_FILE)
 
   for _, collection in ipairs(state.collections) do
     file:write(
@@ -7630,11 +11051,331 @@ function save_collections()
     end
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存播放列表", true)
+    return false
+  end
   state.collections_dirty = false
+  return true
+end
+
+function replay_pending_project_usage(session)
+  for _, pending in ipairs(session and session.pending_usage or {}) do
+    apply_project_usage_record(
+      pending.project_path,
+      pending.asset_path,
+      pending.action,
+      pending.used_at
+    )
+  end
+  if session then session.pending_usage = {} end
+end
+
+function replay_pending_history(session)
+  for id, asset in pairs(session and session.pending_history or {}) do
+    state.preview_history_assets[id] = asset
+  end
+  if session then session.pending_history = {} end
+end
+
+function replay_pending_session_played(session)
+  for key in pairs(session and session.pending_played or {}) do
+    state.session_played[key] = true
+  end
+  if session then session.pending_played = {} end
+end
+
+function auxiliary_save_label(kind)
+  if kind == "collections" then return "播放列表" end
+  if kind == "project_usage" then return "工程使用记录" end
+  if kind == "history" then return "试听历史" end
+  if kind == "session_played" then return "本次试听高亮" end
+  if kind == "regions" then return "Region 数据" end
+  if kind == "loudness" then return "响度缓存" end
+  if kind == "failed_tasks" then return "失败任务" end
+  return "辅助数据"
+end
+
+function cancel_auxiliary_save(reason)
+  local session = state.auxiliary_save_session
+  if not session then return false end
+  if session.writer and session.writer.abort then
+    session.writer:abort()
+  end
+  AppState.set("auxiliary_save_session", nil)
+  if session.kind == "collections" then
+    state.collections_dirty = true
+  elseif session.kind == "project_usage" then
+    state.project_usage_dirty = true
+    replay_pending_project_usage(session)
+  elseif session.kind == "history" then
+    state.history_dirty = true
+    replay_pending_history(session)
+  elseif session.kind == "session_played" then
+    state.session_played_dirty = true
+    replay_pending_session_played(session)
+  elseif session.kind == "regions" then
+    AppState.mark_dirty("regions_dirty")
+  elseif session.kind == "loudness" then
+    AppState.mark_dirty("loudness_dirty")
+  elseif session.kind == "failed_tasks" then
+    AppState.mark_dirty("failed_tasks_dirty")
+  end
+  return true
+end
+
+function fail_auxiliary_save(session, message)
+  if state.auxiliary_save_session ~= session then return end
+  cancel_auxiliary_save("write failed")
+  set_status(
+    "无法后台保存" .. auxiliary_save_label(session.kind)
+      .. "：" .. tostring(message or "写入失败"),
+    true
+  )
+end
+
+function start_collections_save()
+  if state.auxiliary_save_session or not state.collections_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(COLLECTIONS_FILE)
+  if not writer then
+    set_status("无法后台保存播放列表：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, COLLECTIONS_FILE) then
+    writer:abort()
+    set_status("无法后台保存播放列表：无法写入文件头", true)
+    return false
+  end
+
+  state.collections_dirty = false
+  state.auxiliary_save_session = {
+    kind = "collections",
+    writer = writer,
+    job = new_collections_persistence_job(state.collections),
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function start_project_usage_save()
+  if state.auxiliary_save_session or not state.project_usage_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(PROJECT_USAGE_FILE)
+  if not writer then
+    set_status("无法后台保存工程使用记录：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, PROJECT_USAGE_FILE) then
+    writer:abort()
+    set_status("无法后台保存工程使用记录：无法写入文件头", true)
+    return false
+  end
+
+  state.project_usage_dirty = false
+  state.auxiliary_save_session = {
+    kind = "project_usage",
+    writer = writer,
+    job = new_project_usage_persistence_job(state.project_usage),
+    pending_usage = {},
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function start_catalog_auxiliary_save(kind, path, dirty_flag, job)
+  if state.auxiliary_save_session or not state[dirty_flag] then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(path)
+  if not writer then
+    set_status(
+      "无法后台保存" .. auxiliary_save_label(kind) .. "："
+        .. tostring(open_error or "无法创建临时文件"),
+      true
+    )
+    return false
+  end
+  if not write_persistence_schema(writer, path) then
+    writer:abort()
+    set_status(
+      "无法后台保存" .. auxiliary_save_label(kind) .. "：无法写入文件头",
+      true
+    )
+    return false
+  end
+  AppState.set(dirty_flag, false)
+  AppState.set("auxiliary_save_session", {
+    kind = kind,
+    writer = writer,
+    job = job,
+    started = reaper.time_precise(),
+  })
+  return true
+end
+
+function start_regions_save()
+  return start_catalog_auxiliary_save(
+    "regions",
+    REGIONS_FILE,
+    "regions_dirty",
+    new_regions_persistence_job(state.regions_by_path)
+  )
+end
+
+function start_loudness_save()
+  return start_catalog_auxiliary_save(
+    "loudness",
+    LOUDNESS_FILE,
+    "loudness_dirty",
+    new_loudness_persistence_job(state.loudness_cache)
+  )
+end
+
+function start_failed_tasks_save()
+  return start_catalog_auxiliary_save(
+    "failed_tasks",
+    FAILED_TASKS_FILE,
+    "failed_tasks_dirty",
+    new_failed_tasks_persistence_job(state.failed_tasks)
+  )
+end
+
+function finish_auxiliary_save(session)
+  local closed, close_error = session.writer:close()
+  if not closed then
+    fail_auxiliary_save(session, close_error or "提交临时文件失败")
+    return false
+  end
+  state.auxiliary_save_session = nil
+  if session.kind == "project_usage" then
+    replay_pending_project_usage(session)
+  elseif session.kind == "history" then
+    replay_pending_history(session)
+  elseif session.kind == "session_played" then
+    state.last_session_played = session.job.saved
+    replay_pending_session_played(session)
+  end
+  if state.collections_dirty or state.history_dirty
+    or state.session_played_dirty or state.project_usage_dirty
+    or state.regions_dirty or state.loudness_dirty
+    or state.failed_tasks_dirty then
+    state.last_save = 0
+  end
+  return true
+end
+
+function process_collections_save(session, deadline)
+  local complete, failure = step_collections_persistence_job(
+    session.job,
+    session.writer,
+    AUXILIARY_SAVE_RECORDS_PER_FRAME,
+    escape_tsv,
+    path_key,
+    deadline,
+    reaper.time_precise
+  )
+  if failure then
+    fail_auxiliary_save(session, failure)
+    return false
+  end
+  return complete
+end
+
+function process_project_usage_save(session, deadline)
+  local complete, failure = step_project_usage_persistence_job(
+    session.job,
+    session.writer,
+    AUXILIARY_SAVE_RECORDS_PER_FRAME,
+    escape_tsv,
+    deadline,
+    reaper.time_precise
+  )
+  if failure then
+    fail_auxiliary_save(session, failure)
+    return false
+  end
+  return complete
+end
+
+function process_auxiliary_save()
+  local session = state.auxiliary_save_session
+  if not session then return end
+  local deadline = reaper.time_precise() + AUXILIARY_SAVE_FRAME_BUDGET
+  local complete, failure
+  if session.kind == "collections" then
+    complete = process_collections_save(session, deadline)
+  elseif session.kind == "project_usage" then
+    complete = process_project_usage_save(session, deadline)
+  elseif session.kind == "history" then
+    complete, failure = step_history_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      path_key,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "session_played" then
+    complete, failure = step_path_set_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "regions" then
+    complete, failure = step_regions_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "loudness" then
+    complete, failure = step_loudness_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  elseif session.kind == "failed_tasks" then
+    complete, failure = step_failed_tasks_persistence_job(
+      session.job,
+      session.writer,
+      AUXILIARY_SAVE_RECORDS_PER_FRAME,
+      escape_tsv,
+      deadline,
+      reaper.time_precise
+    )
+  else
+    fail_auxiliary_save(session, "未知保存任务")
+    return
+  end
+  if failure then
+    fail_auxiliary_save(session, failure)
+    return
+  end
+  if complete and state.auxiliary_save_session == session then
+    finish_auxiliary_save(session)
+  end
 end
 
 function create_collection(kind)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再新建集合", true)
+    return nil
+  end
   kind =
     kind == "project"
     and "project"
@@ -7752,6 +11493,10 @@ function rename_collection(collection)
 end
 
 function delete_collection(collection)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再删除集合", true)
+    return
+  end
   if not collection then
     return
   end
@@ -7795,6 +11540,10 @@ function add_assets_to_collection(
   collection,
   assets
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改集合", true)
+    return 0
+  end
   if not collection or not assets then
     return 0
   end
@@ -7838,6 +11587,10 @@ function remove_assets_from_collection(
   collection,
   assets
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改集合", true)
+    return 0
+  end
   if not collection or not assets then
     return 0
   end
@@ -7931,12 +11684,14 @@ end
 function save_saved_searches()
   ensure_dirs()
 
-  local file = io.open(SAVED_SEARCHES_FILE, "wb")
+  local file = atomic_file_writer(SAVED_SEARCHES_FILE)
 
   if not file then
     set_status("无法保存搜索条件", true)
     return
   end
+
+  write_persistence_schema(file, SAVED_SEARCHES_FILE)
 
   for _, saved in ipairs(state.saved_searches) do
     file:write(
@@ -7964,8 +11719,12 @@ function save_saved_searches()
     )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存搜索条件", true)
+    return false
+  end
   state.searches_dirty = false
+  return true
 end
 
 function save_current_search()
@@ -8102,6 +11861,8 @@ function load_history()
           tonumber(fields[3]) or 0
         asset.last_previewed =
           tonumber(fields[4]) or 0
+        ensure_asset_identity(asset)
+        state.preview_history_assets[asset.asset_id] = asset
       end
     end
   end
@@ -8110,31 +11871,117 @@ function load_history()
 end
 
 function save_history()
+  if state.root_removal_session then return false end
+  if state.auxiliary_save_session
+    and state.auxiliary_save_session.kind == "history" then
+    cancel_auxiliary_save("synchronous history save")
+  end
   ensure_dirs()
 
-  local file = io.open(HISTORY_FILE, "wb")
+  local file = atomic_file_writer(HISTORY_FILE)
 
   if not file then
     set_status("无法保存试听历史", true)
     return
   end
 
-  for _, asset in ipairs(state.assets) do
-    if (tonumber(asset.last_previewed) or 0) > 0 then
-      file:write(
-        "preview\t",
-        escape_tsv(asset.path),
-        "\t",
-        tostring(asset.preview_count or 0),
-        "\t",
-        tostring(asset.last_previewed or 0),
-        "\n"
-      )
-    end
+  write_persistence_schema(file, HISTORY_FILE)
+
+  local history_assets = ordered_preview_history_assets(
+    state.preview_history_assets,
+    state.by_path,
+    path_key,
+    asset_path_sort_key
+  )
+  for _, asset in ipairs(history_assets) do
+    file:write(
+      "preview\t",
+      escape_tsv(asset.path),
+      "\t",
+      tostring(asset.preview_count or 0),
+      "\t",
+      tostring(asset.last_previewed or 0),
+      "\n"
+    )
   end
 
-  file:close()
+  if not file:close() then
+    set_status("无法保存试听历史", true)
+    return false
+  end
   state.history_dirty = false
+  return true
+end
+
+function start_history_save()
+  if state.auxiliary_save_session or not state.history_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(HISTORY_FILE)
+  if not writer then
+    set_status("无法后台保存试听历史：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, HISTORY_FILE) then
+    writer:abort()
+    set_status("无法后台保存试听历史：无法写入文件头", true)
+    return false
+  end
+  state.history_dirty = false
+  state.auxiliary_save_session = {
+    kind = "history",
+    writer = writer,
+    job = new_history_persistence_job(
+      state.preview_history_assets,
+      state.by_path
+    ),
+    pending_history = {},
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function start_session_played_save()
+  if state.auxiliary_save_session or not state.session_played_dirty then
+    return false
+  end
+  ensure_dirs()
+  local writer, open_error = atomic_file_writer(LAST_PLAYED_SESSION_FILE)
+  if not writer then
+    set_status("无法后台保存本次试听高亮：" .. tostring(open_error or "无法创建临时文件"), true)
+    return false
+  end
+  if not write_persistence_schema(writer, LAST_PLAYED_SESSION_FILE) then
+    writer:abort()
+    set_status("无法后台保存本次试听高亮：无法写入文件头", true)
+    return false
+  end
+  state.session_played_dirty = false
+  state.auxiliary_save_session = {
+    kind = "session_played",
+    writer = writer,
+    job = new_path_set_persistence_job(state.session_played),
+    pending_played = {},
+    started = reaper.time_precise(),
+  }
+  return true
+end
+
+function schedule_auxiliary_save()
+  if state.auxiliary_save_session then return false end
+  if state.scan or state.import_session or state.root_removal_session
+    or state.relink_plan_session then
+    return false
+  end
+  if state.collections_dirty then return start_collections_save() end
+  if state.history_dirty then return start_history_save() end
+  if state.session_played_dirty then return start_session_played_save() end
+  if state.project_usage_dirty then return start_project_usage_save() end
+  if state.failed_tasks_dirty then return start_failed_tasks_save() end
+  if state.regions_dirty then return start_regions_save() end
+  if state.loudness_dirty then return start_loudness_save() end
+  return false
 end
 
 function workflow_label(status)
@@ -8159,12 +12006,12 @@ function set_workflow_status(
   for _, asset in ipairs(assets or {}) do
     if asset.workflow_status ~= status then
       asset.workflow_status = status
+      mark_asset_database_change(asset)
       count = count + 1
     end
   end
 
   if count > 0 then
-    state.db_dirty = true
     state.results_dirty = true
     set_status(
       string.format(
@@ -8184,11 +12031,23 @@ function record_preview_history(asset)
   asset.preview_count =
     (tonumber(asset.preview_count) or 0) + 1
   asset.last_previewed = os.time()
+  ensure_asset_identity(asset)
+  local save_session = state.auxiliary_save_session
+  if save_session and save_session.kind == "history"
+    and not state.preview_history_assets[asset.asset_id] then
+    save_session.pending_history[asset.asset_id] = asset
+  else
+    state.preview_history_assets[asset.asset_id] = asset
+  end
   local played_key =
     path_key(asset.path)
 
   if not state.session_played[played_key] then
-    state.session_played[played_key] = true
+    if save_session and save_session.kind == "session_played" then
+      save_session.pending_played[played_key] = true
+    else
+      state.session_played[played_key] = true
+    end
     state.session_played_dirty = true
   end
 
@@ -8778,17 +12637,10 @@ function remember_root_artwork(record, path)
 end
 
 function invalidate_root_artwork_assets(record)
-  if not record then
-    return
-  end
-
-  for _, asset in ipairs(state.assets) do
-    if asset.root_id == record.id
-      and tostring(asset.artwork_path or "") == "" then
-      asset.artwork_checked = false
-    end
-  end
-
+  if not record then return end
+  -- Artwork queue eligibility also checks the source record's shared path and
+  -- checked state. Changing that record therefore invalidates visible assets
+  -- lazily without touching every catalog row here.
   state.results_dirty = true
 end
 
@@ -8996,6 +12848,14 @@ function process_artwork_queue()
     return
   end
 
+  local job_token =
+    Jobs.begin("artwork", "artwork_reader", false)
+
+  if not job_token then
+    table.insert(state.artwork_queue, 1, job)
+    return
+  end
+
   state.artwork_queued[job.key] = nil
 
   local asset = job.asset
@@ -9011,7 +12871,7 @@ function process_artwork_queue()
 
       if found ~= "" then
         asset.artwork_path = shared and "" or found
-        state.db_dirty = true
+        mark_asset_database_change(asset)
       elseif current ~= "-" then
         asset.artwork_path = ""
       end
@@ -9021,6 +12881,7 @@ function process_artwork_queue()
   end
 
   state.artwork_next_job = now + 0.025
+  Jobs.finish(job_token, true)
 end
 
 function release_artwork_image(key)
@@ -9310,6 +13171,30 @@ function draw_artwork_cover(
 end
 
 function clear_artwork_cache()
+  if state.persistence_read_only then
+    set_status("只读保护模式下不能修改 Artwork 缓存状态", true)
+    return false
+  end
+  if state.artwork_reset_session then
+    set_status("Artwork 缓存正在清理")
+    return false
+  end
+  cancel_database_snapshot("artwork cache reset")
+  local job_token, job_error = Jobs.begin(
+    "artwork_reset",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status(
+      job_error == "resource_busy"
+        and "请等待当前目录维护任务完成"
+        or "无法启动 Artwork 缓存清理",
+      true
+    )
+    return false
+  end
+
   for key in pairs(state.artwork_images) do
     release_artwork_image(key)
   end
@@ -9328,15 +13213,45 @@ function clear_artwork_cache()
     end
   end
 
-  for _, asset in ipairs(state.assets) do
-    if asset.artwork_path ~= "-" then
-      asset.artwork_path = ""
-      asset.artwork_checked = false
-    end
+  mark_database_snapshot_dirty()
+  state.artwork_reset_session = new_artwork_reset_job(state.assets)
+  state.artwork_reset_session.job_token = job_token
+  set_status(string.format(
+    "正在清空 Artwork 缓存：0 / %d",
+    #state.assets
+  ))
+  return true
+end
+
+function process_artwork_cache_reset()
+  local session = state.artwork_reset_session
+  if not session then return end
+  if session.job_token.cancel_requested then
+    state.artwork_reset_session = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    set_status("已停止 Artwork 缓存清理；已完成部分仍会保存")
+    return
   end
 
-  state.db_dirty = true
-  set_status("已清空 Artwork 缓存；可见素材将重新查找封面")
+  local complete = step_artwork_reset_job(
+    session,
+    ARTWORK_RESET_ASSETS_PER_FRAME
+  )
+  if not complete then
+    set_status(string.format(
+      "正在清空 Artwork 缓存：%d / %d",
+      math.min(session.index - 1, session.total),
+      session.total
+    ))
+    return
+  end
+
+  state.artwork_reset_session = nil
+  Jobs.finish(session.job_token, true)
+  set_status(string.format(
+    "已清空 Artwork 缓存：重置 %d 条；可见素材将重新查找封面",
+    session.changed
+  ))
 end
 
 ----------------------------------------------------------------
@@ -9490,7 +13405,7 @@ function index_asset(asset)
 
   reaper.PCM_Source_Destroy(source)
 
-  state.db_dirty = true
+  mark_asset_database_change(asset)
   state.results_dirty = true
   return true
 end
@@ -9555,11 +13470,65 @@ end
 -- Scan
 ----------------------------------------------------------------
 
+function start_import_recovery_audit()
+  if state.persistence_read_only or #state.roots == 0
+    or #state.assets == 0 then
+    state.import_recovery_audit = nil
+    return
+  end
+  state.import_recovery_audit = {
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+  }
+end
+
+function process_import_recovery_audit()
+  local audit = state.import_recovery_audit
+  if not audit or state.scan or state.import_session
+    or state.transfer_running or not can_run_heavy_job() then
+    return
+  end
+
+  for _, token in pairs(Jobs.active) do
+    if token.resource == "catalog_exclusive"
+      and not token.finished then
+      return
+    end
+  end
+
+  if audit.assets ~= state.assets then
+    audit.assets = state.assets
+    audit.index = 1
+    audit.total = #state.assets
+  end
+
+  local last = math.min(
+    audit.total,
+    audit.index + IMPORT_RECOVERY_ASSETS_PER_FRAME - 1
+  )
+  for index = audit.index, last do
+    local asset = audit.assets[index]
+    if asset and not asset.ready then
+      state.import_recovery_audit = nil
+      start_scan("恢复未完成导入")
+      return
+    end
+  end
+  audit.index = last + 1
+  if audit.index > audit.total then
+    state.import_recovery_audit = nil
+  end
+end
+
 function start_scan(reason, roots_override, options)
   local requested = roots_override or state.roots
   local silent =
     type(options) == "table"
     and options.silent == true
+  local force_rebuild =
+    type(options) == "table"
+    and options.force_rebuild == true
 
   if #requested == 0 then
     set_status("请先添加音效库根目录", true)
@@ -9580,6 +13549,7 @@ function start_scan(reason, roots_override, options)
     new_assets = {},
     started = reaper.time_precise(),
     silent = silent,
+    force_rebuild = force_rebuild,
   }
 
   for _, root in ipairs(requested) do
@@ -9601,6 +13571,26 @@ function start_scan(reason, roots_override, options)
     return
   end
 
+  cancel_auxiliary_save("catalog scan")
+  local job_token, job_error =
+    Jobs.begin(
+      "catalog_pipeline",
+      "catalog_exclusive",
+      false
+    )
+
+  if not job_token then
+    set_status(
+      job_error == "resource_busy"
+        and "另一个目录写任务正在运行"
+        or "扫描任务已经在运行",
+      true
+    )
+    return
+  end
+
+  scan.job_token = job_token
+
   state.scan = scan
   state.scan_checkpoint_last_at = 0
   write_scan_checkpoint(scan, "scan")
@@ -9614,50 +13604,28 @@ function start_scan(reason, roots_override, options)
       )
     )
   end
+
 end
 
 function finish_scan()
   local scan = state.scan
-
-  if not scan then
-    return
+  if not scan or scan.phase then return end
+  scan.phase = "finalize_prune"
+  scan.prune_job = new_catalog_prune_job(state.by_path)
+  scan.finalize_total = #state.assets
+  scan.removed = 0
+  scan.finalize_removed_so_far = 0
+  scan.pending = {}
+  scan.pending_seen = {}
+  scan.pending_index = 1
+  if not scan.silent then
+    set_status(scan.reason .. "：扫描完成，正在整理索引…")
   end
+end
 
-  local removed = 0
-
-  clear_scan_checkpoint()
-
-  for key, asset in pairs(state.by_path) do
-    local belongs =
-      scan.root_keys[path_key(asset.root or "")] == true
-
-    if belongs and not scan.seen[key] then
-      state.by_path[key] = nil
-      state.favorites[key] = nil
-      state.selected_set[key] = nil
-      removed = removed + 1
-    end
-  end
-
-  if removed > 0 then
-    rebuild_assets()
-    state.config_dirty = true
-    state.db_dirty = true
-  end
-
-  local pending = {}
-  local pending_seen = {}
-
-  for _, asset in ipairs(scan.new_assets) do
-    local key = path_key(asset.path)
-
-    if not pending_seen[key] and not asset.ready then
-      pending_seen[key] = true
-      asset.pending_batch = true
-      pending[#pending + 1] = asset
-    end
-  end
-
+function complete_scan_finalize(scan)
+  local pending = scan.pending
+  local removed = scan.removed or 0
   state.scan = nil
 
   if #pending > 0 then
@@ -9673,6 +13641,7 @@ function finish_scan()
       phase = "prepare",
       silent = scan.silent,
       removed = removed,
+      job_token = scan.job_token,
     }
 
     state.import_cancel_requested = false
@@ -9687,6 +13656,8 @@ function finish_scan()
       )
     end
   else
+    clear_scan_checkpoint()
+    Jobs.finish(scan.job_token, true)
     if scan.silent then
       if removed > 0 then
         set_status(
@@ -9721,10 +13692,142 @@ function finish_scan()
   state.results_dirty = true
 end
 
+function process_scan_finalize(scan)
+  if scan.phase == "finalize_prune" then
+    local complete = step_catalog_prune_job(
+      scan.prune_job,
+      SCAN_FINALIZE_ASSETS_PER_FRAME,
+      function(key, asset)
+        local belongs =
+          scan.root_keys[path_key(asset.root or "")] == true
+        return belongs and not scan.seen[key]
+      end,
+      function(key, asset)
+        state.favorites[key] = nil
+        state.selected_set[key] = nil
+        state.preview_history_assets[asset.asset_id or ""] = nil
+        scan.finalize_removed_so_far =
+          scan.finalize_removed_so_far + 1
+      end
+    )
+    if complete then
+      scan.removed = scan.prune_job.removed
+      if scan.removed > 0 then
+        state.assets = scan.prune_job.kept
+        state.database_ordered_assets = nil
+        state.config_dirty = true
+        mark_database_snapshot_dirty()
+        invalidate_library_counts()
+        invalidate_folder_navigation()
+      end
+      scan.prune_job = nil
+      scan.phase = "finalize_pending"
+    end
+    return
+  end
+
+  local last = math.min(
+    #scan.new_assets,
+    scan.pending_index + SCAN_FINALIZE_ASSETS_PER_FRAME - 1
+  )
+  for index = scan.pending_index, last do
+    local asset = scan.new_assets[index]
+    local key = asset and path_key(asset.path) or ""
+    if asset and key ~= "" and not scan.pending_seen[key]
+      and not asset.ready then
+      scan.pending_seen[key] = true
+      asset.pending_batch = true
+      scan.pending[#scan.pending + 1] = asset
+    end
+  end
+  scan.pending_index = last + 1
+  if scan.pending_index > #scan.new_assets then
+    scan.pending_seen = nil
+    complete_scan_finalize(scan)
+  end
+end
+
+function begin_scan_cancel(scan)
+  if scan.phase == "cancel_collect"
+    or scan.phase == "cancel_prune" then
+    return
+  end
+  scan.phase = "cancel_collect"
+  scan.cancel_index = 1
+  scan.cancel_keys = {}
+  scan.prune_job = nil
+  set_status("正在取消扫描并清理未完成素材…")
+end
+
+function process_scan_cancel(scan)
+  if scan.phase == "cancel_collect" then
+    local last = math.min(
+      #scan.new_assets,
+      scan.cancel_index + SCAN_FINALIZE_ASSETS_PER_FRAME - 1
+    )
+    for index = scan.cancel_index, last do
+      local asset = scan.new_assets[index]
+      if asset and not asset.ready then
+        scan.cancel_keys[path_key(asset.path)] = true
+      end
+    end
+    scan.cancel_index = last + 1
+    if scan.cancel_index > #scan.new_assets then
+      scan.phase = "cancel_prune"
+      scan.prune_job = new_catalog_prune_job(state.by_path)
+      scan.cancel_total = #state.assets
+    end
+    return
+  end
+
+  local complete = step_catalog_prune_job(
+    scan.prune_job,
+    SCAN_FINALIZE_ASSETS_PER_FRAME,
+    function(key)
+      return scan.cancel_keys[key] == true
+    end,
+    function(key, asset)
+      state.favorites[key] = nil
+      state.selected_set[key] = nil
+      state.preview_history_assets[asset.asset_id or ""] = nil
+    end
+  )
+  if not complete then return end
+
+  local removed = scan.prune_job.removed
+  local catalog_changed = removed > 0
+    or (scan.finalize_removed_so_far or 0) > 0
+  if catalog_changed then
+    state.assets = scan.prune_job.kept
+    state.database_ordered_assets = nil
+    mark_database_snapshot_dirty()
+    invalidate_library_counts()
+    invalidate_folder_navigation()
+  end
+  state.scan = nil
+  clear_scan_checkpoint()
+  Jobs.finish(scan.job_token, true, "user canceled")
+  state.results_dirty = true
+  set_status("已取消扫描")
+end
+
 function process_scan()
   local scan = state.scan
 
   if not scan then
+    return
+  end
+
+  if scan.job_token
+    and scan.job_token.cancel_requested then
+    begin_scan_cancel(scan)
+    process_scan_cancel(scan)
+    return
+  end
+
+  if scan.phase == "finalize_prune"
+    or scan.phase == "finalize_pending" then
+    process_scan_finalize(scan)
     return
   end
 
@@ -9787,7 +13890,12 @@ function process_scan()
               scan.new_assets[#scan.new_assets + 1] =
                 asset
 
-              state.db_dirty = true
+              mark_asset_database_change(asset)
+            elseif scan.force_rebuild then
+              local asset = state.by_path[key]
+              asset.ready = false
+              asset.indexed = false
+              scan.new_assets[#scan.new_assets + 1] = asset
             elseif not state.by_path[key].ready then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
@@ -9987,6 +14095,12 @@ function asset_in_view(asset)
   elseif state.view == "duplicates"
     and not state.duplicate_lookup[path_key(asset.path)] then
     return false
+  elseif state.view == "duplicates_confirmed"
+    and not state.duplicate_confirmed_lookup[path_key(asset.path)] then
+    return false
+  elseif state.view == "duplicate_failures"
+    and not state.duplicate_confirmation_failures[path_key(asset.path)] then
+    return false
   elseif state.view == "project_used" then
     local bucket = project_usage_bucket(
       state.current_project_path,
@@ -10032,80 +14146,121 @@ function asset_in_view(asset)
   return true
 end
 
-function rebuild_results()
-  state.results = {}
+local function cached_sort_text(asset, field, source_field, value_field)
+  local source = tostring(asset[field] or "")
+  if asset[source_field] ~= source then
+    asset[source_field] = source
+    asset[value_field] = safe_lower(source)
+  end
+  return asset[value_field]
+end
 
-  for _, asset in ipairs(state.assets) do
-    if asset_in_view(asset)
-      and matches_search(asset) then
-      state.results[#state.results + 1] = asset
+local function cached_sort_path(asset)
+  return asset_path_sort_key(asset)
+end
+
+local function result_sort_comparator()
+  local direction = state.sort_desc and -1 or 1
+  local view = state.view
+  local sort_mode = state.sort_mode
+  local duplicate_lookup = state.duplicate_lookup
+  local confirmed_lookup = state.duplicate_confirmed_lookup
+
+  return function(a, b)
+    local av
+    local bv
+
+    if view == "duplicates" then
+      av = duplicate_lookup[cached_sort_path(a)] or ""
+      bv = duplicate_lookup[cached_sort_path(b)] or ""
+    elseif view == "duplicates_confirmed" then
+      av = confirmed_lookup[cached_sort_path(a)] or ""
+      bv = confirmed_lookup[cached_sort_path(b)] or ""
+    elseif sort_mode == "duration" then
+      av = tonumber(a.duration) or 0
+      bv = tonumber(b.duration) or 0
+    elseif sort_mode == "library" then
+      av = cached_sort_text(
+        a,
+        "library",
+        "_sort_library_source",
+        "_sort_library_value"
+      )
+      bv = cached_sort_text(
+        b,
+        "library",
+        "_sort_library_source",
+        "_sort_library_value"
+      )
+    elseif sort_mode == "used" then
+      av = tonumber(a.last_used) or 0
+      bv = tonumber(b.last_used) or 0
+    elseif sort_mode == "previewed" then
+      av = tonumber(a.last_previewed) or 0
+      bv = tonumber(b.last_previewed) or 0
+    else
+      av = cached_sort_text(
+        a,
+        "name",
+        "_sort_name_source",
+        "_sort_name_value"
+      )
+      bv = cached_sort_text(
+        b,
+        "name",
+        "_sort_name_source",
+        "_sort_name_value"
+      )
     end
+
+    if av == bv then
+      local a_path = cached_sort_path(a)
+      local b_path = cached_sort_path(b)
+      if a_path == b_path then
+        return false
+      end
+      return direction > 0 and a_path < b_path or a_path > b_path
+    end
+
+    return direction > 0 and av < bv or av > bv
+  end
+end
+
+function start_results_rebuild()
+  state.results_dirty = false
+  state.results_job = begin_incremental_result_job(
+    state.assets,
+    function(asset)
+      return asset_in_view(asset) and matches_search(asset)
+    end,
+    result_sort_comparator(),
+    cached_sort_path,
+    state.selected_path and path_key(state.selected_path) or nil
+  )
+end
+
+function process_results_rebuild()
+  if state.results_dirty or not state.results_job then
+    start_results_rebuild()
   end
 
-  local direction =
-    state.sort_desc and -1 or 1
+  local status, results, selected_index =
+    step_incremental_result_job(
+      state.results_job,
+      RESULT_BUILD_DEFAULT_BUDGET
+    )
 
-  table.sort(
-    state.results,
-    function(a, b)
-      local av
-      local bv
+  if status == "complete" then
+    state.results = results
+    state.selected_index = selected_index
+    state.results_job = nil
+  end
+end
 
-      if state.view == "duplicates" then
-        av = state.duplicate_lookup[path_key(a.path)] or ""
-        bv = state.duplicate_lookup[path_key(b.path)] or ""
-      elseif state.sort_mode == "duration" then
-        av = tonumber(a.duration) or 0
-        bv = tonumber(b.duration) or 0
-      elseif state.sort_mode == "library" then
-        av = safe_lower(a.library)
-        bv = safe_lower(b.library)
-      elseif state.sort_mode == "used" then
-        av = tonumber(a.last_used) or 0
-        bv = tonumber(b.last_used) or 0
-      elseif state.sort_mode == "previewed" then
-        av = tonumber(a.last_previewed) or 0
-        bv = tonumber(b.last_previewed) or 0
-      else
-        av = safe_lower(a.name)
-        bv = safe_lower(b.name)
-      end
-
-      if av == bv then
-        local a_path = path_key(a.path)
-        local b_path = path_key(b.path)
-
-        if a_path == b_path then
-          return false
-        end
-
-        if direction > 0 then
-          return a_path < b_path
-        end
-
-        return a_path > b_path
-      end
-
-      if direction > 0 then
-        return av < bv
-      end
-
-      return av > bv
-    end
-  )
-
-  state.results_dirty = false
-
-  if state.selected_path then
-    state.selected_index = 0
-
-    for index, asset in ipairs(state.results) do
-      if path_key(asset.path)
-        == path_key(state.selected_path) then
-        state.selected_index = index
-        break
-      end
-    end
+function rebuild_results()
+  start_results_rebuild()
+  while state.results_job do
+    process_results_rebuild()
   end
 end
 
@@ -10652,6 +14807,12 @@ function process_wave_queue()
     end
 
     state.wave_active = job
+    job.job_token =
+      Jobs.begin(
+        "waveform",
+        "waveform_reader",
+        true
+      )
   end
 
   local job = state.wave_active
@@ -10671,12 +14832,14 @@ function process_wave_queue()
 
     state.wave_queued[job.key] = nil
     state.wave_active = nil
+    Jobs.finish(job.job_token, true)
   elseif result == "failed" then
     destroy_wave_job(job)
     job.asset.wave_error = tostring(err or "波形建立失败")
     record_failed_task(job.asset, "waveform", job.asset.wave_error)
     state.wave_queued[job.key] = nil
     state.wave_active = nil
+    Jobs.finish(job.job_token, false, err)
     set_status(
       "波形建立失败："
         .. basename(job.asset.path)
@@ -10696,32 +14859,6 @@ function wave_cache_file_exists(asset, points, preserve_channels)
     points,
     preserve_channels
   ) ~= nil
-end
-
-function precache_asset_list(scope)
-  local assets = {}
-
-  for _, asset in ipairs(state.assets) do
-    local include =
-      asset.ready
-      and reaper.file_exists(asset.path)
-
-    if include
-      and scope == "current"
-      and (state.root_filter or state.library_filter_id) then
-      if state.root_filter then
-        include = path_is_inside(asset.path, state.root_filter)
-      else
-        include = asset.library_id == state.library_filter_id
-      end
-    end
-
-    if include then
-      assets[#assets + 1] = asset
-    end
-  end
-
-  return assets
 end
 
 function start_wave_precache(points, scope)
@@ -10744,37 +14881,42 @@ function start_wave_precache(points, scope)
   points =
     tonumber(points) == 2048 and 2048 or 4096
 
-  local assets =
-    precache_asset_list(scope or "all")
+  local job_token =
+    Jobs.begin("wave_precache", "catalog_exclusive", false)
 
-  if #assets == 0 then
-    set_status(
-      "当前范围没有可预缓存的素材",
-      true
-    )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
     return
   end
 
   state.precache_cancel_requested = false
+  scope = scope or "all"
   state.precache_session = {
-    assets = assets,
-    total = #assets,
+    phase = "collect",
+    source = state.assets,
+    source_total = #state.assets,
+    collect_index = 1,
+    filter_root = scope == "current" and state.root_filter or nil,
+    filter_library_id = scope == "current"
+      and not state.root_filter and state.library_filter_id or nil,
+    assets = {},
+    total = 0,
     index = 1,
     generated = 0,
     cached = 0,
     failed = 0,
     points = points,
     preserve_channels = state.multichannel_waveform,
-    scope = scope or "all",
+    scope = scope,
     current = nil,
     started = reaper.time_precise(),
+    job_token = job_token,
   }
 
   set_status(
     string.format(
-      "开始预缓存 %d 个素材的 %d 点高精度波形",
-      #assets,
-      points
+      "正在整理高精度波形预缓存范围：0 / %d",
+      #state.assets
     )
   )
 end
@@ -10802,6 +14944,7 @@ function finish_wave_precache()
 
   state.precache_session = nil
   state.precache_cancel_requested = false
+  Jobs.finish(session.job_token, true)
 end
 
 function cancel_wave_precache()
@@ -10817,6 +14960,8 @@ function cancel_wave_precache()
 
   state.precache_session = nil
   state.precache_cancel_requested = false
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, "canceled")
   set_status("已取消高精度波形预缓存")
 end
 
@@ -10832,20 +14977,70 @@ function process_wave_precache()
     return
   end
 
+  if session.job_token
+    and session.job_token.cancel_requested then
+    cancel_wave_precache()
+    return
+  end
+
   if not can_run_heavy_job() then
     return
   end
 
   local now = reaper.time_precise()
 
+  if session.phase == "collect" then
+    local processed = 0
+    local deadline = now + PRECACHE_FRAME_BUDGET
+    while session.collect_index <= session.source_total
+      and processed < PRECACHE_COLLECT_FILES_PER_FRAME
+      and reaper.time_precise() < deadline do
+      local asset = session.source[session.collect_index]
+      session.collect_index = session.collect_index + 1
+      processed = processed + 1
+      local include = asset and asset.ready
+      if include and session.filter_root then
+        include = path_is_inside(asset.path, session.filter_root)
+      elseif include and session.filter_library_id then
+        include = asset.library_id == session.filter_library_id
+      end
+      if include and reaper.file_exists(asset.path) then
+        session.assets[#session.assets + 1] = asset
+      end
+    end
+    if session.collect_index > session.source_total then
+      session.source = nil
+      session.phase = "precache"
+      session.total = #session.assets
+      if session.total == 0 then
+        state.precache_session = nil
+        state.precache_cancel_requested = false
+        Jobs.finish(session.job_token, true)
+        set_status("当前范围没有可预缓存的素材", true)
+      else
+        set_status(string.format(
+          "开始预缓存 %d 个素材的 %d 点高精度波形",
+          session.total,
+          session.points
+        ))
+      end
+    end
+    return
+  end
+
   if now < state.next_wave_job then
     return
   end
 
   if not session.current then
-    while session.index <= session.total do
+    local probed = 0
+    local deadline = now + PRECACHE_FRAME_BUDGET
+    while session.index <= session.total
+      and probed < PRECACHE_CACHE_PROBES_PER_FRAME
+      and reaper.time_precise() < deadline do
       local asset =
         session.assets[session.index]
+      probed = probed + 1
 
       if wave_cache_file_exists(
         asset,
@@ -10876,6 +15071,9 @@ function process_wave_precache()
     if not session.current
       and session.index > session.total then
       finish_wave_precache()
+      return
+    end
+    if not session.current then
       return
     end
   end
@@ -10920,13 +15118,7 @@ function process_wave_precache()
 end
 
 function clear_wave_cache()
-  destroy_wave_job(state.wave_active)
-  state.wave_active = nil
-  state.wave_cache = {}
-  state.wave_cache_count = 0
-  state.wave_checked = {}
-  state.wave_queue = {}
-  state.wave_queued = {}
+  reset_wave_cache_runtime()
 
   while true do
     local file =
@@ -11014,6 +15206,14 @@ function start_wave_cache_verification()
     return
   end
 
+  local job_token =
+    Jobs.begin("cache_verify", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
+  end
+
   local files = {}
   local index = 0
 
@@ -11038,6 +15238,7 @@ function start_wave_cache_verification()
     valid = 0,
     invalid = 0,
     started = reaper.time_precise(),
+    job_token = job_token,
   }
 
   set_status(string.format("开始检查 %d 个波形缓存", #files))
@@ -11050,6 +15251,13 @@ function process_wave_cache_verification()
     return
   end
 
+  if session.job_token
+    and session.job_token.cancel_requested then
+    state.cache_verify_session = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    return
+  end
+
   for _ = 1, CACHE_VERIFY_FILES_PER_FRAME do
     local filename = session.files[session.index]
 
@@ -11057,6 +15265,7 @@ function process_wave_cache_verification()
       local elapsed = reaper.time_precise() - session.started
       local invalid = session.invalid
       state.cache_verify_session = nil
+      Jobs.finish(session.job_token, true)
       reset_wave_cache_runtime()
       set_status(
         string.format(
@@ -11106,18 +15315,15 @@ function finish_import_session()
   local elapsed =
     reaper.time_precise() - session.started
 
-  for _, asset in ipairs(session.assets) do
-    asset.pending_batch = nil
-  end
-
   state.import_session = nil
   state.import_cancel_requested = false
   state.results_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
+  state.clear_scan_checkpoint_after_database_save = true
 
-  save_database()
-  save_failed_tasks()
-  clear_scan_checkpoint()
+  Jobs.finish(session.job_token, true)
+  save_database_changes()
+  start_failed_tasks_save()
 
   if session.silent then
     set_status(
@@ -11149,25 +15355,77 @@ function cancel_import_session()
     return
   end
 
-  if session.current and session.current.wave_job then
-    destroy_wave_job(session.current.wave_job)
-  end
-
-  -- 未完成的素材保持隐藏，并从本轮数据库中移除，避免“读取中”残留。
-  for _, asset in ipairs(session.assets) do
-    if not asset.ready then
-      state.by_path[path_key(asset.path)] = nil
-    else
-      asset.pending_batch = nil
+  if session.phase ~= "cancel_cleanup"
+    and session.phase ~= "cancel_rebuild" then
+    if session.current and session.current.wave_job then
+      destroy_wave_job(session.current.wave_job)
     end
+    session.current = nil
+    session.phase = "cancel_cleanup"
+    session.cleanup_index = 1
+    Jobs.cancel(session.job_token)
+    set_status("正在取消导入并整理索引…")
   end
 
-  rebuild_assets()
+  if session.phase == "cancel_cleanup" then
+    local last = math.min(
+      #session.assets,
+      session.cleanup_index + IMPORT_FINALIZE_ASSETS_PER_FRAME - 1
+    )
+    for index = session.cleanup_index, last do
+      local asset = session.assets[index]
+      if asset then
+        if not asset.ready then
+          state.by_path[path_key(asset.path)] = nil
+        else
+          asset.pending_batch = nil
+        end
+      end
+    end
+    session.cleanup_index = last + 1
+    if session.cleanup_index <= #session.assets then return end
+    session.phase = "cancel_rebuild"
+    session.prune_job = new_catalog_prune_job(state.by_path)
+    session.cancel_rebuild_total = #state.assets
+  end
+
+  local complete = step_catalog_prune_job(
+    session.prune_job,
+    IMPORT_FINALIZE_ASSETS_PER_FRAME,
+    function() return false end
+  )
+  if not complete then return end
+
+  state.assets = session.prune_job.kept
+  state.database_ordered_assets = nil
+  state.results_dirty = true
+  invalidate_library_counts()
+  invalidate_folder_navigation()
   state.import_session = nil
   state.import_cancel_requested = false
-  state.db_dirty = true
-  save_database()
+  mark_database_snapshot_dirty()
+  state.clear_scan_checkpoint_after_database_save = true
+  Jobs.finish(session.job_token, true, "canceled")
+  save_database_changes()
   set_status("已取消导入；已完成的素材保留")
+end
+
+function process_import_finalize(session)
+  session.finalize_index = session.finalize_index or 1
+  local last = math.min(
+    #session.assets,
+    session.finalize_index + IMPORT_FINALIZE_ASSETS_PER_FRAME - 1
+  )
+  for index = session.finalize_index, last do
+    local asset = session.assets[index]
+    if asset then asset.pending_batch = nil end
+  end
+  session.finalize_index = last + 1
+  if session.finalize_index <= #session.assets then
+    return false
+  end
+  finish_import_session()
+  return true
 end
 
 function process_import_session()
@@ -11177,17 +15435,28 @@ function process_import_session()
     return
   end
 
+  if session.job_token
+    and session.job_token.cancel_requested then
+    cancel_import_session()
+    return
+  end
+
   local checkpoint_now = reaper.time_precise()
 
   if checkpoint_now - (state.import_checkpoint_last_at or 0)
       >= IMPORT_CHECKPOINT_INTERVAL then
-    save_database()
-    save_failed_tasks()
+    save_database_changes()
+    start_failed_tasks_save()
     state.import_checkpoint_last_at = checkpoint_now
   end
 
   if state.import_cancel_requested then
     cancel_import_session()
+    return
+  end
+
+  if session.phase == "finalize" then
+    process_import_finalize(session)
     return
   end
 
@@ -11200,7 +15469,9 @@ function process_import_session()
       session.assets[session.done + 1]
 
     if not asset then
-      finish_import_session()
+      session.phase = "finalize"
+      session.finalize_index = 1
+      set_status("导入分析完成，正在整理索引…")
       return
     end
 
@@ -11227,7 +15498,7 @@ function process_import_session()
         session.failed = session.failed + 1
         session.done = session.done + 1
         session.current = nil
-        state.db_dirty = true
+        mark_asset_database_change(asset)
         return
       end
     end
@@ -11252,7 +15523,7 @@ function process_import_session()
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
       return
     end
 
@@ -11292,7 +15563,7 @@ function process_import_session()
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
     elseif result == "failed" then
       destroy_wave_job(current.wave_job)
       asset.ready = true
@@ -11301,7 +15572,7 @@ function process_import_session()
       session.failed = session.failed + 1
       session.done = session.done + 1
       session.current = nil
-      state.db_dirty = true
+      mark_asset_database_change(asset)
     end
   end
 end
@@ -11367,6 +15638,9 @@ function destroy_preview_sources(after_fade)
 end
 
 function stop_preview()
+  local preview_job_token = state.preview_job_token
+  state.preview_job_token = nil
+
   if state.preview_companion
     and type(reaper.CF_Preview_Stop) == "function" then
     pcall(
@@ -11393,6 +15667,11 @@ function stop_preview()
   state.preview_map_reverse = false
   state.preview_percent = 0
   destroy_preview_sources(true)
+
+  if preview_job_token then
+    Jobs.cancel(preview_job_token)
+    Jobs.finish(preview_job_token, true, "stopped")
+  end
 end
 
 function request_preview_stop()
@@ -11571,6 +15850,10 @@ function play_preview(
   start_percent,
   use_selection
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再试听", true)
+    return
+  end
   asset = asset or selected_asset()
 
   if not asset then
@@ -11773,6 +16056,13 @@ function play_preview(
   state.preview_companion = companion
   state.preview_sources = sources
   state.preview_path = asset.path
+  state.preview_job_token =
+    Jobs.begin(
+      "preview",
+      "preview_engine",
+      true,
+      200
+    )
   record_preview_history(asset)
 
   if selection then
@@ -11899,6 +16189,8 @@ function poll_preview()
     state.preview_companion = nil
     state.preview_source = nil
     state.preview_path = nil
+    Jobs.finish(state.preview_job_token, true)
+    state.preview_job_token = nil
     destroy_preview_sources()
     return
   end
@@ -12029,6 +16321,10 @@ function select_result_with_modifiers(
 end
 
 function set_assets_marked(assets, marked)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改素材", true)
+    return false
+  end
   local changed = false
 
   for _, asset in ipairs(assets or {}) do
@@ -12037,12 +16333,12 @@ function set_assets_marked(assets, marked)
     if asset.marked ~= next_value then
       asset.marked = next_value
       asset._search_blob = nil
+      mark_asset_database_change(asset)
       changed = true
     end
   end
 
   if changed then
-    state.db_dirty = true
     state.results_dirty = true
     set_status(
       marked
@@ -12064,6 +16360,10 @@ function toggle_mark(asset)
 end
 
 function toggle_favorite(asset)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再修改收藏", true)
+    return
+  end
   if not asset then
     return
   end
@@ -12086,6 +16386,9 @@ function toggle_favorite(asset)
 end
 
 function push_recent(asset, project_action)
+  if state.root_removal_session then
+    return false
+  end
   local key = path_key(asset.path)
   local updated = { asset.path }
 
@@ -12102,7 +16405,7 @@ function push_recent(asset, project_action)
   asset.last_used = os.time()
 
   state.config_dirty = true
-  state.db_dirty = true
+  mark_asset_database_change(asset)
 
   if project_action then
     record_project_usage(asset, project_action)
@@ -12198,6 +16501,10 @@ function apply_insert_settings(asset)
 end
 
 function insert_asset(asset, new_track, bwf)
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再插入素材", true)
+    return
+  end
   asset = asset or selected_asset()
 
   if not asset then
@@ -13410,6 +17717,11 @@ function finish_transfer_job(job, canceled)
 
   write_transfer_report(job, canceled)
 
+  if canceled then
+    Jobs.cancel(job.job_token)
+  end
+  Jobs.finish(job.job_token, true, canceled and "canceled" or "")
+
   state.transfer_running = false
   state.transfer_job = nil
   state.transfer_cancel_requested = false
@@ -13473,7 +17785,9 @@ function process_transfer_job()
     return
   end
 
-  if state.transfer_cancel_requested then
+  if state.transfer_cancel_requested
+    or (job.job_token
+      and job.job_token.cancel_requested) then
     finish_transfer_job(job, true)
     return
   end
@@ -13664,6 +17978,19 @@ function run_transfer(assets, batch_mode)
     end
   end
 
+  local job_token =
+    Jobs.begin("transfer", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status(
+      translate_ui_text(
+        "请等待当前扫描或维护任务完成"
+      ),
+      true
+    )
+    return
+  end
+
   stop_preview()
   state.transfer_running = true
   state.transfer_cancel_requested = false
@@ -13681,6 +18008,7 @@ function run_transfer(assets, batch_mode)
     records = {},
     started_at = reaper.time_precise(),
     output_directory = state.transfer_dir,
+    job_token = job_token,
   }
   set_status(
     string.format(
@@ -13716,6 +18044,9 @@ function insert_asset_at(
   start_percent,
   end_percent
 )
+  if state.root_removal_session then
+    return false
+  end
   if not asset or not reaper.file_exists(asset.path) then
     return false
   end
@@ -13767,6 +18098,10 @@ function insert_selected_stack(
   start_percent,
   end_percent
 )
+  if state.root_removal_session then
+    set_status("请等待来源移除完成后再插入素材", true)
+    return
+  end
   local assets = selected_assets()
 
   if #assets == 0 then
@@ -14285,93 +18620,498 @@ function add_root(library_id, supplied_path)
   return added
 end
 
-function remove_root(root)
-  local record = type(root) == "table"
-    and root
-    or root_record_for_path(root)
-
-  if not record then
-    return
+function path_is_in_removed_roots(path, roots)
+  for _, root in ipairs(roots or {}) do
+    if path_is_inside(path, root) then return true end
   end
+  return false
+end
 
-  root = record.path
-  if state.import_session then
-    local touches_import = false
+function asset_is_in_removed_roots(asset, roots)
+  return asset and path_is_in_removed_roots(asset.path, roots) or false
+end
 
-    for _, import_root in ipairs(
-      state.import_session.roots or {}
-    ) do
-      if path_key(import_root) == path_key(root) then
-        touches_import = true
-        break
-      end
-    end
-
-    if touches_import then
-      if state.import_session.current
-        and state.import_session.current.wave_job then
-        destroy_wave_job(
-          state.import_session.current.wave_job
-        )
-      end
-
-      state.import_session = nil
+function start_root_removal(records, library_id)
+  if state.persistence_read_only then
+    set_status("只读保护模式下不能移除来源", true)
+    return false
+  end
+  if state.root_removal_session then
+    set_status("已有来源移除任务正在运行", true)
+    return false
+  end
+  local roots = {}
+  local root_ids = {}
+  for _, record in ipairs(records or {}) do
+    if record and state.root_by_id[record.id] == record then
+      roots[#roots + 1] = record.path
+      root_ids[record.id] = true
     end
   end
+  if #roots == 0 and not library_id then return false end
 
-  if state.scan then
-    for _, scan_root in ipairs(state.scan.roots or {}) do
-      if path_key(scan_root) == path_key(root) then
-        state.scan = nil
-        break
-      end
+  cancel_auxiliary_save("catalog changed")
+  cancel_database_snapshot("catalog changed")
+  local job_token, job_error = Jobs.begin(
+    "root_removal",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status(
+      job_error == "resource_busy"
+        and "请等待当前目录维护任务完成后再移除来源"
+        or "无法启动来源移除任务",
+      true
+    )
+    return false
+  end
+
+  if state.wave_active then
+    local wave_token = state.wave_active.job_token
+    destroy_wave_job(state.wave_active)
+    if wave_token then
+      Jobs.cancel(wave_token)
+      Jobs.finish(wave_token, true, "catalog changed")
+    end
+    state.wave_active = nil
+  end
+  destroy_loudness_job(state.loudness_active)
+  state.loudness_active = nil
+  state.meta_queue = {}
+  state.meta_queued = {}
+  state.wave_queue = {}
+  state.wave_queued = {}
+  state.artwork_queue = {}
+  state.artwork_queued = {}
+  state.loudness_queue = {}
+  state.loudness_queued = {}
+
+  local library = library_id and state.library_by_id[library_id] or nil
+  local filter_job = new_catalog_filter_job(state.assets)
+  state.root_removal_session = {
+    phase = "filter",
+    roots = roots,
+    root_ids = root_ids,
+    library_id = library_id,
+    label = library and library.name or basename(roots[1] or ""),
+    filter_job = filter_job,
+    collections = state.collections,
+    project_usage = state.project_usage,
+    concurrent_asset_changes = {},
+    cleanup_index = 1,
+    cleanup_records = {},
+    changed = {},
+    job_token = job_token,
+  }
+  set_status(string.format(
+    "正在准备移除来源：0 / %d",
+    filter_job.total
+  ))
+  return true
+end
+
+function restore_root_removal_record(record)
+  local key = record.key
+  local asset_id = record.asset_id
+  if record.favorite ~= nil then state.favorites[key] = record.favorite end
+  if record.selected ~= nil then state.selected_set[key] = record.selected end
+  if record.history ~= nil then
+    state.preview_history_assets[asset_id] = record.history
+  end
+  if record.regions ~= nil then state.regions_by_path[key] = record.regions end
+  if record.loudness ~= nil then state.loudness_cache[key] = record.loudness end
+  if record.failed ~= nil then state.failed_tasks[key] = record.failed end
+  if record.session_played ~= nil then
+    state.session_played[key] = record.session_played
+  end
+  if record.last_session_played ~= nil then
+    state.last_session_played[key] = record.last_session_played
+  end
+end
+
+function flush_root_removal_asset_changes(session, kept_only)
+  for key, asset in pairs(session.concurrent_asset_changes or {}) do
+    if not kept_only
+      or session.filter_job.kept_by_key[key] == asset then
+      state.db_dirty = true
+      record_asset_change(
+        state.database_changes,
+        key,
+        "upsert",
+        database_asset_values(asset)
+      )
     end
   end
+  session.concurrent_asset_changes = {}
+end
+
+function cancel_root_removal(session, reason)
+  session = session or state.root_removal_session
+  if not session then return false end
+  if session.phase ~= "cleanup" then
+    flush_root_removal_asset_changes(session, false)
+    state.root_removal_session = nil
+    Jobs.cancel(session.job_token)
+    Jobs.finish(session.job_token, true, reason or "canceled")
+    set_status("已取消来源移除")
+    return true
+  end
+  session.phase = "rollback"
+  session.rollback_index = #session.cleanup_records
+  session.cancel_reason = reason or "canceled"
+  set_status("正在回滚来源移除…")
+  return true
+end
+
+function finish_root_removal_rollback(session)
+  local first = math.max(
+    1,
+    session.rollback_index - ROOT_REMOVAL_ASSETS_PER_FRAME + 1
+  )
+  for index = session.rollback_index, first, -1 do
+    restore_root_removal_record(session.cleanup_records[index])
+  end
+  session.rollback_index = first - 1
+  if session.rollback_index > 0 then return end
+  flush_root_removal_asset_changes(session, false)
+  state.root_removal_session = nil
+  Jobs.finish(session.job_token, true, session.cancel_reason)
+  set_status("已取消来源移除并恢复原状态")
+end
+
+function capture_root_removal_record(session, asset)
+  local key = path_key(asset.path)
+  local asset_id = asset.asset_id or ""
+  local record = {
+    key = key,
+    asset_id = asset_id,
+    favorite = state.favorites[key],
+    selected = state.selected_set[key],
+    history = state.preview_history_assets[asset_id],
+    regions = state.regions_by_path[key],
+    loudness = state.loudness_cache[key],
+    failed = state.failed_tasks[key],
+    session_played = state.session_played[key],
+    last_session_played = state.last_session_played[key],
+  }
+  local referenced = record.favorite ~= nil
+    or record.selected ~= nil
+    or record.history ~= nil
+    or record.regions ~= nil
+    or record.loudness ~= nil
+    or record.failed ~= nil
+    or record.session_played ~= nil
+    or record.last_session_played ~= nil
+  if referenced then
+    session.cleanup_records[#session.cleanup_records + 1] = record
+  end
+  if record.favorite ~= nil then session.changed.config = true end
+  if record.history ~= nil then session.changed.history = true end
+  if record.regions ~= nil then session.changed.regions = true end
+  if record.loudness ~= nil then session.changed.loudness = true end
+  if record.failed ~= nil then session.changed.failed = true end
+  if record.session_played ~= nil
+    or record.last_session_played ~= nil then
+    session.changed.session_played = true
+  end
+  state.favorites[key] = nil
+  state.selected_set[key] = nil
+  state.preview_history_assets[asset_id] = nil
+  state.regions_by_path[key] = nil
+  state.loudness_cache[key] = nil
+  state.failed_tasks[key] = nil
+  state.session_played[key] = nil
+  state.last_session_played[key] = nil
+end
+
+function begin_root_removal_collection_filter(session)
+  session.phase = "collections"
+  session.collection_index = 1
+  session.collection_job = nil
+  session.collection_updates = {}
+  session.collection_processed = 0
+  session.collection_total = 0
+  for _, collection in ipairs(session.collections or {}) do
+    session.collection_total = session.collection_total
+      + #(collection.order or {})
+      + collection_item_count(collection)
+  end
+end
+
+function step_root_removal_collection_filter(session, deadline)
+  local frame_processed = 0
+  while session.collection_index <= #(session.collections or {}) do
+    local collection = session.collections[session.collection_index]
+    if not session.collection_job then
+      session.collection_job = new_ordered_path_filter_job(
+        collection.order,
+        collection.items
+      )
+    end
+    local job = session.collection_job
+    local before = job.processed
+    local complete = step_ordered_path_filter_job(
+      job,
+      ROOT_REMOVAL_ASSETS_PER_FRAME - frame_processed,
+      function(path)
+        return path_is_in_removed_roots(path, session.roots)
+      end,
+      path_key,
+      deadline,
+      reaper.time_precise
+    )
+    local delta = job.processed - before
+    frame_processed = frame_processed + delta
+    session.collection_processed = session.collection_processed + delta
+    if not complete then return false end
+
+    session.collection_updates[#session.collection_updates + 1] = {
+      collection = collection,
+      items = job.kept_items,
+      order = job.kept_order,
+      count = #job.kept_order,
+    }
+    if job.removed > 0 or job.repaired > 0 then
+      session.changed.collections = true
+    end
+    session.collection_job = nil
+    session.collection_index = session.collection_index + 1
+    if frame_processed >= ROOT_REMOVAL_ASSETS_PER_FRAME
+      or reaper.time_precise() >= deadline then
+      return false
+    end
+  end
+  return true
+end
+
+function begin_root_removal_project_usage_filter(session)
+  session.phase = "project_usage"
+  session.project_keys = {}
+  for key in pairs(session.project_usage or {}) do
+    session.project_keys[#session.project_keys + 1] = key
+  end
+  table.sort(session.project_keys)
+  session.project_index = 1
+  session.project_job = nil
+  session.project_usage_filtered = {}
+  session.project_usage_processed = 0
+end
+
+function step_root_removal_project_usage_filter(session, deadline)
+  local frame_processed = 0
+  while session.project_index <= #session.project_keys do
+    local project_key = session.project_keys[session.project_index]
+    local bucket = session.project_usage[project_key]
+    if not session.project_job then
+      session.project_job = new_path_map_filter_job(
+        bucket and bucket.assets or {}
+      )
+    end
+    local job = session.project_job
+    local before = job.processed
+    local complete = step_path_map_filter_job(
+      job,
+      ROOT_REMOVAL_ASSETS_PER_FRAME - frame_processed,
+      function(path)
+        return path_is_in_removed_roots(path, session.roots)
+      end,
+      function(entry) return entry.path end,
+      deadline,
+      reaper.time_precise
+    )
+    local delta = job.processed - before
+    frame_processed = frame_processed + delta
+    session.project_usage_processed = session.project_usage_processed + delta
+    if not complete then return false end
+
+    local filtered_bucket = {}
+    for field, value in pairs(bucket or {}) do
+      if field ~= "assets" then filtered_bucket[field] = value end
+    end
+    filtered_bucket.assets = job.kept
+    session.project_usage_filtered[project_key] = filtered_bucket
+    if job.removed > 0 then session.changed.project_usage = true end
+    session.project_job = nil
+    session.project_index = session.project_index + 1
+    if frame_processed >= ROOT_REMOVAL_ASSETS_PER_FRAME
+      or reaper.time_precise() >= deadline then
+      return false
+    end
+  end
+  return true
+end
+
+function commit_root_removal(session)
+  state.assets = session.filter_job.kept
+  state.by_path = session.filter_job.kept_by_key
+  state.database_ordered_assets = nil
+
+  for _, update in ipairs(session.collection_updates or {}) do
+    update.collection.items = update.items
+    update.collection.order = update.order
+    update.collection.count = update.count
+  end
+  if session.project_usage_filtered then
+    state.project_usage = session.project_usage_filtered
+  end
+  if session.changed.collections then state.collections_dirty = true end
+  if session.changed.project_usage then state.project_usage_dirty = true end
+  rebuild_collection_index()
+  refresh_current_project_binding()
 
   for index = #state.root_records, 1, -1 do
-    if state.root_records[index].id == record.id then
+    if session.root_ids[state.root_records[index].id] then
+      state.expanded_source_folders[state.root_records[index].id] = nil
       table.remove(state.root_records, index)
+    end
+  end
+  if session.library_id then
+    for index = #state.libraries, 1, -1 do
+      if state.libraries[index].id == session.library_id then
+        table.remove(state.libraries, index)
+        break
+      end
+    end
+  end
+  rebuild_library_indexes()
+  refresh_all_asset_library_bindings()
+
+  for _, saved in ipairs(state.saved_searches) do
+    local changed = false
+    if saved.root and saved.root ~= ""
+      and path_is_in_removed_roots(saved.root, session.roots) then
+      saved.root = ""
+      changed = true
+    end
+    if session.library_id and saved.library_id == session.library_id then
+      saved.library_id = nil
+      changed = true
+    end
+    if changed then state.searches_dirty = true end
+  end
+
+  local recent = {}
+  for _, path in ipairs(state.recent) do
+    if not path_is_in_removed_roots(path, session.roots) then
+      recent[#recent + 1] = path
+    end
+  end
+  if #recent ~= #state.recent then session.changed.config = true end
+  state.recent = recent
+
+  for _, root in ipairs(session.roots) do
+    if state.root_filter and path_is_inside(state.root_filter, root) then
+      state.root_filter = nil
       break
     end
   end
-
-  rebuild_library_indexes()
-
-  for key, asset in pairs(state.by_path) do
-    if path_is_inside(asset.path, root) then
-      state.by_path[key] = nil
-      state.favorites[key] = nil
-
-      if state.regions_by_path[key] then
-        state.regions_by_path[key] = nil
-        state.regions_dirty = true
-      end
-
-      if state.loudness_cache[key] then
-        state.loudness_cache[key] = nil
-        state.loudness_dirty = true
-      end
-    end
-  end
-
-  if state.root_filter
-    and path_is_inside(state.root_filter, root) then
-    state.root_filter = nil
-  end
-
-  if state.library_filter_id == record.library_id then
-    local owner = state.library_by_id[record.library_id]
-
-    if not owner or #owner.roots == 0 then
+  if session.library_id
+    and state.library_filter_id == session.library_id then
+    state.library_filter_id = nil
+  elseif state.library_filter_id then
+    local active_library = state.library_by_id[state.library_filter_id]
+    if not active_library or #active_library.roots == 0 then
       state.library_filter_id = nil
     end
   end
 
   clear_row_selection()
-  rebuild_assets()
+  state.duplicate_groups = {}
+  state.duplicate_lookup = {}
+  state.duplicate_group_count = 0
+  state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
+  state.missing_assets = {}
+  state.missing_asset_count = 0
   state.libraries_dirty = true
-  state.db_dirty = true
-  set_status("已移除来源路径：" .. basename(root))
+  state.config_dirty = state.config_dirty or session.changed.config == true
+  state.history_dirty = state.history_dirty or session.changed.history == true
+  state.session_played_dirty = state.session_played_dirty
+    or session.changed.session_played == true
+  state.regions_dirty = state.regions_dirty or session.changed.regions == true
+  state.loudness_dirty = state.loudness_dirty or session.changed.loudness == true
+  state.failed_tasks_dirty = state.failed_tasks_dirty
+    or session.changed.failed == true
+  state.results_dirty = true
+  invalidate_library_counts()
+  invalidate_folder_navigation()
+  mark_database_snapshot_dirty()
+  flush_root_removal_asset_changes(session, true)
+
+  state.root_removal_session = nil
+  Jobs.finish(session.job_token, true)
+  save_libraries()
+  save_database_changes()
+  set_status(string.format(
+    "已移除%s：%s（%d 个素材）",
+    session.library_id and "音效库" or "来源路径",
+    session.label,
+    #session.filter_job.removed
+  ))
+end
+
+function process_root_removal()
+  local session = state.root_removal_session
+  if not session then return end
+  if session.phase == "rollback" then
+    finish_root_removal_rollback(session)
+    return
+  end
+  if session.job_token.cancel_requested then
+    cancel_root_removal(session, "canceled")
+    return
+  end
+
+  if session.phase == "filter" then
+    local complete = step_catalog_filter_job(
+      session.filter_job,
+      ROOT_REMOVAL_ASSETS_PER_FRAME,
+      function(asset)
+        return asset_is_in_removed_roots(asset, session.roots)
+      end,
+      function(asset) return path_key(asset.path) end,
+      reaper.time_precise() + ROOT_REMOVAL_FRAME_BUDGET,
+      reaper.time_precise
+    )
+    if not complete then return end
+    begin_root_removal_collection_filter(session)
+  end
+
+  local deadline = reaper.time_precise() + ROOT_REMOVAL_FRAME_BUDGET
+  if session.phase == "collections" then
+    if not step_root_removal_collection_filter(session, deadline) then return end
+    begin_root_removal_project_usage_filter(session)
+  end
+  if session.phase == "project_usage" then
+    if not step_root_removal_project_usage_filter(session, deadline) then return end
+    session.phase = "cleanup"
+    session.cleanup_index = 1
+  end
+
+  local removed = session.filter_job.removed
+  local last = math.min(
+    #removed,
+    session.cleanup_index + ROOT_REMOVAL_ASSETS_PER_FRAME - 1
+  )
+  for index = session.cleanup_index, last do
+    capture_root_removal_record(session, removed[index])
+  end
+  session.cleanup_index = last + 1
+  if session.cleanup_index <= #removed then return end
+  commit_root_removal(session)
+end
+
+function remove_root(root)
+  local record = type(root) == "table"
+    and root
+    or root_record_for_path(root)
+  if not record then return false end
+  return start_root_removal({ record }, nil)
 end
 
 function relative_path_from_root(path, root)
@@ -14394,11 +19134,33 @@ function relative_path_from_root(path, root)
 end
 
 function replace_path_in_order(order, old_key, new_path)
-  for index, path in ipairs(order or {}) do
-    if path_key(path) == old_key then
+  local changed = 0
+  local new_key = path_key(new_path)
+  local seen_new = false
+  local index = 1
+
+  while index <= #(order or {}) do
+    local key = path_key(order[index])
+    if key == old_key then
       order[index] = new_path
+      key = new_key
+      changed = changed + 1
+    end
+
+    if key == new_key then
+      if seen_new then
+        table.remove(order, index)
+        changed = changed + 1
+      else
+        seen_new = true
+        index = index + 1
+      end
+    else
+      index = index + 1
     end
   end
+
+  return changed
 end
 
 function migrate_path_references(old_path, new_path)
@@ -14426,7 +19188,9 @@ function migrate_path_references(old_path, new_path)
     state.last_session_played[new_key] = true
   end
 
-  replace_path_in_order(state.recent, old_key, new_path)
+  if replace_path_in_order(state.recent, old_key, new_path) > 0 then
+    state.config_dirty = true
+  end
 
   if state.selected_path and path_key(state.selected_path) == old_key then
     state.selected_path = new_path
@@ -14438,9 +19202,13 @@ function migrate_path_references(old_path, new_path)
 
   for _, collection in ipairs(state.collections or {}) do
     if collection.items and collection.items[old_key] then
+      local target_existed = collection.items[new_key] ~= nil
       collection.items[old_key] = nil
       collection.items[new_key] = new_path
       replace_path_in_order(collection.order, old_key, new_path)
+      if target_existed then
+        collection.count = math.max(0, (collection.count or 1) - 1)
+      end
       state.collections_dirty = true
     end
   end
@@ -14475,8 +19243,21 @@ function migrate_path_references(old_path, new_path)
     local entry = bucket.assets and bucket.assets[old_key]
     if entry then
       bucket.assets[old_key] = nil
-      entry.path = new_path
-      bucket.assets[new_key] = entry
+      local existing = bucket.assets[new_key]
+      if existing and existing ~= entry then
+        local entry_last = tonumber(entry.last_used) or 0
+        local existing_last = tonumber(existing.last_used) or 0
+        existing.count = (tonumber(existing.count) or 0)
+          + (tonumber(entry.count) or 0)
+        if entry_last >= existing_last then
+          existing.last_used = entry_last
+          existing.action = entry.action
+        end
+        existing.path = new_path
+      else
+        entry.path = new_path
+        bucket.assets[new_key] = entry
+      end
       state.project_usage_dirty = true
     end
   end
@@ -14504,17 +19285,21 @@ function migrate_asset_path(asset, new_path, record)
   asset.root = record.path
   asset.root_id = record.id
   asset.library_id = record.library_id
+  asset.relative_path = asset_relative_path(
+    asset.path,
+    record.path
+  )
+  ensure_asset_identity(asset)
   local library = state.library_by_id[record.library_id]
   asset.library = library and library.name or asset.library
   asset.missing = not reaper.file_exists(asset.path)
   asset._search_blob = nil
   asset.artwork_checked = false
+  state.database_ordered_assets = nil
 
-  local current_size = asset.missing and 0 or file_size(asset.path)
-  if current_size ~= (tonumber(asset.fingerprint_size) or 0) then
-    asset.fingerprint = ""
-    asset.fingerprint_size = 0
-  end
+  -- A relink changes the physical identity even when the target happens to
+  -- have the same byte length. Never carry a sampled result across paths.
+  clear_asset_fingerprint(asset)
 
   state.by_path[new_key] = asset
   return true
@@ -14533,45 +19318,129 @@ function validate_relinked_root(record, new_root)
   return true
 end
 
-function relink_root(record, supplied_path)
-  if not record then
+function new_relink_plan(record, new_root, job_token)
+  return {
+    record = record,
+    old_root = record.path,
+    new_root = new_root,
+    entries = {},
+    targets = {},
+    conflicts = {},
+    missing = 0,
+    external_artwork = 0,
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    job_token = job_token,
+  }
+end
+
+function process_relink_plan_entry(plan, asset)
+  if asset then
+    if tostring(asset.root_id or "") == tostring(plan.record.id)
+      or path_is_inside(asset.path, plan.record.path) then
+      local relative = tostring(asset.relative_path or "")
+      if relative == "" then
+        relative = asset_relative_path(asset.path, plan.record.path)
+      end
+      local target = relative == ""
+        and plan.new_root
+        or join_path(plan.new_root, relative)
+      local target_key = path_key(target)
+      local conflict = state.by_path[target_key]
+      local duplicate_target = plan.targets[target_key]
+
+      if (conflict and conflict ~= asset) or duplicate_target then
+        plan.conflicts[#plan.conflicts + 1] = target
+      else
+        plan.targets[target_key] = asset
+      end
+
+      if not reaper.file_exists(target) then
+        plan.missing = plan.missing + 1
+      end
+
+      local artwork_relative = relative_path_from_root(
+        asset.artwork_path or "",
+        plan.record.path
+      )
+      if tostring(asset.artwork_path or "") ~= ""
+        and not artwork_relative then
+        plan.external_artwork = plan.external_artwork + 1
+      end
+
+      plan.entries[#plan.entries + 1] = {
+        asset = asset,
+        old_path = asset.path,
+        target = target,
+        old_artwork = asset.artwork_path or "",
+        artwork_relative = artwork_relative,
+      }
+    end
+  end
+end
+
+function cancel_relink_plan(session, reason)
+  if not session then return end
+  state.relink_plan_session = nil
+  Jobs.cancel(session.job_token)
+  Jobs.finish(session.job_token, true, reason or "canceled")
+  set_status("已取消来源重定位计划")
+end
+
+function confirm_relink_plan(plan)
+  local message = string.format(
+    "来源重定位预览\n\n%s\n→ %s\n\n迁移：%d\n缺失：%d\n冲突：%d\n外部封面：%d",
+    plan.old_root,
+    plan.new_root,
+    math.max(0, #plan.entries - plan.missing - #plan.conflicts),
+    plan.missing,
+    #plan.conflicts,
+    plan.external_artwork
+  )
+
+  if #plan.conflicts > 0 then
+    local preview = {}
+    for index = 1, math.min(8, #plan.conflicts) do
+      preview[#preview + 1] = plan.conflicts[index]
+    end
+    reaper.MB(
+      message .. "\n\n冲突路径：\n" .. table.concat(preview, "\n"),
+      "来源重定位冲突",
+      0
+    )
     return false
   end
 
-  local new_root = supplied_path
-    or choose_folder("重新定位来源路径", record.path)
+  return reaper.MB(
+    message
+      .. "\n\n确认后将先创建恢复快照，再一次性迁移全部引用。是否继续？",
+    "确认来源重定位",
+    4
+  ) == 6
+end
 
-  if not new_root or trim(new_root) == "" then
-    return false
-  end
-
-  new_root = canonical_source_path(new_root)
-  if not directory_exists(new_root) then
-    set_status("新来源目录不存在或无法访问：" .. new_root, true)
-    return false
-  end
-
-  local valid, conflict = validate_relinked_root(record, new_root)
-  if not valid then
-    set_status("新来源目录与现有来源重叠：" .. conflict.path, true)
+function commit_relink_plan(plan)
+  local record = plan.record
+  local new_root = plan.new_root
+  if not create_data_backup("source_relink", true) then
+    set_status("无法创建重定位恢复快照，未修改任何路径", true)
+    Jobs.finish(plan.job_token, false, "backup failed")
     return false
   end
 
   stop_preview()
   local old_root = record.path
+  local old_root_filter = state.root_filter
+  local old_record_artwork = record.artwork_path or ""
+  local old_canonical_path = record.canonical_path or ""
+  local old_volume_label = record.volume_label or ""
+  local old_volume_serial = record.volume_serial or ""
+  local old_last_seen = record.last_seen or 0
   local root_artwork_relative = relative_path_from_root(
     record.artwork_path or "",
     old_root
   )
-  local candidates = {}
-
-  for _, asset in ipairs(state.assets) do
-    if tostring(asset.root_id or "") == tostring(record.id)
-      or path_is_inside(asset.path, old_root) then
-      candidates[#candidates + 1] = asset
-    end
-  end
-
   record.path = new_root
   if root_artwork_relative then
     record.artwork_path = root_artwork_relative == ""
@@ -14584,25 +19453,20 @@ function relink_root(record, supplied_path)
 
   local moved = 0
   local unresolved = 0
-  for _, asset in ipairs(candidates) do
-    local relative = relative_path_from_root(asset.path, old_root)
-    if relative then
-      local target = relative == "" and new_root or join_path(new_root, relative)
-      local artwork_relative = relative_path_from_root(
-        asset.artwork_path or "",
-        old_root
-      )
-      if migrate_asset_path(asset, target, record) then
-        if artwork_relative then
-          asset.artwork_path = artwork_relative == ""
+  local moved_entries = {}
+  for _, entry in ipairs(plan.entries) do
+    local asset = entry.asset
+    if migrate_asset_path(asset, entry.target, record) then
+        if entry.artwork_relative then
+          asset.artwork_path = entry.artwork_relative == ""
             and new_root
-            or join_path(new_root, artwork_relative)
+            or join_path(new_root, entry.artwork_relative)
         end
         moved = moved + 1
-        if not reaper.file_exists(target) then
+        moved_entries[#moved_entries + 1] = entry
+        if not reaper.file_exists(entry.target) then
           unresolved = unresolved + 1
         end
-      end
     end
   end
 
@@ -14612,21 +19476,140 @@ function relink_root(record, supplied_path)
   end
 
   state.libraries_dirty = true
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   state.results_dirty = true
-  state.library_counts_dirty = true
+  invalidate_library_counts()
   invalidate_folder_navigation()
   state.missing_assets = {}
   state.missing_asset_count = 0
-  save_libraries()
-  save_database()
+  local libraries_saved = save_libraries()
+  local database_saved = libraries_saved and save_database()
+
+  if not libraries_saved or not database_saved then
+    record.path = old_root
+    record.artwork_path = old_record_artwork
+    record.canonical_path = old_canonical_path
+    record.volume_label = old_volume_label
+    record.volume_serial = old_volume_serial
+    record.last_seen = old_last_seen
+    rebuild_library_indexes()
+    for index = #moved_entries, 1, -1 do
+      local entry = moved_entries[index]
+      migrate_asset_path(entry.asset, entry.old_path, record)
+      entry.asset.artwork_path = entry.old_artwork
+    end
+    state.root_filter = old_root_filter
+    state.libraries_dirty = true
+    mark_database_snapshot_dirty()
+    save_libraries()
+    save_database()
+    set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    Jobs.finish(plan.job_token, false, "commit failed")
+    return false
+  end
   set_status(string.format("来源已重定位：迁移 %d 条路径，待重新扫描 %d 条", moved, unresolved))
+  Jobs.finish(plan.job_token, true)
   start_scan("重定位后增量扫描", { new_root }, { silent = unresolved == 0 })
+  return true
+end
+
+function process_relink_plan()
+  local plan = state.relink_plan_session
+  if not plan or not can_run_heavy_job() then return end
+  if plan.job_token.cancel_requested then
+    cancel_relink_plan(plan, "user canceled")
+    return
+  end
+  if plan.assets ~= state.assets
+    or state.root_by_id[plan.record.id] ~= plan.record then
+    cancel_relink_plan(plan, "catalog changed")
+    set_status("素材库结构已变化，请重新开始来源重定位", true)
+    return
+  end
+
+  local processed = 0
+  local deadline = reaper.time_precise() + RELINK_PLAN_FRAME_BUDGET
+  while plan.index <= plan.total
+    and processed < RELINK_PLAN_FILES_PER_FRAME
+    and reaper.time_precise() < deadline do
+    process_relink_plan_entry(plan, plan.assets[plan.index])
+    plan.index = plan.index + 1
+    processed = processed + 1
+  end
+  if plan.index <= plan.total then return end
+
+  plan.assets = nil
+  state.relink_plan_session = nil
+  if not confirm_relink_plan(plan) then
+    Jobs.finish(plan.job_token, true, "not confirmed")
+    return
+  end
+  commit_relink_plan(plan)
+end
+
+function relink_root(record, supplied_path)
+  if not record then return false end
+  if state.relink_plan_session or state.scan or state.import_session
+    or state.root_removal_session or state.artwork_reset_session
+    or state.precache_session or state.duplicate_scan
+    or state.duplicate_confirmation or state.missing_audit then
+    set_status("请等待当前后台任务完成后再重新定位来源", true)
+    return false
+  end
+
+  local new_root = supplied_path
+    or choose_folder("重新定位来源路径", record.path)
+  if not new_root or trim(new_root) == "" then return false end
+  new_root = canonical_source_path(new_root)
+  if not directory_exists(new_root) then
+    set_status("新来源目录不存在或无法访问：" .. new_root, true)
+    return false
+  end
+  local valid, conflict = validate_relinked_root(record, new_root)
+  if not valid then
+    set_status("新来源目录与现有来源重叠：" .. conflict.path, true)
+    return false
+  end
+
+  cancel_auxiliary_save("source relink")
+
+  local job_token = Jobs.begin(
+    "relink_plan",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return false
+  end
+  state.relink_plan_session = new_relink_plan(
+    record,
+    new_root,
+    job_token
+  )
+  set_status(string.format(
+    "正在生成来源重定位计划：0 / %d",
+    #state.assets
+  ))
   return true
 end
 
 function start_missing_audit()
   if state.missing_audit then
+    return
+  end
+
+  if state.scan or state.import_session or state.precache_session
+    or state.duplicate_scan or state.duplicate_confirmation then
+    set_status("请等待当前后台任务完成", true)
+    return
+  end
+
+  local job_token =
+    Jobs.begin("missing_audit", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
     return
   end
 
@@ -14647,13 +19630,22 @@ function start_missing_audit()
     missing = 0,
     checked = 0,
     offline = offline,
+    job_token = job_token,
   }
   set_status("正在检查缺失文件…")
 end
 
 function process_missing_audit()
   local session = state.missing_audit
-  if not session or not can_run_heavy_job() then
+  if not session or state.scan or state.import_session
+    or state.precache_session or not can_run_heavy_job() then
+    return
+  end
+
+  if session.job_token
+    and session.job_token.cancel_requested then
+    state.missing_audit = nil
+    Jobs.finish(session.job_token, true, "canceled")
     return
   end
 
@@ -14677,6 +19669,7 @@ function process_missing_audit()
   if session.index > session.total then
     state.missing_asset_count = session.missing
     state.missing_audit = nil
+    Jobs.finish(session.job_token, true)
     state.results_dirty = true
     set_status(string.format("缺失检查完成：%d 个离线来源，%d 个缺失素材", #state.offline_roots, state.missing_asset_count), state.missing_asset_count > 0)
   end
@@ -14709,120 +19702,370 @@ function start_duplicate_scan()
     return
   end
 
-  local size_groups = {}
-  for _, asset in ipairs(state.assets) do
-    local size = tonumber(asset.size) or 0
-    if asset.ready and size > 0 then
-      local group = size_groups[size]
-      if not group then
-        group = {}
-        size_groups[size] = group
-      end
-      group[#group + 1] = asset
-    end
+  if state.scan or state.import_session or state.precache_session
+    or state.missing_audit or state.duplicate_confirmation then
+    set_status("请等待当前后台任务完成", true)
+    return
   end
 
-  local candidates = {}
-  for _, group in pairs(size_groups) do
-    if #group > 1 then
-      for _, asset in ipairs(group) do
-        candidates[#candidates + 1] = asset
-      end
-    end
+  local job_token =
+    Jobs.begin("duplicate_scan", "catalog_exclusive", false)
+
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
   end
 
   state.duplicate_groups = {}
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
   state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
   state.duplicate_scan = {
-    candidates = candidates,
+    phase = "sizes",
+    assets = state.assets,
+    asset_index = 1,
+    asset_total = #state.assets,
+    size_groups = {},
+    candidates = {},
     index = 1,
-    total = #candidates,
+    total = 0,
     failed = 0,
+    fingerprint_groups = {},
+    duplicate_groups = {},
+    duplicate_lookup = {},
+    duplicate_asset_count = 0,
+    job_token = job_token,
   }
-  set_status(string.format("正在检查重复素材：%d 个同尺寸候选", #candidates))
+  set_status(string.format("正在读取文件大小：0 / %d", #state.assets))
+end
+
+function close_duplicate_confirmation_session(session)
+  if session and session.comparison then
+    close_duplicate_comparison(session.comparison)
+    session.comparison = nil
+  end
+end
+
+function finish_duplicate_confirmation(session)
+  close_duplicate_confirmation_session(session)
+  state.duplicate_confirmed_groups = session.confirmed_groups
+  state.duplicate_confirmed_lookup = session.confirmed_lookup
+  state.duplicate_confirmed_asset_count = session.confirmed_assets
+  state.duplicate_confirmation_failures = session.failures
+  state.duplicate_confirmation_failure_count = session.failure_count
+  state.duplicate_confirmation = nil
+  Jobs.finish(session.job_token, true)
+  state.results_dirty = true
+  set_status(string.format(
+    "完整确认完成：%d 组，%d 个素材，读取失败 %d",
+    #session.confirmed_groups,
+    session.confirmed_assets,
+    session.failure_count
+  ), session.failure_count > 0)
+end
+
+function start_duplicate_confirmation()
+  if state.duplicate_confirmation or #state.duplicate_groups == 0 then
+    return
+  end
+  local job_token = Jobs.begin(
+    "duplicate_confirmation",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return
+  end
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
+  state.duplicate_confirmation = {
+    groups = state.duplicate_groups,
+    group_index = 1,
+    asset_index = 1,
+    representative_index = 1,
+    partitions = {},
+    comparison = nil,
+    confirmed_groups = {},
+    confirmed_lookup = {},
+    confirmed_assets = 0,
+    failures = {},
+    failure_count = 0,
+    comparisons_finished = 0,
+    total_assets = state.duplicate_asset_count,
+    job_token = job_token,
+  }
+  set_status("正在逐字节确认重复候选")
+end
+
+function mark_duplicate_confirmation_failure(session, asset)
+  local key = path_key(asset.path)
+  if not session.failures[key] then
+    session.failures[key] = asset
+    session.failure_count = session.failure_count + 1
+  end
+end
+
+function finalize_duplicate_confirmation_group(session, candidate_group)
+  for partition_index, partition in ipairs(session.partitions) do
+    if #partition.assets > 1 then
+      local identity = tostring(candidate_group.fingerprint)
+        .. ":" .. tostring(partition_index)
+      local confirmed = {
+        fingerprint = identity,
+        assets = partition.assets,
+        count = #partition.assets,
+        confirmed = true,
+      }
+      session.confirmed_groups[#session.confirmed_groups + 1] = confirmed
+      session.confirmed_assets = session.confirmed_assets + #partition.assets
+      for _, asset in ipairs(partition.assets) do
+        session.confirmed_lookup[path_key(asset.path)] = identity
+      end
+    end
+  end
+end
+
+function advance_duplicate_confirmation_asset(session)
+  session.asset_index = session.asset_index + 1
+  session.representative_index = 1
+  session.comparison = nil
+end
+
+function process_duplicate_confirmation()
+  local session = state.duplicate_confirmation
+  if not session or not can_run_heavy_job() then
+    return
+  end
+  if session.job_token.cancel_requested then
+    close_duplicate_confirmation_session(session)
+    state.duplicate_confirmation = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    return
+  end
+
+  local candidate_group = session.groups[session.group_index]
+  if not candidate_group then
+    finish_duplicate_confirmation(session)
+    return
+  end
+  local asset = candidate_group.assets[session.asset_index]
+  if not asset then
+    finalize_duplicate_confirmation_group(session, candidate_group)
+    session.group_index = session.group_index + 1
+    session.asset_index = 1
+    session.representative_index = 1
+    session.partitions = {}
+    return
+  end
+  if #session.partitions == 0 then
+    session.partitions[1] = { representative = asset, assets = { asset } }
+    advance_duplicate_confirmation_asset(session)
+    return
+  end
+
+  local partition = session.partitions[session.representative_index]
+  if not partition then
+    session.partitions[#session.partitions + 1] = {
+      representative = asset,
+      assets = { asset },
+    }
+    advance_duplicate_confirmation_asset(session)
+    return
+  end
+  if not session.comparison then
+    local comparison, open_error = begin_duplicate_comparison(
+      partition.representative.path,
+      asset.path
+    )
+    if not comparison then
+      if open_error == "left_open" then
+        for _, previous in ipairs(partition.assets) do
+          mark_duplicate_confirmation_failure(session, previous)
+        end
+        table.remove(session.partitions, session.representative_index)
+      else
+        mark_duplicate_confirmation_failure(session, asset)
+        advance_duplicate_confirmation_asset(session)
+      end
+      return
+    end
+    session.comparison = comparison
+  end
+
+  local result = step_duplicate_comparison(session.comparison)
+  if result == "pending" then
+    return
+  end
+  session.comparisons_finished = session.comparisons_finished + 1
+  session.comparison = nil
+  if result == "equal" then
+    partition.assets[#partition.assets + 1] = asset
+    advance_duplicate_confirmation_asset(session)
+  elseif result == "different" then
+    session.representative_index = session.representative_index + 1
+  else
+    mark_duplicate_confirmation_failure(session, asset)
+    mark_duplicate_confirmation_failure(session, partition.representative)
+    advance_duplicate_confirmation_asset(session)
+  end
 end
 
 function finish_duplicate_scan(session)
-  local groups = {}
-  for _, asset in ipairs(session.candidates) do
-    local fingerprint = tostring(asset.fingerprint or "")
-    if fingerprint ~= "" then
-      local group = groups[fingerprint]
-      if not group then
-        group = {}
-        groups[fingerprint] = group
-      end
-      group[#group + 1] = asset
-    end
-  end
-
-  local duplicates = {}
-  local lookup = {}
-  local asset_count = 0
-  for fingerprint, group in pairs(groups) do
-    if #group > 1 then
-      table.sort(group, function(a, b) return path_key(a.path) < path_key(b.path) end)
-      duplicates[#duplicates + 1] = { fingerprint = fingerprint, assets = group, count = #group }
-      asset_count = asset_count + #group
-      for _, asset in ipairs(group) do
-        lookup[path_key(asset.path)] = fingerprint
-      end
-    end
-  end
-  table.sort(duplicates, function(a, b)
-    if a.count == b.count then return a.fingerprint < b.fingerprint end
-    return a.count > b.count
-  end)
+  local duplicates = session.sorted_groups or session.duplicate_groups or {}
+  local lookup = session.duplicate_lookup or {}
+  local asset_count = session.duplicate_asset_count or 0
 
   state.duplicate_groups = duplicates
   state.duplicate_lookup = lookup
   state.duplicate_group_count = #duplicates
   state.duplicate_asset_count = asset_count
   state.duplicate_scan = nil
+  Jobs.finish(session.job_token, true)
   state.results_dirty = true
-  state.db_dirty = true
-  set_status(string.format("重复检查完成：%d 组，%d 个素材", #duplicates, asset_count))
+  mark_database_snapshot_dirty()
+  set_status(string.format("候选检查完成：%d 组，%d 个素材", #duplicates, asset_count))
 end
 
 function process_duplicate_scan()
   local session = state.duplicate_scan
-  if not session or not can_run_heavy_job() then
+  if not session or state.scan or state.import_session
+    or state.precache_session or not can_run_heavy_job() then
+    return
+  end
+
+  if session.job_token
+    and session.job_token.cancel_requested then
+    state.duplicate_scan = nil
+    Jobs.finish(session.job_token, true, "canceled")
+    return
+  end
+
+  if session.phase == "sizes" then
+    local processed = 0
+    local deadline = reaper.time_precise()
+      + DUPLICATE_STAT_FRAME_BUDGET
+    while session.asset_index <= session.asset_total
+      and processed < DUPLICATE_STAT_FILES_PER_FRAME
+      and reaper.time_precise() < deadline do
+      local asset = session.assets[session.asset_index]
+      session.asset_index = session.asset_index + 1
+      processed = processed + 1
+      local size = asset and asset.ready and file_size(asset.path) or 0
+      if asset and size > 0 then
+        if size ~= (tonumber(asset.size) or 0) then
+          asset.size = size
+          clear_asset_fingerprint(asset)
+          mark_asset_database_change(asset)
+        end
+        add_duplicate_size_candidate(
+          session.size_groups,
+          session.candidates,
+          size,
+          asset
+        )
+      end
+    end
+    if session.asset_index > session.asset_total then
+      session.assets = nil
+      session.size_groups = nil
+      session.phase = "fingerprints"
+      session.index = 1
+      session.total = #session.candidates
+      set_status(string.format(
+        "正在检查重复候选：%d 个同尺寸文件",
+        session.total
+      ))
+    end
+    return
+  end
+
+  if session.phase == "sort" then
+    local result, sorted = step_incremental_result_job(
+      session.sort_job,
+      DUPLICATE_SORT_ITEMS_PER_FRAME
+    )
+    if result == "complete" then
+      session.sorted_groups = sorted
+      session.sort_job = nil
+      finish_duplicate_scan(session)
+    end
     return
   end
 
   local asset = session.candidates[session.index]
   if not asset then
-    finish_duplicate_scan(session)
+    session.candidates = nil
+    session.fingerprint_groups = nil
+    session.phase = "sort"
+    session.sort_job = begin_incremental_result_job(
+      session.duplicate_groups,
+      function() return true end,
+      function(left, right)
+        if left.count == right.count then
+          return left.fingerprint < right.fingerprint
+        end
+        return left.count > right.count
+      end,
+      nil,
+      nil
+    )
     return
   end
 
   session.index = session.index + 1
-  local size = tonumber(asset.size) or file_size(asset.path)
-  local cached = tostring(asset.fingerprint or "") ~= ""
-    and tonumber(asset.fingerprint_size) == size
-
-  if not cached then
-    local fingerprint = sampled_file_fingerprint(asset.path, size)
-    if fingerprint then
-      asset.fingerprint = fingerprint
-      asset.fingerprint_size = size
-    else
-      session.failed = session.failed + 1
+  local size = file_size(asset.path)
+  if size <= 0 then
+    clear_asset_fingerprint(asset)
+    session.failed = session.failed + 1
+    return
+  end
+  -- A size-only cache cannot detect an external replacement with identical
+  -- length. An explicit audit therefore resamples every candidate.
+  local before = duplicate_file_stat(asset.path, size)
+  local fingerprint = sampled_file_fingerprint(asset.path, size)
+  local after = duplicate_file_stat(asset.path, size)
+  local changed_during_read = duplicate_file_changed_since(before, after)
+  if fingerprint and not changed_during_read then
+    record_asset_fingerprint(asset, fingerprint, after)
+    local became_duplicate = add_duplicate_fingerprint_asset(
+      session.fingerprint_groups,
+      session.duplicate_groups,
+      session.duplicate_lookup,
+      fingerprint,
+      asset,
+      path_key
+    )
+    if became_duplicate then
+      local group = session.fingerprint_groups[fingerprint]
+      if group.count == 2 then
+        session.duplicate_asset_count =
+          session.duplicate_asset_count + 2
+      else
+        session.duplicate_asset_count =
+          session.duplicate_asset_count + 1
+      end
     end
+  else
+    clear_asset_fingerprint(asset)
+    session.failed = session.failed + 1
   end
 
-  if session.index > session.total then
-    finish_duplicate_scan(session)
-  end
 end
 
 function remove_library(library_id)
   local library = state.library_by_id[library_id]
 
   if not library then
-    return
+    return false
   end
 
   local roots = {}
@@ -14831,25 +20074,7 @@ function remove_library(library_id)
     roots[#roots + 1] = record
   end
 
-  for _, record in ipairs(roots) do
-    remove_root(record)
-  end
-
-  for index = #state.libraries, 1, -1 do
-    if state.libraries[index].id == library_id then
-      table.remove(state.libraries, index)
-      break
-    end
-  end
-
-  if state.library_filter_id == library_id then
-    state.library_filter_id = nil
-  end
-
-  rebuild_library_indexes()
-  refresh_all_asset_library_bindings()
-  state.libraries_dirty = true
-  set_status("已移除逻辑音效库：" .. library.name)
+  return start_root_removal(roots, library_id)
 end
 
 function roots_for_library(library_id)
@@ -14926,8 +20151,6 @@ function reset_interface_settings()
   state.transfer_variant_gains = ""
   state.transfer_variant_include_reverse = false
   state.transfer_variant_auto_suffix = true
-  state.transfer_job = nil
-  state.transfer_cancel_requested = false
   state.transfer_last_output = ""
   state.transfer_last_outputs = {}
   state.transfer_last_error = ""
@@ -15031,6 +20254,66 @@ function reset_interface_settings()
   set_status("已重置界面与试听设置")
 end
 
+function cancel_catalog_jobs(reason)
+  reason = tostring(reason or "canceled")
+  cancel_auxiliary_save(reason)
+  cancel_database_snapshot(reason)
+  if state.root_removal_session then
+    local removal = state.root_removal_session
+    for index = #removal.cleanup_records, 1, -1 do
+      restore_root_removal_record(removal.cleanup_records[index])
+    end
+    flush_root_removal_asset_changes(removal, false)
+    Jobs.cancel(removal.job_token)
+    Jobs.finish(removal.job_token, true, reason)
+    state.root_removal_session = nil
+  end
+
+  if state.transfer_job then
+    finish_transfer_job(state.transfer_job, true)
+  end
+
+  if state.import_session
+    and state.import_session.current
+    and state.import_session.current.wave_job then
+    destroy_wave_job(
+      state.import_session.current.wave_job
+    )
+  end
+
+  local catalog_job = state.import_session
+      and state.import_session.job_token
+    or state.scan
+      and state.scan.job_token
+
+  Jobs.cancel(catalog_job)
+  Jobs.finish(catalog_job, true, reason)
+  state.scan = nil
+  state.import_session = nil
+  state.import_cancel_requested = false
+
+  local maintenance_fields = {
+    "artwork_reset_session",
+    "cache_verify_session",
+    "missing_audit",
+    "duplicate_scan",
+    "duplicate_confirmation",
+    "relink_plan_session",
+  }
+
+  for _, field in ipairs(maintenance_fields) do
+    local session = state[field]
+
+    if session and session.job_token then
+      close_duplicate_confirmation_session(session)
+      Jobs.cancel(session.job_token)
+      Jobs.finish(session.job_token, true, reason)
+    end
+
+    state[field] = nil
+  end
+end
+
 function reset_database_keep_roots()
   local answer = reaper.MB(
     "将清空 PsyReaSFX 数据库和波形缓存，"
@@ -15044,21 +20327,15 @@ function reset_database_keep_roots()
   end
 
   stop_preview()
-
-  if state.import_session
-    and state.import_session.current
-    and state.import_session.current.wave_job then
-    destroy_wave_job(
-      state.import_session.current.wave_job
-    )
-  end
-
-  state.scan = nil
-  state.import_session = nil
-  state.import_cancel_requested = false
+  cancel_catalog_jobs("database reset")
   state.assets = {}
   state.by_path = {}
+  state.database_ordered_assets = nil
+  state.database_generation = 0
+  clear_asset_changes(state.database_changes)
   state.results = {}
+  state.results_job = nil
+  state.results_dirty = true
   state.favorites = {}
   state.recent = {}
   state.active_collection_id = nil
@@ -15066,9 +20343,11 @@ function reset_database_keep_roots()
   clear_row_selection()
   clear_wave_cache()
   os.remove(DATABASE_FILE)
+  os.remove(DATABASE_JOURNAL_FILE)
   os.remove(HISTORY_FILE)
   os.remove(LAST_PLAYED_SESSION_FILE)
   os.remove(SCAN_CHECKPOINT_FILE)
+  state.clear_scan_checkpoint_after_database_save = false
   os.remove(FAILED_TASKS_FILE)
   state.failed_tasks = {}
   state.failed_tasks_dirty = false
@@ -15079,11 +20358,17 @@ function reset_database_keep_roots()
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
   state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
   state.history_dirty = false
+  state.preview_history_assets = {}
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
-  state.db_dirty = true
+  mark_database_snapshot_dirty()
   state.config_dirty = true
   save_config()
 
@@ -15107,9 +20392,7 @@ function factory_reset()
   end
 
   stop_preview()
-  state.scan = nil
-  state.import_session = nil
-  state.import_cancel_requested = false
+  cancel_catalog_jobs("factory reset")
   state.roots = {}
   state.libraries = {}
   state.library_by_id = {}
@@ -15119,7 +20402,12 @@ function factory_reset()
   state.library_filter_id = nil
   state.assets = {}
   state.by_path = {}
+  state.database_ordered_assets = nil
+  state.database_generation = 0
+  clear_asset_changes(state.database_changes)
   state.results = {}
+  state.results_job = nil
+  state.results_dirty = true
   state.favorites = {}
   state.recent = {}
   state.collections = {}
@@ -15137,6 +20425,7 @@ function factory_reset()
   os.remove(CONFIG_FILE)
   os.remove(LIBRARIES_FILE)
   os.remove(DATABASE_FILE)
+  os.remove(DATABASE_JOURNAL_FILE)
   os.remove(COLLECTIONS_FILE)
   os.remove(SAVED_SEARCHES_FILE)
   os.remove(HISTORY_FILE)
@@ -15144,6 +20433,7 @@ function factory_reset()
   os.remove(REGIONS_FILE)
   os.remove(LOUDNESS_FILE)
   os.remove(SCAN_CHECKPOINT_FILE)
+  state.clear_scan_checkpoint_after_database_save = false
   os.remove(FAILED_TASKS_FILE)
   os.remove(BACKUP_STATE_FILE)
   os.remove(PROJECT_USAGE_FILE)
@@ -15153,6 +20443,7 @@ function factory_reset()
   state.collections_dirty = false
   state.searches_dirty = false
   state.history_dirty = false
+  state.preview_history_assets = {}
   state.session_played = {}
   state.last_session_played = {}
   state.session_played_dirty = false
@@ -15168,6 +20459,11 @@ function factory_reset()
   state.duplicate_lookup = {}
   state.duplicate_group_count = 0
   state.duplicate_asset_count = 0
+  state.duplicate_confirmed_groups = {}
+  state.duplicate_confirmed_lookup = {}
+  state.duplicate_confirmed_asset_count = 0
+  state.duplicate_confirmation_failures = {}
+  state.duplicate_confirmation_failure_count = 0
 
   state.wave_cache_dir =
     DEFAULT_WAVE_CACHE_DIR
@@ -16924,22 +22220,35 @@ function end_module()
 end
 
 function library_asset_count(library_id)
-  if state.library_counts_dirty and not state.scan then
-    state.library_asset_counts = {}
+  return state.library_asset_counts[library_id] or 0
+end
 
-    for _, asset in ipairs(state.assets) do
-      local id = asset.library_id or ""
-
-      if id ~= "" then
-        state.library_asset_counts[id] =
-          (state.library_asset_counts[id] or 0) + 1
-      end
-    end
-
-    state.library_counts_dirty = false
+function process_library_count_rebuild()
+  if not state.library_counts_dirty then
+    state.library_counts_job = nil
+    return
+  end
+  if state.scan or state.import_session then
+    state.library_counts_job = nil
+    return
   end
 
-  return state.library_asset_counts[library_id] or 0
+  local job = state.library_counts_job
+  if not job then
+    job = new_library_count_job()
+    state.library_counts_job = job
+  end
+
+  local complete, counts = step_library_count_job(
+    job,
+    state.assets,
+    LIBRARY_COUNT_ASSETS_PER_FRAME
+  )
+  if complete then
+    state.library_asset_counts = counts
+    state.library_counts_dirty = false
+    state.library_counts_job = nil
+  end
 end
 
 function rename_library(library)
@@ -17297,14 +22606,11 @@ function draw_library_manager_popup()
       ImGui.SameLine(ctx)
 
       if dark_button("重建", 54) then
-        for _, asset in ipairs(state.assets) do
-          if path_is_inside(asset.path, record.path) then
-            asset.ready = false
-            asset.indexed = false
-          end
-        end
-
-        start_scan("重建 " .. basename(record.path), { record.path })
+        start_scan(
+          "重建 " .. basename(record.path),
+          { record.path },
+          { force_rebuild = true }
+        )
       end
 
       ImGui.SameLine(ctx)
@@ -17334,8 +22640,6 @@ function draw_library_manager_popup()
 
     if answer == 6 then
       remove_root(remove_root_record)
-      save_libraries()
-      save_database()
     end
   end
 
@@ -17351,8 +22655,6 @@ function draw_library_manager_popup()
 
     if answer == 6 then
       remove_library(remove_library_id)
-      save_libraries()
-      save_database()
     end
   end
 
@@ -18241,11 +23543,41 @@ function draw_sidebar()
 
   if state.duplicate_asset_count > 0 then
     sidebar_item(
-      string.format("重复素材  %d", state.duplicate_asset_count),
+      string.format("重复候选  %d", state.duplicate_asset_count),
       state.view == "duplicates"
         and not state.active_collection_id,
       function()
         state.view = "duplicates"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.config_dirty = true
+      end
+    )
+  end
+
+  if state.duplicate_confirmed_asset_count > 0 then
+    sidebar_item(
+      string.format("已确认相同  %d", state.duplicate_confirmed_asset_count),
+      state.view == "duplicates_confirmed",
+      function()
+        state.view = "duplicates_confirmed"
+        state.active_collection_id = nil
+        state.root_filter = nil
+        state.library_filter_id = nil
+        state.results_dirty = true
+        state.config_dirty = true
+      end
+    )
+  end
+
+  if state.duplicate_confirmation_failure_count > 0 then
+    sidebar_item(
+      string.format("确认读取失败  %d", state.duplicate_confirmation_failure_count),
+      state.view == "duplicate_failures",
+      function()
+        state.view = "duplicate_failures"
         state.active_collection_id = nil
         state.root_filter = nil
         state.library_filter_id = nil
@@ -19160,10 +24492,16 @@ function draw_import_progress()
   local visible_import =
     state.import_session
     and not state.import_session.silent
+  local visible_relink = state.relink_plan_session
+  local visible_artwork_reset = state.artwork_reset_session
+  local visible_root_removal = state.root_removal_session
 
   if not visible_scan
     and not visible_import
-    and not state.precache_session then
+    and not state.precache_session
+    and not visible_relink
+    and not visible_artwork_reset
+    and not visible_root_removal then
     return
   end
 
@@ -19180,30 +24518,138 @@ function draw_import_progress()
     72,
     ImGui.ChildFlags_Borders
   ) then
-    if state.precache_session then
+    if visible_root_removal then
+      local phase = visible_root_removal.phase
+      local completed = 0
+      local total = 0
+      local label = "筛选目录素材"
+      if phase == "filter" then
+        completed = math.max(
+          0,
+          (visible_root_removal.filter_job.index or 1) - 1
+        )
+        total = visible_root_removal.filter_job.total or 0
+      elseif phase == "collections" then
+        label = "清理集合引用"
+        completed = visible_root_removal.collection_processed or 0
+        total = visible_root_removal.collection_total or 0
+      elseif phase == "project_usage" then
+        label = string.format(
+          "清理工程使用记录（已检查 %d 条）",
+          visible_root_removal.project_usage_processed or 0
+        )
+        completed = math.max(
+          0,
+          (visible_root_removal.project_index or 1) - 1
+        )
+        total = #(visible_root_removal.project_keys or {})
+      elseif phase == "cleanup" then
+        label = "清理素材引用"
+        completed = math.max(0, (visible_root_removal.cleanup_index or 1) - 1)
+        total = #visible_root_removal.filter_job.removed
+      elseif phase == "rollback" then
+        label = "回滚已清理引用"
+        total = #visible_root_removal.cleanup_records
+        completed = math.max(
+          0,
+          total - (visible_root_removal.rollback_index or 0)
+        )
+      else
+        label = "完成事务"
+        completed = 1
+        total = 1
+      end
+      completed = math.min(completed, total)
+      local fraction = total > 0 and completed / total or 1
+      ImGui.Text(ctx, string.format(
+        "正在%s：%s  %d / %d",
+        visible_root_removal.library_id and "移除音效库" or "移除来源",
+        label,
+        completed,
+        total
+      ))
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(ctx, compact(visible_root_removal.label, 80))
+    elseif visible_artwork_reset then
+      local completed = math.min(
+        math.max(0, (visible_artwork_reset.index or 1) - 1),
+        visible_artwork_reset.total or 0
+      )
+      local total = visible_artwork_reset.total or 0
+      local fraction = total > 0 and completed / total or 1
+      ImGui.Text(ctx, string.format(
+        "正在清空 Artwork 缓存  %d / %d  已重置 %d",
+        completed,
+        total,
+        visible_artwork_reset.changed or 0
+      ))
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(ctx, "只清理 PsyReaSFX 缓存，不会删除源图片")
+    elseif visible_relink then
+      local completed = math.min(
+        math.max(0, (visible_relink.index or 1) - 1),
+        visible_relink.total or 0
+      )
+      local total = visible_relink.total or 0
+      local fraction = total > 0 and completed / total or 1
+      ImGui.Text(ctx, string.format(
+        "正在生成来源重定位计划  %d / %d  目标 %d  缺失 %d  冲突 %d",
+        completed,
+        total,
+        #visible_relink.entries,
+        visible_relink.missing,
+        #visible_relink.conflicts
+      ))
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(ctx, compact(
+        visible_relink.old_root .. " → " .. visible_relink.new_root,
+        80
+      ))
+    elseif state.precache_session then
       local session = state.precache_session
       local current_progress =
         session.current
         and session.current.progress
         or 0
 
-      local completed =
-        session.generated
-        + session.cached
-        + session.failed
+      local collecting = session.phase == "collect"
+      local completed = collecting
+        and math.max(0, (session.collect_index or 1) - 1)
+        or session.generated + session.cached + session.failed
+      local total = collecting
+        and (session.source_total or 0) or (session.total or 0)
 
       local fraction =
-        session.total > 0
+        total > 0
         and clamp(
           (completed + current_progress)
-            / session.total,
+            / total,
           0,
           1
         )
-        or 1
+        or 0
 
       local current_name =
-        session.current
+        collecting and "正在整理预缓存范围"
+        or session.current
         and session.current.asset
         and session.current.asset.name
         or "检查现有缓存"
@@ -19211,10 +24657,11 @@ function draw_import_progress()
       ImGui.Text(
         ctx,
         string.format(
-          "高精度预缓存 %d 点  %d / %d  新生成 %d  已有 %d  失败 %d",
+          "%s %d 点  %d / %d  新生成 %d  已有 %d  失败 %d",
+          collecting and "整理高精度预缓存" or "高精度预缓存",
           session.points,
           completed,
-          session.total,
+          total,
           session.generated,
           session.cached,
           session.failed
@@ -19234,26 +24681,64 @@ function draw_import_progress()
         compact(current_name, 80)
       )
     elseif visible_scan then
-      local animated =
-        (reaper.time_precise() * 0.28) % 1
-
-      ImGui.Text(
-        ctx,
-        string.format(
-          "%s：正在扫描文件…  已发现 %d 个音频 / %d 个目录",
-          state.scan.reason,
-          state.scan.files,
-          state.scan.directories
+      local scan = state.scan
+      if scan.phase then
+        local label = "整理扫描结果"
+        local completed = 0
+        local total = 0
+        if scan.phase == "finalize_prune" then
+          label = "整理索引"
+          completed = scan.prune_job and scan.prune_job.processed or 0
+          total = scan.finalize_total or 0
+        elseif scan.phase == "finalize_pending" then
+          label = "整理待分析素材"
+          completed = math.max(0, (scan.pending_index or 1) - 1)
+          total = #scan.new_assets
+        elseif scan.phase == "cancel_collect" then
+          label = "收集待清理素材"
+          completed = math.max(0, (scan.cancel_index or 1) - 1)
+          total = #scan.new_assets
+        else
+          label = "取消并清理扫描"
+          completed = scan.prune_job and scan.prune_job.processed or 0
+          total = scan.cancel_total or 0
+        end
+        completed = math.min(completed, total)
+        local fraction = total > 0 and completed / total or 1
+        ImGui.Text(ctx, string.format(
+          "%s：%s  %d / %d",
+          scan.reason,
+          label,
+          completed,
+          total
+        ))
+        ImGui.ProgressBar(
+          ctx,
+          fraction,
+          -100,
+          18,
+          string.format("%.1f%%", fraction * 100)
         )
-      )
-
-      ImGui.ProgressBar(
-        ctx,
-        animated,
-        -100,
-        18,
-        "扫描中"
-      )
+      else
+        local animated =
+          (reaper.time_precise() * 0.28) % 1
+        ImGui.Text(
+          ctx,
+          string.format(
+            "%s：正在扫描文件…  已发现 %d 个音频 / %d 个目录",
+            scan.reason,
+            scan.files,
+            scan.directories
+          )
+        )
+        ImGui.ProgressBar(
+          ctx,
+          animated,
+          -100,
+          18,
+          "扫描中"
+        )
+      end
     else
       local session = visible_import
       local current_progress =
@@ -19261,8 +24746,24 @@ function draw_import_progress()
         and session.current.progress
         or 0
 
+      local cleanup_phase = session.phase == "finalize"
+        or session.phase == "cancel_cleanup"
+        or session.phase == "cancel_rebuild"
+      local cleanup_completed = session.phase == "finalize"
+          and math.max(0, (session.finalize_index or 1) - 1)
+        or session.phase == "cancel_cleanup"
+          and math.max(0, (session.cleanup_index or 1) - 1)
+        or session.phase == "cancel_rebuild"
+          and (session.prune_job and session.prune_job.processed or 0)
+        or 0
+      local cleanup_total = session.phase == "cancel_rebuild"
+          and (session.cancel_rebuild_total or 0)
+        or #session.assets
+
       local fraction =
-        session.total > 0
+        cleanup_phase and cleanup_total > 0
+          and clamp(cleanup_completed / cleanup_total, 0, 1)
+        or session.total > 0
         and clamp(
           (session.done + current_progress)
             / session.total,
@@ -19279,13 +24780,25 @@ function draw_import_progress()
 
       ImGui.Text(
         ctx,
-        string.format(
-          "%s：分析元数据并建立波形  %d / %d  失败 %d",
-          session.label,
-          session.done,
-          session.total,
-          session.failed
-        )
+        cleanup_phase
+          and string.format(
+            "%s：%s  %d / %d",
+            session.label,
+            session.phase == "finalize"
+                and "整理已完成素材"
+              or session.phase == "cancel_cleanup"
+                and "清理未完成素材"
+              or "重建可用索引",
+            cleanup_completed,
+            cleanup_total
+          )
+          or string.format(
+            "%s：分析元数据并建立波形  %d / %d  失败 %d",
+            session.label,
+            session.done,
+            session.total,
+            session.failed
+          )
       )
 
       ImGui.ProgressBar(
@@ -19305,22 +24818,21 @@ function draw_import_progress()
     ImGui.SameLine(ctx)
 
     if dark_button("取消", 72) then
-      if state.precache_session then
+      if visible_root_removal then
+        if visible_root_removal.phase ~= "rollback" then
+          Jobs.cancel(visible_root_removal.job_token)
+        end
+      elseif visible_artwork_reset then
+        Jobs.cancel(visible_artwork_reset.job_token)
+      elseif visible_relink then
+        Jobs.cancel(visible_relink.job_token)
+        set_status("正在取消来源重定位计划…")
+      elseif state.precache_session then
         state.precache_cancel_requested = true
       elseif visible_scan then
         local scan = state.scan
-
-        for _, asset in ipairs(scan.new_assets or {}) do
-          if not asset.ready then
-            state.by_path[path_key(asset.path)] = nil
-          end
-        end
-
-        state.scan = nil
-        clear_scan_checkpoint()
-        rebuild_assets()
-        state.db_dirty = true
-        set_status("已取消扫描")
+        Jobs.cancel(scan.job_token)
+        set_status("正在取消扫描…")
       else
         state.import_cancel_requested = true
       end
@@ -19943,13 +25455,17 @@ function row_popup(asset)
   end
 
   if bulk and ImGui.MenuItem(ctx, "收藏全部所选") then
-    for _, selected_item in ipairs(bulk_assets) do
-      state.favorites[path_key(selected_item.path)] = true
-    end
+    if state.root_removal_session then
+      set_status("请等待来源移除完成后再修改收藏", true)
+    else
+      for _, selected_item in ipairs(bulk_assets) do
+        state.favorites[path_key(selected_item.path)] = true
+      end
 
-    state.config_dirty = true
-    state.results_dirty = true
-    set_status("已收藏所选素材")
+      state.config_dirty = true
+      state.results_dirty = true
+      set_status("已收藏所选素材")
+    end
   end
 
   if ImGui.MenuItem(
@@ -23038,12 +28554,12 @@ function apply_metadata_editor(assets)
 
     if asset_changed then
       asset._search_blob = nil
+      mark_asset_database_change(asset)
       changed_count = changed_count + 1
     end
   end
 
   if changed_count > 0 then
-    state.db_dirty = true
     state.results_dirty = true
     state.metadata_editor.signature = ""
 
@@ -23098,7 +28614,7 @@ function choose_artwork_for_asset(asset)
     asset.artwork_path =
       normalize_slashes(filename)
     asset.artwork_checked = true
-    state.db_dirty = true
+    mark_asset_database_change(asset)
     state.results_dirty = true
     set_status("已设置 Artwork")
   end
@@ -23172,14 +28688,14 @@ function draw_inspector_artwork_header(asset)
     state.artwork_folder_cache = {}
     state.artwork_dimension_cache = {}
     queue_artwork(asset, true)
-    state.db_dirty = true
+    mark_asset_database_change(asset)
   end
 
   if tostring(asset.artwork_path or "") ~= "" then
     if dark_button("清除封面", -1) then
       asset.artwork_path = "-"
       asset.artwork_checked = true
-      state.db_dirty = true
+      mark_asset_database_change(asset)
       state.results_dirty = true
     end
   end
@@ -24123,6 +29639,8 @@ function build_diagnostics_text()
         .. tostring(session_played_count()),
       "Previous-session highlights: "
         .. tostring(last_session_played_count()),
+      "Missing English translations seen: "
+        .. tostring(missing_translation_count()),
       "Data directory: " .. DATA_DIR,
       "Wave cache directory: "
         .. tostring(
@@ -25445,6 +30963,29 @@ function draw_settings_waveforms()
     if dark_button("停止预缓存", 110) then
       state.precache_cancel_requested = true
     end
+
+    local session = state.precache_session
+    local collecting = session.phase == "collect"
+    local total = collecting
+      and (session.source_total or 0) or (session.total or 0)
+    local completed = collecting
+      and math.max(0, (session.collect_index or 1) - 1)
+      or math.max(0, (session.index or 1) - 1)
+    completed = math.min(completed, total)
+    local fraction = total > 0 and completed / total or 0
+    ImGui.TextDisabled(ctx, string.format(
+      "%s %d / %d",
+      collecting and "正在整理范围" or "正在预缓存",
+      completed,
+      total
+    ))
+    ImGui.ProgressBar(
+      ctx,
+      fraction,
+      -1,
+      18,
+      string.format("%.1f%%", fraction * 100)
+    )
   end
 
   ImGui.Spacing(ctx)
@@ -25891,39 +31432,97 @@ function draw_settings_maintenance()
   ImGui.Separator(ctx)
 
   settings_section_title(
-    "重复素材",
-    "仅对大小相同的候选文件读取头部、中部和尾部采样块；不会修改或删除源文件。"
+    "重复候选",
+    "仅对大小相同的文件读取头部、中部和尾部采样块；结果尚未经过完整内容确认，不会修改或删除源文件。"
   )
 
   if state.duplicate_scan then
     local session = state.duplicate_scan
-    local completed = math.min((session.index or 1) - 1, session.total or 0)
-    local fraction = session.total > 0 and completed / session.total or 1
+    local phase = session.phase or "fingerprints"
+    local completed = 0
+    local total = 0
+    local label = "重复检查"
+    local fraction = 0
+    if phase == "sizes" then
+      label = "读取文件大小"
+      total = session.asset_total or 0
+      completed = math.min(
+        math.max(0, (session.asset_index or 1) - 1),
+        total
+      )
+      fraction = total > 0 and completed / total or 1
+    elseif phase == "fingerprints" then
+      label = "采样重复候选"
+      total = session.total or 0
+      completed = math.min(
+        math.max(0, (session.index or 1) - 1),
+        total
+      )
+      fraction = total > 0 and completed / total or 1
+    else
+      label = "整理候选组"
+      total = #(session.duplicate_groups or {})
+      local sort_job = session.sort_job
+      if sort_job and sort_job.stage == "filter" then
+        completed = math.min(
+          math.max(0, (sort_job.index or 1) - 1),
+          sort_job.total or total
+        )
+        total = sort_job.total or total
+        fraction = total > 0 and completed / total * 0.25 or 0.25
+      elseif sort_job and sort_job.stage == "sort_chunks" then
+        completed = math.min(
+          math.max(0, (sort_job.sort_index or 1) - 1),
+          total
+        )
+        fraction = 0.25
+          + (total > 0 and completed / total * 0.25 or 0.25)
+      elseif sort_job and sort_job.stage == "merge" then
+        completed = total
+        fraction = 0.75
+      else
+        completed = total
+        fraction = 0.95
+      end
+    end
     ImGui.Text(
       ctx,
       string.format(
-        "重复检查 %d / %d · 失败 %d",
+        "%s %d / %d · 失败 %d",
+        label,
         completed,
-        session.total or 0,
+        total,
         session.failed or 0
       )
     )
+    ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
+  elseif state.duplicate_confirmation then
+    local session = state.duplicate_confirmation
+    ImGui.Text(ctx, string.format(
+      "完整确认第 %d / %d 组 · 当前组已处理 %d",
+      session.group_index,
+      #session.groups,
+      math.max(0, session.asset_index - 1)
+    ))
+    local fraction = #session.groups > 0
+      and math.min(1, (session.group_index - 1) / #session.groups)
+      or 1
     ImGui.ProgressBar(ctx, fraction, -1, 18, string.format("%.1f%%", fraction * 100))
   else
     ImGui.TextDisabled(
       ctx,
       string.format(
-        "重复组 %d · 涉及素材 %d",
+        "候选组 %d · 涉及素材 %d",
         state.duplicate_group_count,
         state.duplicate_asset_count
       )
     )
-    if dark_button("检查重复素材", 150) then
+    if dark_button("检查重复候选", 150) then
       start_duplicate_scan()
     end
     if state.duplicate_asset_count > 0 then
       ImGui.SameLine(ctx)
-      if dark_button("查看重复素材", 150) then
+      if dark_button("查看重复候选", 150) then
         state.view = "duplicates"
         state.active_collection_id = nil
         state.root_filter = nil
@@ -25931,7 +31530,16 @@ function draw_settings_maintenance()
         state.results_dirty = true
         state.settings_close_requested = true
       end
+      ImGui.SameLine(ctx)
+      if dark_button("完整确认候选", 150) then
+        start_duplicate_confirmation()
+      end
     end
+    ImGui.TextDisabled(ctx, string.format(
+      "已确认相同 %d · 读取失败 %d",
+      state.duplicate_confirmed_asset_count,
+      state.duplicate_confirmation_failure_count
+    ))
   end
 
   ImGui.Separator(ctx)
@@ -26025,7 +31633,8 @@ function draw_settings_maintenance()
     if dark_button("清除失败记录", 140) then
       state.failed_tasks = {}
       state.failed_tasks_dirty = true
-      save_failed_tasks()
+      state.last_save = 0
+      schedule_auxiliary_save()
       set_status("失败任务记录已清除")
     end
   else
@@ -26060,17 +31669,22 @@ function draw_settings_maintenance()
   end
 
   if dark_button("立即创建备份", 150) then
-    if state.config_dirty then save_config() end
-    if state.libraries_dirty then save_libraries() end
-    if state.db_dirty and not state.scan and not state.import_session then save_database() end
-    if state.collections_dirty then save_collections() end
-    if state.searches_dirty then save_saved_searches() end
-    if state.history_dirty then save_history() end
-    if state.regions_dirty then save_regions() end
-    if state.loudness_dirty then save_loudness_cache() end
-    if state.failed_tasks_dirty then save_failed_tasks() end
-    if state.project_usage_dirty then save_project_usage() end
-    create_data_backup("manual", false)
+    if state.root_removal_session then
+      set_status("请等待来源移除或回滚完成后再创建备份", true)
+    else
+      cancel_auxiliary_save("manual backup")
+      if state.config_dirty then save_config() end
+      if state.libraries_dirty then save_libraries() end
+      if state.db_dirty and not state.scan and not state.import_session then save_database() end
+      if state.collections_dirty then save_collections() end
+      if state.searches_dirty then save_saved_searches() end
+      if state.history_dirty then save_history() end
+      if state.regions_dirty then save_regions() end
+      if state.loudness_dirty then save_loudness_cache() end
+      if state.failed_tasks_dirty then save_failed_tasks() end
+      if state.project_usage_dirty then save_project_usage() end
+      create_data_backup("manual", false)
+    end
   end
 
   ImGui.SameLine(ctx)
@@ -26350,7 +31964,7 @@ function draw_settings_popup()
 
   if dark_button("保存并关闭", button_width) then
     save_config()
-    save_database()
+    if state.db_dirty then save_database_changes() end
     ImGui.CloseCurrentPopup(ctx)
   end
 
@@ -26370,6 +31984,9 @@ function keyboard()
   if state.keyboard_consumed
     or state.parameter_edit
     or ImGui.IsAnyItemActive(ctx) then
+    return
+  end
+  if state.root_removal_session then
     return
   end
 
@@ -26987,6 +32604,13 @@ end
 ----------------------------------------------------------------
 
 function autosave()
+  if state.persistence_read_only then
+    return
+  end
+  if state.root_removal_session then
+    return
+  end
+
   local now = reaper.time_precise()
 
   if now - state.last_save
@@ -27004,49 +32628,30 @@ function autosave()
 
   if state.db_dirty
     and not state.scan
-    and not state.import_session then
-    save_database()
-  end
-
-  if state.collections_dirty then
-    save_collections()
+    and not state.import_session
+    and not state.asset_binding_refresh
+    and not state.artwork_reset_session
+    and not state.database_snapshot_session then
+    save_database_changes()
   end
 
   if state.searches_dirty then
     save_saved_searches()
   end
 
-  if state.history_dirty then
-    save_history()
-  end
-
-  if state.session_played_dirty then
-    save_last_played_session()
-  end
-
-  if state.regions_dirty then
-    save_regions()
-  end
-
-  if state.loudness_dirty then
-    save_loudness_cache()
-  end
-
-  if state.failed_tasks_dirty then
-    save_failed_tasks()
-  end
-
-  if state.project_usage_dirty then
-    save_project_usage()
-  end
+  schedule_auxiliary_save()
 
   state.last_save = now
 end
 
 function watch_folders()
-  if not state.watch_enabled
+  if state.persistence_read_only
+    or not state.watch_enabled
     or state.scan
     or state.import_session
+    or state.artwork_reset_session
+    or state.root_removal_session
+    or state.database_snapshot_session
     or state.precache_session
     or state.transfer_running then
     return
@@ -27066,14 +32671,31 @@ function watch_folders()
 end
 
 function cleanup()
+  Jobs.stop_accepting()
+  cancel_auxiliary_save("shutdown")
+  if state.root_removal_session then
+    local removal = state.root_removal_session
+    for index = #removal.cleanup_records, 1, -1 do
+      restore_root_removal_record(removal.cleanup_records[index])
+    end
+    flush_root_removal_asset_changes(removal, false)
+    state.root_removal_session = nil
+    Jobs.finish(removal.job_token, true, "shutdown rollback")
+  end
+  cancel_database_snapshot("shutdown")
   stop_preview()
   cleanup_retired_preview_sources(true)
-  destroy_wave_job(state.wave_active)
-
-  if state.skip_persistence_on_cleanup then
-    destroy_loudness_job(state.loudness_active)
-    return
+  if state.wave_active
+    and state.wave_active.job_token then
+    Jobs.cancel(state.wave_active.job_token)
+    Jobs.finish(
+      state.wave_active.job_token,
+      true,
+      "shutdown"
+    )
+    state.wave_active.job_token = nil
   end
+  destroy_wave_job(state.wave_active)
 
   if state.transfer_job then
     finish_transfer_job(state.transfer_job, true)
@@ -27090,12 +32712,72 @@ function cleanup()
     )
   end
 
+  if state.precache_session then
+    Jobs.cancel(state.precache_session.job_token)
+    Jobs.finish(
+      state.precache_session.job_token,
+      true,
+      "shutdown"
+    )
+  end
+
   if state.import_session
     and state.import_session.current
     and state.import_session.current.wave_job then
     destroy_wave_job(
       state.import_session.current.wave_job
     )
+  end
+
+  if state.import_session then
+    Jobs.cancel(state.import_session.job_token)
+    Jobs.finish(
+      state.import_session.job_token,
+      true,
+      "shutdown"
+    )
+  elseif state.scan then
+    Jobs.cancel(state.scan.job_token)
+    Jobs.finish(
+      state.scan.job_token,
+      true,
+      "shutdown"
+    )
+  end
+
+  local maintenance_sessions = {
+    state.artwork_reset_session,
+    state.cache_verify_session,
+    state.missing_audit,
+    state.duplicate_scan,
+    state.duplicate_confirmation,
+    state.relink_plan_session,
+  }
+
+  for _, session in pairs(maintenance_sessions) do
+    if session and session.job_token then
+      close_duplicate_confirmation_session(session)
+      Jobs.cancel(session.job_token)
+      Jobs.finish(
+        session.job_token,
+        true,
+        "shutdown"
+      )
+    end
+  end
+
+  destroy_loudness_job(state.loudness_active)
+
+  if state.skip_persistence_on_cleanup
+    or state.persistence_read_only then
+    return
+  end
+
+  if state.asset_binding_refresh
+    and (state.asset_binding_refresh.changed_count or 0) > 0 then
+    -- The deferred pass may have changed objects that have not reached its
+    -- incremental persistence phase yet. Preserve them on an early exit.
+    mark_database_snapshot_dirty()
   end
 
   if state.config_dirty then
@@ -27142,13 +32824,16 @@ function cleanup()
     save_project_usage()
   end
 
-  destroy_loudness_job(state.loudness_active)
 end
 
 reaper.atexit(cleanup)
 
 ensure_dirs()
-migrate_legacy_data()
+recover_atomic_data_files()
+preflight_persistence_schemas()
+if not state.persistence_read_only then
+  migrate_legacy_data()
+end
 load_or_migrate_project_url()
 load_config()
 state.next_watch = reaper.time_precise() + state.watch_interval
@@ -27193,38 +32878,37 @@ end
 
 load_regions()
 load_loudness_cache()
+schedule_legacy_schema_migrations()
 apply_surface_style()
 apply_theme_palette()
 apply_waveform_palette()
 state.results_dirty = true
 
-if state.auto_backup
+if not state.persistence_read_only
+  and state.auto_backup
   and state.backup_last_date ~= os.date("%Y%m%d") then
   create_data_backup("auto", true)
-end
-
-local needs_import_recovery = false
-
-for _, asset in ipairs(state.assets) do
-  if not asset.ready then
-    needs_import_recovery = true
-    break
-  end
 end
 
 local interrupted_scan = state.resume_scan_on_start
   and load_scan_checkpoint()
   or nil
 
-if interrupted_scan then
-  start_scan("恢复中断扫描", interrupted_scan.roots)
-elseif #state.roots > 0
-  and (#state.assets == 0 or needs_import_recovery) then
-  start_scan(
-    needs_import_recovery
-      and "恢复未完成导入"
-      or "首次扫描"
+if state.persistence_read_only then
+  set_status(
+    "数据格式只读保护已启用；浏览可用，扫描与保存已暂停",
+    true
   )
+elseif interrupted_scan then
+  start_scan(
+    "恢复中断扫描",
+    interrupted_scan.roots,
+    { force_rebuild = interrupted_scan.force_rebuild }
+  )
+elseif #state.roots > 0 and #state.assets == 0 then
+  start_scan("首次扫描")
+elseif #state.roots > 0 then
+  start_import_recovery_audit()
 end
 
 function loop()
@@ -27232,11 +32916,22 @@ function loop()
     return
   end
 
+  process_asset_library_binding_refresh()
+  process_import_recovery_audit()
+
   if state.transfer_running then
     -- Transfer receives the background-work budget while active. Library
     -- scanning, waveform generation, Artwork and loudness analysis resume
     -- automatically after the job finishes or is stopped.
     process_transfer_job()
+  elseif state.relink_plan_session then
+    process_relink_plan()
+  elseif state.root_removal_session then
+    process_root_removal()
+  elseif state.artwork_reset_session then
+    process_artwork_cache_reset()
+  elseif state.database_snapshot_session then
+    process_database_snapshot()
   else
     process_scan()
     process_import_session()
@@ -27246,19 +32941,22 @@ function loop()
     process_wave_cache_verification()
     process_missing_audit()
     process_duplicate_scan()
+    process_duplicate_confirmation()
     process_wave_precache()
     process_wave_queue()
     process_pending_transient_detection()
     process_loudness_queue()
   end
+  process_library_count_rebuild()
+  process_auxiliary_save()
   cleanup_retired_preview_sources(false)
   poll_preview()
   poll_current_project_binding()
   watch_folders()
   autosave()
 
-  if state.results_dirty then
-    rebuild_results()
+  if state.results_dirty or state.results_job then
+    process_results_rebuild()
   end
 
   draw_main()

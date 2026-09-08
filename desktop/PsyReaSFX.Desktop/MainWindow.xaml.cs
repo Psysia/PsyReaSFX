@@ -18,6 +18,7 @@ using Microsoft.Win32;
 using PsyReaSFX.Data;
 using PsyReaSFX.Desktop.Controls;
 using PsyReaSFX.Desktop.Services;
+using PsyReaSFX.Desktop.ViewModels;
 
 namespace PsyReaSFX.Desktop;
 
@@ -27,25 +28,30 @@ public partial class MainWindow : Window
     private enum SortMode { Name, Duration, Library, RecentlyPreviewed }
     private readonly record struct QueryToken(string Field, string Term, bool Exclude);
 
-    private readonly StateStore _store = new();
+    private readonly IStorageService _store = new StateStore();
     private readonly DesktopPreferencesStore _preferencesStore = new();
-    private readonly LibraryIndexer _indexer = new();
+    private readonly ICatalogIndexer _indexer = new LibraryIndexer();
+    private readonly IArtworkService _artwork = new ArtworkService();
+    private readonly IPathIdentityService _paths = new PathIdentityService();
+    private readonly IOrganizationService _organization = new OrganizationService();
     private readonly CatalogReliabilityService _reliability;
     private readonly LibraryWatchService _watchFolders = new();
-    private ObservableCollection<AudioAsset> _assets = [];
-    private readonly LowLatencyPreviewEngine _previewEngine = new();
+    private readonly CatalogViewModel _catalog = new();
+    private ObservableCollection<AudioAsset> _assets => _catalog.Assets;
+    private ICollectionView _view => _catalog.View;
+    private readonly IPreviewController _previewEngine;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _autoPreviewTimer = new() { Interval = TimeSpan.FromMilliseconds(110) };
     private readonly DispatcherTimer _activitySaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _bridgeTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly ReaperBridgeService _bridge = new();
+    private readonly IJobCoordinator _jobs = new BackgroundJobCoordinator();
+    private readonly WindowStateController _windowState = new();
     private readonly HashSet<string> _activityDirty = new(StringComparer.OrdinalIgnoreCase);
     private bool _activitySaveInFlight;
     private PersistedState _state = new();
     private DesktopPreferences _preferences = new();
-    private ICollectionView _view;
-    private CancellationTokenSource? _scanCancellation;
     private AudioAsset? _selected;
     private AudioAsset? _previewing;
     private string _libraryIdFilter = "";
@@ -57,12 +63,8 @@ public partial class MainWindow : Window
     private bool _autoPreview = true;
     private bool _isPlaying;
     private bool _initialized;
-    private bool _focusMode;
-    private bool _navigationVisible = true;
-    private bool _inspectorVisible = true;
     private bool _suppressSelectionPreview;
     private double _pendingSeekRatio;
-    private CancellationTokenSource? _previewCancellation;
     private long _lastTimeTextUpdateTick;
     private long _playbackClockAnchorTicks;
     private double _playbackClockAnchorSeconds;
@@ -71,8 +73,6 @@ public partial class MainWindow : Window
     private double _gainDb;
     private bool _reverseAudition;
     private bool _preservePitch = true;
-    private GridLength _navigationWidth = new(240);
-    private GridLength _inspectorWidth = new(292);
     private Point _dragStart;
     private List<QueryToken> _queryTokens = [];
     private int _visibleCount;
@@ -97,14 +97,14 @@ public partial class MainWindow : Window
     private bool _loadingPreviewRegions;
     private Point _selectionDragStart;
     private bool _selectionDragArmed;
-    private CancellationTokenSource? _selectionDragPreparation;
-    private CancellationTokenSource? _analysisCancellation;
     private LoudnessRecord? _currentLoudness;
     private string? _preparedSelectionDragPath;
     private string _preparedSelectionDragKey = "";
     private bool _watchScanPending;
     private HelpWindow? _helpWindow;
     private bool _bridgeBusy;
+    private bool _shutdownStarted;
+    private bool _shutdownCommitted;
 
     public static readonly DependencyProperty InlineWaveformResolutionProperty = DependencyProperty.Register(
         nameof(InlineWaveformResolution), typeof(int), typeof(MainWindow), new PropertyMetadata(512));
@@ -117,12 +117,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _reliability = new CatalogReliabilityService(_store.DataDirectory);
+        _previewEngine = new PreviewController(_jobs, new LowLatencyPreviewEngine());
         InitializeComponent();
         _preferences = _preferencesStore.Load();
         LuaWaveCache.Configure(_preferences.WaveformCacheDirectory);
         ApplyPreferences(_preferences, false);
-        _view = CollectionViewSource.GetDefaultView(_assets);
-        _view.Filter = FilterAsset;
+        _catalog.SetFilter(FilterAsset);
         AssetGrid.ItemsSource = _view;
         RegionSelector.ItemsSource = _previewRegions;
 
@@ -203,16 +203,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            var state = await Task.Run(() => _store.LoadAsync());
+            var state = await _store.LoadAsync();
             _state = state;
-            ApplyArtworkFallbacks(state);
+            _artwork.ApplyFallbacks(state);
             foreach (var item in state.Index) item.IsFavorite = state.Favorites.Contains(item.FilePath);
-            _assets = new ObservableCollection<AudioAsset>(state.Index);
+            _catalog.Replace(state.Index);
             _savedSessionPlayed = _assets.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var asset in _assets) asset.UiLanguage = _preferences.Language;
-            _view = CollectionViewSource.GetDefaultView(_assets);
-            _view.Filter = FilterAsset;
             AssetGrid.ItemsSource = _view;
             CollectionList.ItemsSource = _state.Collections;
             SavedSearchList.ItemsSource = _state.SavedSearches;
@@ -225,16 +223,18 @@ public partial class MainWindow : Window
                 AssetGrid.SelectedItem = first;
                 AssetGrid.ScrollIntoView(first);
             }
-            _initialized = true;
-            _ = ResolveMissingSourceArtworkAsync();
-
-            ConfigureWatchFolders();
-            if (_preferences.AutomaticCatalogBackup)
-                _ = Task.Run(async () =>
-                {
-                    try { await _reliability.EnsureDailyBackupAsync(_store.DatabasePath, _preferences.CatalogBackupRetention); }
-                    catch (Exception exception) { AppDiagnostics.Write("Automatic catalog backup failed.", exception); }
-                });
+            _initialized = _store.CanWrite;
+            if (_initialized)
+            {
+                _ = ResolveMissingSourceArtworkAsync();
+                ConfigureWatchFolders();
+                if (_preferences.AutomaticCatalogBackup)
+                    _ = Task.Run(async () =>
+                    {
+                        try { await _reliability.EnsureDailyBackupAsync(_store.DatabasePath, _preferences.CatalogBackupRetention); }
+                        catch (Exception exception) { AppDiagnostics.Write("Automatic catalog backup failed.", exception); }
+                    });
+            }
 
             if (_store.LastError is not null)
                 StatusText.Text = T($"数据库打开失败 · 日志：{AppDiagnostics.CurrentLogPath}", $"Database open failed · Log: {AppDiagnostics.CurrentLogPath}");
@@ -242,6 +242,8 @@ public partial class MainWindow : Window
                 StatusText.Text = T($"已迁移 Lua 数据：{migration.Libraries} 个库 · {migration.Assets:N0} 个素材", $"Migrated Lua data: {migration.Libraries} libraries · {migration.Assets:N0} assets");
             else
                 StatusText.Text = T($"就绪：{_assets.Count:N0} 个素材", $"Ready: {_assets.Count:N0} assets");
+
+            if (!_initialized) return;
 
             var interrupted = _reliability.LoadCheckpoint() is { Active: true };
             if (_state.Libraries.Count > 0 && ((_state.Index.Count == 0) || (interrupted && _preferences.ResumeInterruptedScan)))
@@ -327,28 +329,23 @@ public partial class MainWindow : Window
 
     private void RefreshView()
     {
-        _view.Filter = FilterAsset;
-        _view.Refresh();
-        _visibleCount = _view.Cast<object>().Count();
+        _catalog.SetFilter(FilterAsset);
+        _visibleCount = _catalog.RefreshAndCount();
         UpdateCount();
         UpdateBreadcrumb();
     }
 
     private void ApplySort()
     {
-        using (_view.DeferRefresh())
+        var direction = _sortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        var property = _sortMode switch
         {
-            _view.SortDescriptions.Clear();
-            var direction = _sortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
-            var property = _sortMode switch
-            {
-                SortMode.Duration => nameof(AudioAsset.DurationSeconds),
-                SortMode.Library => nameof(AudioAsset.LibraryName),
-                SortMode.RecentlyPreviewed => nameof(AudioAsset.LastPreviewed),
-                _ => nameof(AudioAsset.FileName)
-            };
-            _view.SortDescriptions.Add(new SortDescription(property, direction));
-        }
+            SortMode.Duration => nameof(AudioAsset.DurationSeconds),
+            SortMode.Library => nameof(AudioAsset.LibraryName),
+            SortMode.RecentlyPreviewed => nameof(AudioAsset.LastPreviewed),
+            _ => nameof(AudioAsset.FileName)
+        };
+        _catalog.ApplySort(property, direction);
         SortButton.Content = $"{T("排序", "Sort")}: {SortLabel()}";
     }
 
@@ -368,29 +365,40 @@ public partial class MainWindow : Window
     }
 
     private async void Rescan_Click(object sender, RoutedEventArgs e) => await RescanAsync(true);
-    private async Task RescanAsync(bool announce)
+    private async Task<bool> RescanAsync(bool announce)
     {
-        if (_scanCancellation != null) return;
-        _scanCancellation = new CancellationTokenSource();
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.CatalogScan,
+            BackgroundJobResource.CatalogWriter,
+            false,
+            BackgroundJobPriority.UserInitiated);
+        if (job == null) return false;
+        var succeeded = false;
+        var originalAssets = _assets;
+        var originalIndex = _state.Index;
+        PathReferenceSnapshot? referenceSnapshot = null;
         RescanButton.IsEnabled = false;
         StatusText.Text = T("正在增量扫描音效库…", "Scanning libraries incrementally…");
         _reliability.BeginScan();
         try
         {
+            RefreshSourceIdentities();
+            var librarySnapshot = SnapshotLibraries(_state.Libraries);
+            var previousSnapshot = _assets.ToArray();
             var progress = new Progress<(int Count, string File)>(p =>
             {
                 StatusText.Text = T($"正在索引 {p.Count:N0} · {Path.GetFileName(p.File)}", $"Indexing {p.Count:N0} · {Path.GetFileName(p.File)}");
                 _reliability.UpdateScan(p.Count, p.File);
             });
-            var indexed = await _indexer.BuildAsync(_state.Libraries, _assets, progress, _scanCancellation.Token);
+            var indexed = await _indexer.BuildAsync(librarySnapshot, previousSnapshot, progress, job.Token);
+            referenceSnapshot = CapturePathReferences();
+            ApplyPathIdentityRelocations(previousSnapshot, indexed);
             foreach (var asset in indexed) asset.IsFavorite = _state.Favorites.Contains(asset.FilePath);
-            _assets = new ObservableCollection<AudioAsset>(indexed);
+            _catalog.Replace(indexed);
             foreach (var asset in _assets) asset.UiLanguage = _preferences.Language;
-            _view = CollectionViewSource.GetDefaultView(_assets);
-            _view.Filter = FilterAsset;
             AssetGrid.ItemsSource = _view;
             _state.Index = indexed;
-            await Task.Run(() => _store.Save(_state));
+            await _store.SaveAsync(_state, job.Token);
             ApplySort();
             RebuildLibraryTree();
             RebuildFacets();
@@ -404,19 +412,30 @@ public partial class MainWindow : Window
                 ? T($"扫描完成：{indexed.Count:N0} 个素材", $"Scan complete: {indexed.Count:N0} assets")
                 : T($"扫描完成：{indexed.Count:N0} 个素材 · {_indexer.LastFailures.Count:N0} 个失败任务可重试",
                     $"Scan complete: {indexed.Count:N0} assets · {_indexer.LastFailures.Count:N0} failed tasks can be retried");
-            if (announce && indexed.Count == 0) MessageBox.Show("没有找到受支持的音频文件。", "PsyReaSFX Desktop");
+            succeeded = true;
+            if (announce && indexed.Count == 0)
+                MessageBox.Show(T("没有找到受支持的音频文件。", "No supported audio files were found."), "PsyReaSFX Desktop");
         }
-        catch (OperationCanceledException) { StatusText.Text = T("扫描已取消", "Scan cancelled"); }
-        catch (Exception ex) { StatusText.Text = T("扫描失败", "Scan failed"); AppDiagnostics.Write("Library scan failed.", ex); MessageBox.Show(ex.Message, T("扫描失败", "Scan failed")); }
+        catch (OperationCanceledException)
+        {
+            RestoreScanState(originalAssets, originalIndex, referenceSnapshot);
+            StatusText.Text = T("扫描已取消", "Scan cancelled");
+        }
+        catch (Exception ex)
+        {
+            RestoreScanState(originalAssets, originalIndex, referenceSnapshot);
+            job.MarkFailed(ex); StatusText.Text = T("扫描失败", "Scan failed"); AppDiagnostics.Write("Library scan failed.", ex); MessageBox.Show(ex.Message, T("扫描失败", "Scan failed"));
+        }
         finally
         {
-            _scanCancellation.Dispose(); _scanCancellation = null; RescanButton.IsEnabled = true;
+            RescanButton.IsEnabled = true;
             if (_watchScanPending)
             {
                 _watchScanPending = false;
                 _ = Dispatcher.BeginInvoke(async () => await RescanAsync(false), DispatcherPriority.Background);
             }
         }
+        return succeeded;
     }
 
     private void ConfigureWatchFolders()
@@ -429,35 +448,45 @@ public partial class MainWindow : Window
     private void WatchFolders_ChangeDetected(object? sender, EventArgs e) => Dispatcher.BeginInvoke(async () =>
     {
         if (!_initialized || !_preferences.WatchFoldersEnabled) return;
-        if (_scanCancellation != null) { _watchScanPending = true; return; }
+        if (_jobs.IsActive(BackgroundJobKind.CatalogScan)) { _watchScanPending = true; return; }
         StatusText.Text = T("检测到音效库变化，准备增量更新…", "Library changes detected; preparing an incremental update…");
         await RescanAsync(false);
     });
 
-    private void NewLibrary_Click(object sender, RoutedEventArgs e)
+    private async void NewLibrary_Click(object sender, RoutedEventArgs e)
     {
-        var name = Interaction.InputBox("为逻辑音效库命名：", "新建逻辑音效库", "New Library").Trim();
+        var name = Interaction.InputBox(T("为逻辑音效库命名：", "Name the logical library:"),
+            T("新建逻辑音效库", "New logical library"), "New Library").Trim();
         if (string.IsNullOrWhiteSpace(name)) return;
         if (_state.Libraries.Any(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
-        { MessageBox.Show("已经存在同名逻辑音效库。", "PsyReaSFX Desktop"); return; }
+        { MessageBox.Show(T("已经存在同名逻辑音效库。", "A logical library with that name already exists."), "PsyReaSFX Desktop"); return; }
         var library = new LibraryDefinition { Name = name };
         _state.Libraries.Add(library);
-        _store.SaveWorkspace(_state);
+        await _store.SaveWorkspaceAsync(_state);
         RebuildLibraryTree();
         SelectLibrary(library);
-        StatusText.Text = $"已建立逻辑音效库：{name}";
+        StatusText.Text = T($"已建立逻辑音效库：{name}", $"Created logical library: {name}");
     }
 
     private async void AddSource_Click(object? sender, RoutedEventArgs? e)
     {
         var library = SelectedLibrary();
-        if (library == null) { MessageBox.Show("请先在左侧选择一个逻辑音效库。", "PsyReaSFX Desktop"); return; }
-        var dialog = new OpenFolderDialog { Title = $"向 {library.Name} 添加素材文件夹", Multiselect = false };
+        if (library == null) { MessageBox.Show(T("请先在左侧选择一个逻辑音效库。", "Select a logical library in the navigation panel first."), "PsyReaSFX Desktop"); return; }
+        var dialog = new OpenFolderDialog { Title = T($"向 {library.Name} 添加素材文件夹", $"Add a source folder to {library.Name}"), Multiselect = false };
         if (dialog.ShowDialog(this) != true) return;
         if (library.Sources.Any(s => s.Path.Equals(dialog.FolderName, StringComparison.OrdinalIgnoreCase))) return;
-        var artwork = ArtworkFinder.FindForSource(dialog.FolderName);
-        library.Sources.Add(new LibrarySource { Path = dialog.FolderName, ArtworkPath = artwork });
-        _store.SaveWorkspace(_state);
+        var artwork = _artwork.FindForSource(dialog.FolderName);
+        var identity = _paths.CaptureSource(dialog.FolderName);
+        library.Sources.Add(new LibrarySource
+        {
+            Path = identity.DisplayPath,
+            ArtworkPath = artwork,
+            CanonicalPath = identity.CanonicalPath,
+            VolumeLabel = identity.VolumeLabel,
+            VolumeSerial = identity.VolumeSerial,
+            LastSeenUtc = identity.LastSeenUtc
+        });
+        await _store.SaveWorkspaceAsync(_state);
         RebuildLibraryTree();
         await RescanAsync(false);
     }
@@ -496,9 +525,9 @@ public partial class MainWindow : Window
     private ContextMenu BuildLibraryMenu(LibraryDefinition library)
     {
         var menu = new ContextMenu();
-        var add = new MenuItem { Header = "添加实体文件夹…" }; add.Click += (_, _) => { SelectLibrary(library); AddSource_Click(null, null); };
-        var rename = new MenuItem { Header = "重命名逻辑库…" }; rename.Click += (_, _) => RenameLibrary(library);
-        var remove = new MenuItem { Header = "移除逻辑库" }; remove.Click += (_, _) => RemoveLibrary(library);
+        var add = new MenuItem { Header = T("添加实体文件夹…", "Add source folder…") }; add.Click += (_, _) => { SelectLibrary(library); AddSource_Click(null, null); };
+        var rename = new MenuItem { Header = T("重命名逻辑库…", "Rename logical library…") }; rename.Click += async (_, _) => await RenameLibraryAsync(library);
+        var remove = new MenuItem { Header = T("移除逻辑库", "Remove logical library") }; remove.Click += async (_, _) => await RemoveLibraryAsync(library);
         menu.Items.Add(add); menu.Items.Add(rename); menu.Items.Add(new Separator()); menu.Items.Add(remove);
         return menu;
     }
@@ -506,11 +535,12 @@ public partial class MainWindow : Window
     private ContextMenu BuildSourceMenu(LibraryDefinition library, LibrarySource source)
     {
         var menu = new ContextMenu();
-        var reveal = new MenuItem { Header = "打开文件夹" }; reveal.Click += (_, _) => OpenFolder(source.Path);
-        var chooseArtwork = new MenuItem { Header = "为此路径指定封面…" }; chooseArtwork.Click += (_, _) => ChooseArtworkForSource(library, source);
-        var detectArtwork = new MenuItem { Header = "重新自动查找封面" }; detectArtwork.Click += async (_, _) => await DetectArtworkForSourceAsync(source, true);
-        var remove = new MenuItem { Header = "从逻辑库移除" }; remove.Click += (_, _) => RemoveSource(library, source);
-        menu.Items.Add(reveal); menu.Items.Add(new Separator()); menu.Items.Add(chooseArtwork); menu.Items.Add(detectArtwork);
+        var reveal = new MenuItem { Header = T("打开文件夹", "Open folder") }; reveal.Click += (_, _) => OpenFolder(source.Path);
+        var relocate = new MenuItem { Header = T("重新定位来源…", "Relocate source…") }; relocate.Click += async (_, _) => await RelocateSourceAsync(library, source);
+        var chooseArtwork = new MenuItem { Header = T("为此路径指定封面…", "Choose artwork for this source…") }; chooseArtwork.Click += (_, _) => ChooseArtworkForSource(library, source);
+        var detectArtwork = new MenuItem { Header = T("重新自动查找封面", "Detect artwork again") }; detectArtwork.Click += async (_, _) => await DetectArtworkForSourceAsync(source, true);
+        var remove = new MenuItem { Header = T("从逻辑库移除", "Remove from logical library") }; remove.Click += async (_, _) => await RemoveSourceAsync(library, source);
+        menu.Items.Add(reveal); menu.Items.Add(relocate); menu.Items.Add(new Separator()); menu.Items.Add(chooseArtwork); menu.Items.Add(detectArtwork);
         menu.Items.Add(new Separator()); menu.Items.Add(remove); return menu;
     }
 
@@ -520,39 +550,245 @@ public partial class MainWindow : Window
             if (ReferenceEquals(item.Tag, library)) { item.IsSelected = true; item.BringIntoView(); return; }
     }
 
-    private void RenameLibrary(LibraryDefinition library)
+    private async Task RenameLibraryAsync(LibraryDefinition library)
     {
-        var name = Interaction.InputBox("输入新的逻辑库名称：", "重命名", library.Name).Trim();
+        var name = Interaction.InputBox(T("输入新的逻辑库名称：", "Enter a new logical library name:"), T("重命名", "Rename"), library.Name).Trim();
         if (name.Length == 0 || _state.Libraries.Any(item => !ReferenceEquals(item, library) && item.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
         var old = library.Name; library.Name = name;
         foreach (var asset in _assets.Where(asset => asset.LibraryId.Equals(library.Id, StringComparison.OrdinalIgnoreCase) || asset.LibraryName.Equals(old, StringComparison.OrdinalIgnoreCase))) asset.LibraryName = name;
-        _store.Save(_state); RebuildLibraryTree(); RefreshView();
+        await _store.SaveAsync(_state); RebuildLibraryTree(); RefreshView();
     }
 
-    private void RemoveLibrary(LibraryDefinition library)
+    private static LibraryDefinition[] SnapshotLibraries(IEnumerable<LibraryDefinition> libraries) =>
+        libraries.Select(library => new LibraryDefinition
+        {
+            Id = library.Id,
+            Name = library.Name,
+            ArtworkPath = library.ArtworkPath,
+            IsExpanded = library.IsExpanded,
+            Sources = new ObservableCollection<LibrarySource>(library.Sources.Select(source => new LibrarySource
+            {
+                Id = source.Id,
+                Path = source.Path,
+                Alias = source.Alias,
+                Enabled = source.Enabled,
+                ArtworkPath = source.ArtworkPath,
+                ArtworkChecked = source.ArtworkChecked,
+                ArtworkScanVersion = source.ArtworkScanVersion,
+                CanonicalPath = source.CanonicalPath,
+                VolumeLabel = source.VolumeLabel,
+                VolumeSerial = source.VolumeSerial,
+                LastSeenUtc = source.LastSeenUtc
+            }))
+        }).ToArray();
+
+    private void RefreshSourceIdentities()
     {
-        if (MessageBox.Show($"从 PsyReaSFX 移除逻辑库“{library.Name}”？\n\n不会删除硬盘中的源文件。", "移除逻辑库", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        foreach (var source in _state.Libraries.SelectMany(library => library.Sources))
+        {
+            var identity = _paths.CaptureSource(source.Path);
+            source.Path = identity.DisplayPath;
+            if (!string.IsNullOrWhiteSpace(identity.CanonicalPath)) source.CanonicalPath = identity.CanonicalPath;
+            if (!string.IsNullOrWhiteSpace(identity.VolumeLabel)) source.VolumeLabel = identity.VolumeLabel;
+            if (!string.IsNullOrWhiteSpace(identity.VolumeSerial)) source.VolumeSerial = identity.VolumeSerial;
+            if (identity.LastSeenUtc > 0) source.LastSeenUtc = identity.LastSeenUtc;
+        }
+    }
+
+    private void ApplyPathIdentityRelocations(IEnumerable<AudioAsset> previous, IEnumerable<AudioAsset> current)
+    {
+        var previousById = previous.Where(asset => !string.IsNullOrWhiteSpace(asset.AssetId))
+            .GroupBy(asset => asset.AssetId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().FilePath, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var asset in current)
+        {
+            if (string.IsNullOrWhiteSpace(asset.AssetId)
+                || !previousById.TryGetValue(asset.AssetId, out var oldPath)
+                || oldPath.Equals(asset.FilePath, StringComparison.OrdinalIgnoreCase)) continue;
+            RemapPathReference(oldPath, asset.FilePath);
+        }
+    }
+
+    private void RemapPathReference(string oldPath, string newPath)
+    {
+        if (_state.Favorites.Remove(oldPath)) _state.Favorites.Add(newPath);
+        if (_savedSessionPlayed.Remove(oldPath)) _savedSessionPlayed.Add(newPath);
+        if (_activityDirty.Remove(oldPath)) _activityDirty.Add(newPath);
+
+        foreach (var collection in _state.Collections)
+        {
+            var alreadyPresent = collection.Items.Any(path => path.Equals(newPath, StringComparison.OrdinalIgnoreCase));
+            for (var index = collection.Items.Count - 1; index >= 0; index--)
+            {
+                if (!collection.Items[index].Equals(oldPath, StringComparison.OrdinalIgnoreCase)) continue;
+                if (alreadyPresent) collection.Items.RemoveAt(index);
+                else { collection.Items[index] = newPath; alreadyPresent = true; }
+            }
+        }
+    }
+
+    private PathReferenceSnapshot CapturePathReferences() => new(
+        new HashSet<string>(_state.Favorites, StringComparer.OrdinalIgnoreCase),
+        new HashSet<string>(_savedSessionPlayed, StringComparer.OrdinalIgnoreCase),
+        new HashSet<string>(_activityDirty, StringComparer.OrdinalIgnoreCase),
+        _state.Collections.ToDictionary(collection => collection.Id, collection => collection.Items.ToArray(), StringComparer.OrdinalIgnoreCase));
+
+    private void RestoreScanState(
+        ObservableCollection<AudioAsset> assets,
+        List<AudioAsset> index,
+        PathReferenceSnapshot? references)
+    {
+        _catalog.Replace(assets);
+        _state.Index = index;
+        if (references != null)
+        {
+            _state.Favorites = new HashSet<string>(references.Favorites, StringComparer.OrdinalIgnoreCase);
+            _savedSessionPlayed = new HashSet<string>(references.SessionPlayed, StringComparer.OrdinalIgnoreCase);
+            _activityDirty.Clear();
+            _activityDirty.UnionWith(references.ActivityDirty);
+            foreach (var collection in _state.Collections)
+                if (references.CollectionItems.TryGetValue(collection.Id, out var items))
+                    collection.Items = new ObservableCollection<string>(items);
+        }
+        _catalog.SetFilter(FilterAsset);
+        AssetGrid.ItemsSource = _view;
+        ApplySort();
+        RebuildLibraryTree();
+        RebuildFacets();
+        RefreshView();
+    }
+
+    private sealed record PathReferenceSnapshot(
+        HashSet<string> Favorites,
+        HashSet<string> SessionPlayed,
+        HashSet<string> ActivityDirty,
+        Dictionary<string, string[]> CollectionItems);
+
+    private async Task RemoveLibraryAsync(LibraryDefinition library)
+    {
+        if (MessageBox.Show(T($"从 PsyReaSFX 移除逻辑库“{library.Name}”？\n\n不会删除硬盘中的源文件。",
+                $"Remove logical library “{library.Name}” from PsyReaSFX?\n\nSource files on disk will not be deleted."),
+                T("移除逻辑库", "Remove logical library"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         _state.Libraries.Remove(library);
         var removed = _assets.Where(asset => asset.LibraryId.Equals(library.Id, StringComparison.OrdinalIgnoreCase) || asset.LibraryName.Equals(library.Name, StringComparison.OrdinalIgnoreCase)).ToList();
         foreach (var asset in removed) _assets.Remove(asset);
         _state.Index = _assets.ToList();
         _libraryIdFilter = ""; _sourceFilter = "";
-        _store.Save(_state); RebuildLibraryTree(); RefreshView();
+        await _store.SaveAsync(_state); RebuildLibraryTree(); RefreshView();
     }
 
-    private void RemoveSource(LibraryDefinition library, LibrarySource source)
+    private async Task RemoveSourceAsync(LibraryDefinition library, LibrarySource source)
     {
-        if (MessageBox.Show($"从“{library.Name}”移除路径？\n{source.Path}\n\n不会删除硬盘文件。", "移除实体路径", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show(T($"从“{library.Name}”移除路径？\n{source.Path}\n\n不会删除硬盘文件。",
+                $"Remove this source from “{library.Name}”?\n{source.Path}\n\nFiles on disk will not be deleted."),
+                T("移除实体路径", "Remove source"), MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         library.Sources.Remove(source);
         foreach (var asset in _assets.Where(asset => asset.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)).ToList()) _assets.Remove(asset);
         _state.Index = _assets.ToList(); _sourceFilter = "";
-        _store.Save(_state); RebuildLibraryTree(); RefreshView();
+        await _store.SaveAsync(_state); RebuildLibraryTree(); RefreshView();
+    }
+
+    private async Task RelocateSourceAsync(LibraryDefinition library, LibrarySource source)
+    {
+        var dialog = new OpenFolderDialog { Title = T($"重新定位 {source.DisplayName}", $"Relocate {source.DisplayName}"), Multiselect = false };
+        if (dialog.ShowDialog(this) != true) return;
+
+        var newIdentity = _paths.CaptureSource(dialog.FolderName);
+        if (!Directory.Exists(newIdentity.DisplayPath)) return;
+
+        var overlaps = _state.Libraries.SelectMany(item => item.Sources)
+            .Where(item => !ReferenceEquals(item, source))
+            .Select(item => _paths.CaptureSource(item.Path))
+            .Any(item => PathsOverlap(item.CanonicalPath, newIdentity.CanonicalPath));
+        if (overlaps)
+        {
+            MessageBox.Show(T("新目录与现有来源重叠，未执行重定位。", "The new folder overlaps an existing source; relocation was not applied."),
+                T("来源重定位", "Source relocation"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var candidates = _assets.Where(asset => asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)).ToArray();
+        var occupied = _assets.Where(asset => !asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase))
+            .Select(asset => _paths.Normalize(asset.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var missing = 0;
+        var conflicts = new List<string>();
+        var externalArtwork = 0;
+
+        foreach (var asset in candidates)
+        {
+            var relative = string.IsNullOrWhiteSpace(asset.RelativePath)
+                ? _paths.RelativeTo(source.Path, asset.FilePath)
+                : asset.RelativePath;
+            var target = _paths.Normalize(Path.Combine(newIdentity.DisplayPath, relative));
+            if (!targets.Add(target) || occupied.Contains(target)) conflicts.Add(target);
+            else if (!File.Exists(target)) missing++;
+            if (!string.IsNullOrWhiteSpace(asset.ArtworkPath) && !PathIsInside(asset.ArtworkPath, source.Path)) externalArtwork++;
+        }
+
+        var preview = T(
+            $"重定位预览\n\n逻辑库：{library.Name}\n来源：{source.Path}\n目标：{newIdentity.DisplayPath}\n迁移：{candidates.Length - missing - conflicts.Count:N0}\n缺失：{missing:N0}\n冲突：{conflicts.Count:N0}\n外部封面：{externalArtwork:N0}\n\n确认后将以一次数据库事务迁移所有引用。",
+            $"Relocation preview\n\nLibrary: {library.Name}\nSource: {source.Path}\nTarget: {newIdentity.DisplayPath}\nMove: {candidates.Length - missing - conflicts.Count:N0}\nMissing: {missing:N0}\nConflicts: {conflicts.Count:N0}\nExternal artwork: {externalArtwork:N0}\n\nAll references will be moved in one database transaction after confirmation.");
+        if (conflicts.Count > 0)
+        {
+            MessageBox.Show(preview + "\n\n" + string.Join("\n", conflicts.Take(8)),
+                T("重定位存在冲突", "Relocation conflicts"), MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (MessageBox.Show(preview, T("确认来源重定位", "Confirm source relocation"),
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        var oldPath = source.Path;
+        var oldCanonical = source.CanonicalPath;
+        var oldLabel = source.VolumeLabel;
+        var oldSerial = source.VolumeSerial;
+        var oldLastSeen = source.LastSeenUtc;
+        var oldArtwork = source.ArtworkPath;
+        source.Path = newIdentity.DisplayPath;
+        source.CanonicalPath = newIdentity.CanonicalPath;
+        source.VolumeLabel = newIdentity.VolumeLabel;
+        source.VolumeSerial = newIdentity.VolumeSerial;
+        source.LastSeenUtc = newIdentity.LastSeenUtc;
+        if (PathIsInside(oldArtwork, oldPath))
+            source.ArtworkPath = Path.Combine(newIdentity.DisplayPath, _paths.RelativeTo(oldPath, oldArtwork));
+
+        if (await RescanAsync(false))
+        {
+            StatusText.Text = T($"来源已重定位：{candidates.Length:N0} 条身份已保留，{missing:N0} 条待恢复",
+                $"Source relocated: {candidates.Length:N0} identities preserved, {missing:N0} awaiting recovery");
+            return;
+        }
+
+        source.Path = oldPath;
+        source.CanonicalPath = oldCanonical;
+        source.VolumeLabel = oldLabel;
+        source.VolumeSerial = oldSerial;
+        source.LastSeenUtc = oldLastSeen;
+        source.ArtworkPath = oldArtwork;
+        StatusText.Text = T("重定位未提交，已恢复原来源。", "Relocation was not committed; the original source was restored.");
+    }
+
+    private bool PathsOverlap(string first, string second) =>
+        PathIsInside(first, second) || PathIsInside(second, first);
+
+    private bool PathIsInside(string candidate, string root)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(root)) return false;
+        try
+        {
+            var relative = Path.GetRelativePath(_paths.Normalize(root), _paths.Normalize(candidate));
+            return relative == "." || (!relative.Equals("..", StringComparison.Ordinal)
+                && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal));
+        }
+        catch { return false; }
     }
 
     private void ManageLibraries_Click(object sender, RoutedEventArgs e)
     {
         foreach (TreeViewItem item in LibraryTree.Items) item.IsExpanded = true;
-        StatusText.Text = "右键逻辑库可添加路径、重命名或移除；右键实体路径可打开或移除。";
+        StatusText.Text = T("右键逻辑库可添加路径、重命名或移除；右键实体路径可打开或移除。",
+            "Right-click a logical library to add, rename or remove it; right-click a source to open or remove it.");
     }
 
     private void LibraryTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
@@ -722,8 +958,7 @@ public partial class MainWindow : Window
     {
         var name = Interaction.InputBox(T("集合名称：", "Collection name:"), title, kind == "playlist" ? "New playlist" : "New project bin").Trim();
         if (name.Length == 0) return;
-        var collection = new AssetCollection { Name = name, Kind = kind };
-        foreach (var asset in SelectedAssets()) collection.Items.Add(asset.FilePath);
+        var collection = _organization.CreateCollection(kind, name, SelectedAssets());
         _state.Collections.Add(collection);
         PersistOrganization();
         RefreshCollectionLists(collection);
@@ -736,10 +971,8 @@ public partial class MainWindow : Window
         {
             MessageBox.Show(T("请先选择一个播放列表或项目素材箱。", "Select a playlist or project bin first."), "PsyReaSFX Desktop"); return;
         }
-        var existing = collection.Items.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var added = 0;
-        foreach (var asset in SelectedAssets()) if (existing.Add(asset.FilePath)) { collection.Items.Add(asset.FilePath); added++; }
-        _activeCollectionPaths = existing;
+        var added = _organization.AddAssets(collection, SelectedAssets());
+        _activeCollectionPaths = _organization.ActivePaths(collection);
         PersistOrganization(); RefreshCollectionLists(collection); RefreshView();
         StatusText.Text = T($"已向 {collection.Name} 加入 {added:N0} 个素材", $"Added {added:N0} assets to {collection.Name}");
     }
@@ -747,10 +980,8 @@ public partial class MainWindow : Window
     private void RemoveFromCollection_Click(object sender, RoutedEventArgs e)
     {
         if (CollectionList.SelectedItem is not AssetCollection collection) return;
-        var remove = SelectedAssets().Select(asset => asset.FilePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var count = collection.Items.Count(path => remove.Contains(path));
-        for (var index = collection.Items.Count - 1; index >= 0; index--) if (remove.Contains(collection.Items[index])) collection.Items.RemoveAt(index);
-        _activeCollectionPaths = collection.Items.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var count = _organization.RemoveAssets(collection, SelectedAssets());
+        _activeCollectionPaths = _organization.ActivePaths(collection);
         PersistOrganization(); RefreshCollectionLists(collection); RefreshView();
         StatusText.Text = T($"已从 {collection.Name} 移出 {count:N0} 个素材", $"Removed {count:N0} assets from {collection.Name}");
     }
@@ -789,14 +1020,12 @@ public partial class MainWindow : Window
 
     private void SaveSearch_Click(object sender, RoutedEventArgs e)
     {
-        var name = Interaction.InputBox("保存当前查询与筛选条件：", "保存搜索", SearchBox.Text.Length > 0 ? SearchBox.Text : "Saved search").Trim();
+        var name = Interaction.InputBox(T("保存当前查询与筛选条件：", "Save the current query and filters:"),
+            T("保存搜索", "Save search"), SearchBox.Text.Length > 0 ? SearchBox.Text : "Saved search").Trim();
         if (name.Length == 0) return;
-        var saved = new SavedSearchDefinition
-        {
-            Name = name, Query = BuildSavedQuery(), View = _browseMode.ToString(), LibraryId = _libraryIdFilter,
-            Root = _sourceFilter, StatusFilter = _statusFilter, CollectionId = _collectionIdFilter,
-            SortMode = _sortMode.ToString(), SortDescending = _sortDescending
-        };
+        var saved = _organization.CreateSavedSearch(
+            name, BuildSavedQuery(), _browseMode.ToString(), _libraryIdFilter,
+            _sourceFilter, _statusFilter, _collectionIdFilter, _sortMode.ToString(), _sortDescending);
         _state.SavedSearches.Add(saved); PersistOrganization();
         SavedSearchList.SelectedItem = saved;
         StatusText.Text = T($"已保存搜索：{name}", $"Saved search: {name}");
@@ -804,12 +1033,7 @@ public partial class MainWindow : Window
 
     private string BuildSavedQuery()
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(SearchBox.Text)) parts.Add(SearchBox.Text.Trim());
-        if (_categoryFacet.Length > 0) parts.Add($"category:\"{_categoryFacet}\"");
-        if (_formatFacet.Length > 0) parts.Add($"format:{_formatFacet}");
-        if (_channelFacet > 0) parts.Add($"channels:{_channelFacet}");
-        return string.Join(' ', parts);
+        return _organization.BuildSavedQuery(SearchBox.Text, _categoryFacet, _formatFacet, _channelFacet);
     }
 
     private void SavedSearchList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -836,7 +1060,12 @@ public partial class MainWindow : Window
     private void PersistOrganization()
     {
         _state.Index = _assets.ToList();
-        try { _store.SaveWorkspace(_state); }
+        _ = PersistWorkspaceSafelyAsync();
+    }
+
+    private async Task PersistWorkspaceSafelyAsync()
+    {
+        try { await _store.SaveWorkspaceAsync(_state); }
         catch (Exception exception) { AppDiagnostics.Write("Organization data could not be saved.", exception); }
     }
 
@@ -857,7 +1086,7 @@ public partial class MainWindow : Window
         DetailWaveform.ClearSelection();
         _selectionStartRatio = _selectionEndRatio = -1;
         CancelPreparedSelectionDrag();
-        CancelCancellation(ref _analysisCancellation);
+        _jobs.Cancel(BackgroundJobKind.LoudnessAnalysis);
         SelectionDragCapsule.Visibility = Visibility.Collapsed;
         SetDetailPlayhead(0, false);
         InspectorName.Text = _selected.FileName;
@@ -1126,8 +1355,12 @@ public partial class MainWindow : Window
     private async Task AnalyzeLoudnessAsync(AudioAsset asset, bool force)
     {
         if (!_preferences.ShowLoudnessMetrics && !_preferences.LoudnessMatchAudition && !force) return;
-        var cancellation = ReplaceCancellation(ref _analysisCancellation);
-        var token = cancellation.Token;
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.LoudnessAnalysis,
+            BackgroundJobResource.AudioAnalysis,
+            true);
+        if (job == null) return;
+        var token = job.Token;
         if (ReferenceEquals(_selected, asset)) PreviewLoudness.Text = T("分析响度…", "Analyzing loudness…");
         try
         {
@@ -1143,13 +1376,9 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) { }
         catch (Exception exception)
         {
+            job.MarkFailed(exception);
             if (ReferenceEquals(_selected, asset)) PreviewLoudness.Text = T("响度不可用", "Loudness unavailable");
             AppDiagnostics.Write("Loudness analysis failed.", exception);
-        }
-        finally
-        {
-            if (ReferenceEquals(_analysisCancellation, cancellation)) _analysisCancellation = null;
-            cancellation.Dispose();
         }
     }
 
@@ -1320,7 +1549,7 @@ public partial class MainWindow : Window
 
     private void CancelPreparedSelectionDrag()
     {
-        CancelCancellation(ref _selectionDragPreparation);
+        _jobs.Cancel(BackgroundJobKind.SelectionDrag);
         _preparedSelectionDragPath = null;
         _preparedSelectionDragKey = "";
         if (SelectionDragCapsuleText != null) SelectionDragCapsuleText.Text = T("拖出选区", "Drag selection");
@@ -1331,8 +1560,12 @@ public partial class MainWindow : Window
         if (_selected == null || !HasValidSelection()) { CancelPreparedSelectionDrag(); return; }
         var key = CurrentSelectionDragKey();
         if (key == _preparedSelectionDragKey && !string.IsNullOrWhiteSpace(_preparedSelectionDragPath) && File.Exists(_preparedSelectionDragPath)) return;
-        var cancellation = ReplaceCancellation(ref _selectionDragPreparation);
-        var token = cancellation.Token;
+        using var job = _jobs.TryStart(
+            BackgroundJobKind.SelectionDrag,
+            BackgroundJobResource.DragExport,
+            true);
+        if (job == null) return;
+        var token = job.Token;
         var asset = _selected;
         var start = _selectionStartRatio * asset.DurationSeconds;
         var finish = _selectionEndRatio * asset.DurationSeconds;
@@ -1352,15 +1585,11 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             if (token.IsCancellationRequested) return;
+            job.MarkFailed(exception);
             SelectionDragCapsuleText.Text = T("选区不可拖出", "Drag unavailable");
             SelectionDragCapsule.Opacity = .65;
             StatusText.Text = T($"无法准备选区拖放：{exception.Message}", $"Could not prepare selection drag: {exception.Message}");
             AppDiagnostics.Write("Waveform selection pre-export failed.", exception);
-        }
-        finally
-        {
-            if (ReferenceEquals(_selectionDragPreparation, cancellation)) _selectionDragPreparation = null;
-            cancellation.Dispose();
         }
     }
 
@@ -1368,12 +1597,9 @@ public partial class MainWindow : Window
     {
         if (_selected == null || !File.Exists(_selected.FilePath)) return;
         var asset = _selected;
-        CancellationTokenSource? cancellation = null;
         try
         {
             _autoPreviewTimer.Stop();
-            cancellation = ReplaceCancellation(ref _previewCancellation);
-            var token = cancellation.Token;
             if (_previewing != null && !ReferenceEquals(_previewing, asset)) _previewing.PreviewPlayhead = -1;
             _previewing = asset;
             _pendingSeekRatio = Math.Clamp(ratio, 0, 1);
@@ -1385,8 +1611,8 @@ public partial class MainWindow : Window
             // pitch shifter's overlap buffer. Reusing that buffer mixed a few
             // frames from the old position into the new one and caused clicks.
             StatusText.Text = T($"正在准备试听：{asset.FileName}", $"Preparing preview: {asset.FileName}");
-            await _previewEngine.OpenAsync(asset.FilePath, startAt, true, token);
-            if (token.IsCancellationRequested || !ReferenceEquals(_previewing, asset)) return;
+            var started = await _previewEngine.OpenAsync(asset.FilePath, startAt, true);
+            if (!started || !ReferenceEquals(_previewing, asset)) return;
             _isPlaying = true;
             SetPlaybackClock(startAt);
             PlayButton.Icon = "pause";
@@ -1401,10 +1627,6 @@ public partial class MainWindow : Window
             PlayButton.Icon = "play";
             StatusText.Text = T($"无法试听：{exception.Message}", $"Preview failed: {exception.Message}");
             AppDiagnostics.Write("Preview start failed.", exception);
-        }
-        finally
-        {
-            if (cancellation != null) CompleteCancellation(ref _previewCancellation, cancellation);
         }
     }
 
@@ -1720,11 +1942,8 @@ public partial class MainWindow : Window
         if (_selected == null) return;
         var channels = CurrentAuditionChannels();
         UpdateChannelModePresentation();
-        var cancellation = ReplaceCancellation(ref _previewCancellation);
-        try { await _previewEngine.ReconfigureAsync(_reverseAudition, channels, cancellation.Token); }
-        catch (OperationCanceledException) { return; }
+        try { await _previewEngine.ReconfigureAsync(_reverseAudition, channels); }
         catch (Exception exception) { AppDiagnostics.Write("Channel audition reconfiguration failed.", exception); }
-        finally { CompleteCancellation(ref _previewCancellation, cancellation); }
     }
 
     private int[] CurrentAuditionChannels() => _channelMode == 0 ? [] : [_channelMode - 1];
@@ -1757,11 +1976,8 @@ public partial class MainWindow : Window
         _reverseAudition = !_reverseAudition;
         ReverseButton.IsActive = _reverseAudition;
         ReverseButton.Foreground = _reverseAudition ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("MutedBrush");
-        var cancellation = ReplaceCancellation(ref _previewCancellation);
-        try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], cancellation.Token); }
-        catch (OperationCanceledException) { }
+        try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1]); }
         catch (Exception exception) { StatusText.Text = exception.Message; AppDiagnostics.Write("Reverse audition failed.", exception); }
-        finally { CompleteCancellation(ref _previewCancellation, cancellation); }
     }
 
     private async void PreservePitch_Click(object sender, RoutedEventArgs e)
@@ -1773,11 +1989,8 @@ public partial class MainWindow : Window
         StatusText.Text = _preservePitch ? T("变速时保持音高", "Pitch is preserved while changing speed") : T("变速会同步改变音高", "Pitch follows playback speed");
         if (_previewEngine.IsOpen)
         {
-            var cancellation = ReplaceCancellation(ref _previewCancellation);
-            try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1], cancellation.Token); }
-            catch (OperationCanceledException) { }
+            try { await _previewEngine.ReconfigureAsync(_reverseAudition, _channelMode == 0 ? [] : [_channelMode - 1]); }
             catch (Exception exception) { AppDiagnostics.Write("Preserve-pitch pipeline rebuild failed.", exception); }
-            finally { CompleteCancellation(ref _previewCancellation, cancellation); }
         }
     }
 
@@ -1799,31 +2012,6 @@ public partial class MainWindow : Window
     private static string FormatTime(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(seconds >= 3600 ? @"hh\:mm\:ss\.fff" : @"mm\:ss\.fff");
     private static string FormatTimeCompact(double seconds) => Math.Max(0, seconds).ToString("0.000");
 
-    private static CancellationTokenSource ReplaceCancellation(ref CancellationTokenSource? source)
-    {
-        CancelCancellation(ref source);
-        source = new CancellationTokenSource();
-        return source;
-    }
-
-    private static void CancelCancellation(ref CancellationTokenSource? source)
-    {
-        var previous = source;
-        source = null;
-        if (previous == null) return;
-        try { previous.Cancel(); }
-        catch (ObjectDisposedException) { }
-        // The asynchronous operation that owns this source disposes it in its
-        // own finally block. Disposing here races with token registrations that
-        // are still unwinding when the user changes selection rapidly.
-    }
-
-    private static void CompleteCancellation(ref CancellationTokenSource? source, CancellationTokenSource completed)
-    {
-        if (ReferenceEquals(source, completed)) source = null;
-        completed.Dispose();
-    }
-
     private AudioAsset[] SelectedAssets() => AssetGrid.SelectedItems.Cast<AudioAsset>().ToArray();
 
     private void LoadMetadataEditor(IReadOnlyList<AudioAsset> selectedAssets)
@@ -1841,7 +2029,8 @@ public partial class MainWindow : Window
             _metadataBaseline[key] = value;
             box.Text = value;
             box.ToolTip = selectedAssets.Count > 1 && selectedAssets.Any(item => !string.Equals(value, selector(item), StringComparison.Ordinal))
-                ? "所选素材包含多个不同值；输入新内容后将批量替换，保持空白则不修改。"
+                ? T("所选素材包含多个不同值；输入新内容后将批量替换，保持空白则不修改。",
+                    "The selected assets contain mixed values. Enter text to replace them in bulk; leave blank to keep existing values.")
                 : null;
         }
 
@@ -1850,7 +2039,9 @@ public partial class MainWindow : Window
         Set(InspectorCategory, "category", item => item.Category);
         Set(InspectorSubcategory, "subcategory", item => item.Subcategory);
         Set(InspectorCatId, "catid", item => item.CatId);
-        SaveMetadataButton.Content = selectedAssets.Count > 1 ? $"批量保存元数据（{selectedAssets.Count}）" : "保存元数据";
+        SaveMetadataButton.Content = selectedAssets.Count > 1
+            ? T($"批量保存元数据（{selectedAssets.Count}）", $"Save metadata for {selectedAssets.Count} assets")
+            : T("保存元数据", "Save metadata");
     }
 
     private void UpdateWorkflowControls(IReadOnlyList<AudioAsset> selectedAssets)
@@ -1864,7 +2055,7 @@ public partial class MainWindow : Window
             button.BorderBrush = active ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("LineBrush");
         }
         var allMarked = selectedAssets.Count > 0 && selectedAssets.All(item => item.Marked);
-        MarkButton.Content = allMarked ? "取消标记 · M" : "标记素材 · M";
+        MarkButton.Content = allMarked ? T("取消标记 · M", "Unmark assets · M") : T("标记素材 · M", "Mark assets · M");
         MarkButton.Background = allMarked ? (Brush)FindResource("AccentBrush") : (Brush)FindResource("PanelRaisedBrush");
     }
 
@@ -1875,7 +2066,8 @@ public partial class MainWindow : Window
         var selectedAssets = SelectedAssets();
         if (selectedAssets.Length == 0) return;
         foreach (var asset in selectedAssets) asset.WorkflowStatus = status;
-        await SaveAssetDetailsAsync(selectedAssets, $"已更新 {selectedAssets.Length:N0} 个素材的工作流状态");
+        await SaveAssetDetailsAsync(selectedAssets,
+            T($"已更新 {selectedAssets.Length:N0} 个素材的工作流状态", $"Updated workflow status for {selectedAssets.Length:N0} assets"));
         UpdateWorkflowControls(selectedAssets);
         RefreshView();
     }
@@ -1887,8 +2079,8 @@ public partial class MainWindow : Window
         var newValue = !selectedAssets.All(item => item.Marked);
         foreach (var asset in selectedAssets) asset.Marked = newValue;
         await SaveAssetDetailsAsync(selectedAssets, newValue
-            ? $"已标记 {selectedAssets.Length:N0} 个素材"
-            : $"已取消标记 {selectedAssets.Length:N0} 个素材");
+            ? T($"已标记 {selectedAssets.Length:N0} 个素材", $"Marked {selectedAssets.Length:N0} assets")
+            : T($"已取消标记 {selectedAssets.Length:N0} 个素材", $"Unmarked {selectedAssets.Length:N0} assets"));
         UpdateWorkflowControls(selectedAssets);
     }
 
@@ -1905,10 +2097,11 @@ public partial class MainWindow : Window
         changes += ApplyMetadataChange(selectedAssets, "catid", InspectorCatId.Text, (asset, value) => asset.CatId = value);
         if (changes == 0)
         {
-            StatusText.Text = "元数据没有变化";
+            StatusText.Text = T("元数据没有变化", "Metadata was not changed");
             return;
         }
-        await SaveAssetDetailsAsync(selectedAssets, $"已保存 {selectedAssets.Length:N0} 个素材的元数据");
+        await SaveAssetDetailsAsync(selectedAssets,
+            T($"已保存 {selectedAssets.Length:N0} 个素材的元数据", $"Saved metadata for {selectedAssets.Length:N0} assets"));
         LoadMetadataEditor(selectedAssets);
         RefreshView();
     }
@@ -1926,7 +2119,7 @@ public partial class MainWindow : Window
 
     private async void UndoMetadata_Click(object sender, RoutedEventArgs e)
     {
-        if (_metadataUndo.Count == 0) { StatusText.Text = "没有可撤销的元数据修改"; return; }
+        if (_metadataUndo.Count == 0) { StatusText.Text = T("没有可撤销的元数据修改", "There are no metadata changes to undo"); return; }
         var snapshots = _metadataUndo.Pop();
         var byPath = _assets.ToDictionary(asset => asset.FilePath, StringComparer.OrdinalIgnoreCase);
         var changed = new List<AudioAsset>();
@@ -1937,7 +2130,8 @@ public partial class MainWindow : Window
             asset.Subcategory = snapshot.Subcategory; asset.CatId = snapshot.CatId; asset.WorkflowStatus = snapshot.WorkflowStatus; asset.Marked = snapshot.Marked;
             changed.Add(asset);
         }
-        await SaveAssetDetailsAsync(changed, $"已撤销 {changed.Count:N0} 个素材的元数据修改");
+        await SaveAssetDetailsAsync(changed,
+            T($"已撤销 {changed.Count:N0} 个素材的元数据修改", $"Undid metadata changes for {changed.Count:N0} assets"));
         LoadMetadataEditor(SelectedAssets()); RefreshView();
     }
 
@@ -1961,7 +2155,8 @@ public partial class MainWindow : Window
                 if (parts.Length > 1) asset.Subcategory = parts[1];
             }
         }
-        await SaveAssetDetailsAsync(assets, $"已从文件名解析 {assets.Length:N0} 个素材");
+        await SaveAssetDetailsAsync(assets,
+            T($"已从文件名解析 {assets.Length:N0} 个素材", $"Parsed {assets.Length:N0} assets from filenames"));
         LoadMetadataEditor(assets); RebuildFacets(); RefreshView();
     }
 
@@ -1970,18 +2165,20 @@ public partial class MainWindow : Window
         var assets = SelectedAssets();
         if (assets.Length == 0) assets = _view.Cast<AudioAsset>().ToArray();
         if (assets.Length == 0) return;
-        var dialog = new SaveFileDialog { Title = "导出 PsyReaSFX 元数据", Filter = "CSV 文件|*.csv", FileName = "PsyReaSFX_metadata.csv" };
+        var dialog = new SaveFileDialog { Title = T("导出 PsyReaSFX 元数据", "Export PsyReaSFX metadata"),
+            Filter = T("CSV 文件|*.csv", "CSV files|*.csv"), FileName = "PsyReaSFX_metadata.csv" };
         if (dialog.ShowDialog(this) != true) return;
         var lines = new List<string> { "Path,FileName,Description,Keywords,CatID,Category,SubCategory,Library,Status,Marked" };
         lines.AddRange(assets.Select(asset => string.Join(',', new[] { asset.FilePath, asset.FileName, asset.Description, asset.Keywords,
             asset.CatId, asset.Category, asset.Subcategory, asset.LibraryName, asset.WorkflowStatus, asset.Marked ? "true" : "false" }.Select(CsvEscape))));
         File.WriteAllLines(dialog.FileName, lines, new UTF8Encoding(true));
-        StatusText.Text = $"已导出 {assets.Length:N0} 条元数据";
+        StatusText.Text = T($"已导出 {assets.Length:N0} 条元数据", $"Exported {assets.Length:N0} metadata rows");
     }
 
     private async void ImportCsv_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog { Title = "导入 PsyReaSFX 元数据", Filter = "CSV 文件|*.csv", CheckFileExists = true };
+        var dialog = new OpenFileDialog { Title = T("导入 PsyReaSFX 元数据", "Import PsyReaSFX metadata"),
+            Filter = T("CSV 文件|*.csv", "CSV files|*.csv"), CheckFileExists = true };
         if (dialog.ShowDialog(this) != true) return;
         try
         {
@@ -2002,10 +2199,11 @@ public partial class MainWindow : Window
                 if (Get("Status").Length > 0) asset.WorkflowStatus = Get("Status");
                 if (bool.TryParse(Get("Marked"), out var marked)) asset.Marked = marked;
             }
-            await SaveAssetDetailsAsync(changed, $"已导入 {changed.Count:N0} 条元数据");
+            await SaveAssetDetailsAsync(changed,
+                T($"已导入 {changed.Count:N0} 条元数据", $"Imported {changed.Count:N0} metadata rows"));
             RebuildFacets(); LoadMetadataEditor(SelectedAssets()); RefreshView();
         }
-        catch (Exception exception) { AppDiagnostics.Write("CSV import failed.", exception); MessageBox.Show(exception.Message, "CSV 导入失败"); }
+        catch (Exception exception) { AppDiagnostics.Write("CSV import failed.", exception); MessageBox.Show(exception.Message, T("CSV 导入失败", "CSV import failed")); }
     }
 
     private static string CsvEscape(string? value)
@@ -2050,17 +2248,18 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            StatusText.Text = "保存素材信息失败；关闭软件前请勿继续修改";
+            StatusText.Text = T("保存素材信息失败；关闭软件前请勿继续修改",
+                "Saving asset information failed; do not make further changes before closing the application");
             AppDiagnostics.Write("Asset details could not be saved.", exception);
         }
     }
 
-    private void Favorite_Click(object sender, RoutedEventArgs e)
+    private async void Favorite_Click(object sender, RoutedEventArgs e)
     {
         if (_selected == null) return;
         _selected.IsFavorite = !_selected.IsFavorite;
         if (_selected.IsFavorite) _state.Favorites.Add(_selected.FilePath); else _state.Favorites.Remove(_selected.FilePath);
-        _store.SaveWorkspace(_state); RebuildLibraryTree(); RefreshView();
+        await _store.SaveWorkspaceAsync(_state); RebuildLibraryTree(); RefreshView();
     }
 
     private void Reveal_Click(object sender, RoutedEventArgs e)
@@ -2358,27 +2557,6 @@ public partial class MainWindow : Window
         _preferences.SidebarSectionExpanded["activity"] = ActivitySection.IsExpanded;
     }
 
-    private static void ApplyArtworkFallbacks(PersistedState state)
-    {
-        var sourcesById = state.Libraries.SelectMany(library => library.Sources)
-            .Where(source => !string.IsNullOrWhiteSpace(source.Id))
-            .GroupBy(source => source.Id, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var sourcesByPath = state.Libraries.SelectMany(library => library.Sources)
-            .Where(source => !string.IsNullOrWhiteSpace(source.Path))
-            .GroupBy(source => source.Path, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        foreach (var asset in state.Index)
-        {
-            if (!string.IsNullOrWhiteSpace(asset.ArtworkPath) && File.Exists(asset.ArtworkPath)) continue;
-            LibrarySource? source = null;
-            if (!string.IsNullOrWhiteSpace(asset.RootId)) sourcesById.TryGetValue(asset.RootId, out source);
-            if (source == null && !string.IsNullOrWhiteSpace(asset.SourcePath)) sourcesByPath.TryGetValue(asset.SourcePath, out source);
-            if (source != null && !string.IsNullOrWhiteSpace(source.ArtworkPath) && File.Exists(source.ArtworkPath))
-                asset.ArtworkPath = source.ArtworkPath;
-        }
-    }
-
     private async Task ResolveMissingSourceArtworkAsync()
     {
         try
@@ -2389,7 +2567,7 @@ public partial class MainWindow : Window
             var changed = false;
             foreach (var source in missing)
             {
-                var artwork = await Task.Run(() => ArtworkFinder.FindForSource(source.Path));
+                var artwork = await _artwork.FindForSourceAsync(source.Path);
                 if (string.IsNullOrWhiteSpace(artwork)) continue;
                 ApplySourceArtwork(source, artwork);
                 changed = true;
@@ -2398,8 +2576,8 @@ public partial class MainWindow : Window
             if (changed)
             {
                 _state.Index = _assets.ToList();
-                await Task.Run(() => _store.Save(_state));
-                StatusText.Text = "已补全可识别的音效库封面";
+                await _store.SaveAsync(_state);
+                StatusText.Text = T("已补全可识别的音效库封面", "Detected and applied available library artwork");
             }
         }
         catch (Exception exception) { AppDiagnostics.Write("Background artwork discovery failed.", exception); }
@@ -2407,11 +2585,7 @@ public partial class MainWindow : Window
 
     private void ApplySourceArtwork(LibrarySource source, string artwork)
     {
-        source.ArtworkPath = artwork;
-        source.ArtworkChecked = true;
-        foreach (var asset in _assets.Where(asset => asset.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)
-                                                     || asset.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)))
-            asset.ArtworkPath = artwork;
+        _artwork.ApplyToSource(source, _assets, artwork);
         if (_selected != null && (_selected.RootId.Equals(source.Id, StringComparison.OrdinalIgnoreCase)
                                   || _selected.SourcePath.Equals(source.Path, StringComparison.OrdinalIgnoreCase)))
         {
@@ -2420,32 +2594,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task PersistCatalogSafelyAsync()
+    {
+        try { await _store.SaveAsync(_state); }
+        catch (Exception exception) { AppDiagnostics.Write("Background catalog save failed.", exception); }
+    }
+
     private async Task DetectArtworkForSourceAsync(LibrarySource source, bool announce)
     {
-        var artwork = await Task.Run(() => ArtworkFinder.FindForSource(source.Path));
+        var artwork = await _artwork.FindForSourceAsync(source.Path);
         if (string.IsNullOrWhiteSpace(artwork))
         {
-            if (announce) MessageBox.Show("没有在该实体路径或其 Artwork/Cover 子目录中找到合适图片。", "PsyReaSFX Desktop");
+            if (announce) MessageBox.Show(T("没有在该实体路径或其 Artwork/Cover 子目录中找到合适图片。",
+                "No suitable image was found in this source or its Artwork/Cover subfolders."), "PsyReaSFX Desktop");
             return;
         }
         ApplySourceArtwork(source, artwork);
         _state.Index = _assets.ToList();
-        await Task.Run(() => _store.Save(_state));
-        if (announce) StatusText.Text = $"已应用封面：{Path.GetFileName(artwork)}";
+        await _store.SaveAsync(_state);
+        if (announce) StatusText.Text = T($"已应用封面：{Path.GetFileName(artwork)}", $"Applied artwork: {Path.GetFileName(artwork)}");
     }
 
     private void ChooseArtworkForSource(LibraryDefinition library, LibrarySource source)
     {
         var dialog = new OpenFileDialog
         {
-            Title = $"为 {library.Name} / {source.DisplayName} 指定封面",
-            Filter = "图片文件|*.png;*.jpg;*.jpeg;*.webp|所有文件|*.*",
+            Title = T($"为 {library.Name} / {source.DisplayName} 指定封面", $"Choose artwork for {library.Name} / {source.DisplayName}"),
+            Filter = T("图片文件|*.png;*.jpg;*.jpeg;*.webp|所有文件|*.*", "Image files|*.png;*.jpg;*.jpeg;*.webp|All files|*.*"),
             CheckFileExists = true
         };
         if (dialog.ShowDialog(this) != true) return;
         ApplySourceArtwork(source, dialog.FileName);
         _state.Index = _assets.ToList();
-        _ = Task.Run(() => _store.Save(_state));
+        _ = PersistCatalogSafelyAsync();
     }
 
     private void ChooseArtwork_Click(object sender, RoutedEventArgs e)
@@ -2524,35 +2705,6 @@ public partial class MainWindow : Window
         StatusText.Text = _autoPreview ? T("自动试听已开启", "Auto preview enabled") : T("自动试听已关闭", "Auto preview disabled");
     }
 
-    private void NavigationToggle_Click(object sender, RoutedEventArgs e) => SetNavigationVisible(!_navigationVisible);
-    private void InspectorToggle_Click(object sender, RoutedEventArgs e) => SetInspectorVisible(!_inspectorVisible);
-    private void FocusToggle_Click(object sender, RoutedEventArgs e)
-    {
-        _focusMode = !_focusMode;
-        if (_focusMode) { SetNavigationVisible(false); SetInspectorVisible(false); }
-        else { SetNavigationVisible(true); SetInspectorVisible(true); }
-        FocusToggle.Foreground = _focusMode ? (Brush)FindResource("AccentBrightBrush") : (Brush)FindResource("TextBrush");
-        FocusToggle.IsActive = _focusMode;
-    }
-
-    private void SetNavigationVisible(bool visible)
-    {
-        if (_navigationVisible && NavigationColumn.Width.Value > 0) _navigationWidth = NavigationColumn.Width;
-        _navigationVisible = visible; NavigationPanel.Visibility = NavigationSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        NavigationColumn.MinWidth = visible ? 190 : 0;
-        NavigationColumn.Width = visible ? _navigationWidth : new GridLength(0); NavigationSplitterColumn.Width = visible ? new GridLength(5) : new GridLength(0);
-        NavigationToggle.IsActive = visible;
-    }
-
-    private void SetInspectorVisible(bool visible)
-    {
-        if (_inspectorVisible && InspectorColumn.Width.Value > 0) _inspectorWidth = InspectorColumn.Width;
-        _inspectorVisible = visible; InspectorPanel.Visibility = InspectorSplitter.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        InspectorColumn.MinWidth = visible ? 230 : 0;
-        InspectorColumn.Width = visible ? _inspectorWidth : new GridLength(0); InspectorSplitterColumn.Width = visible ? new GridLength(5) : new GridLength(0);
-        InspectorToggle.IsActive = visible;
-    }
-
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
@@ -2605,16 +2757,24 @@ public partial class MainWindow : Window
         PreviewHistoryCount.Text = _assets.Count(asset => asset.PreviewCount > 0).ToString("N0");
     }
 
-    private void Window_Closing(object? sender, CancelEventArgs e)
+    private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (_shutdownCommitted) return;
+        e.Cancel = true;
+        if (_shutdownStarted) return;
+        _shutdownStarted = true;
+
+        try
+        {
         CompositionTarget.Rendering -= PlaybackRendering;
         CancelPreparedSelectionDrag();
-        CancelCancellation(ref _analysisCancellation);
-        CancelCancellation(ref _selectionDragPreparation);
-        CancelCancellation(ref _previewCancellation);
-        _scanCancellation?.Cancel(); _watchFolders.Dispose(); _autoPreviewTimer.Stop(); _activitySaveTimer.Stop(); _bridgeTimer.Stop(); _timer.Stop(); _previewEngine.Dispose();
-        _preferences.NavigationVisible = _navigationVisible;
-        _preferences.InspectorVisible = _inspectorVisible;
+        _watchFolders.Dispose(); _autoPreviewTimer.Stop(); _activitySaveTimer.Stop(); _bridgeTimer.Stop(); _timer.Stop();
+        await _jobs.StopAcceptingAndCancelAsync(TimeSpan.FromSeconds(5));
+        if (_jobs.Snapshot().Any(job => job.FinishedUtc == null))
+            AppDiagnostics.Write("Background job shutdown reached its five-second timeout.");
+        _previewEngine.Dispose();
+        _preferences.NavigationVisible = _windowState.State.NavigationVisible;
+        _preferences.InspectorVisible = _windowState.State.InspectorVisible;
         _preferences.AutoPreview = _autoPreview;
         _preferences.AuditionPitchSemitones = _pitchSemitones;
         _preferences.AuditionRate = _playbackRate;
@@ -2626,7 +2786,7 @@ public partial class MainWindow : Window
         SaveResultColumnPreferences();
         try { _preferencesStore.Save(_preferences); }
         catch (Exception exception) { AppDiagnostics.Write("Desktop preferences could not be saved.", exception); }
-        if (_initialized)
+        if (_initialized && _store.CanWrite)
         {
             _state.Index = _assets.ToList();
             try
@@ -2635,14 +2795,24 @@ public partial class MainWindow : Window
                 {
                     _savedSessionPlayed = _assets.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath)
                         .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                    _store.SaveSessionPlayed(_savedSessionPlayed);
+                    await _store.SaveSessionPlayedAsync(_savedSessionPlayed);
                 }
-                _store.SaveWorkspace(_state);
+                await _store.SaveWorkspaceAsync(_state);
                 if (_activityDirty.Count > 0)
-                    _store.SaveActivities(_assets.Where(asset => _activityDirty.Contains(asset.FilePath)));
+                    await _store.SaveActivitiesAsync(_assets.Where(asset => _activityDirty.Contains(asset.FilePath)).ToArray());
             }
             catch (Exception exception) { AppDiagnostics.Write("Catalog save during shutdown failed.", exception); }
         }
-        AppDiagnostics.Write("Desktop shutdown completed.");
+            AppDiagnostics.Write("Desktop shutdown completed.");
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.Write("Desktop shutdown encountered an error; the remaining cleanup path was released.", exception);
+        }
+        finally
+        {
+            _shutdownCommitted = true;
+            Close();
+        }
     }
 }

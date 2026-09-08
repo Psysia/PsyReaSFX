@@ -194,9 +194,11 @@ public sealed class LibraryWatchService : IDisposable
                 {
                     IncludeSubdirectories = true,
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    InternalBufferSize = 64 * 1024,
                     EnableRaisingEvents = true
                 };
                 watcher.Created += OnChanged; watcher.Changed += OnChanged; watcher.Deleted += OnChanged; watcher.Renamed += OnChanged;
+                watcher.Error += OnWatcherError;
                 _watchers.Add(watcher);
             }
             catch (Exception exception) { AppDiagnostics.Write($"Watch Folder unavailable: {source.Path}", exception); }
@@ -206,9 +208,24 @@ public sealed class LibraryWatchService : IDisposable
     private void OnChanged(object sender, FileSystemEventArgs e)
     {
         if (!AudioFileReader.SupportedExtensions.Contains(Path.GetExtension(e.FullPath)) && Path.HasExtension(e.FullPath)) return;
+        ScheduleChange();
+    }
+
+    private void OnWatcherError(object sender, ErrorEventArgs e)
+    {
+        AppDiagnostics.Write("Watch Folder event buffer overflowed or became unavailable; scheduling a full incremental scan.", e.GetException());
+        ScheduleChange();
+    }
+
+    private void ScheduleChange()
+    {
         lock (_gate)
         {
-            _timer ??= new System.Threading.Timer(_ => ChangeDetected?.Invoke(this, EventArgs.Empty));
+            _timer ??= new System.Threading.Timer(_ =>
+            {
+                try { ChangeDetected?.Invoke(this, EventArgs.Empty); }
+                catch (Exception exception) { AppDiagnostics.Write("Watch Folder change notification failed.", exception); }
+            });
             _timer.Change(_debounce, Timeout.InfiniteTimeSpan);
         }
     }

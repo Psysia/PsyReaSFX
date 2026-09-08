@@ -2,13 +2,25 @@ using PsyReaSFX.Data;
 
 namespace PsyReaSFX.Desktop.Services;
 
-public sealed class StateStore
+public sealed class StateStore : IStorageService
 {
-    private readonly PsyReaSFXDatabase _database = new();
+    private readonly PsyReaSFXDatabase _database;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly object _workspaceQueueGate = new();
+    private readonly List<TaskCompletionSource> _pendingWorkspaceWaiters = [];
+    private CatalogSnapshot? _pendingWorkspace;
+    private bool _workspacePumpRunning;
+    private long _workspaceWritesExecuted;
+    private long _workspaceWritesCoalesced;
     public string DataDirectory => _database.DataDirectory;
     public string DatabasePath => _database.DatabasePath;
     public MigrationSummary? LastMigration { get; private set; }
     public Exception? LastError { get; private set; }
+    public bool CanWrite => LastError is null;
+    internal long WorkspaceWritesExecuted => Interlocked.Read(ref _workspaceWritesExecuted);
+    internal long WorkspaceWritesCoalesced => Interlocked.Read(ref _workspaceWritesCoalesced);
+
+    public StateStore(PsyReaSFXDatabase? database = null) => _database = database ?? new PsyReaSFXDatabase();
 
     public async Task<PersistedState> LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -19,6 +31,7 @@ public sealed class StateStore
             LastMigration = await _database.ImportLuaIfNeededAsync(cancellationToken: cancellationToken);
             var snapshot = await _database.LoadSnapshotAsync(cancellationToken);
             var state = FromSnapshot(snapshot);
+            LastError = null;
             AppDiagnostics.Write($"Catalog opened: {state.Libraries.Count} libraries, {state.Index.Count} assets.");
             return state;
         }
@@ -34,46 +47,162 @@ public sealed class StateStore
 
     public void Save(PersistedState state)
     {
-        _database.SaveDesktopSnapshotAsync(ToSnapshot(state)).GetAwaiter().GetResult();
+        SaveAsync(state).GetAwaiter().GetResult();
     }
 
-    public void SaveWorkspace(PersistedState state) =>
-        _database.SaveWorkspaceAsync(ToSnapshot(state)).GetAwaiter().GetResult();
+    public Task SaveAsync(PersistedState state, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        // Capture mutable UI collections before the first await. The database
+        // can then write in the background without enumerating live WPF state.
+        var snapshot = ToSnapshot(state);
+        return WriteSerializedAsync(token => _database.SaveDesktopSnapshotAsync(snapshot, token), cancellationToken);
+    }
 
-    public void SaveActivities(IEnumerable<AudioAsset> assets) =>
-        _database.SaveAssetActivityAsync(assets.Select(ToAsset)).GetAwaiter().GetResult();
+    public void SaveWorkspace(PersistedState state)
+    {
+        SaveWorkspaceAsync(state).GetAwaiter().GetResult();
+    }
 
-    public Task SaveActivitiesAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default) =>
-        _database.SaveAssetActivityAsync(assets.Select(ToAsset).ToArray(), cancellationToken);
+    public Task SaveWorkspaceAsync(PersistedState state, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        cancellationToken.ThrowIfCancellationRequested();
+        var snapshot = ToWorkspaceSnapshot(state);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_workspaceQueueGate)
+        {
+            if (_pendingWorkspace is not null)
+                Interlocked.Increment(ref _workspaceWritesCoalesced);
+            _pendingWorkspace = snapshot;
+            _pendingWorkspaceWaiters.Add(completion);
+            if (!_workspacePumpRunning)
+            {
+                _workspacePumpRunning = true;
+                _ = Task.Run(PumpWorkspaceWritesAsync);
+            }
+        }
+        return cancellationToken.CanBeCanceled
+            ? completion.Task.WaitAsync(cancellationToken)
+            : completion.Task;
+    }
 
-    public Task SaveAssetDetailsAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default) =>
-        _database.SaveAssetDetailsAsync(assets.Select(ToAsset), cancellationToken);
+    public void SaveActivities(IEnumerable<AudioAsset> assets)
+    {
+        SaveActivitiesAsync(assets).GetAwaiter().GetResult();
+    }
 
-    public void SaveSessionPlayed(IEnumerable<string> paths) =>
-        _database.ReplaceSessionPlayedAsync(paths).GetAwaiter().GetResult();
+    public Task SaveActivitiesAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        var rows = assets.Select(ToAsset).ToArray();
+        return WriteSerializedAsync(token => _database.SaveAssetActivityAsync(rows, token), cancellationToken);
+    }
+
+    public Task SaveAssetDetailsAsync(IEnumerable<AudioAsset> assets, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        var rows = assets.Select(ToAsset).ToArray();
+        return WriteSerializedAsync(token => _database.SaveAssetDetailsAsync(rows, token), cancellationToken);
+    }
+
+    public void SaveSessionPlayed(IEnumerable<string> paths)
+    {
+        SaveSessionPlayedAsync(paths).GetAwaiter().GetResult();
+    }
+
+    public Task SaveSessionPlayedAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        var rows = paths.ToArray();
+        return WriteSerializedAsync(token => _database.ReplaceSessionPlayedAsync(rows, token), cancellationToken);
+    }
 
     public Task<IReadOnlyList<RegionRecord>> LoadRegionsAsync(string assetPath, CancellationToken cancellationToken = default) =>
         _database.LoadRegionsAsync(assetPath, cancellationToken);
 
-    public Task SaveRegionAsync(RegionRecord region, CancellationToken cancellationToken = default) =>
-        _database.UpsertRegionAsync(region, cancellationToken);
+    public Task SaveRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return WriteSerializedAsync(token => _database.UpsertRegionAsync(region, token), cancellationToken);
+    }
 
-    public Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default) =>
-        _database.DeleteRegionAsync(region, cancellationToken);
+    public Task DeleteRegionAsync(RegionRecord region, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return WriteSerializedAsync(token => _database.DeleteRegionAsync(region, token), cancellationToken);
+    }
 
     public Task<LoudnessRecord?> LoadLoudnessAsync(string assetPath, CancellationToken cancellationToken = default) =>
         _database.LoadLoudnessAsync(assetPath, cancellationToken);
 
-    public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default) =>
-        _database.UpsertLoudnessAsync(row, cancellationToken);
+    public Task SaveLoudnessAsync(LoudnessRecord row, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return WriteSerializedAsync(token => _database.UpsertLoudnessAsync(row, token), cancellationToken);
+    }
 
-    public Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default) =>
-        _database.AddProjectUsageAsync(row, cancellationToken);
+    public Task AddProjectUsageAsync(ProjectUsageRecord row, CancellationToken cancellationToken = default)
+    {
+        EnsureWritable();
+        return WriteSerializedAsync(token => _database.AddProjectUsageAsync(row, token), cancellationToken);
+    }
 
     public Task<IReadOnlyList<ProjectUsageRecord>> LoadProjectUsageAsync(int limit = 500, CancellationToken cancellationToken = default) =>
         _database.LoadProjectUsageAsync(limit, cancellationToken);
 
-    private static PersistedState FromSnapshot(CatalogSnapshot snapshot)
+    private async Task PumpWorkspaceWritesAsync()
+    {
+        while (true)
+        {
+            CatalogSnapshot snapshot;
+            TaskCompletionSource[] waiters;
+            lock (_workspaceQueueGate)
+            {
+                if (_pendingWorkspace is null)
+                {
+                    _workspacePumpRunning = false;
+                    return;
+                }
+                snapshot = _pendingWorkspace;
+                _pendingWorkspace = null;
+                waiters = _pendingWorkspaceWaiters.ToArray();
+                _pendingWorkspaceWaiters.Clear();
+            }
+
+            try
+            {
+                await WriteSerializedAsync(
+                    token => _database.SaveWorkspaceAsync(snapshot, token),
+                    CancellationToken.None).ConfigureAwait(false);
+                Interlocked.Increment(ref _workspaceWritesExecuted);
+                foreach (var waiter in waiters) waiter.TrySetResult();
+            }
+            catch (Exception exception)
+            {
+                foreach (var waiter in waiters) waiter.TrySetException(exception);
+            }
+        }
+    }
+
+    private Task WriteSerializedAsync(
+        Func<CancellationToken, Task> writer,
+        CancellationToken cancellationToken) =>
+        Task.Run(async () =>
+        {
+            await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try { await writer(cancellationToken).ConfigureAwait(false); }
+            finally { _writeGate.Release(); }
+        });
+
+    private void EnsureWritable()
+    {
+        if (LastError is not null)
+            throw new InvalidOperationException(
+                "Catalog writes are disabled because the database did not open successfully.", LastError);
+    }
+
+    internal static PersistedState FromSnapshot(CatalogSnapshot snapshot)
     {
         var state = new PersistedState { Favorites = new HashSet<string>(snapshot.Favorites, StringComparer.OrdinalIgnoreCase) };
         var byId = new Dictionary<string, LibraryDefinition>(StringComparer.OrdinalIgnoreCase);
@@ -86,7 +215,9 @@ public sealed class StateStore
             if (byId.TryGetValue(row.LibraryId, out var library)) library.Sources.Add(new LibrarySource
             {
                 Id = row.Id, Path = row.Path, Alias = row.Alias, Enabled = row.Enabled, ArtworkPath = row.ArtworkPath,
-                ArtworkChecked = row.ArtworkChecked, ArtworkScanVersion = row.ArtworkScanVersion
+                ArtworkChecked = row.ArtworkChecked, ArtworkScanVersion = row.ArtworkScanVersion,
+                CanonicalPath = row.CanonicalPath, VolumeLabel = row.VolumeLabel,
+                VolumeSerial = row.VolumeSerial, LastSeenUtc = row.LastSeenUtc
             });
         state.Index = snapshot.Assets.Select(FromAsset).ToList();
         foreach (var asset in state.Index)
@@ -105,16 +236,24 @@ public sealed class StateStore
 
     private static CatalogSnapshot ToSnapshot(PersistedState state)
     {
+        var snapshot = ToWorkspaceSnapshot(state);
+        snapshot.Assets.AddRange(state.Index.Select(ToAsset));
+        snapshot.SessionPlayed.UnionWith(state.Index.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath));
+        return snapshot;
+    }
+
+    private static CatalogSnapshot ToWorkspaceSnapshot(PersistedState state)
+    {
         var snapshot = new CatalogSnapshot();
         foreach (var library in state.Libraries)
         {
             snapshot.Libraries.Add(new LibraryRecord(library.Id, library.Name, library.ArtworkPath, library.IsExpanded));
             foreach (var source in library.Sources)
-                snapshot.Sources.Add(new SourceRecord(source.Id, library.Id, source.Path, source.Alias, source.Enabled, source.ArtworkPath, source.ArtworkChecked, source.ArtworkScanVersion));
+                snapshot.Sources.Add(new SourceRecord(source.Id, library.Id, source.Path, source.Alias, source.Enabled,
+                    source.ArtworkPath, source.ArtworkChecked, source.ArtworkScanVersion, source.CanonicalPath,
+                    source.VolumeLabel, source.VolumeSerial, source.LastSeenUtc));
         }
-        snapshot.Assets.AddRange(state.Index.Select(ToAsset));
         snapshot.Favorites.UnionWith(state.Favorites);
-        snapshot.SessionPlayed.UnionWith(state.Index.Where(asset => asset.IsSessionPlayed).Select(asset => asset.FilePath));
         foreach (var collection in state.Collections)
         {
             snapshot.Collections.Add(new CollectionRecord(collection.Id, collection.Name, collection.Kind));
@@ -129,23 +268,25 @@ public sealed class StateStore
 
     private static AudioAsset FromAsset(AssetRecord row) => new()
     {
-        FilePath = row.Path, FileName = row.Name, RelativeFolder = row.Folder, SourcePath = row.Root, LibraryName = row.Library,
+        AssetId = row.AssetId, FilePath = row.Path, RelativePath = row.RelativePath,
+        FileName = row.Name, RelativeFolder = row.Folder, SourcePath = row.Root, LibraryName = row.Library,
         DurationSeconds = row.Duration, Channels = row.Channels, SampleRate = row.SampleRate, BitDepth = row.BitDepth,
         Format = row.SourceType, FileSize = row.Size, ArtworkPath = row.ArtworkPath, Description = row.Description,
         Keywords = row.Keywords, CatId = row.CatId, Category = row.Category, Subcategory = row.Subcategory,
         WorkflowStatus = row.WorkflowStatus, Marked = row.Marked, PreviewCount = row.PreviewCount,
         LastPreviewed = row.LastPreviewed, Indexed = row.Indexed, Ready = row.Ready, UsedCount = row.UsedCount,
-        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId
+        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId, LastSeenUtc = row.LastSeenUtc
     };
 
     private static AssetRecord ToAsset(AudioAsset row) => new()
     {
-        Path = row.FilePath, Name = row.FileName, Folder = row.RelativeFolder, Root = row.SourcePath, Library = row.LibraryName,
+        AssetId = row.AssetId, Path = row.FilePath, RelativePath = row.RelativePath,
+        Name = row.FileName, Folder = row.RelativeFolder, Root = row.SourcePath, Library = row.LibraryName,
         Duration = row.DurationSeconds, Channels = row.Channels, SampleRate = row.SampleRate, BitDepth = row.BitDepth,
         SourceType = row.Format, Size = row.FileSize, ArtworkPath = row.ArtworkPath, Description = row.Description,
         Keywords = row.Keywords, CatId = row.CatId, Category = row.Category, Subcategory = row.Subcategory,
         WorkflowStatus = row.WorkflowStatus, Marked = row.Marked, PreviewCount = row.PreviewCount,
         LastPreviewed = row.LastPreviewed, Indexed = row.Indexed, Ready = row.Ready, UsedCount = row.UsedCount,
-        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId
+        LastUsed = row.LastUsed, RootId = row.RootId, LibraryId = row.LibraryId, LastSeenUtc = row.LastSeenUtc
     };
 }

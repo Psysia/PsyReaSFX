@@ -1,0 +1,177 @@
+name: Code quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up pinned Lua test runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/DevelopersCommunity/cmake-lua/releases/download/v5.4.6/Lua-5.4.6-win64.msi'
+          $msi = Join-Path $env:RUNNER_TEMP 'Lua-5.4.6-win64.msi'
+          $target = Join-Path $env:RUNNER_TEMP 'Lua-5.4.6'
+          Invoke-WebRequest -Uri $url -OutFile $msi
+          $actual = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = '1087abb5aca89cad29283a17745ac2819aa46ca076084e8b3416db87d2694ed8'
+          if ($actual -cne $expected) { throw "Lua runtime hash mismatch: $actual" }
+          $process = Start-Process msiexec.exe -ArgumentList '/a', $msi, '/qn', "TARGETDIR=$target" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Lua runtime extraction failed: $($process.ExitCode)" }
+          (Join-Path $target 'Lua/bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Parse Lua 5.3 source
+        shell: pwsh
+        run: |
+          npm install --no-save --ignore-scripts luaparse@0.3.1
+          node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync('PsyReaSFX_v0_7_23_Stable.lua','utf8'),{luaVersion:'5.3'}); console.log('Lua parse OK');"
+
+      - name: Verify modular Lua release
+        shell: pwsh
+        run: |
+          $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
+          ./tools/Build-LuaRelease.ps1 -Version 0.8.0-beta4 -OutputPath $built
+          $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
+          $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
+          if ($tracked -cne $generated) {
+            throw 'Tracked ReaPack script is stale. Rebuild it from src/lua before committing.'
+          }
+          node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync(process.argv[1],'utf8'),{luaVersion:'5.3'}); console.log('Generated Lua parse OK');" $built
+
+      - name: Run Lua persistence fault injection
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Lua-persistence'
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $fixture 'backup') | Out-Null
+          $lockedTarget = Join-Path $fixture 'externally-locked-target.bin'
+          $lockedSource = Join-Path $fixture 'externally-locked-source.bin'
+          [IO.File]::WriteAllText($lockedTarget, 'locked-old-generation')
+          [IO.File]::WriteAllText($lockedSource, 'locked-new-generation')
+          $lock = [IO.File]::Open($lockedTarget, 'Open', 'Read', 'Read')
+          try {
+            lua tools/lua_persistence_selftest.lua $fixture (Resolve-Path 'src/lua/20_jobs_storage.lua') $lockedTarget $lockedSource
+            if ($LASTEXITCODE -ne 0) { throw "Lua persistence test failed: $LASTEXITCODE" }
+          }
+          finally {
+            $lock.Dispose()
+          }
+
+      - name: Run Lua full-file duplicate comparison
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Lua-duplicate-compare'
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          lua tools/lua_duplicate_compare_selftest.lua $fixture (Resolve-Path 'src/lua/45_duplicate_confirmation.lua')
+
+      - name: Run Lua incremental result rebuild
+        shell: pwsh
+        run: |
+          lua tools/lua_incremental_results_selftest.lua (Resolve-Path 'src/lua/35_incremental_results.lua') 25000
+
+      - name: Run Lua asset journal codec
+        shell: pwsh
+        run: |
+          lua tools/lua_asset_journal_selftest.lua (Resolve-Path 'src/lua/36_asset_journal.lua')
+
+      - name: Run Lua catalog cache capacity smoke test
+        shell: pwsh
+        run: |
+          lua tools/lua_catalog_caches_selftest.lua (Resolve-Path 'src/lua/37_catalog_caches.lua') 25000
+
+      - name: Run Lua incremental persistence capacity smoke test
+        shell: pwsh
+        run: |
+          lua tools/lua_incremental_persistence_selftest.lua (Resolve-Path 'src/lua/38_incremental_persistence.lua') 25000
+
+      - name: Run Lua host adapter self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_host_adapter_selftest.lua (Resolve-Path 'src/lua/15_host_adapter.lua')
+
+      - name: Run Lua state store self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_state_store_selftest.lua (Resolve-Path 'src/lua/12_state_store.lua')
+
+      - name: Run Lua i18n self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_i18n_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua')
+
+      - name: Run Lua job coordinator self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_jobs_selftest.lua (Resolve-Path 'src/lua/20_jobs_storage.lua')
+
+      - name: Audit Lua architecture boundaries
+        run: python tools/audit_lua_architecture.py
+
+      - name: Build Desktop Release
+        run: dotnet build desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj -c Release
+
+      - name: Audit NuGet dependencies
+        shell: pwsh
+        run: |
+          $output = dotnet list desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj package --vulnerable --include-transitive
+          $output
+          if ($output -match 'has the following vulnerable packages') {
+            throw 'NuGet vulnerability audit found a vulnerable dependency.'
+          }
+
+      - name: Run Desktop self-test
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Desktop-self-test.json'
+          $exe = 'desktop/PsyReaSFX.Desktop/bin/Release/net8.0-windows/PsyReaSFX.Desktop.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--self-test', $report -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
+            throw "Desktop self-test failed with exit code $($process.ExitCode)."
+          }
+          Get-Content -LiteralPath $report
+
+      - name: Run disposable catalog benchmark
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-hardening-1k'
+          $report = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-hardening-benchmark.json'
+          python tools/generate_hardening_library.py $fixture --count 1000
+          $exe = 'desktop/PsyReaSFX.Desktop/bin/Release/net8.0-windows/PsyReaSFX.Desktop.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--hardening-benchmark', $fixture, $report -Wait -PassThru -WindowStyle Hidden
+          Get-Content -LiteralPath $report
+          if ($process.ExitCode -ne 0) {
+            throw "Hardening benchmark failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Run synthetic capacity smoke test
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-capacity-benchmark.json'
+          $exe = 'desktop/PsyReaSFX.Desktop/bin/Release/net8.0-windows/PsyReaSFX.Desktop.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList '--hardening-capacity-benchmark', '25000', $report -Wait -PassThru -WindowStyle Hidden
+          Get-Content -LiteralPath $report
+          if ($process.ExitCode -ne 0) {
+            throw "Capacity benchmark failed with exit code $($process.ExitCode)."
+          }

@@ -27,6 +27,10 @@ public sealed class LibrarySource
     public string ArtworkPath { get; set; } = "";
     public bool ArtworkChecked { get; set; }
     public int ArtworkScanVersion { get; set; }
+    public string CanonicalPath { get; set; } = "";
+    public string VolumeLabel { get; set; } = "";
+    public string VolumeSerial { get; set; } = "";
+    public long LastSeenUtc { get; set; }
     public string DisplayName => System.IO.Path.GetFileName(Path.TrimEnd(System.IO.Path.DirectorySeparatorChar)) is { Length: > 0 } n ? n : Path;
 }
 
@@ -46,7 +50,9 @@ public sealed class AudioAsset : INotifyPropertyChanged
     private bool _marked;
     private bool _isSessionPlayed;
     private string _uiLanguage = "zh-CN";
+    public string AssetId { get; set; } = "";
     public string FilePath { get; set; } = "";
+    public string RelativePath { get; set; } = "";
     public string FileName { get; set; } = "";
     public string LibraryName { get; set; } = "";
     public string SourcePath { get; set; } = "";
@@ -98,6 +104,7 @@ public sealed class AudioAsset : INotifyPropertyChanged
     public double LastUsed { get; set; }
     public string RootId { get; set; } = "";
     public string LibraryId { get; set; } = "";
+    public long LastSeenUtc { get; set; }
     public bool IsFavorite { get => _isFavorite; set { _isFavorite = value; OnPropertyChanged(); OnPropertyChanged(nameof(FavoriteGlyph)); } }
     public string FavoriteGlyph => IsFavorite ? "★" : "☆";
     public bool HasBeenPreviewed => PreviewCount > 0;
