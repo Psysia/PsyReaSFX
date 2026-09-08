@@ -4159,10 +4159,10 @@ local function result_sort_comparator()
       if a_path == b_path then
         return false
       end
-      return direction > 0 and a_path < b_path or a_path > b_path
+      return ordered_result_less(a_path, b_path, direction)
     end
 
-    return direction > 0 and av < bv or av > bv
+    return ordered_result_less(av, bv, direction)
   end
 end
 

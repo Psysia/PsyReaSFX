@@ -6,6 +6,22 @@ assert(count >= 1 and count <= 500000, "count must be between 1 and 500000")
 assert(loadfile(module_path))()
 local budget = requested_budget or RESULT_BUILD_DEFAULT_BUDGET
 
+-- Regression for the main-window comparator contract. Both orders must be
+-- irreflexive and asymmetric; otherwise Lua raises "invalid order function"
+-- when a real catalog chunk is sorted.
+assert(ordered_result_less("a", "b", 1), "ascending comparison mismatch")
+assert(not ordered_result_less("b", "a", 1), "ascending comparison is not asymmetric")
+assert(not ordered_result_less("a", "a", 1), "ascending comparison is not irreflexive")
+assert(ordered_result_less("b", "a", -1), "descending comparison mismatch")
+assert(not ordered_result_less("a", "b", -1), "descending comparison is not asymmetric")
+assert(not ordered_result_less("a", "a", -1), "descending comparison is not irreflexive")
+
+local strict_fixture = { "b", "a", "c", "a" }
+table.sort(strict_fixture, function(left, right)
+  return ordered_result_less(left, right, 1)
+end)
+assert(table.concat(strict_fixture, ",") == "a,a,b,c", "strict ascending sort mismatch")
+
 local assets = {}
 for index = count, 1, -1 do
   assets[#assets + 1] = {

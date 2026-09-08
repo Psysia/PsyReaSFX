@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.0-beta4
+-- @version 0.8.0-beta4.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -154,6 +154,7 @@
 --   - 核心数据采用 schema、原子事务、代次快照与增量日志保护
 --   - 大型目录的保存、扫描收尾、缓存、维护与关联数据均按帧预算执行
 --   - 建立 AppState、Host、模块化发布源、架构审计和完整 CI 门禁
+--   - 0.8.0 Beta 4.1：修复升序结果比较器不满足严格弱序导致的排序崩溃
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -162,7 +163,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.0 Beta 4"
+local VERSION = "0.8.0 Beta 4.1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -7381,6 +7382,17 @@ end
 RESULT_BUILD_DEFAULT_BUDGET = 10000
 RESULT_SORT_CHUNK_SIZE = 4096
 
+-- Keep the ordering relation strict in both directions. The common
+-- `ascending and left < right or left > right` idiom is not equivalent to an
+-- if/else in Lua: when the ascending comparison is false it evaluates the
+-- descending branch as a fallback, making both a<b and b<a true.
+function ordered_result_less(left, right, direction)
+  if (tonumber(direction) or 1) < 0 then
+    return left > right
+  end
+  return left < right
+end
+
 function begin_incremental_result_job(
   source,
   predicate,
@@ -14219,10 +14231,10 @@ local function result_sort_comparator()
       if a_path == b_path then
         return false
       end
-      return direction > 0 and a_path < b_path or a_path > b_path
+      return ordered_result_less(a_path, b_path, direction)
     end
 
-    return direction > 0 and av < bv or av > bv
+    return ordered_result_less(av, bv, direction)
   end
 end
 

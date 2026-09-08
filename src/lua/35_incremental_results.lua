@@ -5,6 +5,17 @@
 RESULT_BUILD_DEFAULT_BUDGET = 10000
 RESULT_SORT_CHUNK_SIZE = 4096
 
+-- Keep the ordering relation strict in both directions. The common
+-- `ascending and left < right or left > right` idiom is not equivalent to an
+-- if/else in Lua: when the ascending comparison is false it evaluates the
+-- descending branch as a fallback, making both a<b and b<a true.
+function ordered_result_less(left, right, direction)
+  if (tonumber(direction) or 1) < 0 then
+    return left > right
+  end
+  return left < right
+end
+
 function begin_incremental_result_job(
   source,
   predicate,
