@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.0 Beta 4.1
+
+### Result sorting hotfix
+
+- Fixes the ascending comparator falling through to the descending branch when its first comparison was false. That defect could report both items in a pair as “less than” one another and trigger Lua's `invalid order function for sorting`.
+- Ascending and descending order now use explicit mutually exclusive branches; equal values always return false, satisfying the strict weak ordering required by `table.sort`.
+- Adds regression assertions for ascending, descending, equal, and repeated values.
+- Makes the Desktop self-test independent of real local Lua data and verifies both FFmpeg-present and FFmpeg-absent environments.
+
 ## 0.8.0 Beta 4
 
 This release does not expand the user-facing feature scope. It completes the 49-commit hardening program that began with the full-repository review on August 31, 2026. The design, execution order, evidence, 500k capacity standard, and online acceptance checklist are archived in [`HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md`](HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md).

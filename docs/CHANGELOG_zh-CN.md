@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.8.0 Beta 4.1
+
+### 结果排序热修复
+
+- 修复升序比较器在第一个比较为假时错误落入降序分支的问题；该错误会让同一对
+  不同素材双向都返回“更小”，最终触发 Lua 的 `invalid order function for sorting`。
+- 升序与降序现在使用显式互斥分支，并保证相等值不会返回 true，满足 Lua
+  `table.sort` 所要求的严格弱序关系。
+- 增加升序、降序、相等值和重复值的回归断言，防止同类布尔短路错误再次进入发布包。
+- Desktop 自检完全隔离本机真实 Lua 数据，并分别验证存在和缺少 FFmpeg 的环境。
+
 ## 0.8.0 Beta 4
 
 本版本不扩张用户功能范围，集中完成从 2026-08-31 全仓库审查开始的 49 个稳定化提交。完整设计、实施顺序、测试证据、50 万条容量标准和线上验收清单见 [`HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md`](HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md)。
