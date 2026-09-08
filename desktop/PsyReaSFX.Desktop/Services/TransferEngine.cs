@@ -16,6 +16,8 @@ public sealed class TransferEngine : ITransferService
     private const int MaximumJobs = 4096;
     private const int MaximumVariantsPerAsset = 128;
 
+    internal static bool IsFlacEncoderAvailable() => FindExecutable("ffmpeg.exe") is not null;
+
     public static IReadOnlyList<TransferVariant> BuildVariants(TransferOptions options)
     {
         if (!options.VariantsEnabled)

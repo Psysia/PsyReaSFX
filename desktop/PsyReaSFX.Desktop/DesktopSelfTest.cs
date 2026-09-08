@@ -103,11 +103,15 @@ internal static class DesktopSelfTest
                                         && luaSchemaSnapshot.Assets.Single().AssetId == "asset_schema_self"
                                         && futureLuaRejected;
 
-            var luaDirectory = LuaDataLocator.Find();
-            var migration = await database.ImportLuaIfNeededAsync(luaDirectory);
-            var catalog = await database.LoadSnapshotAsync();
-            var migrationPassed = luaDirectory is null ||
-                                  (migration.Imported && catalog.Libraries.Count > 0 && catalog.Assets.Count > 0);
+            // The self-test must never discover or import a developer's real Lua data.
+            // Reuse the isolated schema fixture above so local and CI runs exercise
+            // exactly the same migration, waveform, and thumbnail paths.
+            var luaDirectory = luaSchemaDirectory;
+            var migration = luaSchemaMigration;
+            var catalog = luaSchemaSnapshot;
+            var migrationPassed = migration.Imported
+                                  && catalog.Libraries.Count == 1
+                                  && catalog.Assets.Count == 1;
 
             var detailDatabase = new PsyReaSFXDatabase(Path.Combine(working, "database-details"));
             await detailDatabase.InitializeAsync();
@@ -580,8 +584,12 @@ internal static class DesktopSelfTest
                 [new TransferRequest(transferAsset, -1, -1, flacVariant, 1)], flacOptions,
                 new InlineProgress<TransferProgress>(), CancellationToken.None);
             var flacPath = flacResult.LastOutput;
-            var flacPassed = flacResult.SuccessCount == 1 && flacResult.FailedCount == 0
-                             && flacPath != null && File.Exists(flacPath) && new FileInfo(flacPath).Length > 100;
+            var flacEncoderAvailable = TransferEngine.IsFlacEncoderAvailable();
+            var flacPassed = flacEncoderAvailable
+                ? flacResult.SuccessCount == 1 && flacResult.FailedCount == 0
+                  && flacPath != null && File.Exists(flacPath) && new FileInfo(flacPath).Length > 100
+                : flacResult.SuccessCount == 0 && flacResult.FailedCount == 1
+                  && flacResult.Items.Single().Message.Contains("requires ffmpeg.exe", StringComparison.OrdinalIgnoreCase);
 
             var reliability = new CatalogReliabilityService(Path.Combine(working, "reliability-data"));
             reliability.BeginScan();
@@ -756,6 +764,7 @@ internal static class DesktopSelfTest
                 autoVariantSuffixPassed,
                 wideVariantRangePassed,
                 waveMetadataPassed,
+                flacEncoderAvailable,
                 flacPassed,
                 reliability = new
                 {
