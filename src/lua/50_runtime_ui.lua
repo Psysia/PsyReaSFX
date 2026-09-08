@@ -14430,8 +14430,7 @@ function draw_import_progress()
   local visible_scan =
     state.scan and not state.scan.silent
   local visible_import =
-    state.import_session
-    and not state.import_session.silent
+    visible_progress_session(state.import_session)
   local visible_relink = state.relink_plan_session
   local visible_artwork_reset = state.artwork_reset_session
   local visible_root_removal = state.root_removal_session
