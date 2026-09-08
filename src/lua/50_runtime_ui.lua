@@ -12353,7 +12353,7 @@ function collect_folder_payload()
 
   for index = 0, (count or 0) - 1 do
     local ok, path = ImGui.GetDragDropPayloadFile(ctx, index)
-    path = ok and normalize_slashes(trim(path or "")) or ""
+    path = ok and normalize_external_path(path) or ""
 
     if path ~= ""
       and directory_exists(path)
