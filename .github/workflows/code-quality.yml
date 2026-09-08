@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.8.0-beta4.1 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.8.0-beta4.2 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {

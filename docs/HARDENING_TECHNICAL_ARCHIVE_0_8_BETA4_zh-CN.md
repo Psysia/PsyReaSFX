@@ -10,7 +10,7 @@
 
 代码收口提交：`e3ead43`
 
-公开版本：`0.8.0 Beta 4`；首次线上热修复：`0.8.0 Beta 4.1`
+公开版本：`0.8.0 Beta 4`；线上热修复：`0.8.0 Beta 4.1`、`0.8.0 Beta 4.2`
 
 ## 1. 文档目的
 
@@ -234,10 +234,10 @@ Desktop 自检还覆盖数据库迁移、未来版本拒写、Lua schema 3 导�
 发布策略：
 
 - `0.7.23` 继续作为长期可下载 Stable；
-- `0.8.0-beta2`、`0.8.0-beta3`、`0.8.0-beta4` 和 `0.8.0-beta4.1` 在同一个 ReaPack 包中共存；
+- `0.8.0-beta2`、`0.8.0-beta3`、`0.8.0-beta4`、`0.8.0-beta4.1` 和 `0.8.0-beta4.2` 在同一个 ReaPack 包中共存；
 - Stable 用户不会被自动切换到 Beta；
-- 用户启用该包的 pre-release 后，可在 Versions 菜单主动选择 Beta 4；
-- GitHub Beta 4 Release 只提供本次 Lua 测试包，不混入新的 Desktop 构建。
+- 用户启用该包的 pre-release 后，可在 Versions 菜单主动选择 Beta 4.2；
+- GitHub Beta 4 系列 Release 只提供对应 Lua 测试包，不混入新的 Desktop 构建。
 
 ## 9. 升级、在线测试与回退
 
@@ -324,3 +324,17 @@ Beta 4.1 的处理：
 - 主结果的字段比较与路径兜底比较统一复用同一个严格比较函数；
 - 自动测试新增升序、降序、相等值和重复值断言，并直接触发 `table.sort`；
 - 保留 Beta 4 标签作为事故审计边界，ReaPack 和 Release 以 Beta 4.1 作为后续测试入口。
+
+## 15. 第二次线上测试事件：Beta 4.2 扫描整理进度热修复
+
+真实 42,913 文件库在扫描完成、进入“整理索引”阶段后，于合并单文件第 24758 行触发 `attempt to index a boolean value (local 'session')`。进度绘制使用 `session and not session.silent` 计算可见性，却把这个布尔结果继续当成会话对象读取；正常可见会话因此被折叠为 `true`。
+
+异常发生在 `BeginChild` 与无条件 `EndChild` 之间，Lua 提前退出当前绘制函数，使既有的 `EndChild` 没有机会执行，ReaImGui 随后报告 `Missing EndChild()`。后一个窗口是同一异常的栈清理级联结果，并非独立的布局缺陷。
+
+Beta 4.2 的处理：
+
+- 新增可见进度会话守卫：只返回非静默的 table 会话，其余输入统一返回 nil；
+- 进度窗口保存并使用真实会话对象，不再复用布尔可见性结果；
+- 保留 `EndChild` 的无条件闭合位置，根因消失后正常走完 ReaImGui 栈清理；
+- 自动测试覆盖正常、静默、nil 与异常布尔输入；
+- 保留 Beta 4.1 标签作为首次线上事故边界，以 Beta 4.2 作为后续大库扫描测试入口。

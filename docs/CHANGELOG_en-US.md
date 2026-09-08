@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.0 Beta 4.2
+
+### Scan-finalization progress hotfix
+
+- Fixes the progress renderer converting a visible import session into a boolean and then crashing while indexing `session.current` during scan finalization.
+- Routes visible, silent, absent, and malformed values through an explicit session-type guard, so progress drawing only receives a real session object.
+- The original exception occurred inside a ReaImGui child window and therefore caused a secondary `Missing EndChild()` report; removing the root exception lets the existing unconditional child cleanup complete normally.
+- Adds regression assertions for visible, silent, absent, and boolean session values.
+
 ## 0.8.0 Beta 4.1
 
 ### Result sorting hotfix

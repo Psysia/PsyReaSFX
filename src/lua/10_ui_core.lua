@@ -42,6 +42,16 @@ function missing_translation_count()
   return I18N_MISSING_UNIQUE or 0
 end
 
+-- Progress renderers need the session object itself, not the boolean result of
+-- `session and not session.silent`. Keep this conversion explicit so a visible
+-- import cannot become `true` and then be indexed as a table.
+function visible_progress_session(session)
+  if type(session) ~= "table" or session.silent then
+    return nil
+  end
+  return session
+end
+
 function translate_ui_label(value)
   local text = tostring(value or "")
   local visible, hidden =

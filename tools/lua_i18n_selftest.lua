@@ -17,6 +17,12 @@ assert(missing_translation_count() == 1)
 translate_ui_text("尚未翻译")
 assert(missing_translation_count() == 1 and I18N_MISSING["尚未翻译"] == 2)
 
+local visible_session = { silent = false, current = { progress = 0.5 } }
+assert(visible_progress_session(visible_session) == visible_session)
+assert(visible_progress_session({ silent = true }) == nil)
+assert(visible_progress_session(nil) == nil)
+assert(visible_progress_session(true) == nil)
+
 state.language = "zh"
 assert(translate_ui_text("设置") == "设置")
 
