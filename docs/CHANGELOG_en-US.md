@@ -1,6 +1,8 @@
 ﻿# PsyReaSFX Changelog
 
-## 0.8.0 Beta 3
+## 0.8.0 Beta 4
+
+This release does not expand the user-facing feature scope. It completes the 49-commit hardening program that began with the full-repository review on August 31, 2026. The design, execution order, evidence, 500k capacity standard, and online acceptance checklist are archived in [`HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md`](HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md).
 
 ### 500k catalogs and incremental persistence
 
@@ -21,7 +23,7 @@
 - Tracks untranslated Chinese UI text encountered in English mode and exposes the
   missing-translation count in copied diagnostics.
 
-### Missing assets and source relink
+### Hardened missing assets and source relink
 
 - Adds a frame-budgeted missing-file audit that distinguishes offline physical
   sources from individual missing assets and exposes a dedicated result view.
@@ -31,7 +33,7 @@
   moving source media.
 - Runs an incremental scan of the new source and rejects overlapping roots.
 
-### Large-library duplicate audit
+### Hardened large-library duplicate audit
 
 - Groups candidates by file size, then samples only the beginning, middle and
   end of equal-size files instead of hashing every complete file in the library.
@@ -46,6 +48,41 @@
   unsupported future schemas.
 - Can perform a frame-budgeted byte-for-byte confirmation on demand, separating
   candidates, confirmed matches and read failures without deleting source media.
+
+### Hardened REAPER project association persistence
+
+- Adds `project_usage_v1.tsv` to track assets inserted into the current `.rpp`
+  project, including Transfer-then-insert actions.
+- Project bins can bind to the current saved project and optionally collect new
+  insertions automatically.
+- Adds a **Used by current project** view and includes project usage in save,
+  backup, restore and factory-reset flows.
+
+### Release scope
+
+- Uses a new Beta 4 tag to retain an exact audit boundary without moving or
+  overwriting the already published Beta 3 tag.
+- Keeps 0.7.23 Stable and Beta 2, Beta 3, and Beta 4 in the same ReaPack package.
+
+## 0.8.0 Beta 3
+
+### Missing assets and source relink
+
+- Adds a frame-budgeted missing-file audit that distinguishes offline physical
+  sources from individual missing assets and exposes a dedicated result view.
+- Adds **Relink source folder** to physical-source context menus. A drive or
+  folder move can migrate the index, favorites, recents, played highlights,
+  collections, Regions, loudness cache, failed tasks and project usage without
+  moving source media.
+- Runs an incremental scan of the new source and rejects overlapping roots.
+
+### Large-library duplicate audit
+
+- Groups candidates by file size, then samples only the beginning, middle and
+  end of equal-size files instead of hashing every complete file in the library.
+- Persists fingerprints in the existing index and invalidates them when file
+  size changes.
+- Presents grouped duplicate results without deleting or changing media.
 
 ### REAPER project association
 
