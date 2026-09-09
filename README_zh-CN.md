@@ -95,7 +95,8 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 
 ### PsyReaSFX 下载
 
-- [PsyReaSFX 0.7.23 Stable](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip)
+- [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
+- [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)
 
@@ -112,6 +113,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - [User Guide — English](docs/USER_GUIDE_en-US.md)
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
 - [Changelog — English](docs/CHANGELOG_en-US.md)
+- [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 
 ## 仓库结构
 

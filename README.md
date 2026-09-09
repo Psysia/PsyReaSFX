@@ -95,7 +95,8 @@ It combines library management, waveform browsing, search, audition, metadata, c
 
 ### PsyReaSFX releases
 
-- [PsyReaSFX 0.7.23 Stable](https://github.com/Psysia/PsyReaSFX/releases/download/v0.7.23/PsyReaSFX_v0_7_23_Stable.zip)
+- [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
+- [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
 
@@ -112,6 +113,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 - [用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
 - [Changelog — English](docs/CHANGELOG_en-US.md)
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
+- [0.9 → 1.0 roadmap (Chinese)](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 
 ## Repository structure
 

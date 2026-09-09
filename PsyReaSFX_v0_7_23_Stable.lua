@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.1
+-- @version 0.8.2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -157,6 +157,7 @@
 --   - 0.8.0 Beta 4.1：修复升序结果比较器不满足严格弱序导致的排序崩溃
 --   - 0.8.0 Beta 4.2：修复扫描整理进度把导入会话误转为布尔值导致的崩溃
 --   - 0.8.1：修复 Windows 文件夹拖放误判并结束 0.8.0 Beta 测试序列
+--   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -165,7 +166,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.1"
+local VERSION = "0.8.2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -30846,32 +30847,24 @@ function draw_settings_appearance()
       ImGui.GetContentRegionAvail(ctx)
     )
 
-  local use_two_columns =
-    palette_width >= 720
+  local use_two_columns = palette_width >= 720
 
-  for index, definition in ipairs(WAVEFORM_PALETTE_FIELDS) do
-    if use_two_columns then
-      local column_width =
-        (palette_width - 8) * 0.5
-
-      if ImGui.BeginChild(
-        ctx,
-        "palette_cell_" .. tostring(index),
-        column_width,
-        60,
-        0,
-        ImGui.WindowFlags_NoScrollbar
-          | ImGui.WindowFlags_NoScrollWithMouse
-      ) then
+  if use_two_columns then
+    if ImGui.BeginTable(
+      ctx,
+      "waveform_palette_table",
+      2,
+      ImGui.TableFlags_SizingStretchSame
+    ) then
+      for _, definition in ipairs(WAVEFORM_PALETTE_FIELDS) do
+        ImGui.TableNextColumn(ctx)
         draw_waveform_palette_field(definition)
       end
 
-      ImGui.EndChild(ctx)
-
-      if index % 2 == 1 then
-        ImGui.SameLine(ctx)
-      end
-    else
+      ImGui.EndTable(ctx)
+    end
+  else
+    for _, definition in ipairs(WAVEFORM_PALETTE_FIELDS) do
       draw_waveform_palette_field(definition)
     end
   end
@@ -31325,34 +31318,26 @@ function draw_settings_maintenance()
     ""
   )
 
-  if ImGui.BeginChild(
-    ctx,
-    "maintenance_runtime_card",
-    -1,
-    226,
-    ImGui.ChildFlags_Borders,
-    ImGui.WindowFlags_NoScrollbar
-      | ImGui.WindowFlags_NoScrollWithMouse
-  ) then
-    about_info_row("REAPER 版本", reaper.GetAppVersion())
-    about_info_row("操作系统", reaper.GetOS())
-    about_info_row("ReaImGui", get_reaimgui_runtime_version())
-    about_info_row(
-      "SWS Extension",
-      type(reaper.CF_CreatePreview) == "function"
-        and "已检测"
-        or "未检测"
-    )
-    about_info_row("试听后端", state.preview_backend)
-    about_info_row("数据目录", DATA_DIR)
-    about_info_row(
-      "波形缓存",
-      state.wave_cache_dir
-        or WAVE_CACHE_DIR
-    )
-  end
-
-  ImGui.EndChild(ctx)
+  ImGui.PushID(ctx, "maintenance_runtime_card")
+  ImGui.Indent(ctx, 8)
+  about_info_row("REAPER 版本", reaper.GetAppVersion())
+  about_info_row("操作系统", reaper.GetOS())
+  about_info_row("ReaImGui", get_reaimgui_runtime_version())
+  about_info_row(
+    "SWS Extension",
+    type(reaper.CF_CreatePreview) == "function"
+      and "已检测"
+      or "未检测"
+  )
+  about_info_row("试听后端", state.preview_backend)
+  about_info_row("数据目录", DATA_DIR)
+  about_info_row(
+    "波形缓存",
+    state.wave_cache_dir
+      or WAVE_CACHE_DIR
+  )
+  ImGui.Unindent(ctx, 8)
+  ImGui.PopID(ctx)
   ImGui.Spacing(ctx)
 
   if dark_button("打开数据目录", 140) then
@@ -31389,29 +31374,21 @@ function draw_settings_maintenance()
     "可以移动已有缓存，源音频不受影响。"
   )
 
-  if ImGui.BeginChild(
+  ImGui.PushID(ctx, "cache_directory_card")
+  ImGui.Indent(ctx, 8)
+  ImGui.TextDisabled(ctx, "当前缓存目录")
+  ImGui.TextWrapped(
     ctx,
-    "cache_directory_card",
-    -1,
-    112,
-    ImGui.ChildFlags_Borders,
-    ImGui.WindowFlags_NoScrollbar
-      | ImGui.WindowFlags_NoScrollWithMouse
-  ) then
-    ImGui.TextDisabled(ctx, "当前缓存目录")
-    ImGui.TextWrapped(
-      ctx,
-      state.wave_cache_dir
-        or WAVE_CACHE_DIR
-    )
-    ImGui.TextDisabled(
-      ctx,
-      "默认："
-        .. DEFAULT_WAVE_CACHE_DIR
-    )
-  end
-
-  ImGui.EndChild(ctx)
+    state.wave_cache_dir
+      or WAVE_CACHE_DIR
+  )
+  ImGui.TextDisabled(
+    ctx,
+    "默认："
+      .. DEFAULT_WAVE_CACHE_DIR
+  )
+  ImGui.Unindent(ctx, 8)
+  ImGui.PopID(ctx)
   ImGui.Spacing(ctx)
 
   if dark_button("更改缓存目录…", 150) then

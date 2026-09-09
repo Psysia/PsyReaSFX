@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.1
+-- @version 0.8.2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -157,6 +157,7 @@
 --   - 0.8.0 Beta 4.1：修复升序结果比较器不满足严格弱序导致的排序崩溃
 --   - 0.8.0 Beta 4.2：修复扫描整理进度把导入会话误转为布尔值导致的崩溃
 --   - 0.8.1：修复 Windows 文件夹拖放误判并结束 0.8.0 Beta 测试序列
+--   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -165,7 +166,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.1"
+local VERSION = "0.8.2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."

@@ -9,6 +9,18 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.8.2" author="Psysia" time="2026-09-09T03:13:19Z">
+        <changelog><![CDATA[
+- Fixes the ReaImGui EndChild assertion in the settings Maintenance page.
+- Removes clipped nested Child cards and uses a safe Table for waveform colors.
+- Adds a UI-structure regression test for the affected settings pages.
+- Archives the 0.9 to 1.0 roadmap with UCS classification and navigation.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/assets/fonts/OFL.txt</source>
+      </version>
       <version name="0.8.1" author="Psysia" time="2026-09-08T07:20:09Z">
         <changelog><![CDATA[
 - Fixes valid Windows folders being rejected by drag-and-drop directory classification.
