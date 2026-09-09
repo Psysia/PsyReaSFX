@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.4
+
+### Reliable deep-folder hover navigation
+
+- Replaces directional multi-window folder cascades with an indented hierarchy inside one popup.
+- Preserves the fast workflow: click the icon, hover to expand, and click any level to locate it.
+- Deep levels can no longer flip to the left at the screen edge and break the pointer path to their parent.
+- Only the hovered branch remains open at each depth, preventing the inline hierarchy from expanding without bound.
+- Extends UI-structure regression coverage to prevent directional `BeginMenu` submenus from returning to the folder browser.
+
 ## 0.8.3
 
 ### Prevent accidental REAPER insertion from the search box

@@ -9,6 +9,17 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.8.4" author="Psysia" time="2026-09-09T04:17:33Z">
+        <changelog><![CDATA[
+- Replaces directional folder submenus with one inline hover hierarchy.
+- Prevents deep levels from flipping left at the screen edge and breaking the pointer path.
+- Keeps click-to-open, hover-to-expand and click-to-locate behavior with regression coverage.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/assets/fonts/OFL.txt</source>
+      </version>
       <version name="0.8.3" author="Psysia" time="2026-09-09T03:44:54Z">
         <changelog><![CDATA[
 - Makes Enter / Ctrl+Enter insertion shortcuts explicitly opt-in and disabled by default.

@@ -144,19 +144,19 @@ Offline sources remain listed. Their library relationship can therefore survive 
 
 ### Browse the indexed folder hierarchy
 
-Hover the borderless folder-search icon beside the search field. A native
-cascading menu opens without changing the workspace layout. It contains:
+Click the borderless folder-search icon beside the search field. A single-window
+hierarchy opens without changing the workspace layout. It contains:
 
 1. all logical libraries;
 2. each physical source folder owned by a library;
 3. every indexed subfolder that contains audio directly or through a
    descendant.
 
-Move the pointer sideways through each menu level. A folder with descendants
-opens the next menu automatically; choose **Show this folder and its
-descendants** when you want the current level itself. A leaf folder can be
-selected directly. The cascade then closes and a compact `Pathname` condition
-appears above the results. Its `×` clears the complete path or library filter.
+Hover an entry with descendants to expand its children inline in the same
+window, without a submenu flipping left at the screen edge. Click any logical
+library, physical source, or subfolder to locate that level and all descendants.
+The menu then closes and a compact `Pathname` condition appears above the
+results. Its `×` clears the complete path or library filter.
 
 The active path is saved between launches. The hierarchy is built from
 `index_v3.tsv` in bounded background batches; hovering never starts a disk
