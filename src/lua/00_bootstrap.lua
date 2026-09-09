@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.3
+-- @version 0.8.4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -133,7 +133,7 @@
 --   - 目录树分帧构建并持久化展开状态，不会因浏览目录重新扫描硬盘
 --   - 0.7.23：目录入口改为搜索框旁的无边框文件夹图标
 --   - 左键点击图标才打开第一层，避免鼠标经过工具栏时意外遮挡工作区
---   - 菜单内部继续以悬停级联浏览逻辑库、来源与子目录
+--   - 菜单内部以单窗口内联悬停树浏览逻辑库、来源与子目录
 --   - 选中目录后只保留紧凑 Pathname 条件条，不再常驻占用结果区高度
 --   - 0.8.0 Beta 1：回填桌面版的可靠性能力，增加中断扫描恢复
 --   - 元数据与波形失败任务单独记录，支持稍后批量重试
@@ -159,6 +159,7 @@
 --   - 0.8.1：修复 Windows 文件夹拖放误判并结束 0.8.0 Beta 测试序列
 --   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
+--   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -167,7 +168,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.3"
+local VERSION = "0.8.4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -696,6 +697,7 @@ local state = {
   expanded_folder_nodes = {},
   folder_browser_open = false,
   folder_menu_active = false,
+  folder_hover_levels = {},
   folder_navigation_trees = {},
   folder_navigation_job = nil,
   folder_navigation_ready = false,
@@ -1913,6 +1915,8 @@ I18N_PREFIX_EN = {
   ["折叠此层级"] = "Collapse this level",
   ["展开此层级"] = "Expand this level",
   ["浏览文件夹层级"] = "Browse folder hierarchy",
+  ["悬停展开下级目录 · 点击定位"] =
+    "Hover to expand folders · click to locate",
   ["显示全部音效库"] = "Show all libraries",
   ["显示此逻辑库的全部素材"] =
     "Show all assets in this logical library",

@@ -43,4 +43,18 @@ assert(
   "waveform palette must use a clipped-safe table layout"
 )
 
+local folder_browser = function_region(
+  "function folder_hover_branch_open(",
+  "function active_path_condition_label()"
+)
+assert(
+  not folder_browser:find("ImGui.BeginMenu(", 1, true),
+  "folder hierarchy must remain in one popup instead of directional submenus"
+)
+assert(
+  folder_browser:find("draw_folder_hover_row(", 1, true)
+    and folder_browser:find("ImGui.Selectable(", 1, true),
+  "folder hierarchy must use inline hover rows"
+)
+
 print("Lua UI structure self-test passed")

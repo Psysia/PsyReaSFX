@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.3
+-- @version 0.8.4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -133,7 +133,7 @@
 --   - 目录树分帧构建并持久化展开状态，不会因浏览目录重新扫描硬盘
 --   - 0.7.23：目录入口改为搜索框旁的无边框文件夹图标
 --   - 左键点击图标才打开第一层，避免鼠标经过工具栏时意外遮挡工作区
---   - 菜单内部继续以悬停级联浏览逻辑库、来源与子目录
+--   - 菜单内部以单窗口内联悬停树浏览逻辑库、来源与子目录
 --   - 选中目录后只保留紧凑 Pathname 条件条，不再常驻占用结果区高度
 --   - 0.8.0 Beta 1：回填桌面版的可靠性能力，增加中断扫描恢复
 --   - 元数据与波形失败任务单独记录，支持稍后批量重试
@@ -159,6 +159,7 @@
 --   - 0.8.1：修复 Windows 文件夹拖放误判并结束 0.8.0 Beta 测试序列
 --   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
+--   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -167,7 +168,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.3"
+local VERSION = "0.8.4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -696,6 +697,7 @@ local state = {
   expanded_folder_nodes = {},
   folder_browser_open = false,
   folder_menu_active = false,
+  folder_hover_levels = {},
   folder_navigation_trees = {},
   folder_navigation_job = nil,
   folder_navigation_ready = false,
@@ -1913,6 +1915,8 @@ I18N_PREFIX_EN = {
   ["折叠此层级"] = "Collapse this level",
   ["展开此层级"] = "Expand this level",
   ["浏览文件夹层级"] = "Browse folder hierarchy",
+  ["悬停展开下级目录 · 点击定位"] =
+    "Hover to expand folders · click to locate",
   ["显示全部音效库"] = "Show all libraries",
   ["显示此逻辑库的全部素材"] =
     "Show all assets in this logical library",
@@ -23281,44 +23285,90 @@ function select_path_from_hover_menu(path, library_id)
   ImGui.CloseCurrentPopup(ctx)
 end
 
-function draw_folder_cascade_node(node, library_id)
-  local has_children = #node.children > 0
-  local label =
-    compact(node.name, 44)
-      .. "  "
-      .. tostring(node.total_count)
-      .. "##folder_cascade_"
-      .. node.key
+function folder_hover_branch_open(depth, key)
+  return state.folder_hover_levels[depth] == key
+end
 
-  if has_children then
-    if ImGui.BeginMenu(ctx, label) then
-      if ImGui.MenuItem(
-        ctx,
-        "显示此目录及子目录##folder_cascade_select"
-      ) then
-        select_path_from_hover_menu(
-          node.path,
-          library_id
-        )
-      end
+function open_folder_hover_branch(depth, key)
+  local levels = state.folder_hover_levels
 
-      ImGui.Separator(ctx)
+  if levels[depth] == key then
+    return
+  end
 
-      for _, child in ipairs(node.children) do
-        draw_folder_cascade_node(child, library_id)
-      end
+  levels[depth] = key
 
-      ImGui.EndMenu(ctx)
-    end
-  elseif ImGui.MenuItem(ctx, label) then
-    select_path_from_hover_menu(
-      node.path,
-      library_id
-    )
+  local deeper = depth + 1
+  while levels[deeper] ~= nil do
+    levels[deeper] = nil
+    deeper = deeper + 1
   end
 end
 
-function draw_source_cascade_menu(record, library)
+function draw_folder_hover_row(
+  depth,
+  key,
+  name,
+  count,
+  has_children,
+  on_click
+)
+  local open = has_children
+    and folder_hover_branch_open(depth, key)
+  local prefix = has_children
+    and (open and "▾  " or "▸  ")
+    or "   "
+  local label = prefix
+    .. compact(name, 52)
+    .. "  "
+    .. tostring(count or 0)
+    .. "##folder_hover_row_"
+    .. key
+
+  ImGui.Indent(ctx, depth * 15)
+  local clicked = ImGui.Selectable(ctx, label, false)
+  local hovered = ImGui.IsItemHovered(ctx)
+  ImGui.Unindent(ctx, depth * 15)
+
+  if hovered then
+    open_folder_hover_branch(depth, key)
+  end
+
+  if clicked then
+    on_click()
+  end
+
+  return has_children
+    and folder_hover_branch_open(depth, key)
+end
+
+function draw_folder_cascade_node(node, library_id, depth)
+  depth = depth or 2
+  local has_children = #node.children > 0
+  local open = draw_folder_hover_row(
+    depth,
+    "node:" .. node.key,
+    node.name,
+    node.total_count,
+    has_children,
+    function()
+      select_path_from_hover_menu(node.path, library_id)
+    end
+  )
+
+  if open then
+    for _, child in ipairs(node.children) do
+      draw_folder_cascade_node(
+        child,
+        library_id,
+        depth + 1
+      )
+    end
+  end
+end
+
+function draw_source_cascade_menu(record, library, depth)
+  depth = depth or 1
   local tree = state.folder_navigation_trees[record.id]
   local source_name =
     record.alias ~= "" and record.alias
@@ -23328,84 +23378,64 @@ function draw_source_cascade_menu(record, library)
       and tree
       and tree.total_count
       or nil
-  local label =
+  local has_children = not state.folder_navigation_ready
+    or (tree and #tree.children > 0)
+  local open = draw_folder_hover_row(
+    depth,
+    "source:" .. record.id,
     (directory_exists(record.path) and "● " or "○ ")
-      .. compact(source_name, 42)
-      .. (count and ("  " .. tostring(count)) or "")
-      .. "##folder_cascade_source_"
-      .. record.id
+      .. source_name,
+    count or 0,
+    has_children,
+    function()
+      select_path_from_hover_menu(record.path, library.id)
+    end
+  )
 
-  if ImGui.BeginMenu(ctx, label) then
-    if ImGui.MenuItem(
+  if open and not state.folder_navigation_ready then
+    local job = state.folder_navigation_job
+    local done = job and math.max(0, job.index - 1) or 0
+    local total = job and job.total or #state.assets
+    ImGui.Indent(ctx, (depth + 1) * 15)
+    ImGui.TextDisabled(
       ctx,
-      "显示此来源的全部素材##source_cascade_select"
-    ) then
-      select_path_from_hover_menu(
-        record.path,
-        library.id
+      string.format(
+        "%s  %d / %d",
+        translate_ui_text("目录索引正在后台建立…"),
+        done,
+        total
+      )
+    )
+    ImGui.Unindent(ctx, (depth + 1) * 15)
+  elseif open and tree then
+    for _, child in ipairs(tree.children) do
+      draw_folder_cascade_node(
+        child,
+        library.id,
+        depth + 1
       )
     end
-
-    if not state.folder_navigation_ready then
-      ImGui.Separator(ctx)
-
-      local job = state.folder_navigation_job
-      local done =
-        job and math.max(0, job.index - 1) or 0
-      local total = job and job.total or #state.assets
-
-      ImGui.TextDisabled(
-        ctx,
-        string.format(
-          "%s  %d / %d",
-          translate_ui_text(
-            "目录索引正在后台建立…"
-          ),
-          done,
-          total
-        )
-      )
-    elseif tree and #tree.children > 0 then
-      ImGui.Separator(ctx)
-
-      for _, child in ipairs(tree.children) do
-        draw_folder_cascade_node(
-          child,
-          library.id
-        )
-      end
-    end
-
-    ImGui.EndMenu(ctx)
   end
 end
 
-function draw_library_cascade_menu(library)
-  local label =
-    compact(library.name, 40)
-      .. "  "
-      .. tostring(library_asset_count(library.id))
-      .. "##folder_cascade_library_"
-      .. library.id
-
-  if ImGui.BeginMenu(ctx, label) then
-    if ImGui.MenuItem(
-      ctx,
-      "显示此逻辑库的全部素材##library_cascade_select"
-    ) then
+function draw_library_cascade_menu(library, depth)
+  depth = depth or 0
+  local open = draw_folder_hover_row(
+    depth,
+    "library:" .. library.id,
+    library.name,
+    library_asset_count(library.id),
+    #library.roots > 0,
+    function()
       activate_library_path(library.id)
       ImGui.CloseCurrentPopup(ctx)
     end
+  )
 
-    if #library.roots > 0 then
-      ImGui.Separator(ctx)
-
-      for _, record in ipairs(library.roots) do
-        draw_source_cascade_menu(record, library)
-      end
+  if open then
+    for _, record in ipairs(library.roots) do
+      draw_source_cascade_menu(record, library, depth + 1)
     end
-
-    ImGui.EndMenu(ctx)
   end
 end
 
@@ -23420,6 +23450,12 @@ function draw_folder_hover_popup()
 
   state.folder_menu_active = true
   ensure_folder_navigation_build()
+
+  ImGui.TextDisabled(
+    ctx,
+    "悬停展开下级目录 · 点击定位"
+  )
+  ImGui.Separator(ctx)
 
   if ImGui.MenuItem(
     ctx,
@@ -23507,6 +23543,7 @@ function draw_path_condition_bar()
     button_width,
     clear_size
   ) then
+    AppState.set("folder_hover_levels", {})
     ensure_folder_navigation_build()
     ImGui.OpenPopup(
       ctx,
@@ -24240,6 +24277,7 @@ function draw_toolbar()
 
   if folder_clicked then
     state.folder_menu_active = true
+    AppState.set("folder_hover_levels", {})
     ensure_folder_navigation_build()
     ImGui.OpenPopup(
       ctx,
