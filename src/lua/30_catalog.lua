@@ -515,6 +515,8 @@ function load_config()
         state.auto_collect_project_usage = value ~= "0"
       elseif name == "auto_preview" then
         state.auto_preview = value == "1"
+      elseif name == "enter_insert_shortcuts" then
+        AppState.set("enter_insert_shortcuts", value == "1")
       elseif name == "insert_lowercase" then
         state.insert_lowercase = value == "1"
       elseif name == "insert_prefix" then
@@ -918,6 +920,12 @@ function save_config()
   file:write(
     "setting\tauto_preview\t",
     state.auto_preview and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tenter_insert_shortcuts\t",
+    state.enter_insert_shortcuts and "1" or "0",
     "\n"
   )
 
