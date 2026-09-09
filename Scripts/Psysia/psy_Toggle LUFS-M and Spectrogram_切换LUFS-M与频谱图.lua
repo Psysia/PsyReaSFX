@@ -1,5 +1,5 @@
 -- @description Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图
--- @version 1.0
+-- @version 1.1
 -- @author Psysia
 --
 -- 在以下两种峰值显示模式之间切换：
@@ -7,7 +7,7 @@
 -- 2. Peaks: Toggle spectrogram
 --
 -- 无需 SWS / ReaPack。
--- 脚本会按动作名称自动查找当前 REAPER 中的 Command ID，并缓存结果。
+-- 自动兼容 REAPER 当前语言包，并缓存已解析的 Command ID。
 
 local MAIN_SECTION_ID = 0
 local CACHE_SECTION = "toggle_lufs_m_spectrogram"
@@ -18,33 +18,75 @@ local ACTION_LUFS_M =
 local ACTION_SPECTROGRAM =
   "Peaks: Toggle spectrogram"
 
-local function name_matches(name, target)
+local function add_candidate(candidates, seen, value)
+  if not value or value == "" or seen[value] then
+    return
+  end
+
+  seen[value] = true
+  candidates[#candidates + 1] = value
+end
+
+local function get_action_name_candidates(target)
+  local candidates = {}
+  local seen = {}
+
+  -- 永远保留 REAPER 原始英文动作名作为兼容后备。
+  add_candidate(candidates, seen, target)
+
+  -- REAPER 语言包中的动作名称位于 actions 区段。
+  -- 使用当前语言包动态取得显示名称，避免硬编码中文翻译。
+  if reaper.LocalizeString then
+    local ok, localized = pcall(
+      reaper.LocalizeString,
+      target,
+      "actions",
+      0
+    )
+
+    if ok then
+      add_candidate(candidates, seen, localized)
+    end
+  end
+
+  return candidates
+end
+
+local function name_matches(name, candidates)
   if not name or name == "" then
     return false
   end
 
-  -- 英文界面：动作名称完全一致。
-  if name == target then
-    return true
+  for _, candidate in ipairs(candidates) do
+    -- 精确匹配：英文或纯本地化语言包。
+    if name == candidate then
+      return true
+    end
+
+    -- 子串匹配：兼容“中文说明 = English action”之类的双语语言包。
+    if name:find(candidate, 1, true) then
+      return true
+    end
   end
 
-  -- 兼容截图中的中英双语语言包：
-  -- “中文说明 = Peaks: ...”
-  return #name >= #target and name:sub(-#target) == target
+  return false
 end
 
 local function find_action(section, target, cache_key)
-  -- 优先读取缓存，并验证缓存仍然对应目标动作。
+  local candidates = get_action_name_candidates(target)
+
+  -- 优先读取缓存，但每次都按当前语言包重新验证。
+  -- 因此重新导入配置或切换语言后，旧缓存不会造成错误绑定。
   local cached_id = tonumber(reaper.GetExtState(CACHE_SECTION, cache_key))
 
   if cached_id and cached_id > 0 then
     local cached_name = reaper.kbd_getTextFromCmd(cached_id, section)
-    if name_matches(cached_name, target) then
+    if name_matches(cached_name, candidates) then
       return cached_id
     end
   end
 
-  -- 缓存无效时，遍历主动作区并按名称查找。
+  -- 缓存不存在或失效时，遍历主动作区重新定位。
   local index = 0
 
   while true do
@@ -55,7 +97,7 @@ local function find_action(section, target, cache_key)
       break
     end
 
-    if name_matches(action_name, target) then
+    if name_matches(action_name, candidates) then
       reaper.SetExtState(
         CACHE_SECTION,
         cache_key,
@@ -114,9 +156,9 @@ if not command_lufs_m or not command_spectrogram then
   end
 
   show_error(
-    "未找到以下 REAPER 动作：\n\n"
+    "未找到所需的 REAPER 峰值显示动作：\n\n"
     .. table.concat(missing, "\n")
-    .. "\n\n请确认动作列表中仍显示这些英文名称。"
+    .. "\n\n请确认当前 REAPER 版本包含这些峰值显示功能。"
   )
   return
 end
