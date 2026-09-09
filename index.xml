@@ -150,6 +150,11 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
     </reapack>
     <reapack name="psy_Toggle LUFS-M and Spectrogram_切换LUFS-M与频谱图.lua" type="script" desc="Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图">
       <metadata><description><![CDATA[Toggle LUFS-M and Spectrogram / 切换 LUFS-M 与频谱图]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.1" author="Psysia" time="2026-09-09T06:55:00Z"><changelog><![CDATA[- Resolve native REAPER actions through the active language pack via LocalizeString.
+- Keep English and bilingual action-name fallback for compatibility.
+- Revalidate cached Command IDs after language or configuration changes.
+- 使用当前 REAPER 语言包动态解析动作名称，修复纯中文动作列表无法识别的问题。
+- 保留英文与中英混排兼容，并在语言或配置变化后重新验证缓存。]]></changelog><source main="main" file="psy_Toggle LUFS-M and Spectrogram_切换LUFS-M与频谱图.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Toggle%20LUFS-M%20and%20Spectrogram_%E5%88%87%E6%8D%A2LUFS-M%E4%B8%8E%E9%A2%91%E8%B0%B1%E5%9B%BE.lua</source></version>
       <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
 - 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Toggle LUFS-M and Spectrogram_切换LUFS-M与频谱图.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Toggle%20LUFS-M%20and%20Spectrogram_%E5%88%87%E6%8D%A2LUFS-M%E4%B8%8E%E9%A2%91%E8%B0%B1%E5%9B%BE.lua</source></version>
     </reapack>
