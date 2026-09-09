@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.2
+-- @version 0.8.3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -158,6 +158,7 @@
 --   - 0.8.0 Beta 4.2：修复扫描整理进度把导入会话误转为布尔值导致的崩溃
 --   - 0.8.1：修复 Windows 文件夹拖放误判并结束 0.8.0 Beta 测试序列
 --   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
+--   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -166,7 +167,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.2"
+local VERSION = "0.8.3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -921,6 +922,7 @@ local state = {
   keyboard_consumed = false,
   selection_drag_handle_pressed = false,
 
+  enter_insert_shortcuts = false,
   insert_lowercase = true,
   insert_prefix = "",
   insert_suffix = "",
@@ -1308,6 +1310,11 @@ I18N_EN = {
   ["重置全部列宽"] = "Reset all column widths",
   ["插入当前轨道"] = "Insert on current track",
   ["插入新轨道"] = "Insert on new track",
+  ["启用 Enter / Ctrl+Enter 快速插入 REAPER"] =
+    "Enable Enter / Ctrl+Enter shortcuts for inserting into REAPER",
+  ["REAPER 插入快捷键"] = "REAPER insertion shortcuts",
+  ["默认关闭，避免在搜索框确认文字时误插入素材。"] =
+    "Off by default so confirming text in the search box cannot insert an asset accidentally.",
   ["按 BWF 时间戳插入"] = "Insert at BWF timestamp",
   ["所选素材分轨插入"] = "Insert selected items on separate tracks",
   ["工作流状态"] = "Workflow status",
@@ -1765,8 +1772,8 @@ I18N_EN = {
     "Shift-click selects a range; Ctrl+A selects all current results.",
   ["试听：Space 播放或停止；点击列表小波形可从对应位置试听；"] =
     "Preview: Space plays or stops; click a list waveform to preview from that position;",
-  ["插入：Enter 插入；Ctrl+Enter 插入新轨；"] =
-    "Insert: Enter inserts; Ctrl+Enter inserts on a new track;",
+  ["插入：使用按钮或右键菜单；Enter 快速插入可在设置中启用。"] =
+    "Insert: use the buttons or context menu; optional Enter shortcuts can be enabled in Settings.",
   ["列表素材和下方波形选区可拖到 REAPER 编排区。"] =
     "Drag result files or the lower waveform selection into the REAPER arrange view.",
   ["工作区：顶部“导航”“元数据”“专注模式”可折叠左右面板。"] =

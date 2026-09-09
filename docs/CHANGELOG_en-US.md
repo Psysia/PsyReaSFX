@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.3
+
+### Prevent accidental REAPER insertion from the search box
+
+- `Enter` / `Ctrl+Enter` insertion shortcuts are now off by default, including for upgrades.
+- General settings now provide an explicit opt-in; buttons and context-menu insertion remain available.
+- The search field consumes both its active and confirmation/deactivation frames so Enter cannot leak into the global shortcut handler.
+- Context menus and Help reflect whether the optional shortcuts are currently enabled.
+- Adds regression checks for the safe default, persistence, global shortcut guard, and search-input isolation.
+
 ## 0.8.2
 
 ### Settings Child-stack fix and roadmap archive

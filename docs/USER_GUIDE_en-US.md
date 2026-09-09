@@ -553,8 +553,8 @@ entries into `cache_quarantine/`; it never modifies source audio.
 |---|---|
 | `Space` | Play or stop |
 | `Up` / `Down` | Move selection |
-| `Enter` | Insert |
-| `Ctrl+Enter` | Insert on a new track |
+| `Enter` | Insert on the current track (off by default; opt in under General settings) |
+| `Ctrl+Enter` | Insert on a new track (off by default; opt in under General settings) |
 | `Ctrl+A` | Select all current results |
 | `Ctrl+F` | Focus search |
 | `Ctrl+R` | Incremental scan |

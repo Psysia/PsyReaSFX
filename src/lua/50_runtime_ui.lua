@@ -10062,6 +10062,7 @@ function reset_interface_settings()
   state.region_end = 1
   state.insert_prefix = ""
   state.insert_suffix = ""
+  AppState.set("enter_insert_shortcuts", false)
   state.insert_lowercase = true
   state.insert_fade_ms = 5
   state.transfer_dir = DEFAULT_TRANSFER_DIR
@@ -14141,6 +14142,13 @@ function draw_toolbar()
       state.search
     )
 
+  -- InputText may deactivate on the Enter frame before the global keyboard
+  -- handler runs. Keep that frame consumed so Enter confirms text only.
+  if ImGui.IsItemActive(ctx)
+    or ImGui.IsItemDeactivated(ctx) then
+    AppState.set("keyboard_consumed", true)
+  end
+
   ImGui.PopStyleColor(ctx, 2)
   ImGui.PopStyleVar(ctx)
 
@@ -15272,11 +15280,16 @@ function row_popup(asset)
     play_preview(asset, 0, false)
   end
 
-  if ImGui.MenuItem(ctx, "插入当前轨道", "Enter") then
+  local enter_shortcut =
+    state.enter_insert_shortcuts and "Enter" or nil
+  local new_track_shortcut =
+    state.enter_insert_shortcuts and "Ctrl+Enter" or nil
+
+  if ImGui.MenuItem(ctx, "插入当前轨道", enter_shortcut) then
     insert_asset(asset, false, false)
   end
 
-  if ImGui.MenuItem(ctx, "插入新轨道", "Ctrl+Enter") then
+  if ImGui.MenuItem(ctx, "插入新轨道", new_track_shortcut) then
     insert_asset(asset, true, false)
   end
 
@@ -19072,14 +19085,22 @@ function draw_help_popup()
       "Insert and Transfer",
       {
         {
-          "Enter",
-          "插入当前轨道",
-          "Insert on the current track",
+          state.enter_insert_shortcuts and "Enter" or "Button / Menu",
+          state.enter_insert_shortcuts
+            and "插入当前轨道"
+            or "插入当前轨道（Enter 快捷键默认关闭）",
+          state.enter_insert_shortcuts
+            and "Insert on the current track"
+            or "Insert on the current track (Enter shortcut off by default)",
         },
         {
-          "Ctrl+Enter",
-          "插入新轨道",
-          "Insert on a new track",
+          state.enter_insert_shortcuts and "Ctrl+Enter" or "Button / Menu",
+          state.enter_insert_shortcuts
+            and "插入新轨道"
+            or "插入新轨道（Ctrl+Enter 快捷键默认关闭）",
+          state.enter_insert_shortcuts
+            and "Insert on a new track"
+            or "Insert on a new track (Ctrl+Enter shortcut off by default)",
         },
         {
           "Drag",
@@ -19288,6 +19309,26 @@ function draw_settings_general()
 
   if inspector_width_changed then
     state.config_dirty = true
+  end
+
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "REAPER 插入快捷键",
+    "默认关闭，避免在搜索框确认文字时误插入素材。"
+  )
+
+  local enter_shortcuts_changed
+  local enter_shortcuts_value
+  enter_shortcuts_changed, enter_shortcuts_value =
+    ImGui.Checkbox(
+      ctx,
+      "启用 Enter / Ctrl+Enter 快速插入 REAPER",
+      state.enter_insert_shortcuts
+    )
+
+  if enter_shortcuts_changed then
+    AppState.set("enter_insert_shortcuts", enter_shortcuts_value)
+    AppState.mark_dirty("config_dirty")
   end
 
   ImGui.Separator(ctx)
@@ -22027,7 +22068,8 @@ function keyboard()
     else
       play_preview(nil, nil, true)
     end
-  elseif ImGui.IsKeyPressed(
+  elseif state.enter_insert_shortcuts
+    and ImGui.IsKeyPressed(
     ctx,
     ImGui.Key_Enter,
     false
