@@ -173,5 +173,14 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
       <version name="1.0" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
 - 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Reverse Selected Items in Place_原位反转选中素材.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Reverse%20Selected%20Items%20in%20Place_%E5%8E%9F%E4%BD%8D%E5%8F%8D%E8%BD%AC%E9%80%89%E4%B8%AD%E7%B4%A0%E6%9D%90.lua</source></version>
     </reapack>
+    <reapack name="psy_Open All Subprojects_打开全部子工程.lua" type="script" desc="Open All Subprojects / 打开全部子工程">
+      <metadata><description><![CDATA[Open all subprojects referenced by the current project, including nested subprojects / 打开当前工程引用的全部子工程，并递归打开嵌套子工程]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-09T06:34:26Z"><changelog><![CDATA[- Open all subprojects referenced by the current project.
+- Recursively discover and open nested subprojects.
+- Avoid duplicate project tabs and return focus to the original project.
+- Support native RPP_PROJECT/RPP-PROX detection with optional SWS path resolution.
+- 打开当前工程引用的全部子工程，并递归处理嵌套子工程。
+- 避免重复打开已有工程标签，完成后返回原工程。]]></changelog><source main="main" file="psy_Open All Subprojects_打开全部子工程.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Open%20All%20Subprojects_%E6%89%93%E5%BC%80%E5%85%A8%E9%83%A8%E5%AD%90%E5%B7%A5%E7%A8%8B.lua</source></version>
+    </reapack>
   </category>
 </index>
