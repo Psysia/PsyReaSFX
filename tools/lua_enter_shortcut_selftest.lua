@@ -23,9 +23,7 @@ assert(
 
 assert(
   runtime:find(
-    "elseif state.enter_insert_shortcuts\n    and ImGui.IsKeyPressed(",
-    1,
-    true
+    "elseif%s+state%.enter_insert_shortcuts%s+and%s+ImGui%.IsKeyPressed%("
   ),
   "global Enter insertion must be guarded by the opt-in setting"
 )
