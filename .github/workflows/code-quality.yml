@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.8.1 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.8.2 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -119,6 +119,11 @@ jobs:
         shell: pwsh
         run: |
           lua tools/lua_i18n_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua')
+
+      - name: Run Lua UI structure self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_ui_structure_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua')
 
       - name: Run Lua directory classification self-test
         shell: pwsh

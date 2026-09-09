@@ -1,5 +1,19 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.2
+
+### Settings Child-stack fix and roadmap archive
+
+- Fixes a ReaImGui `EndChild` assertion that could occur when the Maintenance
+  page's runtime or waveform-cache cards were clipped outside the visible settings area.
+- Removes fixed-height nested Child windows from the settings content scroller, so
+  long cache paths are no longer clipped by those cards.
+- Replaces waveform-palette Child cells with a Table while retaining the two-column layout.
+- Adds a UI-structure regression test that prevents nested Child windows from returning
+  to the Appearance and Maintenance pages.
+- Archives the `0.9 → 1.0` roadmap and adds UCS auto-classification, a virtual UCS tree,
+  existing-library reclassification, and UCS search suggestions to the 0.9 advanced-search scope.
+
 ## 0.8.1
 
 ### Folder drag-and-drop and stable channel
