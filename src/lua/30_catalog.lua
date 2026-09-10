@@ -140,6 +140,41 @@ function asset_path_sort_key(asset)
   return asset._sort_path_value
 end
 
+function refresh_ucs_pending_membership(asset)
+  if not asset or not asset.path then return end
+  local key = path_key(asset.path)
+  local was_pending = state.ucs_pending_lookup[key] ~= nil
+  local is_pending = asset.ucs_status == "pending"
+  if was_pending == is_pending then
+    if is_pending then state.ucs_pending_lookup[key] = asset end
+    return
+  end
+  if is_pending then
+    state.ucs_pending_lookup[key] = asset
+    AppState.set("ucs_pending_count", state.ucs_pending_count + 1)
+  else
+    state.ucs_pending_lookup[key] = nil
+    AppState.set(
+      "ucs_pending_count",
+      math.max(0, state.ucs_pending_count - 1)
+    )
+  end
+end
+
+function remove_ucs_pending_membership(asset_or_path)
+  local path = type(asset_or_path) == "table"
+      and asset_or_path.path
+    or asset_or_path
+  local key = path_key(path or "")
+  if key ~= "" and state.ucs_pending_lookup[key] then
+    state.ucs_pending_lookup[key] = nil
+    AppState.set(
+      "ucs_pending_count",
+      math.max(0, state.ucs_pending_count - 1)
+    )
+  end
+end
+
 function add_or_update_asset(asset)
   ensure_asset_identity(asset)
   local key = path_key(asset.path)
@@ -203,6 +238,8 @@ function add_or_update_asset(asset)
       invalidate_folder_navigation()
     end
 
+    refresh_ucs_pending_membership(existing)
+
     return existing
   end
 
@@ -233,6 +270,7 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
+  refresh_ucs_pending_membership(asset)
   state.database_ordered_assets = nil
   invalidate_library_counts()
   invalidate_folder_navigation()
@@ -242,9 +280,12 @@ end
 function rebuild_assets()
   state.assets = {}
   state.database_ordered_assets = nil
+  AppState.set("ucs_pending_lookup", {})
+  AppState.set("ucs_pending_count", 0)
 
   for _, asset in pairs(state.by_path) do
     state.assets[#state.assets + 1] = asset
+    refresh_ucs_pending_membership(asset)
   end
 
   state.results_dirty = true

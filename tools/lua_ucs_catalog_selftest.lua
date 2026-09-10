@@ -113,6 +113,50 @@ assert(material.ucs_status == "auto" and material.catid == "METLImpt")
 local generic = assert(ucs_classify_filename_keywords("Impact Hit 01.wav"))
 assert(generic.ucs_status == "pending")
 
+local existing = {
+  name = "AIR Burst Pressure Release 01.wav",
+  path = "C:/Library/AIR Burst Pressure Release 01.wav",
+  ucs_status = "unclassified",
+}
+local existing_result, existing_reason = ucs_classify_existing_asset(existing)
+assert(existing_result and existing_reason == "auto")
+assert(existing_result.catid == "AIRBrst")
+assert(ucs_classification_differs(existing, existing_result))
+assert(ucs_assign_classification(existing, existing_result))
+assert(not ucs_classification_differs(existing, existing_result))
+assert(not ucs_assign_classification(existing, existing_result))
+
+local manual = {
+  name = "AIRBrst_Should Stay Manual.wav",
+  ucs_status = "manual",
+  catid = "USER",
+}
+local manual_result, manual_reason = ucs_classify_existing_asset(manual)
+assert(manual_result == nil and manual_reason == "manual")
+assert(manual.catid == "USER")
+
+local pending_existing = {
+  name = "Burst 01.wav",
+  ucs_status = "unclassified",
+}
+local pending_result, pending_reason =
+  ucs_classify_existing_asset(pending_existing)
+assert(pending_result and pending_reason == "pending")
+assert(pending_result.ucs_status == "pending")
+assert(pending_result.ucs_candidates:find("AIRBrst", 1, true))
+
+local generated = {
+  name = "ZXQJ 0001.wav",
+  ucs_status = "auto",
+  ucs_source = "filename_keywords",
+  catid = "AIRBrst",
+  category = "AIR",
+  subcategory = "BURST",
+}
+local generated_result, generated_reason = ucs_classify_existing_asset(generated)
+assert(generated_result and generated_reason == "unclassified")
+assert(generated_result.catid == "" and generated_result.category == "")
+
 local metadata_fields = {
   ["IXML:USER:SUBCATEGORY"] = "BURST",
   ["IXML:USER:CATEGORY"] = "AIR",

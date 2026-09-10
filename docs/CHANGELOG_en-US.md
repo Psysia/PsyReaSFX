@@ -12,9 +12,13 @@
 - Counts each normalized term only once and prefers longer phrases over nested short terms, preventing repeated words from inflating confidence.
 - Applies only high-confidence winners with a safe margin; ambiguous matches persist the top three candidates, scores, and evidence for later review.
 - Persists classification state, source, UCS version, classifier version, and confidence; manual UCS edits are protected from automatic re-indexing.
+- Adds a two-stage existing-library task in Maintenance: it first previews aggregate outcomes and samples without mutation, and writes only to the PsyReaSFX index after explicit confirmation.
+- Applies classification within a 256-item / 4 ms frame budget and supports cancellation. Safely applied records remain committed and a new preview can resume idempotently; source audio is never renamed, moved, or rewritten.
+- Rejects stale previews if the catalog or classifier changes between preview and apply, always skips manual classifications, and safely clears obsolete generated classifications that no longer match current rules.
+- Adds an incrementally maintained `UCS review queue` to the Sounds sidebar, avoiding a per-frame scan of a 500,000-item catalog and removing manually resolved assets immediately.
 - Verifies the official workbook SHA-256 before generation and exercises 500,000 exact plus 500,000 keyword classifications in regression coverage.
 
-> This is a branch development snapshot, not a public Beta release. The UCS virtual tree, existing-library classification, candidate review, and search suggestions will continue in the same Beta feature batch.
+> This is a branch development snapshot, not a public Beta release. The UCS virtual tree, fast candidate confirmation/revert actions, and search suggestions will continue in the same Beta feature batch.
 
 ## 0.8.5
 

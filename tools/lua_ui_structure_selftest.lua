@@ -37,6 +37,43 @@ assert(
   not maintenance:find("ImGui.BeginChild(", 1, true),
   "settings maintenance must not nest Child windows inside settings_content"
 )
+assert(
+  maintenance:find("start_ucs_reclassification_preview()", 1, true)
+    and maintenance:find("start_ucs_reclassification_apply()", 1, true)
+    and maintenance:find("查看 UCS 待确认素材", 1, true),
+  "maintenance settings must expose UCS preview, apply and review actions"
+)
+
+local ucs_task = function_region(
+  "function new_ucs_reclassification_counts()",
+  "function queue_metadata("
+)
+assert(
+  ucs_task:find("UCS_RECLASSIFY_FRAME_BUDGET", 1, true)
+    and ucs_task:find("UCS_RECLASSIFY_ITEMS_PER_FRAME", 1, true),
+  "existing-library UCS classification must remain frame-budgeted"
+)
+assert(
+  ucs_task:find('phase = "preview"', 1, true)
+    and ucs_task:find('phase = "apply"', 1, true)
+    and ucs_task:find("ucs_assign_classification(asset, result)", 1, true),
+  "existing-library UCS classification must keep preview/apply stages"
+)
+assert(
+  ucs_task:find('reason == "manual"', 1, true)
+    and ucs_task:find("session.counts.manual", 1, true),
+  "UCS reclassification must preserve manual classifications"
+)
+
+local asset_view = function_region(
+  "function asset_in_view(asset)",
+  "local function cached_sort_text("
+)
+assert(
+  asset_view:find('"ucs_pending" == state.view', 1, true)
+    and asset_view:find('asset.ucs_status ~= "pending"', 1, true),
+  "UCS review queue must filter to pending assets"
+)
 
 assert(
   source:find('"waveform_palette_table"', 1, true),

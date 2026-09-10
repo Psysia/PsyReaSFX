@@ -815,6 +815,12 @@ local state = {
   duplicate_confirmation_failure_count = 0,
   relink_plan_session = nil,
 
+  -- 0.9：UCS 现有库重分类使用预览/应用双阶段任务。
+  ucs_reclassification_session = nil,
+  ucs_reclassification_review = nil,
+  ucs_pending_lookup = {},
+  ucs_pending_count = 0,
+
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
   project_usage_dirty = false,
@@ -2007,8 +2013,73 @@ I18N_EN["来源已重定位"] = "Source relinked"
 I18N_EN["请先保存当前 REAPER 工程，再绑定项目素材箱"] =
   "Save the current REAPER project before binding a project bin"
 I18N_EN["无法保存工程使用记录"] = "Unable to save project usage history"
+I18N_EN["UCS 分类"] = "UCS classification"
+I18N_EN["先分帧预览现有库，再由你确认应用；人工分类不会被覆盖。"] =
+  "Preview the existing catalog in frame-budgeted steps, then confirm before applying. Manual classifications are protected."
+I18N_EN["预览现有库 UCS 分类"] = "Preview UCS classification"
+I18N_EN["取消 UCS 任务"] = "Cancel UCS task"
+I18N_EN["确认应用分类"] = "Apply classifications"
+I18N_EN["丢弃预览"] = "Discard preview"
+I18N_EN["查看 UCS 待确认素材"] = "Show UCS review queue"
+I18N_EN["只更新 PsyReaSFX 索引，不改名、不移动、不回写源音频。"] =
+  "Updates only the PsyReaSFX index; source audio is not renamed, moved, or rewritten."
+I18N_EN["停止后保留已安全应用的部分，可重新预览继续。"] =
+  "Safely applied records are retained after stopping; preview again to continue."
+I18N_EN["只读保护下不能重分类现有素材"] =
+  "Existing assets cannot be reclassified while read-only protection is active"
+I18N_EN["分类规则已变化，请重新生成预览"] =
+  "Classification rules changed; generate a new preview"
+I18N_EN["素材库已变化，请重新生成 UCS 分类预览"] =
+  "The catalog changed; generate a new UCS classification preview"
+I18N_EN["UCS 分类预览已取消"] = "UCS classification preview canceled"
+I18N_EN["已丢弃 UCS 分类预览"] = "UCS classification preview discarded"
+I18N_EN["未分类"] = "Unclassified"
 
 I18N_PATTERNS_EN = {
+  {
+    "^UCS 待确认  (%d+)$",
+    "UCS review queue  %1",
+  },
+  {
+    "^UCS (.-) · 分类器 (.-) · 当前待确认 (%d+)$",
+    "UCS %1 · classifier %2 · review queue %3",
+  },
+  {
+    "^正在预览 UCS 分类 (%d+) / (%d+) · 自动 (%d+) · 待确认 (%d+) · 人工保护 (%d+)$",
+    "Previewing UCS classification %1 / %2 · auto %3 · pending %4 · manual protected %5",
+  },
+  {
+    "^正在应用 UCS 分类 (%d+) / (%d+) · 自动 (%d+) · 待确认 (%d+) · 人工保护 (%d+)$",
+    "Applying UCS classification %1 / %2 · auto %3 · pending %4 · manual protected %5",
+  },
+  {
+    "^预览完成：可更新 (%d+) · 精确 (%d+) · 自动 (%d+) · 待确认 (%d+) · 未分类 (%d+) · 人工保护 (%d+)$",
+    "Preview complete: %1 updates · exact %2 · auto %3 · pending %4 · unclassified %5 · manual protected %6",
+  },
+  {
+    "^共检查 (%d+) 条，耗时 ([%d%.]+) 秒；应用前不会修改数据库。$",
+    "Checked %1 records in %2 seconds; the database remains unchanged until apply.",
+  },
+  {
+    "^正在预览 UCS 分类：(%d+) / (%d+)$",
+    "Previewing UCS classification: %1 / %2",
+  },
+  {
+    "^正在应用 UCS 分类：(%d+) / (%d+)$",
+    "Applying UCS classification: %1 / %2",
+  },
+  {
+    "^UCS 分类预览完成：可更新 (%d+)，待确认 (%d+)，人工保护 (%d+)$",
+    "UCS preview complete: %1 updates, %2 pending, %3 manual records protected",
+  },
+  {
+    "^UCS 分类已应用：更新 (%d+)，待确认 (%d+)$",
+    "UCS classification applied: %1 updated, %2 pending",
+  },
+  {
+    "^UCS 分类已停止：已安全应用 (%d+)，可重新预览继续$",
+    "UCS classification stopped: %1 safely applied; preview again to continue",
+  },
   {
     "^无法后台保存Region 数据：(.+)$",
     "Unable to save Region data: %1",
@@ -6027,6 +6098,20 @@ end
 UCS_CATALOG_SCHEMA = "ucs_catalog_v1"
 UCS_CATALOG_VERSION = "8.2.1"
 UCS_CLASSIFIER_VERSION = "filename-keywords-v1"
+UCS_RECLASSIFY_ITEMS_PER_FRAME = 256
+UCS_RECLASSIFY_FRAME_BUDGET = 0.004
+UCS_CLASSIFICATION_FIELDS = {
+  "catid",
+  "category",
+  "subcategory",
+  "ucs_status",
+  "ucs_source",
+  "ucs_version",
+  "ucs_classifier_version",
+  "ucs_confidence",
+  "ucs_candidates",
+  "ucs_evidence",
+}
 
 UcsCatalog = {
   attempted = false,
@@ -6173,6 +6258,8 @@ function ucs_classification_result(entry, status, source)
     ucs_version = UCS_CATALOG_VERSION,
     ucs_classifier_version = UCS_CLASSIFIER_VERSION,
     ucs_confidence = 1,
+    ucs_candidates = "",
+    ucs_evidence = "",
   }
 end
 
@@ -6481,6 +6568,92 @@ function ucs_classify_filename_keywords(filename, max_candidates)
   return result
 end
 
+function ucs_unclassified_result(asset, source)
+  local preserve_metadata = source == "metadata"
+  return {
+    catid = preserve_metadata and tostring(asset.catid or "") or "",
+    category = preserve_metadata and tostring(asset.category or "") or "",
+    subcategory = preserve_metadata
+        and tostring(asset.subcategory or "")
+      or "",
+    ucs_status = preserve_metadata and "pending" or "unclassified",
+    ucs_source = preserve_metadata and "metadata" or "",
+    ucs_version = UCS_CATALOG_VERSION,
+    ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    ucs_confidence = 0,
+    ucs_candidates = "",
+    ucs_evidence = "",
+  }
+end
+
+function ucs_classify_existing_asset(asset)
+  if not asset then return nil, "missing" end
+  if asset.ucs_status == "manual" then return nil, "manual" end
+
+  local exact = ucs_classify_filename_exact(asset.name or asset.path or "")
+  if exact then return exact, "exact" end
+
+  local previous_source = tostring(asset.ucs_source or "")
+  local generated_metadata = previous_source == "filename"
+    or previous_source == "filename_keywords"
+  if not generated_metadata then
+    local metadata = ucs_classify_metadata(
+      asset.catid,
+      asset.category,
+      asset.subcategory
+    )
+    if metadata then return metadata, "metadata" end
+  end
+
+  local keywords = ucs_classify_filename_keywords(
+    asset.name or asset.path or ""
+  )
+  if keywords then
+    if keywords.ucs_status == "pending" and not generated_metadata then
+      keywords.catid = tostring(asset.catid or "")
+      keywords.category = tostring(asset.category or "")
+      keywords.subcategory = tostring(asset.subcategory or "")
+    end
+    return keywords, keywords.ucs_status
+  end
+
+  local has_metadata = not generated_metadata
+    and (trim(asset.catid or "") ~= ""
+      or trim(asset.category or "") ~= ""
+      or trim(asset.subcategory or "") ~= "")
+  return ucs_unclassified_result(
+    asset,
+    has_metadata and "metadata" or ""
+  ), has_metadata and "pending" or "unclassified"
+end
+
+function ucs_classification_differs(asset, result)
+  if not asset or not result then return false end
+  for _, field in ipairs(UCS_CLASSIFICATION_FIELDS) do
+    local current = asset[field]
+    local proposed = result[field]
+    if field == "ucs_confidence" then
+      if math.abs((tonumber(current) or 0) - (tonumber(proposed) or 0))
+        > 0.000001 then
+        return true
+      end
+    elseif tostring(current or "") ~= tostring(proposed or "") then
+      return true
+    end
+  end
+  return false
+end
+
+function ucs_assign_classification(asset, result)
+  if not asset or not result then return false end
+  local changed = ucs_classification_differs(asset, result)
+  if not changed then return false end
+  for _, field in ipairs(UCS_CLASSIFICATION_FIELDS) do
+    asset[field] = result[field]
+  end
+  return true
+end
+
 -- Catalog identity, metadata, configuration and library persistence.
 local HostApi = Host or reaper
 
@@ -6623,6 +6796,41 @@ function asset_path_sort_key(asset)
   return asset._sort_path_value
 end
 
+function refresh_ucs_pending_membership(asset)
+  if not asset or not asset.path then return end
+  local key = path_key(asset.path)
+  local was_pending = state.ucs_pending_lookup[key] ~= nil
+  local is_pending = asset.ucs_status == "pending"
+  if was_pending == is_pending then
+    if is_pending then state.ucs_pending_lookup[key] = asset end
+    return
+  end
+  if is_pending then
+    state.ucs_pending_lookup[key] = asset
+    AppState.set("ucs_pending_count", state.ucs_pending_count + 1)
+  else
+    state.ucs_pending_lookup[key] = nil
+    AppState.set(
+      "ucs_pending_count",
+      math.max(0, state.ucs_pending_count - 1)
+    )
+  end
+end
+
+function remove_ucs_pending_membership(asset_or_path)
+  local path = type(asset_or_path) == "table"
+      and asset_or_path.path
+    or asset_or_path
+  local key = path_key(path or "")
+  if key ~= "" and state.ucs_pending_lookup[key] then
+    state.ucs_pending_lookup[key] = nil
+    AppState.set(
+      "ucs_pending_count",
+      math.max(0, state.ucs_pending_count - 1)
+    )
+  end
+end
+
 function add_or_update_asset(asset)
   ensure_asset_identity(asset)
   local key = path_key(asset.path)
@@ -6686,6 +6894,8 @@ function add_or_update_asset(asset)
       invalidate_folder_navigation()
     end
 
+    refresh_ucs_pending_membership(existing)
+
     return existing
   end
 
@@ -6716,6 +6926,7 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
+  refresh_ucs_pending_membership(asset)
   state.database_ordered_assets = nil
   invalidate_library_counts()
   invalidate_folder_navigation()
@@ -6725,9 +6936,12 @@ end
 function rebuild_assets()
   state.assets = {}
   state.database_ordered_assets = nil
+  AppState.set("ucs_pending_lookup", {})
+  AppState.set("ucs_pending_count", 0)
 
   for _, asset in pairs(state.by_path) do
     state.assets[#state.assets + 1] = asset
+    refresh_ucs_pending_membership(asset)
   end
 
   state.results_dirty = true
@@ -10816,6 +11030,7 @@ function mark_asset_database_delete(asset_or_path)
     and asset_or_path.path or asset_or_path
   path = tostring(path or "")
   if path == "" then return false end
+  remove_ucs_pending_membership(path)
   local values = database_asset_values(nil)
   for index, field in ipairs(DB_FIELDS) do
     if field == "path" then
@@ -10888,6 +11103,7 @@ function replace_database_asset(asset)
   existing.artwork_checked = tostring(existing.artwork_path or "") ~= ""
   existing._search_blob = nil
   existing._sort_path_value = nil
+  refresh_ucs_pending_membership(existing)
 end
 
 function replay_database_journal(asset_positions)
@@ -10949,6 +11165,7 @@ function replay_database_journal(asset_positions)
   for _, action in ipairs(actions) do
     local key = action.key
     if action.op == "delete" then
+      remove_ucs_pending_membership(key)
       if asset_positions then
         remove_indexed_array_entry(
           state.assets,
@@ -14036,12 +14253,212 @@ function index_asset(asset)
 
   asset.indexed = true
   asset._search_blob = nil
+  refresh_ucs_pending_membership(asset)
 
   reaper.PCM_Source_Destroy(source)
 
   mark_asset_database_change(asset)
   state.results_dirty = true
   return true
+end
+
+function new_ucs_reclassification_counts()
+  return {
+    exact = 0,
+    auto = 0,
+    pending = 0,
+    unclassified = 0,
+    manual = 0,
+    changed = 0,
+  }
+end
+
+function record_ucs_reclassification_result(session, asset, result, reason)
+  if reason == "manual" then
+    session.counts.manual = session.counts.manual + 1
+    return false
+  end
+  local status = result and result.ucs_status or "unclassified"
+  if session.counts[status] == nil then status = "unclassified" end
+  session.counts[status] = session.counts[status] + 1
+
+  local changed = result and ucs_classification_differs(asset, result)
+  if not changed then return false end
+  session.counts.changed = session.counts.changed + 1
+  if session.phase == "preview" and #session.samples < 8 then
+    session.samples[#session.samples + 1] = {
+      name = tostring(asset.name or basename(asset.path or "")),
+      before = tostring(asset.catid or ""),
+      after = tostring(result.catid or ""),
+      status = status,
+      candidates = tostring(result.ucs_candidates or ""),
+    }
+  end
+  return true
+end
+
+function start_ucs_reclassification_preview()
+  if state.ucs_reclassification_session then return false end
+  if state.persistence_read_only then
+    set_status("只读保护下不能重分类现有素材", true)
+    return false
+  end
+
+  local job_token = Jobs.begin(
+    "ucs_reclassification",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return false
+  end
+
+  AppState.set("ucs_reclassification_review", nil)
+  AppState.set("ucs_reclassification_session", {
+    phase = "preview",
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    counts = new_ucs_reclassification_counts(),
+    samples = {},
+    job_token = job_token,
+    started = reaper.time_precise(),
+  })
+  set_status(string.format("正在预览 UCS 分类：0 / %d", #state.assets))
+  return true
+end
+
+function start_ucs_reclassification_apply()
+  local review = state.ucs_reclassification_review
+  if not review or state.ucs_reclassification_session then return false end
+  if state.persistence_read_only then
+    set_status("只读保护下不能重分类现有素材", true)
+    return false
+  end
+  if review.classifier_version ~= UCS_CLASSIFIER_VERSION then
+    AppState.set("ucs_reclassification_review", nil)
+    set_status("分类规则已变化，请重新生成预览", true)
+    return false
+  end
+  if review.assets ~= state.assets or review.total ~= #state.assets then
+    AppState.set("ucs_reclassification_review", nil)
+    set_status("素材库已变化，请重新生成 UCS 分类预览", true)
+    return false
+  end
+
+  local job_token = Jobs.begin(
+    "ucs_reclassification",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return false
+  end
+
+  AppState.set("ucs_reclassification_session", {
+    phase = "apply",
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    counts = new_ucs_reclassification_counts(),
+    samples = {},
+    applied = 0,
+    job_token = job_token,
+    started = reaper.time_precise(),
+  })
+  set_status(string.format("正在应用 UCS 分类：0 / %d", #state.assets))
+  return true
+end
+
+function cancel_ucs_reclassification()
+  local session = state.ucs_reclassification_session
+  if not session then return false end
+  Jobs.cancel(session.job_token)
+  return true
+end
+
+function finish_ucs_reclassification(session, canceled)
+  AppState.set("ucs_reclassification_session", nil)
+  Jobs.finish(
+    session.job_token,
+    true,
+    canceled and "canceled" or ""
+  )
+
+  if session.phase == "preview" then
+    if canceled then
+      set_status("UCS 分类预览已取消")
+      return
+    end
+    AppState.set("ucs_reclassification_review", {
+      counts = session.counts,
+      samples = session.samples,
+      total = session.total,
+      classifier_version = UCS_CLASSIFIER_VERSION,
+      ucs_version = UCS_CATALOG_VERSION,
+      assets = session.assets,
+      elapsed = reaper.time_precise() - session.started,
+    })
+    set_status(string.format(
+      "UCS 分类预览完成：可更新 %d，待确认 %d，人工保护 %d",
+      session.counts.changed,
+      session.counts.pending,
+      session.counts.manual
+    ))
+    return
+  end
+
+  AppState.set("ucs_reclassification_review", nil)
+  AppState.mark_dirty("results_dirty")
+  if session.applied > 0 then save_database_changes() end
+  set_status(string.format(
+    canceled
+        and "UCS 分类已停止：已安全应用 %d，可重新预览继续"
+      or "UCS 分类已应用：更新 %d，待确认 %d",
+    session.applied,
+    session.counts.pending
+  ))
+end
+
+function process_ucs_reclassification()
+  local session = state.ucs_reclassification_session
+  if not session or not can_run_heavy_job() then return end
+  if session.job_token.cancel_requested then
+    finish_ucs_reclassification(session, true)
+    return
+  end
+
+  local deadline = reaper.time_precise() + UCS_RECLASSIFY_FRAME_BUDGET
+  local processed = 0
+  while session.index <= session.total
+    and processed < UCS_RECLASSIFY_ITEMS_PER_FRAME
+    and reaper.time_precise() < deadline do
+    local asset = session.assets[session.index]
+    session.index = session.index + 1
+    processed = processed + 1
+    if asset then
+      local result, reason = ucs_classify_existing_asset(asset)
+      local changed = record_ucs_reclassification_result(
+        session,
+        asset,
+        result,
+        reason
+      )
+      if session.phase == "apply" and changed
+        and ucs_assign_classification(asset, result) then
+        asset._search_blob = nil
+        refresh_ucs_pending_membership(asset)
+        mark_asset_database_change(asset)
+        session.applied = session.applied + 1
+      end
+    end
+  end
+
+  if session.index > session.total then
+    finish_ucs_reclassification(session, false)
+  end
 end
 
 function queue_metadata(asset, priority)
@@ -14733,6 +15150,9 @@ function asset_in_view(asset)
     return false
   elseif state.view == "previewed"
     and (asset.last_previewed or 0) <= 0 then
+    return false
+  elseif "ucs_pending" == state.view
+    and asset.ucs_status ~= "pending" then
     return false
   elseif state.view == "missing"
     and not state.missing_assets[path_key(asset.path)] then
@@ -24204,6 +24624,22 @@ function draw_sidebar()
     end
   )
 
+  if state.ucs_pending_count > 0 then
+    sidebar_item(
+      string.format("UCS 待确认  %d", state.ucs_pending_count),
+      "ucs_pending" == state.view
+        and not state.active_collection_id,
+      function()
+        AppState.set("view", "ucs_pending")
+        AppState.set("active_collection_id", nil)
+        AppState.set("root_filter", nil)
+        AppState.set("library_filter_id", nil)
+        AppState.mark_dirty("results_dirty")
+        AppState.mark_dirty("config_dirty")
+      end
+    )
+  end
+
   if state.missing_asset_count > 0 then
     sidebar_item(
       string.format("缺失素材  %d", state.missing_asset_count),
@@ -29260,6 +29696,7 @@ function apply_metadata_editor(assets)
         asset.ucs_evidence = ""
       end
       asset._search_blob = nil
+      refresh_ucs_pending_membership(asset)
       mark_asset_database_change(asset)
       changed_count = changed_count + 1
     end
@@ -32081,6 +32518,108 @@ function draw_settings_maintenance()
   ImGui.Separator(ctx)
 
   settings_section_title(
+    "UCS 分类",
+    "先分帧预览现有库，再由你确认应用；人工分类不会被覆盖。"
+  )
+
+  ImGui.TextDisabled(ctx, string.format(
+    "UCS %s · 分类器 %s · 当前待确认 %d",
+    UCS_CATALOG_VERSION,
+    UCS_CLASSIFIER_VERSION,
+    state.ucs_pending_count
+  ))
+
+  local ucs_session = state.ucs_reclassification_session
+  local ucs_review = state.ucs_reclassification_review
+  if ucs_session then
+    local completed = math.min(
+      math.max(0, (ucs_session.index or 1) - 1),
+      ucs_session.total or 0
+    )
+    local fraction = (ucs_session.total or 0) > 0
+        and completed / ucs_session.total
+      or 1
+    local label = ucs_session.phase == "apply"
+        and "正在应用 UCS 分类"
+      or "正在预览 UCS 分类"
+    ImGui.Text(ctx, string.format(
+      "%s %d / %d · 自动 %d · 待确认 %d · 人工保护 %d",
+      label,
+      completed,
+      ucs_session.total or 0,
+      ucs_session.counts.auto,
+      ucs_session.counts.pending,
+      ucs_session.counts.manual
+    ))
+    ImGui.ProgressBar(
+      ctx,
+      fraction,
+      -1,
+      18,
+      string.format("%.1f%%", fraction * 100)
+    )
+    if dark_button("取消 UCS 任务", 150) then
+      cancel_ucs_reclassification()
+    end
+    if ucs_session.phase == "apply" then
+      ImGui.SameLine(ctx)
+      ImGui.TextDisabled(ctx, "停止后保留已安全应用的部分，可重新预览继续。")
+    end
+  elseif ucs_review then
+    local counts = ucs_review.counts
+    ImGui.Text(ctx, string.format(
+      "预览完成：可更新 %d · 精确 %d · 自动 %d · 待确认 %d · 未分类 %d · 人工保护 %d",
+      counts.changed,
+      counts.exact,
+      counts.auto,
+      counts.pending,
+      counts.unclassified,
+      counts.manual
+    ))
+    ImGui.TextDisabled(ctx, string.format(
+      "共检查 %d 条，耗时 %.2f 秒；应用前不会修改数据库。",
+      ucs_review.total,
+      ucs_review.elapsed or 0
+    ))
+    for _, sample in ipairs(ucs_review.samples or {}) do
+      local target = sample.after ~= ""
+          and sample.after
+        or (sample.candidates ~= "" and sample.candidates or "未分类")
+      ImGui.TextDisabled(ctx, compact(
+        sample.name .. "  →  " .. target .. "  [" .. sample.status .. "]",
+        118
+      ))
+    end
+    if counts.changed > 0 and dark_button("确认应用分类", 150) then
+      start_ucs_reclassification_apply()
+    end
+    if counts.changed > 0 then ImGui.SameLine(ctx) end
+    if dark_button("丢弃预览", 130) then
+      AppState.set("ucs_reclassification_review", nil)
+      set_status("已丢弃 UCS 分类预览")
+    end
+  else
+    if dark_button("预览现有库 UCS 分类", 190) then
+      start_ucs_reclassification_preview()
+    end
+    ImGui.SameLine(ctx)
+    ImGui.TextDisabled(ctx, "只更新 PsyReaSFX 索引，不改名、不移动、不回写源音频。")
+  end
+
+  if state.ucs_pending_count > 0 and not ucs_session then
+    if dark_button("查看 UCS 待确认素材", 190) then
+      AppState.set("view", "ucs_pending")
+      AppState.set("active_collection_id", nil)
+      AppState.set("root_filter", nil)
+      AppState.set("library_filter_id", nil)
+      AppState.mark_dirty("results_dirty")
+      AppState.set("settings_close_requested", true)
+    end
+  end
+
+  ImGui.Separator(ctx)
+
+  settings_section_title(
     "路径与离线来源",
     "检查缺失文件，或在素材盘符和目录变化后重新定位来源；不会移动源文件。"
   )
@@ -33471,6 +34010,7 @@ function cleanup()
     state.duplicate_scan,
     state.duplicate_confirmation,
     state.relink_plan_session,
+    state.ucs_reclassification_session,
   }
 
   for _, session in pairs(maintenance_sessions) do
@@ -33655,6 +34195,8 @@ function loop()
     process_root_removal()
   elseif state.artwork_reset_session then
     process_artwork_cache_reset()
+  elseif state.ucs_reclassification_session then
+    process_ucs_reclassification()
   elseif state.database_snapshot_session then
     process_database_snapshot()
   else

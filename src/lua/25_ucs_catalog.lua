@@ -3,6 +3,20 @@
 UCS_CATALOG_SCHEMA = "ucs_catalog_v1"
 UCS_CATALOG_VERSION = "8.2.1"
 UCS_CLASSIFIER_VERSION = "filename-keywords-v1"
+UCS_RECLASSIFY_ITEMS_PER_FRAME = 256
+UCS_RECLASSIFY_FRAME_BUDGET = 0.004
+UCS_CLASSIFICATION_FIELDS = {
+  "catid",
+  "category",
+  "subcategory",
+  "ucs_status",
+  "ucs_source",
+  "ucs_version",
+  "ucs_classifier_version",
+  "ucs_confidence",
+  "ucs_candidates",
+  "ucs_evidence",
+}
 
 UcsCatalog = {
   attempted = false,
@@ -149,6 +163,8 @@ function ucs_classification_result(entry, status, source)
     ucs_version = UCS_CATALOG_VERSION,
     ucs_classifier_version = UCS_CLASSIFIER_VERSION,
     ucs_confidence = 1,
+    ucs_candidates = "",
+    ucs_evidence = "",
   }
 end
 
@@ -455,4 +471,90 @@ function ucs_classify_filename_keywords(filename, max_candidates)
   )
   result.ucs_evidence = table.concat(top.evidence, ",")
   return result
+end
+
+function ucs_unclassified_result(asset, source)
+  local preserve_metadata = source == "metadata"
+  return {
+    catid = preserve_metadata and tostring(asset.catid or "") or "",
+    category = preserve_metadata and tostring(asset.category or "") or "",
+    subcategory = preserve_metadata
+        and tostring(asset.subcategory or "")
+      or "",
+    ucs_status = preserve_metadata and "pending" or "unclassified",
+    ucs_source = preserve_metadata and "metadata" or "",
+    ucs_version = UCS_CATALOG_VERSION,
+    ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    ucs_confidence = 0,
+    ucs_candidates = "",
+    ucs_evidence = "",
+  }
+end
+
+function ucs_classify_existing_asset(asset)
+  if not asset then return nil, "missing" end
+  if asset.ucs_status == "manual" then return nil, "manual" end
+
+  local exact = ucs_classify_filename_exact(asset.name or asset.path or "")
+  if exact then return exact, "exact" end
+
+  local previous_source = tostring(asset.ucs_source or "")
+  local generated_metadata = previous_source == "filename"
+    or previous_source == "filename_keywords"
+  if not generated_metadata then
+    local metadata = ucs_classify_metadata(
+      asset.catid,
+      asset.category,
+      asset.subcategory
+    )
+    if metadata then return metadata, "metadata" end
+  end
+
+  local keywords = ucs_classify_filename_keywords(
+    asset.name or asset.path or ""
+  )
+  if keywords then
+    if keywords.ucs_status == "pending" and not generated_metadata then
+      keywords.catid = tostring(asset.catid or "")
+      keywords.category = tostring(asset.category or "")
+      keywords.subcategory = tostring(asset.subcategory or "")
+    end
+    return keywords, keywords.ucs_status
+  end
+
+  local has_metadata = not generated_metadata
+    and (trim(asset.catid or "") ~= ""
+      or trim(asset.category or "") ~= ""
+      or trim(asset.subcategory or "") ~= "")
+  return ucs_unclassified_result(
+    asset,
+    has_metadata and "metadata" or ""
+  ), has_metadata and "pending" or "unclassified"
+end
+
+function ucs_classification_differs(asset, result)
+  if not asset or not result then return false end
+  for _, field in ipairs(UCS_CLASSIFICATION_FIELDS) do
+    local current = asset[field]
+    local proposed = result[field]
+    if field == "ucs_confidence" then
+      if math.abs((tonumber(current) or 0) - (tonumber(proposed) or 0))
+        > 0.000001 then
+        return true
+      end
+    elseif tostring(current or "") ~= tostring(proposed or "") then
+      return true
+    end
+  end
+  return false
+end
+
+function ucs_assign_classification(asset, result)
+  if not asset or not result then return false end
+  local changed = ucs_classification_differs(asset, result)
+  if not changed then return false end
+  for _, field in ipairs(UCS_CLASSIFICATION_FIELDS) do
+    asset[field] = result[field]
+  end
+  return true
 end
