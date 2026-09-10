@@ -111,6 +111,11 @@ function database_asset_from_values(headers, values)
   asset.fingerprint_version = tostring(asset.fingerprint_version or "")
   asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
   asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+  asset.ucs_status = tostring(asset.ucs_status or "unclassified")
+  asset.ucs_source = tostring(asset.ucs_source or "")
+  asset.ucs_version = tostring(asset.ucs_version or "")
+  asset.ucs_classifier_version = tostring(asset.ucs_classifier_version or "")
+  asset.ucs_confidence = tonumber(asset.ucs_confidence) or 0
   if asset.fingerprint ~= ""
     and not fingerprint_metadata_is_compatible(asset) then
     clear_asset_fingerprint(asset)
@@ -3269,7 +3274,7 @@ function index_asset(asset)
     reaper.GetMediaSourceLength(source)
 
   local metadata = metadata_map(source)
-  local ucs = parse_ucs_filename(asset.name)
+  local filename_ucs = parse_ucs_filename(asset.name)
 
   asset.duration =
     is_qn and 0 or (duration or 0)
@@ -3310,7 +3315,7 @@ function index_asset(asset)
     }
   )
 
-  local catid = metadata_pick(
+  local catid = ucs_metadata_pick(
     metadata,
     {
       "CATID",
@@ -3318,14 +3323,14 @@ function index_asset(asset)
     }
   )
 
-  local category = metadata_pick(
+  local category = ucs_metadata_pick(
     metadata,
     {
       "CATEGORY",
     }
   )
 
-  local subcategory = metadata_pick(
+  local subcategory = ucs_metadata_pick(
     metadata,
     {
       "SUBCATEGORY",
@@ -3333,16 +3338,38 @@ function index_asset(asset)
     }
   )
 
-  asset.catid =
-    catid ~= "" and catid or ucs.catid
+  local metadata_ucs = ucs_classify_metadata(
+    catid,
+    category,
+    subcategory
+  )
+  local ucs = filename_ucs.ucs_status == "exact"
+    and filename_ucs
+    or metadata_ucs
 
-  asset.category =
-    category ~= "" and category or ucs.category
-
-  asset.subcategory =
-    subcategory ~= ""
-      and subcategory
-      or ucs.subcategory
+  if asset.ucs_status ~= "manual" then
+    if ucs then
+      asset.catid = ucs.catid
+      asset.category = ucs.category
+      asset.subcategory = ucs.subcategory
+      asset.ucs_status = ucs.ucs_status
+      asset.ucs_source = ucs.ucs_source
+      asset.ucs_version = ucs.ucs_version
+      asset.ucs_classifier_version = ucs.ucs_classifier_version
+      asset.ucs_confidence = ucs.ucs_confidence
+    else
+      asset.catid = catid
+      asset.category = category
+      asset.subcategory = subcategory
+      asset.ucs_status = (catid ~= "" or category ~= "" or subcategory ~= "")
+        and "pending"
+        or "unclassified"
+      asset.ucs_source = asset.ucs_status == "pending" and "metadata" or ""
+      asset.ucs_version = UCS_CATALOG_VERSION
+      asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
+      asset.ucs_confidence = 0
+    end
+  end
 
   asset.indexed = true
   asset._search_blob = nil
@@ -18532,6 +18559,7 @@ function apply_metadata_editor(assets)
 
   for _, asset in ipairs(assets) do
     local asset_changed = false
+    local ucs_changed = false
 
     for _, field in ipairs(METADATA_EDIT_FIELDS) do
       local should_apply =
@@ -18549,11 +18577,23 @@ function apply_metadata_editor(assets)
           ~= value then
           asset[field.key] = value
           asset_changed = true
+          if field.key == "catid"
+            or field.key == "category"
+            or field.key == "subcategory" then
+            ucs_changed = true
+          end
         end
       end
     end
 
     if asset_changed then
+      if ucs_changed then
+        asset.ucs_status = "manual"
+        asset.ucs_source = "manual"
+        asset.ucs_version = UCS_CATALOG_VERSION
+        asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
+        asset.ucs_confidence = 1
+      end
       asset._search_blob = nil
       mark_asset_database_change(asset)
       changed_count = changed_count + 1

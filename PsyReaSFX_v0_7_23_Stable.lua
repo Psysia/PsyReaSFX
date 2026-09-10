@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.5
+-- @version 0.9.0-beta.1-dev
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -161,6 +161,7 @@
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
 --   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
 --   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
+--   - 0.9 Beta 1 Dev：接入官方 UCS 8.2.1 数据与可解释的精确分类基础
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -169,7 +170,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.5"
+local VERSION = "0.9.0 Beta 1 Dev"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -251,6 +252,14 @@ local BRAND_FONT_PATH =
   .. "fonts"
   .. SEP
   .. "Orbitron-VariableFont_wght.ttf"
+
+local UCS_CATALOG_PATH =
+  SCRIPT_DIR
+  .. "assets"
+  .. SEP
+  .. "ucs"
+  .. SEP
+  .. "ucs-8.2.1.tsv"
 
 local brand_font = nil
 
@@ -6013,29 +6022,214 @@ end
 -- UCS and placeholder assets
 ----------------------------------------------------------------
 
+-- Official UCS catalog loading and deterministic classification primitives.
+
+UCS_CATALOG_SCHEMA = "ucs_catalog_v1"
+UCS_CATALOG_VERSION = "8.2.1"
+UCS_CLASSIFIER_VERSION = "exact-v1"
+
+UcsCatalog = {
+  attempted = false,
+  loaded = false,
+  error = "",
+  entries = {},
+  by_catid = {},
+  by_pair = {},
+  categories = {},
+}
+
+function ucs_reset_catalog()
+  UcsCatalog.attempted = false
+  UcsCatalog.loaded = false
+  UcsCatalog.error = ""
+  UcsCatalog.entries = {}
+  UcsCatalog.by_catid = {}
+  UcsCatalog.by_pair = {}
+  UcsCatalog.categories = {}
+end
+
+function ucs_pair_key(category, subcategory)
+  return string.upper(trim(category or ""))
+    .. "\0"
+    .. string.upper(trim(subcategory or ""))
+end
+
+function ucs_header_map(fields)
+  local map = {}
+  for index, field in ipairs(fields or {}) do
+    map[field] = index
+  end
+  return map
+end
+
+function ucs_field(fields, headers, name)
+  local index = headers[name]
+  return index and tostring(fields[index] or "") or ""
+end
+
+function load_ucs_catalog(path)
+  ucs_reset_catalog()
+  UcsCatalog.attempted = true
+
+  local file = io.open(path or UCS_CATALOG_PATH, "rb")
+  if not file then
+    UcsCatalog.error = "missing_catalog"
+    return false, UcsCatalog.error
+  end
+
+  local schema = ""
+  local version = ""
+  local headers = nil
+  for line in file:lines() do
+    local fields = split_tsv(line)
+    if fields[1] == "#schema" then
+      schema = fields[2] or ""
+    elseif fields[1] == "#ucs_version" then
+      version = fields[2] or ""
+    elseif fields[1] == "category" then
+      headers = ucs_header_map(fields)
+    elseif headers and fields[1] and fields[1] ~= "" then
+      local entry = {
+        category = ucs_field(fields, headers, "category"),
+        subcategory = ucs_field(fields, headers, "subcategory"),
+        catid = ucs_field(fields, headers, "catid"),
+        catshort = ucs_field(fields, headers, "catshort"),
+        explanation = ucs_field(fields, headers, "explanation"),
+        synonyms_en = ucs_field(fields, headers, "synonyms_en"),
+        category_zh = ucs_field(fields, headers, "category_zh"),
+        subcategory_zh = ucs_field(fields, headers, "subcategory_zh"),
+        synonyms_zh = ucs_field(fields, headers, "synonyms_zh"),
+      }
+
+      if entry.catid == ""
+        or entry.category == ""
+        or entry.subcategory == ""
+        or UcsCatalog.by_catid[entry.catid] then
+        file:close()
+        ucs_reset_catalog()
+        UcsCatalog.attempted = true
+        UcsCatalog.error = "invalid_catalog_row"
+        return false, UcsCatalog.error
+      end
+
+      UcsCatalog.entries[#UcsCatalog.entries + 1] = entry
+      UcsCatalog.by_catid[entry.catid] = entry
+      UcsCatalog.by_pair[
+        ucs_pair_key(entry.category, entry.subcategory)
+      ] = entry
+
+      local category = UcsCatalog.categories[entry.category]
+      if not category then
+        category = {
+          name = entry.category,
+          name_zh = entry.category_zh,
+          entries = {},
+        }
+        UcsCatalog.categories[entry.category] = category
+      end
+      category.entries[#category.entries + 1] = entry
+    end
+  end
+  file:close()
+
+  if schema ~= UCS_CATALOG_SCHEMA
+    or version ~= UCS_CATALOG_VERSION
+    or #UcsCatalog.entries ~= 753 then
+    ucs_reset_catalog()
+    UcsCatalog.attempted = true
+    UcsCatalog.error = "unsupported_catalog"
+    return false, UcsCatalog.error
+  end
+
+  UcsCatalog.loaded = true
+  return true, #UcsCatalog.entries
+end
+
+function ensure_ucs_catalog()
+  if UcsCatalog.loaded then return true end
+  if UcsCatalog.attempted then return false end
+  return load_ucs_catalog(UCS_CATALOG_PATH)
+end
+
+function ucs_classification_result(entry, status, source)
+  if not entry then return nil end
+  return {
+    catid = entry.catid,
+    category = entry.category,
+    subcategory = entry.subcategory,
+    ucs_status = status or "exact",
+    ucs_source = source or "filename",
+    ucs_version = UCS_CATALOG_VERSION,
+    ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    ucs_confidence = 1,
+  }
+end
+
+function ucs_classify_filename_exact(filename)
+  if not ensure_ucs_catalog() then return nil end
+  local stem = strip_extension(basename(filename or ""))
+  local token = stem:match("^([A-Za-z0-9]+)[_%-%s]")
+    or stem:match("^([A-Za-z0-9]+)$")
+  if not token then return nil end
+  return ucs_classification_result(
+    UcsCatalog.by_catid[token],
+    "exact",
+    "filename"
+  )
+end
+
+function ucs_classify_metadata(catid, category, subcategory)
+  if not ensure_ucs_catalog() then return nil end
+  local entry = UcsCatalog.by_catid[trim(catid or "")]
+  if not entry and trim(category or "") ~= ""
+    and trim(subcategory or "") ~= "" then
+    entry = UcsCatalog.by_pair[
+      ucs_pair_key(category, subcategory)
+    ]
+  end
+  return ucs_classification_result(entry, "exact", "metadata")
+end
+
+function ucs_metadata_identifier_key(identifier)
+  local text = string.upper(trim(identifier or ""))
+  local leaf = text:match("([^:/\\%.]+)$") or text
+  return leaf:gsub("[^A-Z0-9]", "")
+end
+
+function ucs_metadata_pick(map, names)
+  local ordered_keys = {}
+  for key in pairs(map or {}) do
+    ordered_keys[#ordered_keys + 1] = key
+  end
+  table.sort(ordered_keys)
+
+  for _, name in ipairs(names or {}) do
+    local wanted = ucs_metadata_identifier_key(name)
+    for _, key in ipairs(ordered_keys) do
+      if ucs_metadata_identifier_key(key) == wanted then
+        return tostring(map[key] or "")
+      end
+    end
+  end
+  return ""
+end
+
 -- Catalog identity, metadata, configuration and library persistence.
 local HostApi = Host or reaper
 
 function parse_ucs_filename(filename)
-  local stem = strip_extension(filename)
-  local tokens = {}
-
-  for token in stem:gmatch("[^_%-%s]+") do
-    tokens[#tokens + 1] = token
-  end
-
-  local result = {
+  local result = ucs_classify_filename_exact(filename)
+  if result then return result end
+  return {
     catid = "",
-    category = tokens[1] or "",
-    subcategory = tokens[2] or "",
+    category = "",
+    subcategory = "",
+    ucs_status = "unclassified",
+    ucs_source = "",
+    ucs_version = UCS_CATALOG_VERSION,
+    ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    ucs_confidence = 0,
   }
-
-  if tokens[1]
-    and tokens[1]:match("^[A-Z][A-Z0-9]+$") then
-    result.catid = tokens[1]
-  end
-
-  return result
 end
 
 function asset_relative_path(path, root)
@@ -6119,6 +6313,11 @@ function make_placeholder(path, known_root)
     catid = ucs.catid,
     category = ucs.category,
     subcategory = ucs.subcategory,
+    ucs_status = ucs.ucs_status,
+    ucs_source = ucs.ucs_source,
+    ucs_version = ucs.ucs_version,
+    ucs_classifier_version = ucs.ucs_classifier_version,
+    ucs_confidence = ucs.ucs_confidence,
     artwork_path = "",
     artwork_checked = false,
 
@@ -6286,6 +6485,11 @@ local DB_FIELDS = {
   "catid",
   "category",
   "subcategory",
+  "ucs_status",
+  "ucs_source",
+  "ucs_version",
+  "ucs_classifier_version",
+  "ucs_confidence",
   "artwork_path",
   "workflow_status",
   "marked",
@@ -10277,6 +10481,11 @@ function database_asset_from_values(headers, values)
   asset.fingerprint_version = tostring(asset.fingerprint_version or "")
   asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
   asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+  asset.ucs_status = tostring(asset.ucs_status or "unclassified")
+  asset.ucs_source = tostring(asset.ucs_source or "")
+  asset.ucs_version = tostring(asset.ucs_version or "")
+  asset.ucs_classifier_version = tostring(asset.ucs_classifier_version or "")
+  asset.ucs_confidence = tonumber(asset.ucs_confidence) or 0
   if asset.fingerprint ~= ""
     and not fingerprint_metadata_is_compatible(asset) then
     clear_asset_fingerprint(asset)
@@ -13435,7 +13644,7 @@ function index_asset(asset)
     reaper.GetMediaSourceLength(source)
 
   local metadata = metadata_map(source)
-  local ucs = parse_ucs_filename(asset.name)
+  local filename_ucs = parse_ucs_filename(asset.name)
 
   asset.duration =
     is_qn and 0 or (duration or 0)
@@ -13476,7 +13685,7 @@ function index_asset(asset)
     }
   )
 
-  local catid = metadata_pick(
+  local catid = ucs_metadata_pick(
     metadata,
     {
       "CATID",
@@ -13484,14 +13693,14 @@ function index_asset(asset)
     }
   )
 
-  local category = metadata_pick(
+  local category = ucs_metadata_pick(
     metadata,
     {
       "CATEGORY",
     }
   )
 
-  local subcategory = metadata_pick(
+  local subcategory = ucs_metadata_pick(
     metadata,
     {
       "SUBCATEGORY",
@@ -13499,16 +13708,38 @@ function index_asset(asset)
     }
   )
 
-  asset.catid =
-    catid ~= "" and catid or ucs.catid
+  local metadata_ucs = ucs_classify_metadata(
+    catid,
+    category,
+    subcategory
+  )
+  local ucs = filename_ucs.ucs_status == "exact"
+    and filename_ucs
+    or metadata_ucs
 
-  asset.category =
-    category ~= "" and category or ucs.category
-
-  asset.subcategory =
-    subcategory ~= ""
-      and subcategory
-      or ucs.subcategory
+  if asset.ucs_status ~= "manual" then
+    if ucs then
+      asset.catid = ucs.catid
+      asset.category = ucs.category
+      asset.subcategory = ucs.subcategory
+      asset.ucs_status = ucs.ucs_status
+      asset.ucs_source = ucs.ucs_source
+      asset.ucs_version = ucs.ucs_version
+      asset.ucs_classifier_version = ucs.ucs_classifier_version
+      asset.ucs_confidence = ucs.ucs_confidence
+    else
+      asset.catid = catid
+      asset.category = category
+      asset.subcategory = subcategory
+      asset.ucs_status = (catid ~= "" or category ~= "" or subcategory ~= "")
+        and "pending"
+        or "unclassified"
+      asset.ucs_source = asset.ucs_status == "pending" and "metadata" or ""
+      asset.ucs_version = UCS_CATALOG_VERSION
+      asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
+      asset.ucs_confidence = 0
+    end
+  end
 
   asset.indexed = true
   asset._search_blob = nil
@@ -28698,6 +28929,7 @@ function apply_metadata_editor(assets)
 
   for _, asset in ipairs(assets) do
     local asset_changed = false
+    local ucs_changed = false
 
     for _, field in ipairs(METADATA_EDIT_FIELDS) do
       local should_apply =
@@ -28715,11 +28947,23 @@ function apply_metadata_editor(assets)
           ~= value then
           asset[field.key] = value
           asset_changed = true
+          if field.key == "catid"
+            or field.key == "category"
+            or field.key == "subcategory" then
+            ucs_changed = true
+          end
         end
       end
     end
 
     if asset_changed then
+      if ucs_changed then
+        asset.ucs_status = "manual"
+        asset.ucs_source = "manual"
+        asset.ucs_version = UCS_CATALOG_VERSION
+        asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
+        asset.ucs_confidence = 1
+      end
       asset._search_blob = nil
       mark_asset_database_change(asset)
       changed_count = changed_count + 1

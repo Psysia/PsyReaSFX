@@ -2,25 +2,18 @@
 local HostApi = Host or reaper
 
 function parse_ucs_filename(filename)
-  local stem = strip_extension(filename)
-  local tokens = {}
-
-  for token in stem:gmatch("[^_%-%s]+") do
-    tokens[#tokens + 1] = token
-  end
-
-  local result = {
+  local result = ucs_classify_filename_exact(filename)
+  if result then return result end
+  return {
     catid = "",
-    category = tokens[1] or "",
-    subcategory = tokens[2] or "",
+    category = "",
+    subcategory = "",
+    ucs_status = "unclassified",
+    ucs_source = "",
+    ucs_version = UCS_CATALOG_VERSION,
+    ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    ucs_confidence = 0,
   }
-
-  if tokens[1]
-    and tokens[1]:match("^[A-Z][A-Z0-9]+$") then
-    result.catid = tokens[1]
-  end
-
-  return result
 end
 
 function asset_relative_path(path, root)
@@ -104,6 +97,11 @@ function make_placeholder(path, known_root)
     catid = ucs.catid,
     category = ucs.category,
     subcategory = ucs.subcategory,
+    ucs_status = ucs.ucs_status,
+    ucs_source = ucs.ucs_source,
+    ucs_version = ucs.ucs_version,
+    ucs_classifier_version = ucs.ucs_classifier_version,
+    ucs_confidence = ucs.ucs_confidence,
     artwork_path = "",
     artwork_checked = false,
 
@@ -271,6 +269,11 @@ local DB_FIELDS = {
   "catid",
   "category",
   "subcategory",
+  "ucs_status",
+  "ucs_source",
+  "ucs_version",
+  "ucs_classifier_version",
+  "ucs_confidence",
   "artwork_path",
   "workflow_status",
   "marked",

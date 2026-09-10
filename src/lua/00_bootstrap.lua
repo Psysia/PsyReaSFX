@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.5
+-- @version 0.9.0-beta.1-dev
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -161,6 +161,7 @@
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
 --   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
 --   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
+--   - 0.9 Beta 1 Dev：接入官方 UCS 8.2.1 数据与可解释的精确分类基础
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -169,7 +170,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.5"
+local VERSION = "0.9.0 Beta 1 Dev"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -251,6 +252,14 @@ local BRAND_FONT_PATH =
   .. "fonts"
   .. SEP
   .. "Orbitron-VariableFont_wght.ttf"
+
+local UCS_CATALOG_PATH =
+  SCRIPT_DIR
+  .. "assets"
+  .. SEP
+  .. "ucs"
+  .. SEP
+  .. "ucs-8.2.1.tsv"
 
 local brand_font = nil
 

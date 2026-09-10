@@ -1,5 +1,18 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 1 (in development)
+
+### UCS advanced-search foundation
+
+- Establishes the long-lived `beta/0.9.x` feature branch while 0.8.x remains the stable maintenance line.
+- Generates an offline catalog from the official UCS 8.2.1 translation workbook, covering 753 unique CatIDs, 82 top-level categories, and English/Chinese terms.
+- Classifies newly imported assets from an exact CatID at the beginning of the filename, with case and delimiter validation to prevent false positives.
+- Validates existing CatID or Category/SubCategory metadata against the official catalog when the filename has no valid CatID.
+- Persists classification state, source, UCS version, classifier version, and confidence; manual UCS edits are protected from automatic re-indexing.
+- Verifies the official workbook SHA-256 before generation and adds regression coverage for record counts and matching boundaries.
+
+> This is a branch development snapshot, not a public Beta release. The UCS virtual tree, existing-library classification, candidate review, and search suggestions will continue in the same Beta feature batch.
+
 ## 0.8.5
 
 ### Correct scan-recovery checkpoint semantics

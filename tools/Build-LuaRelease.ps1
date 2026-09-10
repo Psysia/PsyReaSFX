@@ -16,6 +16,7 @@ $modules = @(
     "12_state_store.lua",
     "15_host_adapter.lua",
     "20_jobs_storage.lua",
+    "25_ucs_catalog.lua",
     "30_catalog.lua",
     "35_incremental_results.lua",
     "36_asset_journal.lua",
