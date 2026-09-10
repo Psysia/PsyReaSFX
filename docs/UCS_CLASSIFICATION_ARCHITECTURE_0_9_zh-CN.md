@@ -17,11 +17,15 @@
 
 1. 文件名以合法 CatID 开头，并紧跟 `_`、`-`、空白或文件名结束：记为 `exact / filename`。
 2. 文件名未命中时，精确读取音频元数据中的 CatID；若 CatID 无效，再校验 Category 与 SubCategory 组合：记为 `exact / metadata`。
-3. 元数据存在但无法映射到官方目录：保留原值，记为 `pending / metadata`，等待后续候选确认界面处理。
-4. 没有可用信息：记为 `unclassified`。
-5. 用户手工修改 CatID、Category 或 SubCategory：记为 `manual`，后续自动索引不得覆盖。
+3. 文件名与 Category/SubCategory 组合、子分类名或中英文同义词形成高置信唯一结果：记为 `auto / filename_keywords`。
+4. 多个关键词结果接近，或证据不足以安全自动应用：不写入正式分类，保存前三个候选并记为 `pending / filename_keywords`。
+5. 元数据存在但无法映射到官方目录：保留原值，记为 `pending / metadata`，等待后续候选确认界面处理。
+6. 没有可用信息：记为 `unclassified`。
+7. 用户手工修改 CatID、Category 或 SubCategory：记为 `manual`，后续自动索引不得覆盖。
 
 文件名 CatID 匹配区分大小写并要求分隔符，避免把普通英文前缀误分类。元数据字段名使用确定性的叶节点精确匹配，避免 `CATEGORY` 错误命中 `SUBCATEGORY`。
+
+关键词索引为每个 UCS 条目建立 Category/SubCategory 组合、子分类名、分类名与同义词倒排表。分类时只查询文件名实际出现的词元和最多四词短语，不逐条遍历全部 753 个条目。同一规范化词只计一次；命中长短语后不再重复累计其内部短词。分类名只是上下文弱证据，只有唯一子分类、分类与多个独立证据组合，或明确 Category/SubCategory 短语才能进入自动分类。最高候选与第二候选没有安全分差时始终进入待确认。
 
 ## 持久化字段
 
@@ -32,6 +36,8 @@
 - `ucs_version`：分类所用 UCS 数据版本；
 - `ucs_classifier_version`：分类器规则版本；
 - `ucs_confidence`：当前确定性分值。
+- `ucs_candidates`：按分数排序的前三个 CatID 与分数；
+- `ucs_evidence`：最高候选实际命中的去重词语。
 
 这些字段随数据库表头扩展，不提升数据库主架构版本。0.8.5 可以读取同一数据库并忽略未知字段，便于 Beta 测试期间回退；旧版本再次保存时可能丢弃新增字段，但不会损坏核心素材记录。
 
@@ -39,7 +45,7 @@
 
 - 运行时目录采用 CatID 哈希索引和 Category/SubCategory 组合哈希索引，单次精确分类为常数时间查找。
 - CI 固定验证 753 条记录、82 个一级分类、中文字段、大小写与分隔符边界、元数据字段隔离。
-- CI 每次执行 500,000 次文件名分类查找，持续约束 50 万条素材库的基本规模目标。
+- CI 每次执行 500,000 次 CatID 精确分类和 500,000 次多关键词分类，持续约束 50 万条素材库的基本规模目标。
 
 ## 后续同一 Beta 批次
 

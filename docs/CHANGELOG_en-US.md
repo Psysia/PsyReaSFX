@@ -8,8 +8,11 @@
 - Generates an offline catalog from the official UCS 8.2.1 translation workbook, covering 753 unique CatIDs, 82 top-level categories, and English/Chinese terms.
 - Classifies newly imported assets from an exact CatID at the beginning of the filename, with case and delimiter validation to prevent false positives.
 - Validates existing CatID or Category/SubCategory metadata against the official catalog when the filename has no valid CatID.
+- Uses an inverted index and explainable scoring for filename keywords, combining Category/SubCategory pairs, subcategory names, and English/Chinese synonyms.
+- Counts each normalized term only once and prefers longer phrases over nested short terms, preventing repeated words from inflating confidence.
+- Applies only high-confidence winners with a safe margin; ambiguous matches persist the top three candidates, scores, and evidence for later review.
 - Persists classification state, source, UCS version, classifier version, and confidence; manual UCS edits are protected from automatic re-indexing.
-- Verifies the official workbook SHA-256 before generation and adds regression coverage for record counts and matching boundaries.
+- Verifies the official workbook SHA-256 before generation and exercises 500,000 exact plus 500,000 keyword classifications in regression coverage.
 
 > This is a branch development snapshot, not a public Beta release. The UCS virtual tree, existing-library classification, candidate review, and search suggestions will continue in the same Beta feature batch.
 

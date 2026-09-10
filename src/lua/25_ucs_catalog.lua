@@ -2,7 +2,7 @@
 
 UCS_CATALOG_SCHEMA = "ucs_catalog_v1"
 UCS_CATALOG_VERSION = "8.2.1"
-UCS_CLASSIFIER_VERSION = "exact-v1"
+UCS_CLASSIFIER_VERSION = "filename-keywords-v1"
 
 UcsCatalog = {
   attempted = false,
@@ -12,6 +12,8 @@ UcsCatalog = {
   by_catid = {},
   by_pair = {},
   categories = {},
+  term_index = {},
+  max_term_words = 1,
 }
 
 function ucs_reset_catalog()
@@ -22,6 +24,8 @@ function ucs_reset_catalog()
   UcsCatalog.by_catid = {}
   UcsCatalog.by_pair = {}
   UcsCatalog.categories = {}
+  UcsCatalog.term_index = {}
+  UcsCatalog.max_term_words = 1
 end
 
 function ucs_pair_key(category, subcategory)
@@ -123,6 +127,7 @@ function load_ucs_catalog(path)
     return false, UcsCatalog.error
   end
 
+  ucs_build_term_index()
   UcsCatalog.loaded = true
   return true, #UcsCatalog.entries
 end
@@ -194,4 +199,260 @@ function ucs_metadata_pick(map, names)
     end
   end
   return ""
+end
+
+function ucs_normalize_keyword_text(value)
+  local text = string.upper(tostring(value or ""))
+  text = text:gsub("[_%-]+", " ")
+  text = text:gsub("[%c%p]", " ")
+  text = text:gsub("%s+", " ")
+  return trim(text)
+end
+
+function ucs_keyword_word_count(value)
+  local count = 0
+  for _ in tostring(value or ""):gmatch("%S+") do
+    count = count + 1
+  end
+  return count
+end
+
+function ucs_keyword_terms(value)
+  local normalized = tostring(value or "")
+    :gsub("，", ",")
+    :gsub("；", ",")
+    :gsub("、", ",")
+  local terms = {}
+  for term in (normalized .. ","):gmatch("(.-),") do
+    term = ucs_normalize_keyword_text(term)
+    if term ~= "" then terms[#terms + 1] = term end
+  end
+  return terms
+end
+
+function ucs_register_entry_term(entry_terms, value, kind, weight)
+  local term = ucs_normalize_keyword_text(value)
+  local word_count = ucs_keyword_word_count(term)
+  if term == "" or word_count == 0 or word_count > 4 then return end
+  if word_count == 1 and #term < 3 then return end
+
+  local existing = entry_terms[term]
+  if not existing or weight > existing.weight then
+    entry_terms[term] = {
+      kind = kind,
+      weight = weight,
+      word_count = word_count,
+    }
+  end
+end
+
+function ucs_build_term_index()
+  UcsCatalog.term_index = {}
+  UcsCatalog.max_term_words = 1
+
+  for _, entry in ipairs(UcsCatalog.entries) do
+    local entry_terms = {}
+    ucs_register_entry_term(
+      entry_terms,
+      entry.category .. " " .. entry.subcategory,
+      "pair",
+      14
+    )
+    ucs_register_entry_term(
+      entry_terms,
+      entry.category_zh .. " " .. entry.subcategory_zh,
+      "pair",
+      14
+    )
+    ucs_register_entry_term(entry_terms, entry.subcategory, "subcategory", 8)
+    ucs_register_entry_term(entry_terms, entry.subcategory_zh, "subcategory", 8)
+    ucs_register_entry_term(entry_terms, entry.category, "category", 2)
+    ucs_register_entry_term(entry_terms, entry.category_zh, "category", 2)
+
+    for _, synonym in ipairs(ucs_keyword_terms(entry.synonyms_en)) do
+      ucs_register_entry_term(entry_terms, synonym, "synonym", 4)
+    end
+    for _, synonym in ipairs(ucs_keyword_terms(entry.synonyms_zh)) do
+      ucs_register_entry_term(entry_terms, synonym, "synonym", 4)
+    end
+
+    for term, info in pairs(entry_terms) do
+      local postings = UcsCatalog.term_index[term]
+      if not postings then
+        postings = {}
+        UcsCatalog.term_index[term] = postings
+      end
+      postings[#postings + 1] = {
+        entry = entry,
+        kind = info.kind,
+        weight = info.weight,
+      }
+      UcsCatalog.max_term_words = math.max(
+        UcsCatalog.max_term_words,
+        info.word_count
+      )
+    end
+  end
+end
+
+function ucs_term_inside(shorter, longer)
+  return (" " .. longer .. " "):find(
+    " " .. shorter .. " ",
+    1,
+    true
+  ) ~= nil
+end
+
+function ucs_filename_query_terms(filename)
+  local normalized = ucs_normalize_keyword_text(
+    strip_extension(basename(filename or ""))
+  )
+  local words = {}
+  for word in normalized:gmatch("%S+") do
+    words[#words + 1] = word
+  end
+
+  local found = {}
+  local max_words = math.min(UcsCatalog.max_term_words or 1, 4)
+  for first = 1, #words do
+    local phrase = ""
+    for count = 1, math.min(max_words, #words - first + 1) do
+      phrase = count == 1
+          and words[first]
+        or (phrase .. " " .. words[first + count - 1])
+      if UcsCatalog.term_index[phrase] then found[phrase] = true end
+    end
+  end
+
+  local ordered = {}
+  for term in pairs(found) do ordered[#ordered + 1] = term end
+  table.sort(ordered, function(a, b)
+    local a_words = ucs_keyword_word_count(a)
+    local b_words = ucs_keyword_word_count(b)
+    if a_words ~= b_words then return a_words > b_words end
+    if #a ~= #b then return #a > #b end
+    return a < b
+  end)
+
+  local selected = {}
+  for _, term in ipairs(ordered) do
+    local nested = false
+    for _, longer in ipairs(selected) do
+      if ucs_term_inside(term, longer) then
+        nested = true
+        break
+      end
+    end
+    if not nested then selected[#selected + 1] = term end
+  end
+  return selected
+end
+
+function ucs_format_candidates(candidates, limit)
+  local values = {}
+  for index = 1, math.min(limit or 3, #candidates) do
+    local candidate = candidates[index]
+    values[#values + 1] = candidate.entry.catid
+      .. "="
+      .. string.format("%.3f", candidate.score)
+  end
+  return table.concat(values, ";")
+end
+
+function ucs_classify_filename_keywords(filename, max_candidates)
+  if not ensure_ucs_catalog() then return nil end
+  local query_terms = ucs_filename_query_terms(filename)
+  if #query_terms == 0 then return nil end
+
+  local scores = {}
+  for _, term in ipairs(query_terms) do
+    local postings = UcsCatalog.term_index[term] or {}
+    if #postings <= 64 then
+      local divisor = 1 + math.log(math.max(1, #postings), 2)
+      for _, posting in ipairs(postings) do
+        local catid = posting.entry.catid
+        local score = scores[catid]
+        if not score then
+          score = {
+            entry = posting.entry,
+            score = 0,
+            evidence = {},
+            evidence_seen = {},
+            noncategory_count = 0,
+            pair_match = false,
+            subcategory_match = false,
+            subcategory_postings = math.huge,
+            category_match = false,
+          }
+          scores[catid] = score
+        end
+
+        score.score = score.score + posting.weight / divisor
+        if not score.evidence_seen[term] then
+          score.evidence_seen[term] = true
+          score.evidence[#score.evidence + 1] = term
+          if posting.kind ~= "category" then
+            score.noncategory_count = score.noncategory_count + 1
+          end
+        end
+        if posting.kind == "pair" then score.pair_match = true end
+        if posting.kind == "category" then score.category_match = true end
+        if posting.kind == "subcategory" then
+          score.subcategory_match = true
+          score.subcategory_postings = math.min(
+            score.subcategory_postings,
+            #postings
+          )
+        end
+      end
+    end
+  end
+
+  local candidates = {}
+  for _, score in pairs(scores) do
+    table.sort(score.evidence)
+    candidates[#candidates + 1] = score
+  end
+  table.sort(candidates, function(a, b)
+    if a.score ~= b.score then return a.score > b.score end
+    return a.entry.catid < b.entry.catid
+  end)
+  if #candidates == 0 then return nil end
+
+  local top = candidates[1]
+  local second_score = candidates[2] and candidates[2].score or 0
+  local margin = top.score - second_score
+  local qualifies = top.pair_match
+    or (top.subcategory_match and top.subcategory_postings <= 2)
+    or (top.category_match and top.noncategory_count >= 2)
+    or top.noncategory_count >= 3
+  local automatic = qualifies and top.score >= 6 and margin >= 2
+  local confidence = automatic
+      and math.min(0.96, 0.75 + math.min(0.15, top.score / 60)
+        + math.min(0.06, margin / 30))
+    or math.min(0.79, 0.45 + math.min(0.2, top.score / 50)
+      + math.min(0.1, math.max(0, margin) / 30))
+
+  local result = automatic
+      and ucs_classification_result(
+        top.entry,
+        "auto",
+        "filename_keywords"
+      )
+    or {
+      catid = "",
+      category = "",
+      subcategory = "",
+      ucs_status = "pending",
+      ucs_source = "filename_keywords",
+      ucs_version = UCS_CATALOG_VERSION,
+      ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    }
+  result.ucs_confidence = confidence
+  result.ucs_candidates = ucs_format_candidates(
+    candidates,
+    max_candidates or 3
+  )
+  result.ucs_evidence = table.concat(top.evidence, ",")
+  return result
 end

@@ -4,6 +4,8 @@ local HostApi = Host or reaper
 function parse_ucs_filename(filename)
   local result = ucs_classify_filename_exact(filename)
   if result then return result end
+  result = ucs_classify_filename_keywords(filename)
+  if result then return result end
   return {
     catid = "",
     category = "",
@@ -13,6 +15,8 @@ function parse_ucs_filename(filename)
     ucs_version = UCS_CATALOG_VERSION,
     ucs_classifier_version = UCS_CLASSIFIER_VERSION,
     ucs_confidence = 0,
+    ucs_candidates = "",
+    ucs_evidence = "",
   }
 end
 
@@ -102,6 +106,8 @@ function make_placeholder(path, known_root)
     ucs_version = ucs.ucs_version,
     ucs_classifier_version = ucs.ucs_classifier_version,
     ucs_confidence = ucs.ucs_confidence,
+    ucs_candidates = ucs.ucs_candidates or "",
+    ucs_evidence = ucs.ucs_evidence or "",
     artwork_path = "",
     artwork_checked = false,
 
@@ -274,6 +280,8 @@ local DB_FIELDS = {
   "ucs_version",
   "ucs_classifier_version",
   "ucs_confidence",
+  "ucs_candidates",
+  "ucs_evidence",
   "artwork_path",
   "workflow_status",
   "marked",

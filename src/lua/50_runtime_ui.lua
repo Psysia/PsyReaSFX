@@ -116,6 +116,8 @@ function database_asset_from_values(headers, values)
   asset.ucs_version = tostring(asset.ucs_version or "")
   asset.ucs_classifier_version = tostring(asset.ucs_classifier_version or "")
   asset.ucs_confidence = tonumber(asset.ucs_confidence) or 0
+  asset.ucs_candidates = tostring(asset.ucs_candidates or "")
+  asset.ucs_evidence = tostring(asset.ucs_evidence or "")
   if asset.fingerprint ~= ""
     and not fingerprint_metadata_is_compatible(asset) then
     clear_asset_fingerprint(asset)
@@ -3344,8 +3346,9 @@ function index_asset(asset)
     subcategory
   )
   local ucs = filename_ucs.ucs_status == "exact"
-    and filename_ucs
+      and filename_ucs
     or metadata_ucs
+    or (filename_ucs.ucs_status == "auto" and filename_ucs)
 
   if asset.ucs_status ~= "manual" then
     if ucs then
@@ -3357,17 +3360,32 @@ function index_asset(asset)
       asset.ucs_version = ucs.ucs_version
       asset.ucs_classifier_version = ucs.ucs_classifier_version
       asset.ucs_confidence = ucs.ucs_confidence
+      asset.ucs_candidates = ucs.ucs_candidates or ""
+      asset.ucs_evidence = ucs.ucs_evidence or ""
     else
       asset.catid = catid
       asset.category = category
       asset.subcategory = subcategory
-      asset.ucs_status = (catid ~= "" or category ~= "" or subcategory ~= "")
-        and "pending"
-        or "unclassified"
-      asset.ucs_source = asset.ucs_status == "pending" and "metadata" or ""
+      local filename_pending = filename_ucs.ucs_status == "pending"
+      asset.ucs_status = filename_pending
+          and "pending"
+        or ((catid ~= "" or category ~= "" or subcategory ~= "")
+          and "pending"
+          or "unclassified")
+      asset.ucs_source = filename_pending
+          and filename_ucs.ucs_source
+        or (asset.ucs_status == "pending" and "metadata" or "")
       asset.ucs_version = UCS_CATALOG_VERSION
       asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
-      asset.ucs_confidence = 0
+      asset.ucs_confidence = filename_pending
+          and filename_ucs.ucs_confidence
+        or 0
+      asset.ucs_candidates = filename_pending
+          and filename_ucs.ucs_candidates
+        or ""
+      asset.ucs_evidence = filename_pending
+          and filename_ucs.ucs_evidence
+        or ""
     end
   end
 
@@ -18593,6 +18611,8 @@ function apply_metadata_editor(assets)
         asset.ucs_version = UCS_CATALOG_VERSION
         asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
         asset.ucs_confidence = 1
+        asset.ucs_candidates = ""
+        asset.ucs_evidence = ""
       end
       asset._search_blob = nil
       mark_asset_database_change(asset)

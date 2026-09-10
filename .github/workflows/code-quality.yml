@@ -81,7 +81,7 @@ jobs:
       - name: Run official UCS catalog self-test
         shell: pwsh
         run: |
-          lua tools/lua_ucs_catalog_selftest.lua (Resolve-Path 'assets/ucs/ucs-8.2.1.tsv') (Resolve-Path 'src/lua/25_ucs_catalog.lua') 500000
+          lua tools/lua_ucs_catalog_selftest.lua (Resolve-Path 'assets/ucs/ucs-8.2.1.tsv') (Resolve-Path 'src/lua/25_ucs_catalog.lua') 500000 500000
 
       - name: Run Lua full-file duplicate comparison
         shell: pwsh

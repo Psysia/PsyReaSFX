@@ -4,6 +4,7 @@ local catalog_path = assert(
 )
 local module_path = assert(arg[2])
 local scale = tonumber(arg[3]) or 500000
+local keyword_scale = tonumber(arg[4]) or 100000
 
 function trim(value)
   return tostring(value or ""):match("^%s*(.-)%s*$")
@@ -85,6 +86,33 @@ local metadata = assert(ucs_classify_metadata("", "air", "burst"))
 assert(metadata.catid == "AIRBrst" and metadata.ucs_source == "metadata")
 assert(ucs_classify_metadata("NOTREAL", "", "") == nil)
 
+local automatic = assert(
+  ucs_classify_filename_keywords("AIR Burst Pressure Release 01.wav")
+)
+assert(automatic.ucs_status == "auto" and automatic.catid == "AIRBrst")
+assert(automatic.ucs_source == "filename_keywords")
+
+local ambiguous = assert(ucs_classify_filename_keywords("Burst 01.wav"))
+assert(ambiguous.ucs_status == "pending" and ambiguous.catid == "")
+assert(ambiguous.ucs_candidates:find("AIRBrst", 1, true))
+assert(ambiguous.ucs_candidates:find("FIREBrst", 1, true))
+
+local repeated = assert(
+  ucs_classify_filename_keywords("AIR AIR AIR Burst Burst Burst.wav")
+)
+local deduplicated = assert(ucs_classify_filename_keywords("AIR Burst.wav"))
+assert(repeated.catid == deduplicated.catid)
+assert(repeated.ucs_candidates == deduplicated.ucs_candidates)
+assert(repeated.ucs_evidence == deduplicated.ucs_evidence)
+
+local material = assert(
+  ucs_classify_filename_keywords("METAL Impact Clang Heavy 01.wav")
+)
+assert(material.ucs_status == "auto" and material.catid == "METLImpt")
+
+local generic = assert(ucs_classify_filename_keywords("Impact Hit 01.wav"))
+assert(generic.ucs_status == "pending")
+
 local metadata_fields = {
   ["IXML:USER:SUBCATEGORY"] = "BURST",
   ["IXML:USER:CATEGORY"] = "AIR",
@@ -103,8 +131,21 @@ for index = 1, scale do
 end
 local elapsed = os.clock() - started
 
+local keyword_started = os.clock()
+for index = 1, keyword_scale do
+  local result = assert(ucs_classify_filename_keywords(
+    index % 2 == 0
+        and "AIR Burst Pressure Release.wav"
+      or "METAL Impact Clang Heavy.wav"
+  ))
+  assert(result.ucs_status == "auto")
+end
+local keyword_elapsed = os.clock() - keyword_started
+
 print(string.format(
-  "Lua UCS catalog self-test OK: records=753 categories=82 lookups=%d elapsed=%.3fs",
+  "Lua UCS catalog self-test OK: records=753 categories=82 exact=%d/%.3fs keyword=%d/%.3fs",
   scale,
-  elapsed
+  elapsed,
+  keyword_scale,
+  keyword_elapsed
 ))
