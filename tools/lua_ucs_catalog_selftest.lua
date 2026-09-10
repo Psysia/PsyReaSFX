@@ -38,6 +38,25 @@ local loaded, count = load_ucs_catalog(catalog_path)
 assert(loaded and count == 753, "official UCS catalog did not load")
 assert(#UcsCatalog.entries == 753)
 
+local source_file = assert(io.open(catalog_path, "rb"))
+local source_content = source_file:read("*a")
+source_file:close()
+source_content = source_content:gsub("\r\n", "\n"):gsub("\r", "\n")
+local crlf_path = os.tmpname()
+local crlf_file = assert(io.open(crlf_path, "wb"))
+crlf_file:write((source_content:gsub("\n", "\r\n")))
+crlf_file:close()
+local crlf_loaded, crlf_count = load_ucs_catalog(crlf_path)
+assert(
+  crlf_loaded and crlf_count == 753,
+  "official UCS catalog must load after a Windows CRLF checkout: "
+    .. tostring(crlf_count or UcsCatalog.error)
+    .. " path="
+    .. crlf_path
+)
+os.remove(crlf_path)
+assert(load_ucs_catalog(catalog_path))
+
 local category_count = 0
 for _ in pairs(UcsCatalog.categories) do category_count = category_count + 1 end
 assert(category_count == 82, "unexpected UCS category count")

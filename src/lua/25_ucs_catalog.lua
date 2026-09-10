@@ -40,7 +40,7 @@ end
 
 function ucs_field(fields, headers, name)
   local index = headers[name]
-  return index and tostring(fields[index] or "") or ""
+  return index and trim(fields[index] or "") or ""
 end
 
 function load_ucs_catalog(path)
@@ -56,7 +56,10 @@ function load_ucs_catalog(path)
   local schema = ""
   local version = ""
   local headers = nil
+  local line_number = 0
   for line in file:lines() do
+    line_number = line_number + 1
+    line = line:gsub("[\r\n]+$", "")
     local fields = split_tsv(line)
     if fields[1] == "#schema" then
       schema = fields[2] or ""
@@ -64,7 +67,7 @@ function load_ucs_catalog(path)
       version = fields[2] or ""
     elseif fields[1] == "category" then
       headers = ucs_header_map(fields)
-    elseif headers and fields[1] and fields[1] ~= "" then
+    elseif headers and fields[1] and trim(fields[1]) ~= "" then
       local entry = {
         category = ucs_field(fields, headers, "category"),
         subcategory = ucs_field(fields, headers, "subcategory"),
@@ -84,7 +87,10 @@ function load_ucs_catalog(path)
         file:close()
         ucs_reset_catalog()
         UcsCatalog.attempted = true
-        UcsCatalog.error = "invalid_catalog_row"
+        UcsCatalog.error = "invalid_catalog_row:"
+          .. tostring(line_number)
+          .. ":"
+          .. tostring(entry.catid)
         return false, UcsCatalog.error
       end
 
