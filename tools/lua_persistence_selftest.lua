@@ -196,8 +196,31 @@ write_scan_checkpoint({
 local forced_checkpoint = assert(load_scan_checkpoint())
 assert(forced_checkpoint.force_rebuild == true)
 assert(forced_checkpoint.roots[1] == "C:/Audio/Library")
-assert(read_all(SCAN_CHECKPOINT_FILE):match("version\t2\n"))
+assert(read_all(SCAN_CHECKPOINT_FILE):match("version\t3\n"))
 clear_scan_checkpoint()
+
+write_scan_checkpoint({
+  reason = "Watch Folder",
+  roots = { "C:/Audio/Library" },
+  checkpoint_enabled = false,
+}, "scan")
+assert(
+  not exists(SCAN_CHECKPOINT_FILE),
+  "background watch scan wrote a startup checkpoint"
+)
+
+write_all(
+  SCAN_CHECKPOINT_FILE,
+  "version\t2\nreason\tWatch Folder\nroot\tC:/Audio/Library\n"
+)
+assert(
+  load_scan_checkpoint() == nil,
+  "legacy background checkpoint was treated as resumable"
+)
+assert(
+  not exists(SCAN_CHECKPOINT_FILE),
+  "rejected legacy checkpoint was not removed"
+)
 
 write_all(first, "backup-config")
 write_all(second, "backup-libraries")

@@ -204,6 +204,10 @@ function save_database_journal()
     return false
   end
   state.db_dirty = false
+  if state.clear_scan_checkpoint_after_database_save then
+    clear_scan_checkpoint()
+    AppState.set("clear_scan_checkpoint_after_database_save", false)
+  end
   return true
 end
 
@@ -3469,6 +3473,13 @@ function start_scan(reason, roots_override, options)
   local force_rebuild =
     type(options) == "table"
     and options.force_rebuild == true
+  local checkpoint_enabled = not silent
+    and (reason or "") ~= "Watch Folder"
+
+  if type(options) == "table"
+    and options.checkpoint_enabled ~= nil then
+    checkpoint_enabled = options.checkpoint_enabled == true
+  end
 
   if #requested == 0 then
     set_status("请先添加音效库根目录", true)
@@ -3490,6 +3501,7 @@ function start_scan(reason, roots_override, options)
     started = reaper.time_precise(),
     silent = silent,
     force_rebuild = force_rebuild,
+    checkpoint_enabled = checkpoint_enabled,
   }
 
   for _, root in ipairs(requested) do
@@ -3533,7 +3545,9 @@ function start_scan(reason, roots_override, options)
 
   state.scan = scan
   state.scan_checkpoint_last_at = 0
-  write_scan_checkpoint(scan, "scan")
+  if scan.checkpoint_enabled then
+    write_scan_checkpoint(scan, "scan")
+  end
 
   if not scan.silent then
     set_status(
@@ -3776,7 +3790,8 @@ function process_scan()
 
   local now = reaper.time_precise()
 
-  if now - (state.scan_checkpoint_last_at or 0)
+  if scan.checkpoint_enabled
+    and now - (state.scan_checkpoint_last_at or 0)
       >= SCAN_CHECKPOINT_INTERVAL then
     write_scan_checkpoint(scan, "scan")
     state.scan_checkpoint_last_at = now
@@ -22322,6 +22337,7 @@ function draw_main()
   local color_count, var_count =
     push_theme()
 
+  local was_open = state.open
   local visible
   visible, state.open =
     ImGui.Begin(
@@ -22335,6 +22351,10 @@ function draw_main()
         | ImGui.WindowFlags_NoScrollbar
         | ImGui.WindowFlags_NoScrollWithMouse
     )
+
+  if was_open and not state.open then
+    AppState.set("clean_shutdown_requested", true)
+  end
 
   if visible then
     -- PsyReaSFX owns Space and the other browser shortcuts while its main
@@ -22654,7 +22674,10 @@ function watch_folders()
     start_scan(
       "Watch Folder",
       nil,
-      { silent = state.watch_silent }
+      {
+        silent = state.watch_silent,
+        checkpoint_enabled = false,
+      }
     )
     state.next_watch =
       now + state.watch_interval
@@ -22813,6 +22836,12 @@ function cleanup()
 
   if state.project_usage_dirty then
     save_project_usage()
+  end
+
+  -- Closing the PsyReaSFX window is a clean stop, not an interrupted scan.
+  -- Keep checkpoints only when the script actually terminates unexpectedly.
+  if state.clean_shutdown_requested then
+    clear_scan_checkpoint()
   end
 
 end

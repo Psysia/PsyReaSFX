@@ -1327,20 +1327,22 @@ function restore_latest_data_backup()
 end
 
 function write_scan_checkpoint(scan, phase)
-  if not scan then
-    return
+  if not scan or scan.checkpoint_enabled == false then
+    return false
   end
 
   ensure_dirs()
   local file = atomic_file_writer(SCAN_CHECKPOINT_FILE)
 
   if not file then
-    return
+    return false
   end
 
-  file:write("version\t2\n")
+  file:write("version\t3\n")
   file:write("phase\t", escape_tsv(phase or "scan"), "\n")
   file:write("reason\t", escape_tsv(scan.reason or "扫描"), "\n")
+  file:write("resume_allowed\t1\n")
+  file:write("updated_at\t", tostring(os.time()), "\n")
   file:write(
     "force_rebuild\t",
     scan.force_rebuild and "1" or "0",
@@ -1353,7 +1355,7 @@ function write_scan_checkpoint(scan, phase)
     file:write("root\t", escape_tsv(root), "\n")
   end
 
-  file:close()
+  return file:close()
 end
 
 function clear_scan_checkpoint()
@@ -1368,26 +1370,42 @@ function load_scan_checkpoint()
   end
 
   local checkpoint = {
+    version = 0,
     roots = {},
     reason = "恢复中断扫描",
     force_rebuild = false,
+    resume_allowed = false,
+    updated_at = 0,
   }
 
   for line in file:lines() do
     local fields = split_tsv(line)
 
-    if fields[1] == "root" and fields[2] and fields[2] ~= "" then
+    if fields[1] == "version" then
+      checkpoint.version = tonumber(fields[2]) or 0
+    elseif fields[1] == "root" and fields[2] and fields[2] ~= "" then
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
     elseif fields[1] == "force_rebuild" then
       checkpoint.force_rebuild = fields[2] == "1"
+    elseif fields[1] == "resume_allowed" then
+      checkpoint.resume_allowed = fields[2] == "1"
+    elseif fields[1] == "updated_at" then
+      checkpoint.updated_at = tonumber(fields[2]) or 0
     end
   end
 
   file:close()
 
-  if #checkpoint.roots == 0 then
+  local checkpoint_age = os.time() - checkpoint.updated_at
+  local invalid_checkpoint = checkpoint.version < 3
+    or not checkpoint.resume_allowed
+    or checkpoint.reason == "Watch Folder"
+    or checkpoint.updated_at <= 0
+    or checkpoint_age > 7 * 24 * 60 * 60
+
+  if #checkpoint.roots == 0 or invalid_checkpoint then
     clear_scan_checkpoint()
     return nil
   end

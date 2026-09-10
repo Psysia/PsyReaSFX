@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.4
+-- @version 0.8.5
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -160,6 +160,7 @@
 --   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
 --   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
+--   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -168,7 +169,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.4"
+local VERSION = "0.8.5"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -712,6 +713,7 @@ local state = {
   auxiliary_save_session = nil,
   root_removal_session = nil,
   clear_scan_checkpoint_after_database_save = false,
+  clean_shutdown_requested = false,
   database_changes = {
     by_key = {},
     count = 0,
@@ -5490,20 +5492,22 @@ function restore_latest_data_backup()
 end
 
 function write_scan_checkpoint(scan, phase)
-  if not scan then
-    return
+  if not scan or scan.checkpoint_enabled == false then
+    return false
   end
 
   ensure_dirs()
   local file = atomic_file_writer(SCAN_CHECKPOINT_FILE)
 
   if not file then
-    return
+    return false
   end
 
-  file:write("version\t2\n")
+  file:write("version\t3\n")
   file:write("phase\t", escape_tsv(phase or "scan"), "\n")
   file:write("reason\t", escape_tsv(scan.reason or "扫描"), "\n")
+  file:write("resume_allowed\t1\n")
+  file:write("updated_at\t", tostring(os.time()), "\n")
   file:write(
     "force_rebuild\t",
     scan.force_rebuild and "1" or "0",
@@ -5516,7 +5520,7 @@ function write_scan_checkpoint(scan, phase)
     file:write("root\t", escape_tsv(root), "\n")
   end
 
-  file:close()
+  return file:close()
 end
 
 function clear_scan_checkpoint()
@@ -5531,26 +5535,42 @@ function load_scan_checkpoint()
   end
 
   local checkpoint = {
+    version = 0,
     roots = {},
     reason = "恢复中断扫描",
     force_rebuild = false,
+    resume_allowed = false,
+    updated_at = 0,
   }
 
   for line in file:lines() do
     local fields = split_tsv(line)
 
-    if fields[1] == "root" and fields[2] and fields[2] ~= "" then
+    if fields[1] == "version" then
+      checkpoint.version = tonumber(fields[2]) or 0
+    elseif fields[1] == "root" and fields[2] and fields[2] ~= "" then
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
     elseif fields[1] == "force_rebuild" then
       checkpoint.force_rebuild = fields[2] == "1"
+    elseif fields[1] == "resume_allowed" then
+      checkpoint.resume_allowed = fields[2] == "1"
+    elseif fields[1] == "updated_at" then
+      checkpoint.updated_at = tonumber(fields[2]) or 0
     end
   end
 
   file:close()
 
-  if #checkpoint.roots == 0 then
+  local checkpoint_age = os.time() - checkpoint.updated_at
+  local invalid_checkpoint = checkpoint.version < 3
+    or not checkpoint.resume_allowed
+    or checkpoint.reason == "Watch Folder"
+    or checkpoint.updated_at <= 0
+    or checkpoint_age > 7 * 24 * 60 * 60
+
+  if #checkpoint.roots == 0 or invalid_checkpoint then
     clear_scan_checkpoint()
     return nil
   end
@@ -10350,6 +10370,10 @@ function save_database_journal()
     return false
   end
   state.db_dirty = false
+  if state.clear_scan_checkpoint_after_database_save then
+    clear_scan_checkpoint()
+    AppState.set("clear_scan_checkpoint_after_database_save", false)
+  end
   return true
 end
 
@@ -13615,6 +13639,13 @@ function start_scan(reason, roots_override, options)
   local force_rebuild =
     type(options) == "table"
     and options.force_rebuild == true
+  local checkpoint_enabled = not silent
+    and (reason or "") ~= "Watch Folder"
+
+  if type(options) == "table"
+    and options.checkpoint_enabled ~= nil then
+    checkpoint_enabled = options.checkpoint_enabled == true
+  end
 
   if #requested == 0 then
     set_status("请先添加音效库根目录", true)
@@ -13636,6 +13667,7 @@ function start_scan(reason, roots_override, options)
     started = reaper.time_precise(),
     silent = silent,
     force_rebuild = force_rebuild,
+    checkpoint_enabled = checkpoint_enabled,
   }
 
   for _, root in ipairs(requested) do
@@ -13679,7 +13711,9 @@ function start_scan(reason, roots_override, options)
 
   state.scan = scan
   state.scan_checkpoint_last_at = 0
-  write_scan_checkpoint(scan, "scan")
+  if scan.checkpoint_enabled then
+    write_scan_checkpoint(scan, "scan")
+  end
 
   if not scan.silent then
     set_status(
@@ -13922,7 +13956,8 @@ function process_scan()
 
   local now = reaper.time_precise()
 
-  if now - (state.scan_checkpoint_last_at or 0)
+  if scan.checkpoint_enabled
+    and now - (state.scan_checkpoint_last_at or 0)
       >= SCAN_CHECKPOINT_INTERVAL then
     write_scan_checkpoint(scan, "scan")
     state.scan_checkpoint_last_at = now
@@ -32468,6 +32503,7 @@ function draw_main()
   local color_count, var_count =
     push_theme()
 
+  local was_open = state.open
   local visible
   visible, state.open =
     ImGui.Begin(
@@ -32481,6 +32517,10 @@ function draw_main()
         | ImGui.WindowFlags_NoScrollbar
         | ImGui.WindowFlags_NoScrollWithMouse
     )
+
+  if was_open and not state.open then
+    AppState.set("clean_shutdown_requested", true)
+  end
 
   if visible then
     -- PsyReaSFX owns Space and the other browser shortcuts while its main
@@ -32800,7 +32840,10 @@ function watch_folders()
     start_scan(
       "Watch Folder",
       nil,
-      { silent = state.watch_silent }
+      {
+        silent = state.watch_silent,
+        checkpoint_enabled = false,
+      }
     )
     state.next_watch =
       now + state.watch_interval
@@ -32959,6 +33002,12 @@ function cleanup()
 
   if state.project_usage_dirty then
     save_project_usage()
+  end
+
+  -- Closing the PsyReaSFX window is a clean stop, not an interrupted scan.
+  -- Keep checkpoints only when the script actually terminates unexpectedly.
+  if state.clean_shutdown_requested then
+    clear_scan_checkpoint()
   end
 
 end

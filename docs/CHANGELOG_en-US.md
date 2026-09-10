@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.8.5
+
+### Correct scan-recovery checkpoint semantics
+
+- Fixes completed libraries being mistaken for interrupted scans and rescanned from their roots at startup.
+- Watch Folder checks no longer create startup recovery checkpoints, regardless of their notification mode.
+- Adds a checkpoint version, explicit recovery permission, and update time; ambiguous legacy checkpoints are retired on upgrade.
+- Closing the PsyReaSFX main window is treated as a clean stop and clears recovery state, while unexpected termination can still be recovered.
+- Clears committed scan checkpoints after either an incremental journal save or a full database snapshot succeeds.
+
 ## 0.8.4
 
 ### Reliable deep-folder hover navigation
