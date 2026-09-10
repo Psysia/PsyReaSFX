@@ -57,4 +57,31 @@ assert(
   "folder hierarchy must use inline hover rows"
 )
 
+local scan_start = function_region(
+  "function start_scan(reason, roots_override, options)",
+  "function finish_scan()"
+)
+assert(
+  scan_start:find("checkpoint_enabled = checkpoint_enabled", 1, true),
+  "catalog scans must carry an explicit checkpoint policy"
+)
+
+local watch = function_region(
+  "function watch_folders()",
+  "function cleanup()"
+)
+assert(
+  watch:find("checkpoint_enabled = false", 1, true),
+  "Watch Folder scans must not create startup recovery checkpoints"
+)
+
+local main_window = function_region(
+  "function draw_main()",
+  "refresh_current_project_binding()"
+)
+assert(
+  main_window:find('AppState.set("clean_shutdown_requested", true)', 1, true),
+  "closing the main window must be marked as a clean shutdown"
+)
+
 print("Lua UI structure self-test passed")

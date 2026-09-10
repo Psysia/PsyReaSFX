@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.4
+-- @version 0.8.5
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -160,6 +160,7 @@
 --   - 0.8.2：修复设置维护页离屏嵌套 Child 触发的 EndChild 断言
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
 --   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
+--   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -168,7 +169,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.4"
+local VERSION = "0.8.5"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -712,6 +713,7 @@ local state = {
   auxiliary_save_session = nil,
   root_removal_session = nil,
   clear_scan_checkpoint_after_database_save = false,
+  clean_shutdown_requested = false,
   database_changes = {
     by_key = {},
     count = 0,

@@ -9,6 +9,17 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.8.5" author="Psysia" time="2026-09-10T04:41:03Z">
+        <changelog><![CDATA[
+- Prevents completed libraries and Watch Folder checks from being mistaken for interrupted scans.
+- Accepts only explicit, recent foreground checkpoints and retires ambiguous legacy checkpoints.
+- Treats closing the PsyReaSFX window as a clean stop while preserving genuine crash recovery.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/assets/fonts/OFL.txt</source>
+      </version>
       <version name="0.8.4" author="Psysia" time="2026-09-09T04:17:33Z">
         <changelog><![CDATA[
 - Replaces directional folder submenus with one inline hover hierarchy.

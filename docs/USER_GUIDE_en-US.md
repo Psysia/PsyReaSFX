@@ -79,6 +79,10 @@ or failed. Disable quiet mode under `Settings → General` to restore the full
 progress panel. First import, manual scans and high-resolution precaching are
 not affected by this option.
 
+Only a foreground scan interrupted by an unexpected termination is eligible for
+startup recovery. Watch Folder checks and an intentional PsyReaSFX window close
+do not leave recovery work behind; ambiguous legacy or week-old checkpoints expire.
+
 ## 4. Workspace tour
 
 ### Top toolbar
