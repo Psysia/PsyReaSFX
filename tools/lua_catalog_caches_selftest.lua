@@ -8,6 +8,10 @@ for index = 1, asset_count do
     path = string.format("C:/Catalog/%07d.wav", index),
     library_id = "library-" .. tostring(((index - 1) % 100) + 1),
     last_previewed = index <= 100 and index or 0,
+    ready = true,
+    category = index % 2 == 0 and "AIR" or "METAL",
+    subcategory = index % 2 == 0 and "BURST" or "IMPACT",
+    catid = index % 2 == 0 and "AIRBrst" or "METLImpt",
   }
 end
 
@@ -22,6 +26,24 @@ assert(steps == math.ceil(asset_count / 4000))
 local total = 0
 for _, count in pairs(counts) do total = total + count end
 assert(total == asset_count)
+
+local ucs_job = new_ucs_count_job()
+local ucs_steps = 0
+local ucs_complete, ucs_counts
+repeat
+  ucs_complete, ucs_counts = step_ucs_count_job(ucs_job, assets, 4000)
+  ucs_steps = ucs_steps + 1
+until ucs_complete
+assert(ucs_steps == math.ceil(asset_count / 4000))
+assert(ucs_counts.total == asset_count)
+assert((ucs_counts.categories.AIR or 0) == math.floor(asset_count / 2))
+assert((ucs_counts.categories.METAL or 0) == math.ceil(asset_count / 2))
+assert(
+  (ucs_counts.subcategories[ucs_subcategory_count_key("AIR", "BURST")] or 0)
+    == math.floor(asset_count / 2)
+)
+assert((ucs_counts.catids.AIRBRST or 0) == math.floor(asset_count / 2))
+assert((ucs_counts.catids.METLIMPT or 0) == math.ceil(asset_count / 2))
 
 local history = {}
 local by_path = {}

@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.8.5
+-- @version 0.9.0-beta1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -161,6 +161,7 @@
 --   - 0.8.3：Enter / Ctrl+Enter 插入 REAPER 改为默认关闭的可选快捷键
 --   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
 --   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
+--   - 0.9.0 Beta 1：UCS 自动分类、虚拟目录、候选确认与搜索提示
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -169,7 +170,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.8.5"
+local VERSION = "0.9.0 Beta 1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -251,6 +252,14 @@ local BRAND_FONT_PATH =
   .. "fonts"
   .. SEP
   .. "Orbitron-VariableFont_wght.ttf"
+
+local UCS_CATALOG_PATH =
+  SCRIPT_DIR
+  .. "assets"
+  .. SEP
+  .. "ucs"
+  .. SEP
+  .. "ucs-8.2.1.tsv"
 
 local brand_font = nil
 
@@ -495,6 +504,7 @@ local DATABASE_JOURNAL_COMPACT_COUNT = 10000
 local DATABASE_SNAPSHOT_ASSETS_PER_FRAME = 2000
 local DATABASE_SNAPSHOT_FRAME_BUDGET = 0.004
 local LIBRARY_COUNT_ASSETS_PER_FRAME = 4000
+local UCS_COUNT_ASSETS_PER_FRAME = 4000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
@@ -694,6 +704,19 @@ local state = {
   library_counts_job = nil,
   library_filter_id = nil,
   expanded_libraries = {},
+  ucs_counts = {
+    categories = {},
+    subcategories = {},
+    catids = {},
+    total = 0,
+  },
+  ucs_counts_dirty = true,
+  ucs_counts_job = nil,
+  ucs_filter_category = nil,
+  ucs_filter_subcategory = nil,
+  ucs_filter_catid = nil,
+  expanded_ucs_categories = {},
+  expanded_ucs_subcategories = {},
   expanded_source_folders = {},
   expanded_folder_nodes = {},
   folder_browser_open = false,
@@ -805,6 +828,15 @@ local state = {
   duplicate_confirmation_failures = {},
   duplicate_confirmation_failure_count = 0,
   relink_plan_session = nil,
+
+  -- 0.9：UCS 现有库重分类使用预览/应用双阶段任务。
+  ucs_reclassification_session = nil,
+  ucs_reclassification_review = nil,
+  ucs_pending_lookup = {},
+  ucs_pending_count = 0,
+  ucs_confirmation_undo = {},
+  ucs_confirmation_undo_order = {},
+  ucs_search_popup_visible = false,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
@@ -1020,6 +1052,7 @@ local state = {
   sidebar_sections = {
     sounds = true,
     libraries = true,
+    ucs = true,
     collections = true,
     saved_searches = true,
     workflow = true,
@@ -1998,8 +2031,96 @@ I18N_EN["来源已重定位"] = "Source relinked"
 I18N_EN["请先保存当前 REAPER 工程，再绑定项目素材箱"] =
   "Save the current REAPER project before binding a project bin"
 I18N_EN["无法保存工程使用记录"] = "Unable to save project usage history"
+I18N_EN["UCS 分类"] = "UCS classification"
+I18N_EN["先分帧预览现有库，再由你确认应用；人工分类不会被覆盖。"] =
+  "Preview the existing catalog in frame-budgeted steps, then confirm before applying. Manual classifications are protected."
+I18N_EN["预览现有库 UCS 分类"] = "Preview UCS classification"
+I18N_EN["取消 UCS 任务"] = "Cancel UCS task"
+I18N_EN["确认应用分类"] = "Apply classifications"
+I18N_EN["丢弃预览"] = "Discard preview"
+I18N_EN["查看 UCS 待确认素材"] = "Show UCS review queue"
+I18N_EN["只更新 PsyReaSFX 索引，不改名、不移动、不回写源音频。"] =
+  "Updates only the PsyReaSFX index; source audio is not renamed, moved, or rewritten."
+I18N_EN["停止后保留已安全应用的部分，可重新预览继续。"] =
+  "Safely applied records are retained after stopping; preview again to continue."
+I18N_EN["只读保护下不能重分类现有素材"] =
+  "Existing assets cannot be reclassified while read-only protection is active"
+I18N_EN["分类规则已变化，请重新生成预览"] =
+  "Classification rules changed; generate a new preview"
+I18N_EN["素材库已变化，请重新生成 UCS 分类预览"] =
+  "The catalog changed; generate a new UCS classification preview"
+I18N_EN["UCS 分类预览已取消"] = "UCS classification preview canceled"
+I18N_EN["已丢弃 UCS 分类预览"] = "UCS classification preview discarded"
+I18N_EN["未分类"] = "Unclassified"
+I18N_EN["UCS 目录"] = "UCS DIRECTORY"
+I18N_EN["UCS 分类索引更新中…"] = "Updating UCS classification index…"
+I18N_EN["尚无已分类素材"] = "No classified assets yet"
+I18N_EN["前往维护页分类现有素材"] = "Classify existing assets in Maintenance"
+I18N_EN["展开或折叠 UCS 分类"] = "Expand or collapse UCS category"
+I18N_EN["展开或折叠 UCS 子分类"] = "Expand or collapse UCS subcategory"
+I18N_EN["UCS 候选"] = "UCS candidates"
+I18N_EN["根据文件名命中："] = "Filename evidence:"
+I18N_EN["撤销上次 UCS 确认"] = "Undo last UCS confirmation"
+I18N_EN["撤销此素材的 UCS 确认"] = "Undo this asset's UCS confirmation"
+I18N_EN["没有可确认的 UCS 候选"] = "No UCS candidate is available to confirm"
+I18N_EN["无法撤销 UCS 确认"] = "Unable to undo UCS confirmation"
+I18N_EN["只读保护下不能修改 UCS 分类"] =
+  "UCS classification cannot be changed in read-only mode"
+I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
 
 I18N_PATTERNS_EN = {
+  {
+    "^已确认 UCS 分类：(.+)$",
+    "UCS classification confirmed: %1",
+  },
+  {
+    "^已撤销 UCS 确认：(.+)$",
+    "UCS confirmation undone: %1",
+  },
+  {
+    "^UCS 待确认  (%d+)$",
+    "UCS review queue  %1",
+  },
+  {
+    "^UCS (.-) · 分类器 (.-) · 当前待确认 (%d+)$",
+    "UCS %1 · classifier %2 · review queue %3",
+  },
+  {
+    "^正在预览 UCS 分类 (%d+) / (%d+) · 自动 (%d+) · 待确认 (%d+) · 人工保护 (%d+)$",
+    "Previewing UCS classification %1 / %2 · auto %3 · pending %4 · manual protected %5",
+  },
+  {
+    "^正在应用 UCS 分类 (%d+) / (%d+) · 自动 (%d+) · 待确认 (%d+) · 人工保护 (%d+)$",
+    "Applying UCS classification %1 / %2 · auto %3 · pending %4 · manual protected %5",
+  },
+  {
+    "^预览完成：可更新 (%d+) · 精确 (%d+) · 自动 (%d+) · 待确认 (%d+) · 未分类 (%d+) · 人工保护 (%d+)$",
+    "Preview complete: %1 updates · exact %2 · auto %3 · pending %4 · unclassified %5 · manual protected %6",
+  },
+  {
+    "^共检查 (%d+) 条，耗时 ([%d%.]+) 秒；应用前不会修改数据库。$",
+    "Checked %1 records in %2 seconds; the database remains unchanged until apply.",
+  },
+  {
+    "^正在预览 UCS 分类：(%d+) / (%d+)$",
+    "Previewing UCS classification: %1 / %2",
+  },
+  {
+    "^正在应用 UCS 分类：(%d+) / (%d+)$",
+    "Applying UCS classification: %1 / %2",
+  },
+  {
+    "^UCS 分类预览完成：可更新 (%d+)，待确认 (%d+)，人工保护 (%d+)$",
+    "UCS preview complete: %1 updates, %2 pending, %3 manual records protected",
+  },
+  {
+    "^UCS 分类已应用：更新 (%d+)，待确认 (%d+)$",
+    "UCS classification applied: %1 updated, %2 pending",
+  },
+  {
+    "^UCS 分类已停止：已安全应用 (%d+)，可重新预览继续$",
+    "UCS classification stopped: %1 safely applied; preview again to continue",
+  },
   {
     "^无法后台保存Region 数据：(.+)$",
     "Unable to save Region data: %1",

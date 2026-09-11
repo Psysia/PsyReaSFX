@@ -2,25 +2,22 @@
 local HostApi = Host or reaper
 
 function parse_ucs_filename(filename)
-  local stem = strip_extension(filename)
-  local tokens = {}
-
-  for token in stem:gmatch("[^_%-%s]+") do
-    tokens[#tokens + 1] = token
-  end
-
-  local result = {
+  local result = ucs_classify_filename_exact(filename)
+  if result then return result end
+  result = ucs_classify_filename_keywords(filename)
+  if result then return result end
+  return {
     catid = "",
-    category = tokens[1] or "",
-    subcategory = tokens[2] or "",
+    category = "",
+    subcategory = "",
+    ucs_status = "unclassified",
+    ucs_source = "",
+    ucs_version = UCS_CATALOG_VERSION,
+    ucs_classifier_version = UCS_CLASSIFIER_VERSION,
+    ucs_confidence = 0,
+    ucs_candidates = "",
+    ucs_evidence = "",
   }
-
-  if tokens[1]
-    and tokens[1]:match("^[A-Z][A-Z0-9]+$") then
-    result.catid = tokens[1]
-  end
-
-  return result
 end
 
 function asset_relative_path(path, root)
@@ -104,6 +101,13 @@ function make_placeholder(path, known_root)
     catid = ucs.catid,
     category = ucs.category,
     subcategory = ucs.subcategory,
+    ucs_status = ucs.ucs_status,
+    ucs_source = ucs.ucs_source,
+    ucs_version = ucs.ucs_version,
+    ucs_classifier_version = ucs.ucs_classifier_version,
+    ucs_confidence = ucs.ucs_confidence,
+    ucs_candidates = ucs.ucs_candidates or "",
+    ucs_evidence = ucs.ucs_evidence or "",
     artwork_path = "",
     artwork_checked = false,
 
@@ -134,6 +138,52 @@ function asset_path_sort_key(asset)
     asset._sort_path_value = path_key(source)
   end
   return asset._sort_path_value
+end
+
+function invalidate_ucs_counts()
+  if not state.ucs_counts_dirty then
+    AppState.set("ucs_counts_dirty", true)
+  end
+  if state.ucs_counts_job then
+    AppState.set("ucs_counts_job", nil)
+  end
+end
+
+function refresh_ucs_pending_membership(asset)
+  if not asset or not asset.path then return end
+  invalidate_ucs_counts()
+  local key = path_key(asset.path)
+  local was_pending = state.ucs_pending_lookup[key] ~= nil
+  local is_pending = asset.ucs_status == "pending"
+  if was_pending == is_pending then
+    if is_pending then state.ucs_pending_lookup[key] = asset end
+    return
+  end
+  if is_pending then
+    state.ucs_pending_lookup[key] = asset
+    AppState.set("ucs_pending_count", state.ucs_pending_count + 1)
+  else
+    state.ucs_pending_lookup[key] = nil
+    AppState.set(
+      "ucs_pending_count",
+      math.max(0, state.ucs_pending_count - 1)
+    )
+  end
+end
+
+function remove_ucs_pending_membership(asset_or_path)
+  local path = type(asset_or_path) == "table"
+      and asset_or_path.path
+    or asset_or_path
+  local key = path_key(path or "")
+  if key ~= "" then invalidate_ucs_counts() end
+  if key ~= "" and state.ucs_pending_lookup[key] then
+    state.ucs_pending_lookup[key] = nil
+    AppState.set(
+      "ucs_pending_count",
+      math.max(0, state.ucs_pending_count - 1)
+    )
+  end
 end
 
 function add_or_update_asset(asset)
@@ -199,6 +249,8 @@ function add_or_update_asset(asset)
       invalidate_folder_navigation()
     end
 
+    refresh_ucs_pending_membership(existing)
+
     return existing
   end
 
@@ -229,6 +281,7 @@ function add_or_update_asset(asset)
 
   state.by_path[key] = asset
   state.assets[#state.assets + 1] = asset
+  refresh_ucs_pending_membership(asset)
   state.database_ordered_assets = nil
   invalidate_library_counts()
   invalidate_folder_navigation()
@@ -238,9 +291,12 @@ end
 function rebuild_assets()
   state.assets = {}
   state.database_ordered_assets = nil
+  AppState.set("ucs_pending_lookup", {})
+  AppState.set("ucs_pending_count", 0)
 
   for _, asset in pairs(state.by_path) do
     state.assets[#state.assets + 1] = asset
+    refresh_ucs_pending_membership(asset)
   end
 
   state.results_dirty = true
@@ -271,6 +327,13 @@ local DB_FIELDS = {
   "catid",
   "category",
   "subcategory",
+  "ucs_status",
+  "ucs_source",
+  "ucs_version",
+  "ucs_classifier_version",
+  "ucs_confidence",
+  "ucs_candidates",
+  "ucs_evidence",
   "artwork_path",
   "workflow_status",
   "marked",
@@ -1387,6 +1450,7 @@ function save_config()
   for _, key in ipairs({
     "sounds",
     "libraries",
+    "ucs",
     "collections",
     "saved_searches",
     "workflow",

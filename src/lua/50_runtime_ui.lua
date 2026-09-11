@@ -111,6 +111,13 @@ function database_asset_from_values(headers, values)
   asset.fingerprint_version = tostring(asset.fingerprint_version or "")
   asset.fingerprint_modified = tostring(asset.fingerprint_modified or "")
   asset.fingerprint_stat_source = tostring(asset.fingerprint_stat_source or "")
+  asset.ucs_status = tostring(asset.ucs_status or "unclassified")
+  asset.ucs_source = tostring(asset.ucs_source or "")
+  asset.ucs_version = tostring(asset.ucs_version or "")
+  asset.ucs_classifier_version = tostring(asset.ucs_classifier_version or "")
+  asset.ucs_confidence = tonumber(asset.ucs_confidence) or 0
+  asset.ucs_candidates = tostring(asset.ucs_candidates or "")
+  asset.ucs_evidence = tostring(asset.ucs_evidence or "")
   if asset.fingerprint ~= ""
     and not fingerprint_metadata_is_compatible(asset) then
     clear_asset_fingerprint(asset)
@@ -164,6 +171,10 @@ function mark_asset_database_delete(asset_or_path)
     and asset_or_path.path or asset_or_path
   path = tostring(path or "")
   if path == "" then return false end
+  if remove_ucs_confirmation_undo then
+    remove_ucs_confirmation_undo(path_key(path))
+  end
+  remove_ucs_pending_membership(path)
   local values = database_asset_values(nil)
   for index, field in ipairs(DB_FIELDS) do
     if field == "path" then
@@ -236,6 +247,7 @@ function replace_database_asset(asset)
   existing.artwork_checked = tostring(existing.artwork_path or "") ~= ""
   existing._search_blob = nil
   existing._sort_path_value = nil
+  refresh_ucs_pending_membership(existing)
 end
 
 function replay_database_journal(asset_positions)
@@ -297,6 +309,7 @@ function replay_database_journal(asset_positions)
   for _, action in ipairs(actions) do
     local key = action.key
     if action.op == "delete" then
+      remove_ucs_pending_membership(key)
       if asset_positions then
         remove_indexed_array_entry(
           state.assets,
@@ -1618,6 +1631,9 @@ function load_saved_searches()
           fields[11] ~= ""
           and fields[11]
           or nil,
+        ucs_category = fields[12] ~= "" and fields[12] or nil,
+        ucs_subcategory = fields[13] ~= "" and fields[13] or nil,
+        ucs_catid = fields[14] ~= "" and fields[14] or nil,
       }
     end
   end
@@ -1659,6 +1675,12 @@ function save_saved_searches()
       escape_tsv(saved.collection_id or ""),
       "\t",
       escape_tsv(saved.library_id or ""),
+      "\t",
+      escape_tsv(saved.ucs_category or ""),
+      "\t",
+      escape_tsv(saved.ucs_subcategory or ""),
+      "\t",
+      escape_tsv(saved.ucs_catid or ""),
       "\n"
     )
   end
@@ -1701,6 +1723,12 @@ function save_current_search()
     sort_desc = state.sort_desc,
     status_filter = state.status_filter,
     collection_id = state.active_collection_id,
+    ucs_category = ucs_directory_view(state.view)
+        and state.ucs_filter_category or nil,
+    ucs_subcategory = ucs_directory_view(state.view)
+        and state.ucs_filter_subcategory or nil,
+    ucs_catid = ucs_directory_view(state.view)
+        and state.ucs_filter_catid or nil,
   }
 
   state.searches_dirty = true
@@ -1713,7 +1741,14 @@ function activate_saved_search(saved)
   end
 
   state.search = saved.query or ""
-  state.view = saved.view or "all"
+  local saved_view = saved.view or "all"
+  if ucs_directory_view(saved_view) and not saved.ucs_category then
+    saved_view = "all"
+  end
+  state.view = saved_view
+  AppState.set("ucs_filter_category", saved.ucs_category)
+  AppState.set("ucs_filter_subcategory", saved.ucs_subcategory)
+  AppState.set("ucs_filter_catid", saved.ucs_catid)
   state.root_filter =
     saved.root ~= ""
     and saved.root
@@ -3269,7 +3304,7 @@ function index_asset(asset)
     reaper.GetMediaSourceLength(source)
 
   local metadata = metadata_map(source)
-  local ucs = parse_ucs_filename(asset.name)
+  local filename_ucs = parse_ucs_filename(asset.name)
 
   asset.duration =
     is_qn and 0 or (duration or 0)
@@ -3310,7 +3345,7 @@ function index_asset(asset)
     }
   )
 
-  local catid = metadata_pick(
+  local catid = ucs_metadata_pick(
     metadata,
     {
       "CATID",
@@ -3318,14 +3353,14 @@ function index_asset(asset)
     }
   )
 
-  local category = metadata_pick(
+  local category = ucs_metadata_pick(
     metadata,
     {
       "CATEGORY",
     }
   )
 
-  local subcategory = metadata_pick(
+  local subcategory = ucs_metadata_pick(
     metadata,
     {
       "SUBCATEGORY",
@@ -3333,25 +3368,383 @@ function index_asset(asset)
     }
   )
 
-  asset.catid =
-    catid ~= "" and catid or ucs.catid
+  local metadata_ucs = ucs_classify_metadata(
+    catid,
+    category,
+    subcategory
+  )
+  local ucs = filename_ucs.ucs_status == "exact"
+      and filename_ucs
+    or metadata_ucs
+    or (filename_ucs.ucs_status == "auto" and filename_ucs)
 
-  asset.category =
-    category ~= "" and category or ucs.category
-
-  asset.subcategory =
-    subcategory ~= ""
-      and subcategory
-      or ucs.subcategory
+  if asset.ucs_status ~= "manual" then
+    if ucs then
+      asset.catid = ucs.catid
+      asset.category = ucs.category
+      asset.subcategory = ucs.subcategory
+      asset.ucs_status = ucs.ucs_status
+      asset.ucs_source = ucs.ucs_source
+      asset.ucs_version = ucs.ucs_version
+      asset.ucs_classifier_version = ucs.ucs_classifier_version
+      asset.ucs_confidence = ucs.ucs_confidence
+      asset.ucs_candidates = ucs.ucs_candidates or ""
+      asset.ucs_evidence = ucs.ucs_evidence or ""
+    else
+      asset.catid = catid
+      asset.category = category
+      asset.subcategory = subcategory
+      local filename_pending = filename_ucs.ucs_status == "pending"
+      asset.ucs_status = filename_pending
+          and "pending"
+        or ((catid ~= "" or category ~= "" or subcategory ~= "")
+          and "pending"
+          or "unclassified")
+      asset.ucs_source = filename_pending
+          and filename_ucs.ucs_source
+        or (asset.ucs_status == "pending" and "metadata" or "")
+      asset.ucs_version = UCS_CATALOG_VERSION
+      asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
+      asset.ucs_confidence = filename_pending
+          and filename_ucs.ucs_confidence
+        or 0
+      asset.ucs_candidates = filename_pending
+          and filename_ucs.ucs_candidates
+        or ""
+      asset.ucs_evidence = filename_pending
+          and filename_ucs.ucs_evidence
+        or ""
+    end
+  end
 
   asset.indexed = true
   asset._search_blob = nil
+  refresh_ucs_pending_membership(asset)
 
   reaper.PCM_Source_Destroy(source)
 
   mark_asset_database_change(asset)
   state.results_dirty = true
   return true
+end
+
+function new_ucs_reclassification_counts()
+  return {
+    exact = 0,
+    auto = 0,
+    pending = 0,
+    unclassified = 0,
+    manual = 0,
+    changed = 0,
+  }
+end
+
+function record_ucs_reclassification_result(session, asset, result, reason)
+  if reason == "manual" then
+    session.counts.manual = session.counts.manual + 1
+    return false
+  end
+  local status = result and result.ucs_status or "unclassified"
+  if session.counts[status] == nil then status = "unclassified" end
+  session.counts[status] = session.counts[status] + 1
+
+  local changed = result and ucs_classification_differs(asset, result)
+  if not changed then return false end
+  session.counts.changed = session.counts.changed + 1
+  if session.phase == "preview" and #session.samples < 8 then
+    session.samples[#session.samples + 1] = {
+      name = tostring(asset.name or basename(asset.path or "")),
+      before = tostring(asset.catid or ""),
+      after = tostring(result.catid or ""),
+      status = status,
+      candidates = tostring(result.ucs_candidates or ""),
+    }
+  end
+  return true
+end
+
+function start_ucs_reclassification_preview()
+  if state.ucs_reclassification_session then return false end
+  if state.persistence_read_only then
+    set_status("只读保护下不能重分类现有素材", true)
+    return false
+  end
+
+  local job_token = Jobs.begin(
+    "ucs_reclassification",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return false
+  end
+
+  AppState.set("ucs_reclassification_review", nil)
+  AppState.set("ucs_reclassification_session", {
+    phase = "preview",
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    counts = new_ucs_reclassification_counts(),
+    samples = {},
+    job_token = job_token,
+    started = reaper.time_precise(),
+  })
+  set_status(string.format("正在预览 UCS 分类：0 / %d", #state.assets))
+  return true
+end
+
+function start_ucs_reclassification_apply()
+  local review = state.ucs_reclassification_review
+  if not review or state.ucs_reclassification_session then return false end
+  if state.persistence_read_only then
+    set_status("只读保护下不能重分类现有素材", true)
+    return false
+  end
+  if review.classifier_version ~= UCS_CLASSIFIER_VERSION then
+    AppState.set("ucs_reclassification_review", nil)
+    set_status("分类规则已变化，请重新生成预览", true)
+    return false
+  end
+  if review.assets ~= state.assets or review.total ~= #state.assets then
+    AppState.set("ucs_reclassification_review", nil)
+    set_status("素材库已变化，请重新生成 UCS 分类预览", true)
+    return false
+  end
+
+  local job_token = Jobs.begin(
+    "ucs_reclassification",
+    "catalog_exclusive",
+    false
+  )
+  if not job_token then
+    set_status("另一个维护任务正在运行", true)
+    return false
+  end
+
+  AppState.set("ucs_reclassification_session", {
+    phase = "apply",
+    assets = state.assets,
+    index = 1,
+    total = #state.assets,
+    counts = new_ucs_reclassification_counts(),
+    samples = {},
+    applied = 0,
+    job_token = job_token,
+    started = reaper.time_precise(),
+  })
+  set_status(string.format("正在应用 UCS 分类：0 / %d", #state.assets))
+  return true
+end
+
+function cancel_ucs_reclassification()
+  local session = state.ucs_reclassification_session
+  if not session then return false end
+  Jobs.cancel(session.job_token)
+  return true
+end
+
+function finish_ucs_reclassification(session, canceled)
+  AppState.set("ucs_reclassification_session", nil)
+  Jobs.finish(
+    session.job_token,
+    true,
+    canceled and "canceled" or ""
+  )
+
+  if session.phase == "preview" then
+    if canceled then
+      set_status("UCS 分类预览已取消")
+      return
+    end
+    AppState.set("ucs_reclassification_review", {
+      counts = session.counts,
+      samples = session.samples,
+      total = session.total,
+      classifier_version = UCS_CLASSIFIER_VERSION,
+      ucs_version = UCS_CATALOG_VERSION,
+      assets = session.assets,
+      elapsed = reaper.time_precise() - session.started,
+    })
+    set_status(string.format(
+      "UCS 分类预览完成：可更新 %d，待确认 %d，人工保护 %d",
+      session.counts.changed,
+      session.counts.pending,
+      session.counts.manual
+    ))
+    return
+  end
+
+  AppState.set("ucs_reclassification_review", nil)
+  AppState.mark_dirty("results_dirty")
+  if session.applied > 0 then save_database_changes() end
+  set_status(string.format(
+    canceled
+        and "UCS 分类已停止：已安全应用 %d，可重新预览继续"
+      or "UCS 分类已应用：更新 %d，待确认 %d",
+    session.applied,
+    session.counts.pending
+  ))
+end
+
+function process_ucs_reclassification()
+  local session = state.ucs_reclassification_session
+  if not session or not can_run_heavy_job() then return end
+  if session.job_token.cancel_requested then
+    finish_ucs_reclassification(session, true)
+    return
+  end
+
+  local deadline = reaper.time_precise() + UCS_RECLASSIFY_FRAME_BUDGET
+  local processed = 0
+  while session.index <= session.total
+    and processed < UCS_RECLASSIFY_ITEMS_PER_FRAME
+    and reaper.time_precise() < deadline do
+    local asset = session.assets[session.index]
+    session.index = session.index + 1
+    processed = processed + 1
+    if asset then
+      local result, reason = ucs_classify_existing_asset(asset)
+      local changed = record_ucs_reclassification_result(
+        session,
+        asset,
+        result,
+        reason
+      )
+      if session.phase == "apply" and changed
+        and ucs_assign_classification(asset, result) then
+        asset._search_blob = nil
+        refresh_ucs_pending_membership(asset)
+        mark_asset_database_change(asset)
+        session.applied = session.applied + 1
+      end
+    end
+  end
+
+  if session.index > session.total then
+    finish_ucs_reclassification(session, false)
+  end
+end
+
+function ucs_classification_snapshot(asset)
+  local snapshot = {}
+  for _, field in ipairs(UCS_CLASSIFICATION_FIELDS) do
+    snapshot[field] = asset[field]
+  end
+  return snapshot
+end
+
+function remove_ucs_confirmation_undo(key)
+  key = tostring(key or "")
+  state.ucs_confirmation_undo[key] = nil
+  for index = #state.ucs_confirmation_undo_order, 1, -1 do
+    if state.ucs_confirmation_undo_order[index] == key then
+      table.remove(state.ucs_confirmation_undo_order, index)
+    end
+  end
+end
+
+function remember_ucs_confirmation_undo(asset)
+  local key = path_key(asset.path)
+  if not state.ucs_confirmation_undo[key] then
+    state.ucs_confirmation_undo[key] = {
+      path = asset.path,
+      values = ucs_classification_snapshot(asset),
+    }
+  end
+  for index = #state.ucs_confirmation_undo_order, 1, -1 do
+    if state.ucs_confirmation_undo_order[index] == key then
+      table.remove(state.ucs_confirmation_undo_order, index)
+    end
+  end
+  state.ucs_confirmation_undo_order[
+    #state.ucs_confirmation_undo_order + 1
+  ] = key
+  while #state.ucs_confirmation_undo_order > 64 do
+    local retired = table.remove(state.ucs_confirmation_undo_order, 1)
+    state.ucs_confirmation_undo[retired] = nil
+  end
+end
+
+function confirm_ucs_candidate(asset, catid)
+  if state.persistence_read_only then
+    set_status("只读保护下不能修改 UCS 分类", true)
+    return false
+  end
+  if not asset or "pending" ~= asset.ucs_status then
+    set_status("没有可确认的 UCS 候选", true)
+    return false
+  end
+  local allowed = false
+  for _, candidate in ipairs(ucs_parse_candidates(asset.ucs_candidates)) do
+    if candidate.entry.catid == catid then
+      allowed = true
+      break
+    end
+  end
+  if not allowed then
+    set_status("没有可确认的 UCS 候选", true)
+    return false
+  end
+  local result = ucs_manual_classification_result(catid)
+  if not result then
+    set_status("没有可确认的 UCS 候选", true)
+    return false
+  end
+  remember_ucs_confirmation_undo(asset)
+  if not ucs_assign_classification(asset, result) then
+    remove_ucs_confirmation_undo(path_key(asset.path))
+    return false
+  end
+  asset._search_blob = nil
+  refresh_ucs_pending_membership(asset)
+  mark_asset_database_change(asset)
+  AppState.mark_dirty("results_dirty")
+  state.metadata_editor.signature = ""
+  set_status("已确认 UCS 分类：" .. result.catid)
+  return true
+end
+
+function undo_ucs_confirmation(asset_or_key)
+  if state.persistence_read_only then
+    set_status("只读保护下不能修改 UCS 分类", true)
+    return false
+  end
+  local key = type(asset_or_key) == "table"
+      and path_key(asset_or_key.path)
+    or tostring(asset_or_key or "")
+  local undo = state.ucs_confirmation_undo[key]
+  local asset = undo and state.by_path[key] or nil
+  if not undo or not asset then
+    remove_ucs_confirmation_undo(key)
+    set_status("无法撤销 UCS 确认", true)
+    return false
+  end
+  local previous_catid = tostring(asset.catid or "")
+  ucs_assign_classification(asset, undo.values)
+  remove_ucs_confirmation_undo(key)
+  asset._search_blob = nil
+  refresh_ucs_pending_membership(asset)
+  mark_asset_database_change(asset)
+  AppState.mark_dirty("results_dirty")
+  state.metadata_editor.signature = ""
+  set_status("已撤销 UCS 确认：" .. previous_catid)
+  return true
+end
+
+function undo_last_ucs_confirmation()
+  while #state.ucs_confirmation_undo_order > 0 do
+    local key = state.ucs_confirmation_undo_order[
+      #state.ucs_confirmation_undo_order
+    ]
+    if state.ucs_confirmation_undo[key] and state.by_path[key] then
+      return undo_ucs_confirmation(key)
+    end
+    remove_ucs_confirmation_undo(key)
+  end
+  set_status("无法撤销 UCS 确认", true)
+  return false
 end
 
 function queue_metadata(asset, priority)
@@ -4043,6 +4436,20 @@ function asset_in_view(asset)
     return false
   elseif state.view == "previewed"
     and (asset.last_previewed or 0) <= 0 then
+    return false
+  elseif "ucs_pending" == state.view
+    and asset.ucs_status ~= "pending" then
+    return false
+  elseif "ucs_category" == state.view
+    and tostring(asset.category or "") ~= state.ucs_filter_category then
+    return false
+  elseif "ucs_subcategory" == state.view
+    and (tostring(asset.category or "") ~= state.ucs_filter_category
+      or tostring(asset.subcategory or "")
+        ~= state.ucs_filter_subcategory) then
+    return false
+  elseif "ucs_catid" == state.view
+    and tostring(asset.catid or "") ~= state.ucs_filter_catid then
     return false
   elseif state.view == "missing"
     and not state.missing_assets[path_key(asset.path)] then
@@ -10166,6 +10573,7 @@ function reset_interface_settings()
   state.sidebar_sections = {
     sounds = true,
     libraries = true,
+    ucs = true,
     collections = true,
     saved_searches = true,
     workflow = true,
@@ -12207,6 +12615,34 @@ function process_library_count_rebuild()
   end
 end
 
+function process_ucs_count_rebuild()
+  if not state.ucs_counts_dirty then return end
+  if state.scan or state.import_session
+    or state.ucs_reclassification_session then
+    if state.ucs_counts_job then
+      AppState.set("ucs_counts_job", nil)
+    end
+    return
+  end
+
+  local job = state.ucs_counts_job
+  if not job then
+    job = new_ucs_count_job()
+    AppState.set("ucs_counts_job", job)
+  end
+
+  local complete, counts = step_ucs_count_job(
+    job,
+    state.assets,
+    UCS_COUNT_ASSETS_PER_FRAME
+  )
+  if complete then
+    AppState.set("ucs_counts", counts)
+    AppState.set("ucs_counts_dirty", false)
+    AppState.set("ucs_counts_job", nil)
+  end
+end
+
 function rename_library(library)
   local ok, name = reaper.GetUserInputs(
     "重命名音效库",
@@ -12712,6 +13148,177 @@ function sidebar_section_header(key, label)
   end
 
   return expanded
+end
+
+function activate_ucs_filter(category, subcategory, catid)
+  category = tostring(category or "")
+  subcategory = tostring(subcategory or "")
+  catid = tostring(catid or "")
+  AppState.set(
+    "view",
+    catid ~= "" and "ucs_catid"
+      or subcategory ~= "" and "ucs_subcategory"
+      or "ucs_category"
+  )
+  AppState.set("ucs_filter_category", category ~= "" and category or nil)
+  AppState.set(
+    "ucs_filter_subcategory",
+    subcategory ~= "" and subcategory or nil
+  )
+  AppState.set("ucs_filter_catid", catid ~= "" and catid or nil)
+  AppState.set("active_collection_id", nil)
+  AppState.set("root_filter", nil)
+  AppState.set("library_filter_id", nil)
+  AppState.set("status_filter", nil)
+  clear_row_selection()
+  AppState.mark_dirty("results_dirty")
+  AppState.mark_dirty("config_dirty")
+end
+
+function ucs_directory_view(view)
+  return "ucs_category" == view
+    or "ucs_subcategory" == view
+    or "ucs_catid" == view
+end
+
+function ucs_category_display_name(category)
+  if "en" == state.language or tostring(category.name_zh or "") == "" then
+    return category.name
+  end
+  return category.name_zh .. " · " .. category.name
+end
+
+function ucs_entry_display_name(entry)
+  if "en" == state.language or tostring(entry.subcategory_zh or "") == "" then
+    return entry.subcategory
+  end
+  return entry.subcategory_zh .. " · " .. entry.subcategory
+end
+
+function ucs_sidebar_arrow(id, expanded, tooltip_text)
+  ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x00000000)
+  ImGui.PushStyleColor(
+    ctx,
+    ImGui.Col_ButtonHovered,
+    rgba_with_alpha(COLOR.button_hover, 0xD0)
+  )
+  ImGui.PushStyleColor(ctx, ImGui.Col_ButtonActive, COLOR.accent)
+  local clicked = ImGui.Button(
+    ctx,
+    (expanded and "▾" or "▸") .. "##" .. id,
+    22,
+    0
+  )
+  ImGui.PopStyleColor(ctx, 3)
+  tooltip(tooltip_text)
+  ImGui.SameLine(ctx, 0, 0)
+  return clicked
+end
+
+function draw_ucs_sidebar_tree()
+  ensure_ucs_catalog()
+  local counts = state.ucs_counts or {}
+  local category_counts = counts.categories or {}
+  local subcategory_counts = counts.subcategories or {}
+  local catid_counts = counts.catids or {}
+
+  if #state.ucs_confirmation_undo_order > 0 then
+    if dark_button("撤销上次 UCS 确认", -1) then
+      undo_last_ucs_confirmation()
+    end
+  end
+
+  if state.ucs_counts_dirty then
+    ImGui.TextDisabled(ctx, "UCS 分类索引更新中…")
+  end
+  if (tonumber(counts.total) or 0) == 0 then
+    if not state.ucs_counts_dirty then
+      ImGui.TextDisabled(ctx, "尚无已分类素材")
+    end
+    if dark_button("前往维护页分类现有素材", -1) then
+      AppState.set("settings_tab", "maintenance")
+      ImGui.OpenPopup(ctx, "设置##reasfx")
+    end
+    return
+  end
+
+  for _, category in ipairs(UcsCatalog.category_order or {}) do
+    local category_count = category_counts[ucs_count_key(category.name)] or 0
+    if category_count > 0 then
+      local expanded = state.expanded_ucs_categories[category.name] == true
+      if ucs_sidebar_arrow(
+        "ucs_category_arrow_" .. category.name,
+        expanded,
+        "展开或折叠 UCS 分类"
+      ) then
+        expanded = not expanded
+        state.expanded_ucs_categories[category.name] = expanded
+      end
+
+      sidebar_item(
+        compact(ucs_category_display_name(category), 22)
+          .. "  " .. tostring(category_count)
+          .. "##ucs_category_" .. category.name,
+        "ucs_category" == state.view
+          and category.name == state.ucs_filter_category,
+        function()
+          activate_ucs_filter(category.name)
+        end
+      )
+
+      if expanded then
+        for _, entry in ipairs(category.entries or {}) do
+          local pair_key = ucs_subcategory_count_key(
+            entry.category,
+            entry.subcategory
+          )
+          local subcategory_count = subcategory_counts[pair_key] or 0
+          if subcategory_count > 0 then
+            local subkey = entry.category .. "\0" .. entry.subcategory
+            local sub_expanded =
+              state.expanded_ucs_subcategories[subkey] == true
+            ImGui.Indent(ctx, 14)
+            if ucs_sidebar_arrow(
+              "ucs_subcategory_arrow_" .. entry.catid,
+              sub_expanded,
+              "展开或折叠 UCS 子分类"
+            ) then
+              sub_expanded = not sub_expanded
+              state.expanded_ucs_subcategories[subkey] = sub_expanded
+            end
+            sidebar_item(
+              compact(ucs_entry_display_name(entry), 20)
+                .. "  " .. tostring(subcategory_count)
+                .. "##ucs_subcategory_" .. entry.catid,
+              "ucs_subcategory" == state.view
+                and entry.category == state.ucs_filter_category
+                and entry.subcategory == state.ucs_filter_subcategory,
+              function()
+                activate_ucs_filter(entry.category, entry.subcategory)
+              end
+            )
+            if sub_expanded then
+              local catid_count = catid_counts[ucs_count_key(entry.catid)] or 0
+              sidebar_item(
+                "      " .. entry.catid .. "  " .. tostring(catid_count)
+                  .. "##ucs_catid_" .. entry.catid,
+                "ucs_catid" == state.view
+                  and entry.catid == state.ucs_filter_catid,
+                function()
+                  activate_ucs_filter(
+                    entry.category,
+                    entry.subcategory,
+                    entry.catid
+                  )
+                end
+              )
+            end
+            ImGui.Unindent(ctx, 14)
+          end
+        end
+      end
+    end
+  end
 end
 
 function activate_folder_path(path, library_id, close_browser)
@@ -13514,6 +14121,22 @@ function draw_sidebar()
     end
   )
 
+  if state.ucs_pending_count > 0 then
+    sidebar_item(
+      string.format("UCS 待确认  %d", state.ucs_pending_count),
+      "ucs_pending" == state.view
+        and not state.active_collection_id,
+      function()
+        AppState.set("view", "ucs_pending")
+        AppState.set("active_collection_id", nil)
+        AppState.set("root_filter", nil)
+        AppState.set("library_filter_id", nil)
+        AppState.mark_dirty("results_dirty")
+        AppState.mark_dirty("config_dirty")
+      end
+    )
+  end
+
   if state.missing_asset_count > 0 then
     sidebar_item(
       string.format("缺失素材  %d", state.missing_asset_count),
@@ -13828,6 +14451,10 @@ function draw_sidebar()
 
   end
 
+  if sidebar_section_header("ucs", "UCS 目录") then
+    draw_ucs_sidebar_tree()
+  end
+
   if sidebar_section_header(
     "collections",
     "COLLECTIONS"
@@ -13982,6 +14609,11 @@ function draw_sidebar()
         saved.status_filter = state.status_filter
         saved.collection_id =
           state.active_collection_id
+        local save_ucs = ucs_directory_view(state.view)
+        saved.ucs_category = save_ucs and state.ucs_filter_category or nil
+        saved.ucs_subcategory = save_ucs
+          and state.ucs_filter_subcategory or nil
+        saved.ucs_catid = save_ucs and state.ucs_filter_catid or nil
         state.searches_dirty = true
         set_status("已更新保存搜索：" .. saved.name)
       end
@@ -14061,6 +14693,78 @@ function draw_sidebar()
   end
 end
 
+function draw_ucs_search_suggestion_popup(active, x, y, width)
+  if not active and not state.ucs_search_popup_visible then return end
+  local suggestions = ucs_search_suggestions(
+    state.search,
+    state.language,
+    7
+  )
+  if active and #suggestions > 0
+    and not state.ucs_search_popup_visible then
+    AppState.set("ucs_search_popup_visible", true)
+    ImGui.OpenPopup(ctx, "UCS 搜索提示##ucs_search_suggestions")
+  end
+  if not state.ucs_search_popup_visible then return end
+  ImGui.SetNextWindowPos(ctx, x, y, ImGui.Cond_Always)
+  ImGui.SetNextWindowSize(ctx, width, 0, ImGui.Cond_Always)
+  if not ImGui.BeginPopup(
+    ctx,
+    "UCS 搜索提示##ucs_search_suggestions",
+    ImGui.WindowFlags_NoMove
+      | ImGui.WindowFlags_AlwaysAutoResize
+  ) then
+    AppState.set("ucs_search_popup_visible", false)
+    return
+  end
+
+  if #suggestions == 0 then
+    ImGui.CloseCurrentPopup(ctx)
+    AppState.set("ucs_search_popup_visible", false)
+  else
+    ImGui.TextDisabled(ctx, "UCS 搜索提示")
+    ImGui.Separator(ctx)
+    local matched_labels = {
+      CatID = "CatID",
+      Category = "分类",
+      SubCategory = "子分类",
+      Synonym = "同义词",
+    }
+    for _, suggestion in ipairs(suggestions) do
+      local entry = suggestion.entry
+      local matched = "en" == state.language
+          and suggestion.matched
+        or (matched_labels[suggestion.matched] or suggestion.matched)
+      local localized = "en" == state.language
+          and entry.subcategory
+        or (entry.subcategory_zh ~= ""
+          and entry.subcategory_zh .. " · " .. entry.subcategory
+          or entry.subcategory)
+      local label = entry.catid
+        .. "  ·  " .. entry.category
+        .. " / " .. localized
+        .. "  [" .. matched .. "]"
+        .. "##ucs_search_" .. entry.catid
+      if ImGui.Selectable(ctx, label, false) then
+        AppState.set(
+          "search",
+          ucs_apply_search_suggestion(state.search, entry.catid)
+        )
+        AppState.mark_dirty("results_dirty")
+        AppState.set("focus_search", true)
+        ImGui.CloseCurrentPopup(ctx)
+        AppState.set("ucs_search_popup_visible", false)
+      end
+      local detail = "en" == state.language
+          and (entry.explanation ~= "" and entry.explanation
+            or entry.synonyms_en)
+        or (entry.synonyms_zh ~= "" and entry.synonyms_zh
+          or entry.explanation)
+      tooltip(detail)
+    end
+  end
+  ImGui.EndPopup(ctx)
+end
 
 function draw_toolbar()
   if state.focus_search then
@@ -14180,6 +14884,11 @@ function draw_toolbar()
     input_padding_y
   )
 
+  local search_x, search_y = ImGui.GetCursorScreenPos(ctx)
+  local search_width = math.max(
+    260,
+    select(1, ImGui.GetContentRegionAvail(ctx)) - 228
+  )
   ImGui.SetNextItemWidth(ctx, -228)
 
   local changed
@@ -14193,8 +14902,9 @@ function draw_toolbar()
 
   -- InputText may deactivate on the Enter frame before the global keyboard
   -- handler runs. Keep that frame consumed so Enter confirms text only.
-  if ImGui.IsItemActive(ctx)
-    or ImGui.IsItemDeactivated(ctx) then
+  local search_active = ImGui.IsItemActive(ctx)
+  local search_deactivated = ImGui.IsItemDeactivated(ctx)
+  if search_active or search_deactivated then
     AppState.set("keyboard_consumed", true)
   end
 
@@ -14307,6 +15017,13 @@ function draw_toolbar()
     )
   end
 
+  draw_ucs_search_suggestion_popup(
+    search_active,
+    search_x,
+    search_y + control_size + 3,
+    search_width
+  )
+
 end
 
 function draw_sub_toolbar()
@@ -14362,6 +15079,16 @@ function draw_sub_toolbar()
 
     if library then
       breadcrumb = breadcrumb .. "  /  " .. library.name
+    end
+  end
+
+  if ucs_directory_view(state.view) and state.ucs_filter_category then
+    breadcrumb = breadcrumb .. "  /  UCS  /  " .. state.ucs_filter_category
+    if state.ucs_filter_subcategory then
+      breadcrumb = breadcrumb .. "  /  " .. state.ucs_filter_subcategory
+    end
+    if state.ucs_filter_catid then
+      breadcrumb = breadcrumb .. "  /  " .. state.ucs_filter_catid
     end
   end
 
@@ -18532,6 +19259,7 @@ function apply_metadata_editor(assets)
 
   for _, asset in ipairs(assets) do
     local asset_changed = false
+    local ucs_changed = false
 
     for _, field in ipairs(METADATA_EDIT_FIELDS) do
       local should_apply =
@@ -18549,12 +19277,28 @@ function apply_metadata_editor(assets)
           ~= value then
           asset[field.key] = value
           asset_changed = true
+          if field.key == "catid"
+            or field.key == "category"
+            or field.key == "subcategory" then
+            ucs_changed = true
+          end
         end
       end
     end
 
     if asset_changed then
+      if ucs_changed then
+        remove_ucs_confirmation_undo(path_key(asset.path))
+        asset.ucs_status = "manual"
+        asset.ucs_source = "manual"
+        asset.ucs_version = UCS_CATALOG_VERSION
+        asset.ucs_classifier_version = UCS_CLASSIFIER_VERSION
+        asset.ucs_confidence = 1
+        asset.ucs_candidates = ""
+        asset.ucs_evidence = ""
+      end
       asset._search_blob = nil
+      refresh_ucs_pending_membership(asset)
       mark_asset_database_change(asset)
       changed_count = changed_count + 1
     end
@@ -18702,6 +19446,50 @@ function draw_inspector_artwork_header(asset)
   end
 end
 
+function draw_ucs_candidate_actions(asset)
+  if not asset then return end
+  local candidates = "pending" == asset.ucs_status
+      and ucs_parse_candidates(asset.ucs_candidates)
+    or {}
+  local undo_key = path_key(asset.path)
+  local has_undo = state.ucs_confirmation_undo[undo_key] ~= nil
+  if #candidates == 0 and not has_undo then return end
+
+  ImGui.TextDisabled(ctx, "UCS 候选")
+  if #candidates > 0 then
+    local evidence = tostring(asset.ucs_evidence or "")
+    if evidence ~= "" then
+      ImGui.TextWrapped(
+        ctx,
+        translate_ui_text("根据文件名命中：") .. evidence
+      )
+    end
+    local score_label = "en" == state.language and "score" or "分值"
+    for _, candidate in ipairs(candidates) do
+      local entry = candidate.entry
+      local localized = ucs_entry_display_name(entry)
+      local label = string.format(
+        "%s · %s · %s %.2f##confirm_ucs_%s",
+        entry.catid,
+        localized,
+        score_label,
+        candidate.score,
+        entry.catid
+      )
+      if dark_button(label, -1) then
+        confirm_ucs_candidate(asset, entry.catid)
+        break
+      end
+    end
+  end
+  if has_undo and dark_button("撤销此素材的 UCS 确认", -1) then
+    undo_ucs_confirmation(undo_key)
+  end
+  ImGui.Spacing(ctx)
+  ImGui.Separator(ctx)
+  ImGui.Spacing(ctx)
+end
+
 function draw_metadata_inspector()
   local assets = selected_assets_fast()
 
@@ -18804,6 +19592,10 @@ function draw_metadata_inspector()
     ImGui.Spacing(ctx)
     ImGui.Separator(ctx)
     ImGui.Spacing(ctx)
+
+    if not multi then
+      draw_ucs_candidate_actions(primary)
+    end
 
     for _, field in ipairs(METADATA_EDIT_FIELDS) do
       if multi then
@@ -21376,6 +22168,108 @@ function draw_settings_maintenance()
   ImGui.Separator(ctx)
 
   settings_section_title(
+    "UCS 分类",
+    "先分帧预览现有库，再由你确认应用；人工分类不会被覆盖。"
+  )
+
+  ImGui.TextDisabled(ctx, string.format(
+    "UCS %s · 分类器 %s · 当前待确认 %d",
+    UCS_CATALOG_VERSION,
+    UCS_CLASSIFIER_VERSION,
+    state.ucs_pending_count
+  ))
+
+  local ucs_session = state.ucs_reclassification_session
+  local ucs_review = state.ucs_reclassification_review
+  if ucs_session then
+    local completed = math.min(
+      math.max(0, (ucs_session.index or 1) - 1),
+      ucs_session.total or 0
+    )
+    local fraction = (ucs_session.total or 0) > 0
+        and completed / ucs_session.total
+      or 1
+    local label = ucs_session.phase == "apply"
+        and "正在应用 UCS 分类"
+      or "正在预览 UCS 分类"
+    ImGui.Text(ctx, string.format(
+      "%s %d / %d · 自动 %d · 待确认 %d · 人工保护 %d",
+      label,
+      completed,
+      ucs_session.total or 0,
+      ucs_session.counts.auto,
+      ucs_session.counts.pending,
+      ucs_session.counts.manual
+    ))
+    ImGui.ProgressBar(
+      ctx,
+      fraction,
+      -1,
+      18,
+      string.format("%.1f%%", fraction * 100)
+    )
+    if dark_button("取消 UCS 任务", 150) then
+      cancel_ucs_reclassification()
+    end
+    if ucs_session.phase == "apply" then
+      ImGui.SameLine(ctx)
+      ImGui.TextDisabled(ctx, "停止后保留已安全应用的部分，可重新预览继续。")
+    end
+  elseif ucs_review then
+    local counts = ucs_review.counts
+    ImGui.Text(ctx, string.format(
+      "预览完成：可更新 %d · 精确 %d · 自动 %d · 待确认 %d · 未分类 %d · 人工保护 %d",
+      counts.changed,
+      counts.exact,
+      counts.auto,
+      counts.pending,
+      counts.unclassified,
+      counts.manual
+    ))
+    ImGui.TextDisabled(ctx, string.format(
+      "共检查 %d 条，耗时 %.2f 秒；应用前不会修改数据库。",
+      ucs_review.total,
+      ucs_review.elapsed or 0
+    ))
+    for _, sample in ipairs(ucs_review.samples or {}) do
+      local target = sample.after ~= ""
+          and sample.after
+        or (sample.candidates ~= "" and sample.candidates or "未分类")
+      ImGui.TextDisabled(ctx, compact(
+        sample.name .. "  →  " .. target .. "  [" .. sample.status .. "]",
+        118
+      ))
+    end
+    if counts.changed > 0 and dark_button("确认应用分类", 150) then
+      start_ucs_reclassification_apply()
+    end
+    if counts.changed > 0 then ImGui.SameLine(ctx) end
+    if dark_button("丢弃预览", 130) then
+      AppState.set("ucs_reclassification_review", nil)
+      set_status("已丢弃 UCS 分类预览")
+    end
+  else
+    if dark_button("预览现有库 UCS 分类", 190) then
+      start_ucs_reclassification_preview()
+    end
+    ImGui.SameLine(ctx)
+    ImGui.TextDisabled(ctx, "只更新 PsyReaSFX 索引，不改名、不移动、不回写源音频。")
+  end
+
+  if state.ucs_pending_count > 0 and not ucs_session then
+    if dark_button("查看 UCS 待确认素材", 190) then
+      AppState.set("view", "ucs_pending")
+      AppState.set("active_collection_id", nil)
+      AppState.set("root_filter", nil)
+      AppState.set("library_filter_id", nil)
+      AppState.mark_dirty("results_dirty")
+      AppState.set("settings_close_requested", true)
+    end
+  end
+
+  ImGui.Separator(ctx)
+
+  settings_section_title(
     "路径与离线来源",
     "检查缺失文件，或在素材盘符和目录变化后重新定位来源；不会移动源文件。"
   )
@@ -22766,6 +23660,7 @@ function cleanup()
     state.duplicate_scan,
     state.duplicate_confirmation,
     state.relink_plan_session,
+    state.ucs_reclassification_session,
   }
 
   for _, session in pairs(maintenance_sessions) do
@@ -22950,6 +23845,8 @@ function loop()
     process_root_removal()
   elseif state.artwork_reset_session then
     process_artwork_cache_reset()
+  elseif state.ucs_reclassification_session then
+    process_ucs_reclassification()
   elseif state.database_snapshot_session then
     process_database_snapshot()
   else
@@ -22968,6 +23865,7 @@ function loop()
     process_loudness_queue()
   end
   process_library_count_rebuild()
+  process_ucs_count_rebuild()
   process_auxiliary_save()
   cleanup_retired_preview_sources(false)
   poll_preview()
