@@ -35,7 +35,7 @@ function asset_relative_path(path, root)
   return normalize_slashes(path:sub(#root + 2))
 end
 
-function ensure_asset_identity(asset)
+function ensure_asset_identity(asset, probe_file)
   if not asset then
     return
   end
@@ -58,10 +58,16 @@ function ensure_asset_identity(asset)
     )
   end
 
-  if HostApi.file_exists(asset.path or "") then
-    asset.last_seen = os.time()
-  else
-    asset.last_seen = tonumber(asset.last_seen) or 0
+  asset.last_seen = tonumber(asset.last_seen) or 0
+
+  -- Persisted database rows were already validated when they were scanned.
+  -- Probing every file while loading the snapshot blocks REAPER's UI and can
+  -- issue two synchronous filesystem calls per asset. Missing-file audits and
+  -- Watch Folder jobs perform the authoritative background verification.
+  if probe_file ~= false then
+    if HostApi.file_exists(asset.path or "") then
+      asset.last_seen = os.time()
+    end
   end
 end
 
@@ -186,8 +192,8 @@ function remove_ucs_pending_membership(asset_or_path)
   end
 end
 
-function add_or_update_asset(asset)
-  ensure_asset_identity(asset)
+function add_or_update_asset(asset, probe_file)
+  ensure_asset_identity(asset, probe_file)
   local key = path_key(asset.path)
   local existing = state.by_path[key]
 

@@ -1,5 +1,17 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 2 (in development)
+
+### Startup and waveform reliability
+
+- Fully localizes the left navigation section headings: Chinese mode shows Chinese labels and English mode shows their English counterparts.
+- Preserves the UCS virtual-directory rule: Chinese mode uses bilingual `Chinese · English` labels, while English mode shows English only.
+- Stops synchronously probing every source file, twice in some cases, while loading the persisted catalog. Frame-bounded recovery audits, Watch Folder and explicit missing-file checks remain authoritative.
+- Reuses the platform separator for Windows path keys instead of calling back into the REAPER host for every comparison.
+- Waits at least one UI frame after peak building, retries transient empty peak reads across frames, and reopens the media source once before declaring a waveform unavailable.
+- Protects peak API calls, reports bounded retry diagnostics, and balances media-source destruction on both success and failure.
+- Adds regression checks for the startup fast path, waveform retry lifecycle, and sidebar language contract.
+
 ## 0.9.0 Beta 1
 
 ### UCS advanced-search foundation
