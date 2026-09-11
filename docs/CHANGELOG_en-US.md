@@ -1,6 +1,6 @@
 ﻿# PsyReaSFX Changelog
 
-## 0.9.0 Beta 3 (in development)
+## 0.9.0 Beta 3
 
 ### On-demand spectral peaks
 

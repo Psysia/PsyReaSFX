@@ -11,8 +11,8 @@ Release、完整更新日志和 ReaPack 历史版本；内部开发快照不强�
 0.9.0 Beta 1 已完成 UCS 官方目录、自动分类、现有库安全重分类、虚拟目录、
 候选确认/撤销和 UCS 搜索提示，并保持 0.8.5 为默认 Stable。
 
-0.9.0 Beta 2 已完成侧栏双语、启动索引快路和波形峰值容错恢复。Beta 3 开始按
-`SPECTRAL_ANALYSIS_ARCHITECTURE_0_9_zh-CN.md` 实施当前素材的按需频谱峰值分析；
+0.9.0 Beta 2 已完成侧栏双语、启动索引快路和波形峰值容错恢复。Beta 3 已按
+`SPECTRAL_ANALYSIS_ARCHITECTURE_0_9_zh-CN.md` 完成当前素材的按需频谱峰值分析；
 完整 FFT 时频图仍需单独冻结需求。
 
 ## 0.9：高级检索、频谱分析、相似声音和 DSP
