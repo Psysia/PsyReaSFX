@@ -1,6 +1,6 @@
 ﻿# PsyReaSFX Changelog
 
-## 0.9.0 Beta 1 (in development)
+## 0.9.0 Beta 1
 
 ### UCS advanced-search foundation
 
@@ -24,7 +24,7 @@
 - Searches only the small official UCS catalog for suggestions, never the user asset catalog. Exact CatID, prefixes and subcategories outrank general synonyms, with stable CatID ordering for ties.
 - Verifies the official workbook SHA-256 before generation and exercises 500,000 exact plus 500,000 keyword classifications in regression coverage.
 
-> This is a branch development snapshot, not a public Beta release. The first UCS classification, directory, candidate-confirmation and search-suggestion loop is complete; real REAPER interaction acceptance and boundary fixes follow.
+> This is a 0.9 feature preview. GitHub and ReaPack continue to default to stable 0.8.5; users can opt into Beta 1 by enabling ReaPack pre-releases. Real REAPER interaction acceptance and boundary fixes continue after this release.
 
 ## 0.8.5
 
