@@ -9,18 +9,18 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="0.9.0-beta1" author="Psysia" time="2026-09-11T02:17:14Z">
+      <version name="0.9.0-beta2" author="Psysia" time="2026-09-11T07:37:22Z">
         <changelog><![CDATA[
-- Adds explainable UCS 8.2.1 filename classification with safe preview-before-apply reclassification.
-- Adds a localized Category / SubCategory / CatID virtual directory, pending-candidate confirmation and bounded undo.
-- Adds UCS search suggestions and exact catid constraints without scanning the user asset catalog.
-- Keeps all aggregation and maintenance work frame-bounded, with 500,000-item capacity coverage.
+- Localizes every left-navigation section while preserving bilingual UCS labels in Chinese mode.
+- Removes per-asset synchronous filesystem and host probes from persisted-catalog startup.
+- Defers peak reads across UI frames and retries transient empty results with one bounded source reopen.
+- Adds startup and waveform lifecycle regressions while retaining 500,000-item capacity coverage.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta1/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta1/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta1/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta1/assets/fonts/OFL.txt</source>
-        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta1/assets/ucs/ucs-8.2.1.tsv</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta2/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta2/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta2/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta2/assets/ucs/ucs-8.2.1.tsv</source>
       </version>
       <version name="0.8.5" author="Psysia" time="2026-09-10T04:41:03Z">
         <changelog><![CDATA[
@@ -32,109 +32,6 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/assets/brand/psyreasfx-icon.png</source>
         <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
         <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.5/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.4" author="Psysia" time="2026-09-09T04:17:33Z">
-        <changelog><![CDATA[
-- Replaces directional folder submenus with one inline hover hierarchy.
-- Prevents deep levels from flipping left at the screen edge and breaking the pointer path.
-- Keeps click-to-open, hover-to-expand and click-to-locate behavior with regression coverage.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.4/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.3" author="Psysia" time="2026-09-09T03:44:54Z">
-        <changelog><![CDATA[
-- Makes Enter / Ctrl+Enter insertion shortcuts explicitly opt-in and disabled by default.
-- Prevents search confirmation from leaking Enter into the global REAPER insertion handler.
-- Keeps button and context-menu insertion available and adds regression coverage.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.3/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.3/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.3/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.2" author="Psysia" time="2026-09-09T03:13:19Z">
-        <changelog><![CDATA[
-- Fixes the ReaImGui EndChild assertion in the settings Maintenance page.
-- Removes clipped nested Child cards and uses a safe Table for waveform colors.
-- Adds a UI-structure regression test for the affected settings pages.
-- Archives the 0.9 to 1.0 roadmap with UCS classification and navigation.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.2/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.1" author="Psysia" time="2026-09-08T07:20:09Z">
-        <changelog><![CDATA[
-- Fixes valid Windows folders being rejected by drag-and-drop directory classification.
-- Adds native REAPER enumeration fallback for long and UNC directory paths.
-- Normalizes external payload paths and adds Windows directory regression coverage.
-- Promotes the hardened Lua line from the 0.8.0 beta series to stable 0.8.1.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.1/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.0-beta4.2" author="Psysia" time="2026-09-08T06:53:56Z">
-        <changelog><![CDATA[
-- Fixes the scan-finalization progress crash caused by indexing a boolean import session.
-- Preserves the real visible session object and rejects silent or malformed values.
-- Prevents the cascading ReaImGui Missing EndChild report and adds regression coverage.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.2/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.2/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.2/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.0-beta4.1" author="Psysia" time="2026-09-08T06:24:26Z">
-        <changelog><![CDATA[
-- Fixes invalid order function for sorting when the main result list used ascending order.
-- Uses explicit strict comparators for ascending, descending, equal and repeated values.
-- Adds a regression test that exercises the production ordering contract.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.1/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.1/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.1/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4.1/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.0-beta4" author="Psysia" time="2026-09-08T02:37:10Z">
-        <changelog><![CDATA[
-- Completes the 49-commit data-safety, concurrency and architecture hardening program.
-- Adds generation-bound incremental persistence and frame-budgeted 500k catalog work.
-- Establishes AppState/Host boundaries, deterministic recovery and expanded CI gates.
-- Keeps source media untouched and retains 0.7.23 Stable as the default channel.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta4/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.0-beta3" author="Psysia" time="2026-08-28T07:38:09Z">
-        <changelog><![CDATA[
-- Adds missing-file audit and safe physical-source relink.
-- Adds sampled duplicate detection designed for large libraries.
-- Tracks current REAPER project usage and binds project bins.
-- Retains quiet Watch Folder, interrupted recovery, backups and cache verification.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta3/assets/fonts/OFL.txt</source>
-      </version>
-      <version name="0.8.0-beta2" author="Psysia" time="2026-08-22T01:54:41Z">
-        <changelog><![CDATA[
-- Runs scheduled Watch Folder checks quietly with a lightweight toolbar indicator.
-- Adds interrupted-scan recovery, failed-task retry and periodic index checkpoints.
-- Adds data snapshots and waveform-cache integrity verification.
-        ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.8.0-beta2/assets/fonts/OFL.txt</source>
       </version>
       <version name="0.7.23" author="Psysia" time="2026-07-24T09:15:50Z">
         <changelog><![CDATA[

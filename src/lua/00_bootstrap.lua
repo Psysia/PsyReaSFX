@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta1
+-- @version 0.9.0-beta2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -162,6 +162,7 @@
 --   - 0.8.4：深层文件夹目录改为单窗口内联悬停树，避免子菜单翻向后断开
 --   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
 --   - 0.9.0 Beta 1：UCS 自动分类、虚拟目录、候选确认与搜索提示
+--   - 0.9.0 Beta 2：侧栏双语、无阻塞启动快路与波形容错恢复
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -170,7 +171,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 1"
+local VERSION = "0.9.0 Beta 2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -534,6 +535,9 @@ local LARGE_WAVE_MAX_POINTS = 4096
 
 local MAX_WAVE_MEMORY = 180
 local MAX_WORK_QUEUE = 160
+WAVE_READ_RETRY_LIMIT = 6
+WAVE_READ_REOPEN_ATTEMPT = 3
+WAVE_READ_REOPEN_LIMIT = 1
 
 local COLOR = {
   accent = 0x1F6FCCFF,

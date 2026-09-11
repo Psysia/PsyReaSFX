@@ -851,7 +851,10 @@ end
 function path_key(path)
   path = normalize_slashes(path)
 
-  if reaper.GetOS():match("Win") then
+  -- SEP is fixed for the life of the script. Avoid calling back into the
+  -- REAPER host for every indexed path (large catalogs call this hundreds of
+  -- thousands of times during startup).
+  if SEP == "\\" then
     path = path:lower()
   end
 

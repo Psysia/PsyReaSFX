@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta1 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta2 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -129,6 +129,16 @@ jobs:
         shell: pwsh
         run: |
           lua tools/lua_ui_structure_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua')
+
+      - name: Run Lua startup fast-path self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_startup_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua') (Resolve-Path 'src/lua/30_catalog.lua') (Resolve-Path 'src/lua/50_runtime_ui.lua')
+
+      - name: Run Lua waveform retry self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_waveform_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua')
 
       - name: Run Lua Enter shortcut self-test
         shell: pwsh

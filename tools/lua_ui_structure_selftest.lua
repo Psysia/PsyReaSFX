@@ -114,6 +114,29 @@ assert(
   "waveform palette must use a clipped-safe table layout"
 )
 
+local wave_job = function_region(
+  "function read_waveform_from_source(",
+  "function memory_wave_key("
+)
+assert(
+  wave_job:find('job.phase = "read_wait"', 1, true)
+    and wave_job:find("WAVE_READ_RETRY_LIMIT", 1, true)
+    and wave_job:find("WAVE_READ_REOPEN_ATTEMPT", 1, true),
+  "waveform reads must wait across frames and retry transient empty peaks"
+)
+
+assert(
+  source:find('sounds = { zh = "素材", en = "SOUNDS" }', 1, true)
+    and source:find('sidebar_section_label("libraries")', 1, true)
+    and source:find('sidebar_section_label("activity")', 1, true),
+  "sidebar section headings must switch explicitly between Chinese and English"
+)
+assert(
+  source:find('category.name_zh .. " · " .. category.name', 1, true)
+    and source:find('entry.subcategory_zh .. " · " .. entry.subcategory', 1, true),
+  "Chinese UCS directory labels must remain bilingual"
+)
+
 local folder_browser = function_region(
   "function folder_hover_branch_open(",
   "function active_path_condition_label()"

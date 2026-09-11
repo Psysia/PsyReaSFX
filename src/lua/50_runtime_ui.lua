@@ -56,7 +56,7 @@ function load_database()
     if asset then
       local key = asset_positions and path_key(asset.path) or nil
       local existed = key and state.by_path[key] ~= nil
-      add_or_update_asset(asset)
+      add_or_update_asset(asset, false)
       if key and not existed then
         asset_positions[key] = #state.assets
       end
@@ -124,7 +124,7 @@ function database_asset_from_values(headers, values)
     mark_database_snapshot_dirty()
   end
   asset.last_seen = tonumber(asset.last_seen) or 0
-  ensure_asset_identity(asset)
+  ensure_asset_identity(asset, false)
   return asset
 end
 
@@ -234,11 +234,11 @@ function save_database_changes()
   return save_database_journal()
 end
 
-function replace_database_asset(asset)
+function replace_database_asset(asset, probe_file)
   local key = path_key(asset.path)
   local existing = state.by_path[key]
   if not existing then
-    add_or_update_asset(asset)
+    add_or_update_asset(asset, probe_file)
     return
   end
   for _, field in ipairs(DB_FIELDS) do
@@ -323,7 +323,7 @@ function replay_database_journal(asset_positions)
       state.selected_set[key] = nil
     else
       local existed = state.by_path[key] ~= nil
-      replace_database_asset(action.asset)
+      replace_database_asset(action.asset, false)
       if asset_positions and not existed then
         asset_positions[key] = #state.assets
       end
@@ -1840,7 +1840,7 @@ function load_history()
           tonumber(fields[3]) or 0
         asset.last_previewed =
           tonumber(fields[4]) or 0
-        ensure_asset_identity(asset)
+        ensure_asset_identity(asset, false)
         state.preview_history_assets[asset.asset_id] = asset
       end
     end
@@ -4856,8 +4856,9 @@ function read_waveform_from_source(
   local buffer =
     reaper.new_array(points * channels * 2)
 
-  local retval =
-    reaper.PCM_Source_GetPeaks(
+  local call_ok, retval =
+    pcall(
+      reaper.PCM_Source_GetPeaks,
       source,
       points / duration,
       0,
@@ -4867,10 +4868,14 @@ function read_waveform_from_source(
       buffer
     )
 
+  if not call_ok or type(retval) ~= "number" then
+    return nil, "峰值接口调用失败", tostring(retval or "unknown")
+  end
+
   local returned = retval & 0xFFFFF
 
   if returned <= 0 then
-    return nil
+    return nil, "峰值暂未就绪", tostring(retval)
   end
 
   local values =
@@ -4951,8 +4956,14 @@ function start_wave_job(job)
     return false, "文件不可用"
   end
 
-  local source =
-    reaper.PCM_Source_CreateFromFile(job.asset.path)
+  local source = nil
+  if (job.reopen_count or 0) > 0
+    and type(reaper.PCM_Source_CreateFromFileEx) == "function" then
+    source = reaper.PCM_Source_CreateFromFileEx(job.asset.path, true)
+  end
+  if not source then
+    source = reaper.PCM_Source_CreateFromFile(job.asset.path)
+  end
 
   if not source then
     return false, "无法建立媒体源"
@@ -4979,11 +4990,21 @@ function start_wave_job(job)
 
   -- GetPeaks 在峰值尚未建立时会返回 0。
   -- 按 REAPER 官方要求先 Begin，再在后续帧 Run，最后 Finish。
-  local remaining =
-    reaper.PCM_Source_BuildPeaks(source, 0)
+  local build_ok, remaining =
+    pcall(reaper.PCM_Source_BuildPeaks, source, 0)
+
+  if not build_ok or type(remaining) ~= "number" then
+    reaper.PCM_Source_Destroy(source)
+    job.source = nil
+    return false,
+      "峰值构建无法启动：" .. tostring(remaining or "未知错误")
+  end
 
   if remaining == 0 then
-    job.phase = "read"
+    -- Some codecs and freshly built REAPER peak caches report zero samples if
+    -- GetPeaks is called in the same defer cycle. Always cross a frame first.
+    job.phase = "read_wait"
+    job.read_wait_frames = 1
     job.progress = 1
   else
     job.progress =
@@ -5007,11 +5028,17 @@ function step_wave_job(job)
   end
 
   if job.phase == "build" then
-    local remaining =
-      reaper.PCM_Source_BuildPeaks(
+    local build_ok, remaining =
+      pcall(
+        reaper.PCM_Source_BuildPeaks,
         job.source,
         1
       )
+
+    if not build_ok or type(remaining) ~= "number" then
+      return "failed", nil,
+        "峰值构建中断：" .. tostring(remaining or "未知错误")
+    end
 
     job.progress =
       clamp(1 - remaining / 100, 0, 0.99)
@@ -5020,17 +5047,28 @@ function step_wave_job(job)
       return "working"
     end
 
-    reaper.PCM_Source_BuildPeaks(
-      job.source,
-      2
-    )
+    local finish_ok, finish_error =
+      pcall(reaper.PCM_Source_BuildPeaks, job.source, 2)
+    if not finish_ok then
+      return "failed", nil,
+        "峰值构建收尾失败：" .. tostring(finish_error)
+    end
 
-    job.phase = "read"
+    job.phase = "read_wait"
+    job.read_wait_frames = 1
     job.progress = 1
   end
 
+  if job.phase == "read_wait" then
+    if (job.read_wait_frames or 0) > 0 then
+      job.read_wait_frames = job.read_wait_frames - 1
+      return "working"
+    end
+    job.phase = "read"
+  end
+
   if job.phase == "read" then
-    local waveform =
+    local waveform, read_error, read_detail =
       read_waveform_from_source(
         job.source,
         job.duration,
@@ -5039,13 +5077,37 @@ function step_wave_job(job)
         job.preserve_channels
       )
 
-    destroy_wave_job(job)
-
     if waveform then
+      destroy_wave_job(job)
       return "done", waveform
     end
 
-    return "failed", nil, "峰值读取为空"
+    job.read_attempts = (job.read_attempts or 0) + 1
+    job.last_read_error = read_error or "峰值读取为空"
+    job.last_read_detail = read_detail or ""
+
+    if job.read_attempts < WAVE_READ_RETRY_LIMIT then
+      if job.read_attempts == WAVE_READ_REOPEN_ATTEMPT
+        and (job.reopen_count or 0) < WAVE_READ_REOPEN_LIMIT then
+        destroy_wave_job(job)
+        job.reopen_count = (job.reopen_count or 0) + 1
+        job.phase = nil
+        job.progress = 0.5
+      else
+        job.phase = "read_wait"
+        job.read_wait_frames = 1
+      end
+      return "working"
+    end
+
+    destroy_wave_job(job)
+    return "failed", nil,
+      string.format(
+        "%s（已重试 %d 次，返回 %s）",
+        job.last_read_error,
+        job.read_attempts,
+        job.last_read_detail ~= "" and job.last_read_detail or "未知"
+      )
   end
 
   return "working"
@@ -13150,6 +13212,22 @@ function sidebar_section_header(key, label)
   return expanded
 end
 
+SIDEBAR_SECTION_LABELS = {
+  sounds = { zh = "素材", en = "SOUNDS" },
+  libraries = { zh = "音效库", en = "LIBRARIES" },
+  ucs = { zh = "UCS 目录", en = "UCS DIRECTORY" },
+  collections = { zh = "集合", en = "COLLECTIONS" },
+  saved_searches = { zh = "保存搜索", en = "SAVED SEARCHES" },
+  workflow = { zh = "工作流", en = "WORKFLOW" },
+  activity = { zh = "活动", en = "ACTIVITY" },
+}
+
+function sidebar_section_label(key)
+  local labels = SIDEBAR_SECTION_LABELS[key]
+  if not labels then return tostring(key or "") end
+  return "en" == state.language and labels.en or labels.zh
+end
+
 function activate_ucs_filter(category, subcategory, catid)
   category = tostring(category or "")
   subcategory = tostring(subcategory or "")
@@ -14052,7 +14130,7 @@ function draw_sidebar()
 
   if sidebar_section_header(
     "sounds",
-    "SOUNDS"
+    sidebar_section_label("sounds")
   ) then
 
   sidebar_item(
@@ -14229,7 +14307,7 @@ function draw_sidebar()
 
   if sidebar_section_header(
     "libraries",
-    "LIBRARIES"
+    sidebar_section_label("libraries")
   ) then
 
   sidebar_item(
@@ -14451,13 +14529,16 @@ function draw_sidebar()
 
   end
 
-  if sidebar_section_header("ucs", "UCS 目录") then
+  if sidebar_section_header(
+    "ucs",
+    sidebar_section_label("ucs")
+  ) then
     draw_ucs_sidebar_tree()
   end
 
   if sidebar_section_header(
     "collections",
-    "COLLECTIONS"
+    sidebar_section_label("collections")
   ) then
 
   if #state.collections == 0 then
@@ -14571,7 +14652,7 @@ function draw_sidebar()
 
   if sidebar_section_header(
     "saved_searches",
-    "SAVED SEARCHES"
+    sidebar_section_label("saved_searches")
   ) then
 
   if #state.saved_searches == 0 then
@@ -14638,7 +14719,7 @@ function draw_sidebar()
 
   if sidebar_section_header(
     "workflow",
-    "WORKFLOW"
+    sidebar_section_label("workflow")
   ) then
 
   sidebar_item(
@@ -14678,7 +14759,7 @@ function draw_sidebar()
 
   if sidebar_section_header(
     "activity",
-    "ACTIVITY"
+    sidebar_section_label("activity")
   ) then
 
   ImGui.TextWrapped(
