@@ -124,6 +124,17 @@ assert(
     and wave_job:find("WAVE_READ_REOPEN_ATTEMPT", 1, true),
   "waveform reads must wait across frames and retry transient empty peaks"
 )
+assert(
+  wave_job:find("spectral and 115 or 0", 1, true)
+    and wave_job:find("retval & 0x1000000", 1, true),
+  "spectral peaks must use REAPER's optional packed extra block"
+)
+assert(
+  source:find('spectral and "|spectral-rwf4" or ""', 1, true)
+    and source:find('"RWF4 "', 1, true)
+    and source:find("state.spectral_peaks_enabled", 1, true),
+  "spectral data must use an opt-in cache key and the RWF4 format"
+)
 
 assert(
   source:find('sounds = { zh = "素材", en = "SOUNDS" }', 1, true)

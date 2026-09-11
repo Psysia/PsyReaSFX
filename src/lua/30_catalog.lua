@@ -728,6 +728,8 @@ function load_config()
           tonumber(value) == 2048 and 2048 or 4096
       elseif name == "multichannel_waveform" then
         state.multichannel_waveform = value ~= "0"
+      elseif name == "spectral_peaks_enabled" then
+        AppState.set("spectral_peaks_enabled", value == "1")
       elseif name == "wave_cache_dir" then
         local configured =
           normalize_slashes(
@@ -1229,6 +1231,12 @@ function save_config()
   file:write(
     "setting\tmultichannel_waveform\t",
     state.multichannel_waveform and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tspectral_peaks_enabled\t",
+    state.spectral_peaks_enabled and "1" or "0",
     "\n"
   )
 

@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta2
+-- @version 0.9.0-beta3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -163,6 +163,7 @@
 --   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
 --   - 0.9.0 Beta 1：UCS 自动分类、虚拟目录、候选确认与搜索提示
 --   - 0.9.0 Beta 2：侧栏双语、无阻塞启动快路与波形容错恢复
+--   - 0.9.0 Beta 3：当前素材按需频谱峰值分析与独立 RWF4 缓存
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -171,7 +172,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 2"
+local VERSION = "0.9.0 Beta 3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -872,6 +873,8 @@ local state = {
 
   -- 高精度大波形可保留每个源声道的独立峰值。
   multichannel_waveform = true,
+  -- 频谱峰值只为当前大波形按需读取，不进入列表缩略图任务。
+  spectral_peaks_enabled = false,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -1752,6 +1755,11 @@ I18N_EN = {
     "256 points uses less cache; 512 points shows more detail.",
   ["立体声显示 L / R；多声道显示 CH 1–8。"] =
     "Stereo uses L / R; multichannel files use CH 1–8.",
+  ["频谱峰值着色"] = "Spectral peak coloring",
+  ["当前素材显示频谱峰值着色"] =
+    "Show spectral peak coloring for the current file",
+  ["按需读取 REAPER 频谱峰值；只影响下方大波形，不扫描整个音效库。"] =
+    "Read REAPER spectral peaks on demand for the detailed waveform only; the full library is not scanned.",
   ["可在首次浏览大型库前预先生成高精度波形。"] =
     "Generate high-resolution waveforms before the first large-library browse.",
   ["仅影响试听，不修改源文件，也不用于交付标准化。"] =
@@ -7559,6 +7567,8 @@ function load_config()
           tonumber(value) == 2048 and 2048 or 4096
       elseif name == "multichannel_waveform" then
         state.multichannel_waveform = value ~= "0"
+      elseif name == "spectral_peaks_enabled" then
+        AppState.set("spectral_peaks_enabled", value == "1")
       elseif name == "wave_cache_dir" then
         local configured =
           normalize_slashes(
@@ -8060,6 +8070,12 @@ function save_config()
   file:write(
     "setting\tmultichannel_waveform\t",
     state.multichannel_waveform and "1" or "0",
+    "\n"
+  )
+
+  file:write(
+    "setting\tspectral_peaks_enabled\t",
+    state.spectral_peaks_enabled and "1" or "0",
     "\n"
   )
 
@@ -15732,7 +15748,7 @@ end
 -- Persistent waveform cache
 ----------------------------------------------------------------
 
-function wave_cache_key(asset, points, preserve_channels)
+function wave_cache_key(asset, points, preserve_channels, spectral)
   if not asset.size or asset.size <= 0 then
     asset.size = file_size(asset.path)
   end
@@ -15744,18 +15760,19 @@ function wave_cache_key(asset, points, preserve_channels)
       .. "|"
       .. tostring(points)
       .. (preserve_channels and "|channels-rwf3" or "")
+      .. (spectral and "|spectral-rwf4" or "")
   )
 end
 
-function wave_cache_path(asset, points, preserve_channels)
+function wave_cache_path(asset, points, preserve_channels, spectral)
   return join_path(
     WAVE_CACHE_DIR,
-    wave_cache_key(asset, points, preserve_channels) .. ".rwf"
+    wave_cache_key(asset, points, preserve_channels, spectral) .. ".rwf"
   )
 end
 
-function load_wave_from_disk(asset, points, preserve_channels)
-  local path = wave_cache_path(asset, points, preserve_channels)
+function load_wave_from_disk(asset, points, preserve_channels, spectral)
+  local path = wave_cache_path(asset, points, preserve_channels, spectral)
   local file = io.open(path, "rb")
 
   if not file then
@@ -15764,7 +15781,7 @@ function load_wave_from_disk(asset, points, preserve_channels)
 
   local header = file:read("*l") or ""
   local version, count_text, channels_text =
-    header:match("^(RWF3)%s+(%d+)%s+(%d+)$")
+    header:match("^(RWF[34])%s+(%d+)%s+(%d+)$")
 
   if not version then
     version, count_text =
@@ -15784,12 +15801,14 @@ function load_wave_from_disk(asset, points, preserve_channels)
 
   local peaks = {}
 
-  if version == "RWF3" then
+  if version == "RWF3" or version == "RWF4" then
     local channels = clamp(tonumber(channels_text) or 1, 1, 8)
-    local bytes = file:read(count * channels * 2)
+    local amplitude_bytes = count * channels * 2
+    local spectral_bytes = version == "RWF4" and count * 4 or 0
+    local bytes = file:read(amplitude_bytes + spectral_bytes)
     file:close()
 
-    if not bytes or #bytes ~= count * channels * 2 then
+    if not bytes or #bytes ~= amplitude_bytes + spectral_bytes then
       return nil
     end
 
@@ -15816,12 +15835,32 @@ function load_wave_from_disk(asset, points, preserve_channels)
       peaks[index] = aggregate
     end
 
-    return {
+    local waveform = {
       count = count,
       channels = channels,
       peaks = peaks,
       channel_peaks = channel_peaks,
     }
+
+    if version == "RWF4" then
+      waveform.spectral_frequency = {}
+      waveform.spectral_tonality = {}
+      waveform.spectral_available = true
+
+      for index = 1, count do
+        local byte_index = amplitude_bytes + (index - 1) * 4 + 1
+        local frequency =
+          (bytes:byte(byte_index) or 0)
+            | ((bytes:byte(byte_index + 1) or 0) << 8)
+        local tonality =
+          (bytes:byte(byte_index + 2) or 0)
+            | ((bytes:byte(byte_index + 3) or 0) << 8)
+        waveform.spectral_frequency[index] = frequency
+        waveform.spectral_tonality[index] = tonality / 65535
+      end
+    end
+
+    return waveform
   elseif version == "RWF2" then
     local bytes = file:read(count * 2)
     file:close()
@@ -15860,13 +15899,14 @@ function save_wave_to_disk(
   asset,
   points,
   waveform,
-  preserve_channels
+  preserve_channels,
+  spectral
 )
   ensure_dirs()
 
   local file =
     io.open(
-      wave_cache_path(asset, points, preserve_channels),
+      wave_cache_path(asset, points, preserve_channels, spectral),
       "wb"
     )
 
@@ -15880,7 +15920,21 @@ function save_wave_to_disk(
     channel_peaks and clamp(waveform.channels or #channel_peaks, 1, 8)
       or 1
 
-  if channel_peaks then
+  local has_spectral =
+    spectral
+    and waveform.spectral_available
+    and waveform.spectral_frequency
+    and waveform.spectral_tonality
+
+  if has_spectral then
+    file:write(
+      "RWF4 ",
+      tostring(waveform.count),
+      " ",
+      tostring(channels),
+      "\n"
+    )
+  elseif channel_peaks then
     file:write(
       "RWF3 ",
       tostring(waveform.count),
@@ -15936,6 +15990,43 @@ function save_wave_to_disk(
   end
 
   file:write(table.concat(chunks))
+
+  if has_spectral then
+    chunks = {}
+    chunk = {}
+
+    for index = 1, waveform.count do
+      local frequency = clamp(
+        math.floor((waveform.spectral_frequency[index] or 0) + 0.5),
+        0,
+        65535
+      )
+      local tonality = clamp(
+        math.floor((waveform.spectral_tonality[index] or 0) * 65535 + 0.5),
+        0,
+        65535
+      )
+
+      chunk[#chunk + 1] = string.char(
+        frequency & 0xFF,
+        (frequency >> 8) & 0xFF,
+        tonality & 0xFF,
+        (tonality >> 8) & 0xFF
+      )
+
+      if #chunk >= 256 then
+        chunks[#chunks + 1] = table.concat(chunk)
+        chunk = {}
+      end
+    end
+
+    if #chunk > 0 then
+      chunks[#chunks + 1] = table.concat(chunk)
+    end
+
+    file:write(table.concat(chunks))
+  end
+
   file:close()
 end
 
@@ -15944,7 +16035,8 @@ function read_waveform_from_source(
   duration,
   channels,
   points,
-  preserve_channels
+  preserve_channels,
+  spectral
 )
   if not source
     or not duration
@@ -15955,8 +16047,10 @@ function read_waveform_from_source(
   channels = clamp(channels or 1, 1, 8)
   points = clamp(math.floor(points), 32, LARGE_WAVE_MAX_POINTS)
 
+  spectral = spectral == true
+  local block_count = spectral and 3 or 2
   local buffer =
-    reaper.new_array(points * channels * 2)
+    reaper.new_array(points * channels * block_count)
 
   local call_ok, retval =
     pcall(
@@ -15966,7 +16060,7 @@ function read_waveform_from_source(
       0,
       channels,
       points,
-      0,
+      spectral and 115 or 0,
       buffer
     )
 
@@ -15980,15 +16074,20 @@ function read_waveform_from_source(
     return nil, "峰值暂未就绪", tostring(retval)
   end
 
+  local has_spectral =
+    spectral and (retval & 0x1000000) ~= 0
   local values =
     buffer.table(
       1,
-      returned * channels * 2
+      returned * channels * (has_spectral and 3 or 2)
     )
 
   local peaks = {}
   local channel_peaks = preserve_channels and {} or nil
   local minimum_offset = returned * channels
+  local spectral_offset = returned * channels * 2
+  local spectral_frequency = has_spectral and {} or nil
+  local spectral_tonality = has_spectral and {} or nil
 
   if channel_peaks then
     for channel = 1, channels do
@@ -15998,6 +16097,7 @@ function read_waveform_from_source(
 
   for sample = 0, returned - 1 do
     local amplitude = 0
+    local dominant_channel = 0
 
     for channel = 0, channels - 1 do
       local maximum =
@@ -16026,6 +16126,10 @@ function read_waveform_from_source(
           minimum
         )
 
+      if math.max(maximum, minimum) >= amplitude then
+        dominant_channel = channel
+      end
+
       if channel_peaks then
         channel_peaks[channel + 1][sample + 1] =
           clamp(math.max(maximum, minimum), 0, 1)
@@ -16034,6 +16138,20 @@ function read_waveform_from_source(
 
     peaks[sample + 1] =
       clamp(amplitude, 0, 1)
+
+    if has_spectral then
+      local packed = math.floor(
+        values[
+          spectral_offset
+            + sample * channels
+            + dominant_channel
+            + 1
+        ] or 0
+      )
+      spectral_frequency[sample + 1] = packed & 0x7FFF
+      spectral_tonality[sample + 1] =
+        ((packed >> 15) & 0x3FFF) / 0x3FFF
+    end
   end
 
   return {
@@ -16041,6 +16159,9 @@ function read_waveform_from_source(
     channels = channels,
     peaks = peaks,
     channel_peaks = channel_peaks,
+    spectral_available = has_spectral,
+    spectral_frequency = spectral_frequency,
+    spectral_tonality = spectral_tonality,
   }
 end
 
@@ -16176,7 +16297,8 @@ function step_wave_job(job)
         job.duration,
         job.channels,
         job.points,
-        job.preserve_channels
+        job.preserve_channels,
+        job.spectral
       )
 
     if waveform then
@@ -16215,8 +16337,8 @@ function step_wave_job(job)
   return "working"
 end
 
-function memory_wave_key(asset, points, preserve_channels)
-  return wave_cache_key(asset, points, preserve_channels)
+function memory_wave_key(asset, points, preserve_channels, spectral)
+  return wave_cache_key(asset, points, preserve_channels, spectral)
 end
 
 function store_wave_memory(key, waveform)
@@ -16255,14 +16377,15 @@ function store_wave_memory(key, waveform)
   end
 end
 
-function queue_wave(asset, points, priority, preserve_channels)
+function queue_wave(asset, points, priority, preserve_channels, spectral)
   if asset.wave_error then
     return nil
   end
 
   preserve_channels = preserve_channels == true
+  spectral = spectral == true
 
-  local key = memory_wave_key(asset, points, preserve_channels)
+  local key = memory_wave_key(asset, points, preserve_channels, spectral)
   local cached = state.wave_cache[key]
 
   state.wave_clock = state.wave_clock + 1
@@ -16276,7 +16399,7 @@ function queue_wave(asset, points, priority, preserve_channels)
     state.wave_checked[key] = true
 
     local disk_wave =
-      load_wave_from_disk(asset, points, preserve_channels)
+      load_wave_from_disk(asset, points, preserve_channels, spectral)
 
     if disk_wave then
       store_wave_memory(key, disk_wave)
@@ -16297,6 +16420,7 @@ function queue_wave(asset, points, priority, preserve_channels)
       asset = asset,
       points = points,
       preserve_channels = preserve_channels,
+      spectral = spectral,
     }
 
     if priority then
@@ -16353,7 +16477,8 @@ function process_wave_queue()
       job.asset,
       job.points,
       waveform,
-      job.preserve_channels
+      job.preserve_channels,
+      job.spectral
     )
 
     state.wave_queued[job.key] = nil
@@ -16672,20 +16797,21 @@ function validate_wave_cache_file(path)
 
   local header = file:read("*l") or ""
   local version, count_text, channels_text =
-    header:match("^(RWF3)%s+(%d+)%s+(%d+)$")
+    header:match("^(RWF[34])%s+(%d+)%s+(%d+)$")
   local expected
 
-  if version == "RWF3" then
+  if version == "RWF3" or version == "RWF4" then
     local count = tonumber(count_text) or 0
     local channels = tonumber(channels_text) or 0
 
     if count < 1 or count > LARGE_WAVE_MAX_POINTS
       or channels < 1 or channels > 8 then
       file:close()
-      return false, "RWF3 头部无效"
+      return false, version .. " 头部无效"
     end
 
     expected = count * channels * 2
+      + (version == "RWF4" and count * 4 or 0)
   else
     version, count_text = header:match("^(RWF2)%s+(%d+)$")
 
@@ -21694,6 +21820,7 @@ function reset_interface_settings()
   state.loop_selection = true
   state.preview_control_layout = "studio_strip"
   state.multichannel_waveform = true
+  AppState.set("spectral_peaks_enabled", false)
   state.bottom_panel_height = 330
   state.preview_channel_mode = "original"
   state.preview_channel_asset_key = nil
@@ -22117,6 +22244,42 @@ function pan_wave_view(delta_percent)
   state.wave_view_end = new_start + span
 end
 
+function spectral_peak_color(frequency, tonality, fallback)
+  frequency = clamp(tonumber(frequency) or 0, 20, 20000)
+  tonality = clamp(tonumber(tonality) or 0, 0, 1)
+
+  local normalized =
+    math.log(frequency / 20)
+      / math.log(20000 / 20)
+  local low = 0x5964EFFF
+  local low_mid = 0x20B9D6FF
+  local high_mid = 0x63D36EFF
+  local high = 0xF2B45CFF
+  local color
+
+  if normalized < 0.34 then
+    color = rgba_mix(low, low_mid, normalized / 0.34)
+  elseif normalized < 0.68 then
+    color = rgba_mix(
+      low_mid,
+      high_mid,
+      (normalized - 0.34) / 0.34
+    )
+  else
+    color = rgba_mix(
+      high_mid,
+      high,
+      (normalized - 0.68) / 0.32
+    )
+  end
+
+  return rgba_mix(
+    fallback or COLOR.waveform,
+    color,
+    0.34 + tonality * 0.66
+  )
+end
+
 function draw_waveform_window(
   draw_list,
   waveform,
@@ -22215,12 +22378,33 @@ function draw_waveform_window(
       )
 
       local amplitude = 0
+      local peak_index = range_start
 
       for index = range_start, range_end do
-        amplitude = math.max(amplitude, peaks[index] or 0)
+        local candidate = peaks[index] or 0
+        if candidate >= amplitude then
+          amplitude = candidate
+          peak_index = index
+        end
       end
 
       local px = x + pixel
+      local pixel_color = lane_wave_color
+
+      if state.spectral_peaks_enabled
+        and waveform.spectral_available
+        and waveform.spectral_frequency then
+        pixel_color = spectral_peak_color(
+          waveform.spectral_frequency[peak_index],
+          waveform.spectral_tonality
+            and waveform.spectral_tonality[peak_index]
+            or 0,
+          lane_wave_color
+        )
+        if not channel_selected then
+          pixel_color = rgba_with_alpha(pixel_color, 0x32)
+        end
+      end
 
       ImGui.DrawList_AddLine(
         draw_list,
@@ -22228,7 +22412,7 @@ function draw_waveform_window(
         center - amplitude * half,
         px,
         center + amplitude * half,
-        lane_wave_color,
+        pixel_color,
         1
       )
     end
@@ -28152,8 +28336,19 @@ function draw_large_wave(asset)
       asset,
       large_points,
       true,
-      state.multichannel_waveform
+      state.multichannel_waveform,
+      state.spectral_peaks_enabled
     )
+
+  if not waveform and state.spectral_peaks_enabled then
+    waveform = queue_wave(
+      asset,
+      large_points,
+      true,
+      state.multichannel_waveform,
+      false
+    )
+  end
 
   draw_waveform_window(
     draw_list,
@@ -29126,6 +29321,19 @@ function draw_more_actions_popup(asset)
   ) then
     state.loop_selection = not state.loop_selection
     state.config_dirty = true
+  end
+
+  if ImGui.MenuItem(
+    ctx,
+    "频谱峰值着色",
+    nil,
+    state.spectral_peaks_enabled
+  ) then
+    AppState.set(
+      "spectral_peaks_enabled",
+      not state.spectral_peaks_enabled
+    )
+    AppState.mark_dirty("config_dirty")
   end
 
   if ImGui.MenuItem(
@@ -32885,6 +33093,25 @@ function draw_settings_waveforms()
   ImGui.TextDisabled(
     ctx,
     "立体声显示 L / R；多声道显示 CH 1–8。"
+  )
+
+  local spectral_changed
+  local spectral_value
+  spectral_changed, spectral_value =
+    ImGui.Checkbox(
+      ctx,
+      "当前素材显示频谱峰值着色",
+      state.spectral_peaks_enabled
+    )
+
+  if spectral_changed then
+    AppState.set("spectral_peaks_enabled", spectral_value)
+    AppState.mark_dirty("config_dirty")
+  end
+
+  ImGui.TextDisabled(
+    ctx,
+    "按需读取 REAPER 频谱峰值；只影响下方大波形，不扫描整个音效库。"
   )
 
   ImGui.Separator(ctx)

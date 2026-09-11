@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta2
+-- @version 0.9.0-beta3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -163,6 +163,7 @@
 --   - 0.8.5：扫描恢复点仅用于异常中断的前台扫描，避免正常启动反复全库重扫
 --   - 0.9.0 Beta 1：UCS 自动分类、虚拟目录、候选确认与搜索提示
 --   - 0.9.0 Beta 2：侧栏双语、无阻塞启动快路与波形容错恢复
+--   - 0.9.0 Beta 3：当前素材按需频谱峰值分析与独立 RWF4 缓存
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -171,7 +172,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 2"
+local VERSION = "0.9.0 Beta 3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -872,6 +873,8 @@ local state = {
 
   -- 高精度大波形可保留每个源声道的独立峰值。
   multichannel_waveform = true,
+  -- 频谱峰值只为当前大波形按需读取，不进入列表缩略图任务。
+  spectral_peaks_enabled = false,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -1752,6 +1755,11 @@ I18N_EN = {
     "256 points uses less cache; 512 points shows more detail.",
   ["立体声显示 L / R；多声道显示 CH 1–8。"] =
     "Stereo uses L / R; multichannel files use CH 1–8.",
+  ["频谱峰值着色"] = "Spectral peak coloring",
+  ["当前素材显示频谱峰值着色"] =
+    "Show spectral peak coloring for the current file",
+  ["按需读取 REAPER 频谱峰值；只影响下方大波形，不扫描整个音效库。"] =
+    "Read REAPER spectral peaks on demand for the detailed waveform only; the full library is not scanned.",
   ["可在首次浏览大型库前预先生成高精度波形。"] =
     "Generate high-resolution waveforms before the first large-library browse.",
   ["仅影响试听，不修改源文件，也不用于交付标准化。"] =
