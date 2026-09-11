@@ -1,6 +1,6 @@
 ﻿# PsyReaSFX Changelog
 
-## 0.9.0 Beta 2 (in development)
+## 0.9.0 Beta 2
 
 ### Startup and waveform reliability
 
