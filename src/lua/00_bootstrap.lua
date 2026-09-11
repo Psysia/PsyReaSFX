@@ -504,6 +504,7 @@ local DATABASE_JOURNAL_COMPACT_COUNT = 10000
 local DATABASE_SNAPSHOT_ASSETS_PER_FRAME = 2000
 local DATABASE_SNAPSHOT_FRAME_BUDGET = 0.004
 local LIBRARY_COUNT_ASSETS_PER_FRAME = 4000
+local UCS_COUNT_ASSETS_PER_FRAME = 4000
 local SCAN_CHECKPOINT_INTERVAL = 1.0
 local IMPORT_CHECKPOINT_INTERVAL = 10.0
 local CACHE_VERIFY_FILES_PER_FRAME = 12
@@ -703,6 +704,19 @@ local state = {
   library_counts_job = nil,
   library_filter_id = nil,
   expanded_libraries = {},
+  ucs_counts = {
+    categories = {},
+    subcategories = {},
+    catids = {},
+    total = 0,
+  },
+  ucs_counts_dirty = true,
+  ucs_counts_job = nil,
+  ucs_filter_category = nil,
+  ucs_filter_subcategory = nil,
+  ucs_filter_catid = nil,
+  expanded_ucs_categories = {},
+  expanded_ucs_subcategories = {},
   expanded_source_folders = {},
   expanded_folder_nodes = {},
   folder_browser_open = false,
@@ -820,6 +834,9 @@ local state = {
   ucs_reclassification_review = nil,
   ucs_pending_lookup = {},
   ucs_pending_count = 0,
+  ucs_confirmation_undo = {},
+  ucs_confirmation_undo_order = {},
+  ucs_search_popup_visible = false,
 
   -- 项目素材箱可绑定已保存的 RPP；使用记录独立保存。
   project_usage = {},
@@ -1035,6 +1052,7 @@ local state = {
   sidebar_sections = {
     sounds = true,
     libraries = true,
+    ucs = true,
     collections = true,
     saved_searches = true,
     workflow = true,
@@ -2034,8 +2052,31 @@ I18N_EN["素材库已变化，请重新生成 UCS 分类预览"] =
 I18N_EN["UCS 分类预览已取消"] = "UCS classification preview canceled"
 I18N_EN["已丢弃 UCS 分类预览"] = "UCS classification preview discarded"
 I18N_EN["未分类"] = "Unclassified"
+I18N_EN["UCS 目录"] = "UCS DIRECTORY"
+I18N_EN["UCS 分类索引更新中…"] = "Updating UCS classification index…"
+I18N_EN["尚无已分类素材"] = "No classified assets yet"
+I18N_EN["前往维护页分类现有素材"] = "Classify existing assets in Maintenance"
+I18N_EN["展开或折叠 UCS 分类"] = "Expand or collapse UCS category"
+I18N_EN["展开或折叠 UCS 子分类"] = "Expand or collapse UCS subcategory"
+I18N_EN["UCS 候选"] = "UCS candidates"
+I18N_EN["根据文件名命中："] = "Filename evidence:"
+I18N_EN["撤销上次 UCS 确认"] = "Undo last UCS confirmation"
+I18N_EN["撤销此素材的 UCS 确认"] = "Undo this asset's UCS confirmation"
+I18N_EN["没有可确认的 UCS 候选"] = "No UCS candidate is available to confirm"
+I18N_EN["无法撤销 UCS 确认"] = "Unable to undo UCS confirmation"
+I18N_EN["只读保护下不能修改 UCS 分类"] =
+  "UCS classification cannot be changed in read-only mode"
+I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
 
 I18N_PATTERNS_EN = {
+  {
+    "^已确认 UCS 分类：(.+)$",
+    "UCS classification confirmed: %1",
+  },
+  {
+    "^已撤销 UCS 确认：(.+)$",
+    "UCS confirmation undone: %1",
+  },
   {
     "^UCS 待确认  (%d+)$",
     "UCS review queue  %1",

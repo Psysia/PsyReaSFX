@@ -74,6 +74,40 @@ assert(
     and asset_view:find('asset.ucs_status ~= "pending"', 1, true),
   "UCS review queue must filter to pending assets"
 )
+assert(
+  asset_view:find('"ucs_category" == state.view', 1, true)
+    and asset_view:find('"ucs_subcategory" == state.view', 1, true)
+    and asset_view:find('"ucs_catid" == state.view', 1, true),
+  "UCS virtual-directory levels must filter the catalog"
+)
+
+local ucs_sidebar = function_region(
+  "function activate_ucs_filter(",
+  "function activate_folder_path("
+)
+assert(
+  ucs_sidebar:find("UcsCatalog.category_order", 1, true)
+    and ucs_sidebar:find("ucs_subcategory_count_key", 1, true)
+    and ucs_sidebar:find("activate_ucs_filter(", 1, true),
+  "sidebar must expose Category, SubCategory and CatID UCS navigation"
+)
+assert(
+  source:find("process_ucs_count_rebuild()", 1, true)
+    and source:find("step_ucs_count_job(", 1, true),
+  "UCS sidebar counts must rebuild through the incremental cache job"
+)
+assert(
+  source:find("function confirm_ucs_candidate(", 1, true)
+    and source:find("function undo_last_ucs_confirmation(", 1, true)
+    and source:find("draw_ucs_candidate_actions(primary)", 1, true),
+  "pending UCS candidates must support confirmation and bounded undo"
+)
+assert(
+  source:find("function draw_ucs_search_suggestion_popup(", 1, true)
+    and source:find("ucs_search_suggestions(", 1, true)
+    and source:find("ucs_apply_search_suggestion(", 1, true),
+  "toolbar must expose bounded UCS search suggestions"
+)
 
 assert(
   source:find('"waveform_palette_table"', 1, true),

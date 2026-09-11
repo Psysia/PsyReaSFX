@@ -103,7 +103,7 @@ jobs:
       - name: Run Lua catalog cache capacity smoke test
         shell: pwsh
         run: |
-          lua tools/lua_catalog_caches_selftest.lua (Resolve-Path 'src/lua/37_catalog_caches.lua') 25000
+          lua tools/lua_catalog_caches_selftest.lua (Resolve-Path 'src/lua/37_catalog_caches.lua') 500000
 
       - name: Run Lua incremental persistence capacity smoke test
         shell: pwsh

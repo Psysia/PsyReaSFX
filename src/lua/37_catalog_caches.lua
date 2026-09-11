@@ -22,6 +22,56 @@ function step_library_count_job(job, assets, batch_size)
   return job.index > #assets, job.counts
 end
 
+function ucs_count_key(value)
+  return string.upper(tostring(value or ""):match("^%s*(.-)%s*$"))
+end
+
+function ucs_subcategory_count_key(category, subcategory)
+  return ucs_count_key(category) .. "\0" .. ucs_count_key(subcategory)
+end
+
+function new_ucs_count_job()
+  return {
+    index = 1,
+    counts = {
+      categories = {},
+      subcategories = {},
+      catids = {},
+      total = 0,
+    },
+  }
+end
+
+function step_ucs_count_job(job, assets, batch_size)
+  if type(job) ~= "table" or type(assets) ~= "table"
+    or type(job.counts) ~= "table" then
+    return false, nil, "invalid_input"
+  end
+  batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
+  local last = math.min(#assets, job.index + batch_size - 1)
+  for index = job.index, last do
+    local asset = assets[index]
+    local catid = asset and ucs_count_key(asset.catid) or ""
+    local category = asset and ucs_count_key(asset.category) or ""
+    local subcategory = asset and ucs_count_key(asset.subcategory) or ""
+    if asset and asset.ready and catid ~= "" then
+      job.counts.catids[catid] = (job.counts.catids[catid] or 0) + 1
+      if category ~= "" then
+        job.counts.categories[category] =
+          (job.counts.categories[category] or 0) + 1
+      end
+      if category ~= "" and subcategory ~= "" then
+        local pair = ucs_subcategory_count_key(category, subcategory)
+        job.counts.subcategories[pair] =
+          (job.counts.subcategories[pair] or 0) + 1
+      end
+      job.counts.total = job.counts.total + 1
+    end
+  end
+  job.index = last + 1
+  return job.index > #assets, job.counts
+end
+
 function ordered_preview_history_assets(
   history_assets,
   by_path,

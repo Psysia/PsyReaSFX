@@ -61,6 +61,14 @@ assert(load_ucs_catalog(catalog_path))
 local category_count = 0
 for _ in pairs(UcsCatalog.categories) do category_count = category_count + 1 end
 assert(category_count == 82, "unexpected UCS category count")
+assert(#UcsCatalog.category_order == 82, "UCS category order is incomplete")
+for index = 2, #UcsCatalog.category_order do
+  assert(
+    UcsCatalog.category_order[index - 1].name
+      < UcsCatalog.category_order[index].name,
+    "UCS categories are not deterministically ordered"
+  )
+end
 
 local wood = assert(UcsCatalog.by_catid.WOODHndl)
 assert(wood.category == "WOOD" and wood.subcategory == "HANDLE")
@@ -156,6 +164,31 @@ local generated = {
 local generated_result, generated_reason = ucs_classify_existing_asset(generated)
 assert(generated_result and generated_reason == "unclassified")
 assert(generated_result.catid == "" and generated_result.category == "")
+
+local parsed_candidates = ucs_parse_candidates(
+  "AIRBrst=9.250;FIREBrst=7.125;NOTREAL=99.000"
+)
+assert(#parsed_candidates == 2)
+assert(parsed_candidates[1].entry.catid == "AIRBrst")
+assert(math.abs(parsed_candidates[1].score - 9.25) < 0.000001)
+assert(parsed_candidates[2].entry.catid == "FIREBrst")
+local confirmed = assert(ucs_manual_classification_result("AIRBrst"))
+assert(confirmed.ucs_status == "manual" and confirmed.ucs_source == "manual")
+assert(confirmed.catid == "AIRBrst" and confirmed.ucs_candidates == "")
+assert(ucs_manual_classification_result("NOTREAL") == nil)
+
+local suggestions = ucs_search_suggestions("burst", "en", 7)
+assert(#suggestions > 0 and #suggestions <= 7)
+assert(suggestions[1].entry.catid == "AIRBrst")
+assert(suggestions[1].matched == "SubCategory")
+assert(#ucs_search_suggestions("a", "en", 7) == 0)
+assert(ucs_search_fragment("boom category:burst") == "burst")
+assert(ucs_search_fragment("status:candidate") == "")
+assert(ucs_search_fragment("-burst") == "")
+assert(
+  ucs_apply_search_suggestion("boom category:burst", "AIRBrst")
+    == "boom catid:AIRBrst"
+)
 
 local metadata_fields = {
   ["IXML:USER:SUBCATEGORY"] = "BURST",

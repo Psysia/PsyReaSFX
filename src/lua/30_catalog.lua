@@ -140,8 +140,18 @@ function asset_path_sort_key(asset)
   return asset._sort_path_value
 end
 
+function invalidate_ucs_counts()
+  if not state.ucs_counts_dirty then
+    AppState.set("ucs_counts_dirty", true)
+  end
+  if state.ucs_counts_job then
+    AppState.set("ucs_counts_job", nil)
+  end
+end
+
 function refresh_ucs_pending_membership(asset)
   if not asset or not asset.path then return end
+  invalidate_ucs_counts()
   local key = path_key(asset.path)
   local was_pending = state.ucs_pending_lookup[key] ~= nil
   local is_pending = asset.ucs_status == "pending"
@@ -166,6 +176,7 @@ function remove_ucs_pending_membership(asset_or_path)
       and asset_or_path.path
     or asset_or_path
   local key = path_key(path or "")
+  if key ~= "" then invalidate_ucs_counts() end
   if key ~= "" and state.ucs_pending_lookup[key] then
     state.ucs_pending_lookup[key] = nil
     AppState.set(
@@ -1439,6 +1450,7 @@ function save_config()
   for _, key in ipairs({
     "sounds",
     "libraries",
+    "ucs",
     "collections",
     "saved_searches",
     "workflow",

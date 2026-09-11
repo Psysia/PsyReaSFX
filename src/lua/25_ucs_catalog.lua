@@ -26,6 +26,7 @@ UcsCatalog = {
   by_catid = {},
   by_pair = {},
   categories = {},
+  category_order = {},
   term_index = {},
   max_term_words = 1,
 }
@@ -38,6 +39,7 @@ function ucs_reset_catalog()
   UcsCatalog.by_catid = {}
   UcsCatalog.by_pair = {}
   UcsCatalog.categories = {}
+  UcsCatalog.category_order = {}
   UcsCatalog.term_index = {}
   UcsCatalog.max_term_words = 1
 end
@@ -112,6 +114,25 @@ function load_ucs_catalog(path)
         return false, UcsCatalog.error
       end
 
+      entry.search_catid = string.upper(entry.catid)
+      entry.search_category = ucs_normalize_keyword_text(entry.category)
+      entry.search_subcategory = ucs_normalize_keyword_text(
+        entry.subcategory
+      )
+      entry.search_blob_en = ucs_normalize_keyword_text(table.concat({
+        entry.explanation,
+        entry.synonyms_en,
+        entry.catshort,
+      }, " "))
+      entry.search_blob_zh = ucs_normalize_keyword_text(table.concat({
+        entry.category_zh,
+        entry.subcategory_zh,
+        entry.synonyms_zh,
+        entry.explanation,
+        entry.synonyms_en,
+        entry.catshort,
+      }, " "))
+
       UcsCatalog.entries[#UcsCatalog.entries + 1] = entry
       UcsCatalog.by_catid[entry.catid] = entry
       UcsCatalog.by_pair[
@@ -126,6 +147,7 @@ function load_ucs_catalog(path)
           entries = {},
         }
         UcsCatalog.categories[entry.category] = category
+        UcsCatalog.category_order[#UcsCatalog.category_order + 1] = category
       end
       category.entries[#category.entries + 1] = entry
     end
@@ -139,6 +161,18 @@ function load_ucs_catalog(path)
     UcsCatalog.attempted = true
     UcsCatalog.error = "unsupported_catalog"
     return false, UcsCatalog.error
+  end
+
+  table.sort(UcsCatalog.category_order, function(left, right)
+    return left.name < right.name
+  end)
+  for _, category in ipairs(UcsCatalog.category_order) do
+    table.sort(category.entries, function(left, right)
+      if left.subcategory ~= right.subcategory then
+        return left.subcategory < right.subcategory
+      end
+      return left.catid < right.catid
+    end)
   end
 
   ucs_build_term_index()
@@ -557,4 +591,97 @@ function ucs_assign_classification(asset, result)
     asset[field] = result[field]
   end
   return true
+end
+
+function ucs_parse_candidates(value)
+  if not ensure_ucs_catalog() then return {} end
+  local candidates = {}
+  for token in (tostring(value or "") .. ";"):gmatch("(.-);") do
+    local catid, score = token:match("^([^=]+)=([%d%.]+)$")
+    local entry = catid and UcsCatalog.by_catid[trim(catid)] or nil
+    if entry then
+      candidates[#candidates + 1] = {
+        entry = entry,
+        score = tonumber(score) or 0,
+      }
+    end
+  end
+  return candidates
+end
+
+function ucs_manual_classification_result(catid)
+  if not ensure_ucs_catalog() then return nil end
+  local entry = UcsCatalog.by_catid[trim(catid or "")]
+  return ucs_classification_result(entry, "manual", "manual")
+end
+
+function ucs_search_fragment(query)
+  local token = tostring(query or ""):match("([^%s]+)$") or ""
+  if token:match("^%-") then return "" end
+  local field, value = token:match("^([^:]+):(.*)$")
+  if field then
+    field = string.lower(field)
+    if field ~= "category" and field ~= "subcategory"
+      and field ~= "catid" and field ~= "ucs" then
+      return ""
+    end
+    token = value
+  end
+  token = token:gsub('^"+', ""):gsub('"+$', "")
+  return trim(token)
+end
+
+function ucs_search_suggestions(query, language, limit)
+  if not ensure_ucs_catalog() then return {} end
+  local fragment = ucs_search_fragment(query)
+  local needle = ucs_normalize_keyword_text(fragment)
+  if #needle < 2 then return {} end
+
+  local suggestions = {}
+  for _, entry in ipairs(UcsCatalog.entries) do
+    local catid = entry.search_catid
+    local category = entry.search_category
+    local subcategory = entry.search_subcategory
+    local blob = language == "en"
+        and entry.search_blob_en
+      or entry.search_blob_zh
+    local score = 0
+    local matched = ""
+    if catid == needle then
+      score, matched = 120, "CatID"
+    elseif catid:find(needle, 1, true) == 1 then
+      score, matched = 105, "CatID"
+    elseif subcategory == needle then
+      score, matched = 95, "SubCategory"
+    elseif subcategory:find(needle, 1, true) == 1 then
+      score, matched = 85, "SubCategory"
+    elseif category == needle then
+      score, matched = 78, "Category"
+    elseif category:find(needle, 1, true) == 1 then
+      score, matched = 70, "Category"
+    elseif blob:find(needle, 1, true) then
+      score, matched = 50, "Synonym"
+    end
+    if score > 0 then
+      suggestions[#suggestions + 1] = {
+        entry = entry,
+        score = score,
+        matched = matched,
+      }
+    end
+  end
+
+  table.sort(suggestions, function(left, right)
+    if left.score ~= right.score then return left.score > right.score end
+    return left.entry.catid < right.entry.catid
+  end)
+  while #suggestions > (limit or 8) do
+    table.remove(suggestions)
+  end
+  return suggestions
+end
+
+function ucs_apply_search_suggestion(query, catid)
+  local prefix = tostring(query or ""):match("^(.*%s)") or ""
+  return prefix .. "catid:" .. tostring(catid or "")
 end

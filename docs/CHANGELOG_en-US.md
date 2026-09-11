@@ -16,9 +16,15 @@
 - Applies classification within a 256-item / 4 ms frame budget and supports cancellation. Safely applied records remain committed and a new preview can resume idempotently; source audio is never renamed, moved, or rewritten.
 - Rejects stale previews if the catalog or classifier changes between preview and apply, always skips manual classifications, and safely clears obsolete generated classifications that no longer match current rules.
 - Adds an incrementally maintained `UCS review queue` to the Sounds sidebar, avoiding a per-frame scan of a 500,000-item catalog and removing manually resolved assets immediately.
+- Adds a standalone UCS virtual directory with `Category → SubCategory → CatID` navigation, showing only classifications present in the current catalog and localized names without changing physical folders.
+- Rebuilds UCS aggregate counts in 4,000-item frame-bounded steps. Imports, deletes, manual edits and reclassification invalidate the cache instead of synchronously scanning the catalog when the tree opens.
+- Shows up to three pending CatID candidates, labels, scores and matched terms in the metadata inspector. One click promotes a candidate to a protected manual result, with a bounded 64-entry session undo history.
+- Persists UCS Category, SubCategory and CatID constraints with saved searches so restoring a search cannot lose its selected UCS level.
+- Offers up to seven CatID suggestions after two search characters, matching Category, SubCategory, CatShort, explanations and English/Chinese synonyms from the fixed 753-entry official catalog; selection inserts an exact `catid:` constraint.
+- Searches only the small official UCS catalog for suggestions, never the user asset catalog. Exact CatID, prefixes and subcategories outrank general synonyms, with stable CatID ordering for ties.
 - Verifies the official workbook SHA-256 before generation and exercises 500,000 exact plus 500,000 keyword classifications in regression coverage.
 
-> This is a branch development snapshot, not a public Beta release. The UCS virtual tree, fast candidate confirmation/revert actions, and search suggestions will continue in the same Beta feature batch.
+> This is a branch development snapshot, not a public Beta release. The first UCS classification, directory, candidate-confirmation and search-suggestion loop is complete; real REAPER interaction acceptance and boundary fixes follow.
 
 ## 0.8.5
 
