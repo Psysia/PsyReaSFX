@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 3 (in development)
+
+### On-demand spectral peaks
+
+- Freezes the first spectral-analysis stage: the current file's detailed waveform can optionally use REAPER's official spectral-peak coloring, while a full FFT time-frequency view remains a separate future decision.
+- Requests spectral data on demand only after the user enables it; list thumbnails, startup and full-catalog indexing gain no spectral work.
+- Adds the independent RWF4 cache format for amplitude, channels, dominant frequency and tonality while retaining RWF1/RWF2/RWF3 compatibility.
+- Reuses frame-bounded peak building, bounded retries, source reopening and the LRU memory limit; ordinary waveforms remain available when the host has no spectral extra block.
+- Adds the spectral toggle to Waveform settings and Preview More Actions. An existing ordinary waveform can remain visible until the spectral cache is ready, without a modal progress window.
+- Adds regression coverage for packed spectral decoding and RWF4 serialization.
+
 ## 0.9.0 Beta 2
 
 ### Startup and waveform reliability
