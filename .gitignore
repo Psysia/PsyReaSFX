@@ -14,3 +14,7 @@ wave_cache_v3/
 Thumbs.db
 *.tmp
 *.bak
+
+# .NET build outputs
+**/bin/
+**/obj/
