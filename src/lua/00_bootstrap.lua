@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta4.3
+-- @version 0.9.0-beta4.4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -168,6 +168,7 @@
 --   - 0.9.0 Beta 4.1：修复 UCS 搜索提示抢占输入焦点
 --   - 0.9.0 Beta 4.2：修复 UCS 搜索浮层、目录筛选与层级计数不一致
 --   - 0.9.0 Beta 4.3：相似声音后台索引、精确分桶剪枝与相似度色条
+--   - 0.9.0 Beta 4.4：修复波形定位试听时播放头先闪到起点的问题
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -176,7 +177,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 4.3"
+local VERSION = "0.9.0 Beta 4.4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -914,6 +915,8 @@ local state = {
   preview_map_span = 1,
   preview_map_reverse = false,
   preview_percent = 0,
+  preview_seek_target = nil,
+  preview_seek_started_at = 0,
   preview_backend =
     type(reaper.CF_CreatePreview) == "function"
       and "SWS"

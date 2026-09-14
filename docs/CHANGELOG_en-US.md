@@ -1,5 +1,13 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 4.4
+
+### Waveform seek-preview fix
+
+- Shows the playhead immediately at the requested list or large-waveform seek position instead of flashing at the waveform start for one frame.
+- Ignores the transient stale zero position until SWS confirms the seek, with a bounded timeout before normal polling resumes.
+- Unifies forward, reverse, and selection-preview position mapping so reverse waveform seeks keep the playhead aligned with the audible position.
+
 ## 0.9.0 Beta 4.3
 
 ### Near-instant similar-sound retrieval

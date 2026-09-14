@@ -6234,6 +6234,8 @@ function stop_preview()
   state.preview_map_span = 1
   state.preview_map_reverse = false
   state.preview_percent = 0
+  AppState.set("preview_seek_target", nil)
+  AppState.set("preview_seek_started_at", 0)
   destroy_preview_sources(true)
 
   if preview_job_token then
@@ -6413,6 +6415,56 @@ function configure_preview_instance(
   )
 end
 
+function preview_percent_from_position(
+  position,
+  length,
+  map_start,
+  map_span,
+  reverse
+)
+  if not length or length <= 0 then
+    return clamp(map_start or 0, 0, 1)
+  end
+
+  local local_percent =
+    clamp((position or 0) / length, 0, 1)
+
+  if reverse then
+    local_percent = 1 - local_percent
+  end
+
+  return clamp(
+    (map_start or 0)
+      + (map_span or 1) * local_percent,
+    0,
+    1
+  )
+end
+
+function preview_position_from_percent(
+  percent,
+  length,
+  map_start,
+  map_span,
+  reverse
+)
+  if not length or length <= 0 then return 0 end
+
+  local span = math.max(map_span or 1, 0.000001)
+  local local_percent = clamp(
+    ((percent or map_start or 0) - (map_start or 0))
+      / span,
+    0,
+    1
+  )
+
+  if reverse then
+    local_percent = 1 - local_percent
+  end
+
+  return clamp(local_percent, 0, 0.9999) * length
+end
+
 function play_preview(
   asset,
   start_percent,
@@ -6570,12 +6622,24 @@ function play_preview(
     configure_preview_instance(companion, 1)
   end
 
+  local map_start = selection and state.region_start or 0
+  local map_span = selection
+      and (state.region_end - state.region_start)
+    or 1
+  local map_reverse = state.reverse
+  local preview_length = selection
+      and duration * map_span
+    or duration
   local seek_position = 0
 
-  if not selection and start_percent then
-    seek_position =
-      clamp(start_percent, 0, 0.9999)
-        * duration
+  if not selection and start_percent ~= nil then
+    seek_position = preview_position_from_percent(
+      clamp(start_percent, 0, 1),
+      preview_length,
+      map_start,
+      map_span,
+      map_reverse
+    )
   end
 
   if seek_position > 0 then
@@ -6633,16 +6697,9 @@ function play_preview(
     )
   record_preview_history(asset)
 
-  if selection then
-    state.preview_map_start = state.region_start
-    state.preview_map_span =
-      state.region_end - state.region_start
-  else
-    state.preview_map_start = 0
-    state.preview_map_span = 1
-  end
-
-  state.preview_map_reverse = state.reverse
+  state.preview_map_start = map_start
+  state.preview_map_span = map_span
+  state.preview_map_reverse = map_reverse
 
   local ok_length, length =
     reaper.CF_Preview_GetValue(
@@ -6653,9 +6710,30 @@ function play_preview(
 
   state.preview_length =
     selection
-      and duration
-        * (state.region_end - state.region_start)
+      and preview_length
       or (ok_length and length or duration)
+  AppState.set("preview_position", seek_position)
+  AppState.set(
+    "preview_percent",
+    preview_percent_from_position(
+      seek_position,
+      state.preview_length,
+      state.preview_map_start,
+      state.preview_map_span,
+      state.preview_map_reverse
+    )
+  )
+
+  if seek_position > 0 then
+    -- SWS can expose D_POSITION = 0 for one UI frame after a seek is set.
+    -- Keep the requested playhead visible until the preview engine confirms
+    -- that it has reached the target, instead of flashing at the file start.
+    AppState.set("preview_seek_target", seek_position)
+    AppState.set("preview_seek_started_at", reaper.time_precise())
+  else
+    AppState.set("preview_seek_target", nil)
+    AppState.set("preview_seek_started_at", 0)
+  end
 
   set_status(
     start_percent
@@ -6763,29 +6841,36 @@ function poll_preview()
     return
   end
 
-  state.preview_position = position or 0
+  position = position or 0
 
-  if state.preview_length > 0 then
-    local local_percent =
-      clamp(
-        state.preview_position
-          / state.preview_length,
-        0,
-        1
-      )
+  if state.preview_seek_target then
+    local target = state.preview_seek_target
+    local tolerance = math.max(
+      0.010,
+      math.min(0.100, state.preview_length * 0.002)
+    )
+    local timed_out = reaper.time_precise()
+        - (state.preview_seek_started_at or 0)
+      >= 0.250
 
-    if state.preview_map_reverse then
-      local_percent = 1 - local_percent
+    if position + tolerance < target and not timed_out then
+      return
     end
 
-    state.preview_percent =
-      clamp(
-        state.preview_map_start
-          + state.preview_map_span
-            * local_percent,
-        0,
-        1
-      )
+    AppState.set("preview_seek_target", nil)
+    AppState.set("preview_seek_started_at", 0)
+  end
+
+  state.preview_position = position
+
+  if state.preview_length > 0 then
+    state.preview_percent = preview_percent_from_position(
+      state.preview_position,
+      state.preview_length,
+      state.preview_map_start,
+      state.preview_map_span,
+      state.preview_map_reverse
+    )
   end
 end
 
