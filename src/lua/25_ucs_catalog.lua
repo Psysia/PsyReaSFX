@@ -24,6 +24,7 @@ UcsCatalog = {
   error = "",
   entries = {},
   by_catid = {},
+  by_catid_key = {},
   by_pair = {},
   categories = {},
   category_order = {},
@@ -37,6 +38,7 @@ function ucs_reset_catalog()
   UcsCatalog.error = ""
   UcsCatalog.entries = {}
   UcsCatalog.by_catid = {}
+  UcsCatalog.by_catid_key = {}
   UcsCatalog.by_pair = {}
   UcsCatalog.categories = {}
   UcsCatalog.category_order = {}
@@ -135,6 +137,7 @@ function load_ucs_catalog(path)
 
       UcsCatalog.entries[#UcsCatalog.entries + 1] = entry
       UcsCatalog.by_catid[entry.catid] = entry
+      UcsCatalog.by_catid_key[string.upper(entry.catid)] = entry
       UcsCatalog.by_pair[
         ucs_pair_key(entry.category, entry.subcategory)
       ] = entry
@@ -184,6 +187,21 @@ function ensure_ucs_catalog()
   if UcsCatalog.loaded then return true end
   if UcsCatalog.attempted then return false end
   return load_ucs_catalog(UCS_CATALOG_PATH)
+end
+
+function ucs_asset_hierarchy(asset)
+  asset = type(asset) == "table" and asset or {}
+  local catid = trim(asset.catid or "")
+  if catid ~= "" and ensure_ucs_catalog() then
+    local entry = UcsCatalog.by_catid[catid]
+      or UcsCatalog.by_catid_key[string.upper(catid)]
+    if entry then
+      return entry.category, entry.subcategory, entry.catid
+    end
+  end
+  return trim(asset.category or ""),
+    trim(asset.subcategory or ""),
+    catid
 end
 
 function ucs_classification_result(entry, status, source)

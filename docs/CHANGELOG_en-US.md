@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 4.2
+
+### UCS search and directory consistency fixes
+
+- Replaces the UCS suggestion popup with a non-modal overlay outside the popup focus stack, so suggestions reopen on later searches while the input keeps keyboard focus, a visible caret, and Backspace editing.
+- Clears stale free-text queries when selecting a UCS Category, SubCategory, or CatID, preventing directory counts from being silently narrowed or emptied by an earlier search.
+- Normalizes legacy assets through the bundled official UCS catalog when only CatID is present or Category/SubCategory is missing, inconsistent, or differently cased.
+- Fixes child and CatID counts exceeding their parent by using the same resolved hierarchy for aggregation and result filtering.
+
 ## 0.9.0 Beta 4.1
 
 ### Search input focus fix
