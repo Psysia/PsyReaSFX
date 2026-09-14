@@ -40,6 +40,15 @@ assert(
   "reverse playhead mapping must round-trip"
 )
 
+local play_preview_source = region(
+  "function play_preview(",
+  "function update_preview_parameters()"
+)
+assert(
+  play_preview_source:find("and start_percent > 0", 1, true),
+  "zero-percent full preview must not seek to the end of a reversed source"
+)
+
 assert(
   math.abs(preview_percent_from_position(0, 4, 0.25, 0.5, false) - 0.25)
     < 0.000001,

@@ -1,5 +1,11 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 4.5
+
+### Reverse full-preview boundary fix
+
+- Preserves the full-file preview meaning of a `0%` request from menus, shortcuts, and auto-preview instead of treating it as a waveform seek in reverse mode.
+
 ## 0.9.0 Beta 4.4
 
 ### Waveform seek-preview fix
