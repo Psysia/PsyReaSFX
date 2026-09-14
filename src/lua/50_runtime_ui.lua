@@ -338,6 +338,7 @@ function replay_database_journal(asset_positions)
     )
   end
   if #actions > 0 then
+    invalidate_similarity_index()
     -- `asset_positions` is built while the snapshot is already being read,
     -- so journal deletes do not require a second full catalog rebuild.
     if not asset_positions then
@@ -4065,6 +4066,7 @@ function process_scan_finalize(scan)
       scan.removed = scan.prune_job.removed
       if scan.removed > 0 then
         state.assets = scan.prune_job.kept
+        invalidate_similarity_index()
         state.database_ordered_assets = nil
         state.config_dirty = true
         mark_database_snapshot_dirty()
@@ -4150,6 +4152,7 @@ function process_scan_cancel(scan)
     or (scan.finalize_removed_so_far or 0) > 0
   if catalog_changed then
     state.assets = scan.prune_job.kept
+    invalidate_similarity_index()
     state.database_ordered_assets = nil
     mark_database_snapshot_dirty()
     invalidate_library_counts()
@@ -5311,7 +5314,15 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
     end
   end
 
-  if not state.wave_queued[key] then
+  if state.wave_queued[key] and priority then
+    for index = 2, #state.wave_queue do
+      if state.wave_queue[index].key == key then
+        local queued = table.remove(state.wave_queue, index)
+        table.insert(state.wave_queue, 1, queued)
+        break
+      end
+    end
+  elseif not state.wave_queued[key] then
     if #state.wave_queue >= MAX_WORK_QUEUE
       and not priority then
       return nil
@@ -5953,6 +5964,7 @@ function cancel_import_session()
   if not complete then return end
 
   state.assets = session.prune_job.kept
+  invalidate_similarity_index()
   state.database_ordered_assets = nil
   state.results_dirty = true
   invalidate_library_counts()
@@ -9508,6 +9520,7 @@ end
 
 function commit_root_removal(session)
   state.assets = session.filter_job.kept
+  invalidate_similarity_index()
   state.by_path = session.filter_job.kept_by_key
   state.database_ordered_assets = nil
 
@@ -9835,6 +9848,8 @@ function migrate_asset_path(asset, new_path, record)
   if old_key == new_key then
     return false
   end
+
+  invalidate_similarity_index()
 
   local conflict = state.by_path[new_key]
   if conflict and conflict ~= asset then
@@ -10802,6 +10817,7 @@ function reset_interface_settings()
     path = false,
   }
   state.column_widths = {
+    similarity = 118,
     waveform = 350,
     filename = 265,
     status = 88,
@@ -15678,8 +15694,17 @@ function draw_import_progress()
       local session = visible_similarity
       local loading = session.phase == "load_cache"
       local reference = session.phase == "reference"
-      local completed = session.processed or 0
-      local total = session.total or 0
+      local indexing = session.phase == "index_candidates"
+      local ranking = session.phase == "rank_buckets"
+      local analyzing = session.phase == "analyze_missing"
+      local completed = indexing and (session.indexed or 0)
+        or ranking and (session.ranked_cached or 0)
+        or analyzing and math.max(0, (session.missing_index or 1) - 1)
+        or 0
+      local total = indexing and (session.total or 0)
+        or ranking and (session.cached_candidate_total or 0)
+        or analyzing and #(session.missing or {})
+        or session.total or 0
       local fraction = loading
         and ((reaper.time_precise() * 0.28) % 1)
         or reference
@@ -15692,12 +15717,24 @@ function draw_import_progress()
         )
         or reference
           and "分析参考素材的音频特征"
+          or indexing
+            and string.format(
+              "正在建立相似声音近邻索引  %d / %d",
+              completed,
+              total
+            )
+          or ranking
+            and string.format(
+              "正在精排相似声音  %d / %d  已跳过 %d",
+              completed,
+              total,
+              session.pruned_cached or 0
+            )
           or string.format(
-            "相似声音分析  %d / %d  新分析 %d  缓存 %d  失败 %d",
+            "正在补充未缓存特征  %d / %d  新分析 %d  失败 %d",
             completed,
             total,
             session.analyzed or 0,
-            session.cached or 0,
             session.failed or 0
           )
       ImGui.Text(ctx, label)
@@ -15947,6 +15984,13 @@ end
 
 local COLUMN_DEFS = {
   {
+    key = "similarity",
+    label = "Similarity",
+    minimum = 96,
+    default = 118,
+    contextual = true,
+  },
+  {
     key = "waveform",
     label = "Waveform",
     minimum = 180,
@@ -16053,7 +16097,9 @@ function visible_column_definitions()
   local visible = {}
 
   for _, definition in ipairs(COLUMN_DEFS) do
-    if state.column_visible[definition.key] then
+    if (definition.contextual and "similar" == state.view)
+      or (not definition.contextual
+        and state.column_visible[definition.key]) then
       visible[#visible + 1] = definition
     end
   end
@@ -16070,7 +16116,8 @@ function visible_column_count()
   local count = 0
 
   for _, definition in ipairs(COLUMN_DEFS) do
-    if state.column_visible[definition.key] then
+    if not definition.contextual
+      and state.column_visible[definition.key] then
       count = count + 1
     end
   end
@@ -16096,6 +16143,7 @@ function reset_columns_default()
   end
 
   state.column_widths.waveform = 335
+  state.column_widths.similarity = 118
   state.column_widths.filename = 220
   state.column_widths.description = 320
   state.column_widths.artwork = 52
@@ -16197,21 +16245,23 @@ function draw_column_visibility_popup()
   local count = visible_column_count()
 
   for _, definition in ipairs(COLUMN_DEFS) do
-    local visible =
-      state.column_visible[definition.key]
+    if not definition.contextual then
+      local visible =
+        state.column_visible[definition.key]
 
-    if ImGui.MenuItem(
-      ctx,
-      definition.label,
-      nil,
-      visible
-    ) then
-      if visible and count <= 1 then
-        set_status("至少保留一个列表字段", true)
-      else
-        state.column_visible[definition.key] =
-          not visible
-        state.config_dirty = true
+      if ImGui.MenuItem(
+        ctx,
+        definition.label,
+        nil,
+        visible
+      ) then
+        if visible and count <= 1 then
+          set_status("至少保留一个列表字段", true)
+        else
+          state.column_visible[definition.key] =
+            not visible
+          state.config_dirty = true
+        end
       end
     end
   end
@@ -16663,6 +16713,57 @@ function column_text(asset, key)
   return ""
 end
 
+function similarity_score_color(score)
+  local normalized = clamp((tonumber(score) or 0) / 100, 0, 1)
+  local red = 0xE0524DFF
+  local yellow = 0xE7C447FF
+  local green = 0x43C96BFF
+  if normalized < 0.5 then
+    return rgba_mix(red, yellow, normalized * 2)
+  end
+  return rgba_mix(yellow, green, (normalized - 0.5) * 2)
+end
+
+function draw_similarity_score_bar(draw_list, entry, x, y, width, height)
+  local score = clamp(tonumber(entry and entry.score) or 0, 0, 100)
+  local padding = 7
+  local label_width = 39
+  local bar_x = x + padding
+  local bar_width = math.max(12, width - padding * 2 - label_width)
+  local bar_height = math.max(6, math.min(10, height - 10))
+  local bar_y = y + (height - bar_height) * 0.5
+  local color = similarity_score_color(score)
+  ImGui.DrawList_AddRectFilled(
+    draw_list,
+    bar_x,
+    bar_y,
+    bar_x + bar_width,
+    bar_y + bar_height,
+    rgba_with_alpha(COLOR.border, 0x78),
+    bar_height * 0.5
+  )
+  ImGui.DrawList_AddRectFilled(
+    draw_list,
+    bar_x,
+    bar_y,
+    bar_x + bar_width * score / 100,
+    bar_y + bar_height,
+    color,
+    bar_height * 0.5
+  )
+  draw_clipped_text(
+    draw_list,
+    bar_x + bar_width + 6,
+    y + math.max(2, (height - 14) * 0.5),
+    color,
+    string.format("%.0f%%", score),
+    bar_x + bar_width + 3,
+    y + 1,
+    x + width - 2,
+    y + height - 1
+  )
+end
+
 function draw_result_row(
   asset,
   index,
@@ -16779,7 +16880,16 @@ function draw_result_row(
       )
     end
 
-    if key == "waveform" then
+    if key == "similarity" then
+      draw_similarity_score_bar(
+        draw_list,
+        similarity_entry,
+        column_x,
+        y,
+        item.width,
+        ROW_H
+      )
+    elseif key == "waveform" then
       local waveform =
         queue_wave(
           asset,
@@ -16900,10 +17010,7 @@ function draw_result_row(
           column_x + 7,
           centered_y,
           filename_color,
-          (similarity_entry
-              and string.format("%.1f%%  ", similarity_entry.score)
-              or "")
-            .. (favorite and "★ " or "")
+          (favorite and "★ " or "")
             .. asset.name,
           column_x + 2,
           y + 2,
@@ -16926,13 +17033,9 @@ function draw_result_row(
 
         local secondary
         if similarity_entry then
-          secondary = string.format(
-            "相似度 %.1f%% · %s",
-            similarity_entry.score,
-            similarity_entry.explanation ~= ""
-              and similarity_entry.explanation
-              or "en" == state.language and "audio features" or "音频特征"
-          )
+          secondary = similarity_entry.explanation ~= ""
+            and similarity_entry.explanation
+            or "en" == state.language and "audio features" or "音频特征"
         else
           secondary =
             table.concat(
@@ -22178,12 +22281,33 @@ function draw_settings_waveforms()
   ImGui.Text(ctx, "相似声音特征缓存")
   ImGui.TextDisabled(
     ctx,
-    "相似特征会在首次检索时逐文件建立；清空后可从源音频重新生成。"
+    "空闲时自动生成特征并建立近邻索引；播放和交互期间自动暂停。"
   )
   ImGui.TextDisabled(
     ctx,
     string.format("当前会话已载入 %d 条", state.similarity_cache_count or 0)
   )
+  if state.similarity_warmup then
+    local warmup = state.similarity_warmup
+    local loading = warmup.phase == "load_cache"
+    local completed = loading
+      and (warmup.cache_loaded_count or 0)
+      or warmup.phase == "index_candidates"
+        and (warmup.indexed or 0)
+        or math.max(0, (warmup.missing_index or 1) - 1)
+    local total = loading
+      and (state.similarity_cache_count or 0)
+      or warmup.phase == "index_candidates"
+        and (warmup.total or 0)
+        or #(warmup.missing or {})
+    ImGui.TextDisabled(ctx, string.format(
+      "后台准备相似搜索：%d / %d",
+      completed,
+      total
+    ))
+  elseif similarity_cached_index_is_current(state.similarity_index) then
+    ImGui.TextDisabled(ctx, "全库近邻索引已就绪")
+  end
   if dark_button("清空相似特征缓存", 170) then
     clear_similarity_cache()
   end
@@ -24065,6 +24189,9 @@ end
 
 function cleanup()
   Jobs.stop_accepting()
+  if state.similarity_warmup then
+    similarity_cancel_warmup(false)
+  end
   if state.similarity_session then
     similarity_close_files(state.similarity_session)
     Jobs.finish(
@@ -24354,6 +24481,7 @@ function loop()
     process_duplicate_scan()
     process_duplicate_confirmation()
     process_wave_precache()
+    process_similarity_warmup()
     process_similarity_search()
     process_wave_queue()
     process_pending_transient_detection()

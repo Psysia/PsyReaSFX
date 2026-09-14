@@ -193,6 +193,7 @@ function remove_ucs_pending_membership(asset_or_path)
 end
 
 function add_or_update_asset(asset, probe_file)
+  if invalidate_similarity_index then invalidate_similarity_index() end
   ensure_asset_identity(asset, probe_file)
   local key = path_key(asset.path)
   local existing = state.by_path[key]
@@ -295,6 +296,7 @@ function add_or_update_asset(asset, probe_file)
 end
 
 function rebuild_assets()
+  if invalidate_similarity_index then invalidate_similarity_index() end
   state.assets = {}
   state.database_ordered_assets = nil
   AppState.set("ucs_pending_lookup", {})

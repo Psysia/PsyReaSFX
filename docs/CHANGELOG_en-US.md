@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 4.3
+
+### Near-instant similar-sound retrieval
+
+- Loads similarity features and builds a reusable full-library nearest-neighbor index during idle time, avoiding a complete catalog traversal on each search.
+- Packs in-memory features from 30 hexadecimal characters into 15 fixed bytes to reduce memory use and comparison overhead at 500,000 assets while retaining the compatible disk format.
+- Adds exact bucket-bound pruning over duration, envelope, onset, transient and spectral-centroid dimensions, reranking only candidates that can still enter the Top 200 while preserving exhaustive-search results.
+- Replaces repeated full candidate sorting with a fixed-capacity Top-200 min-heap.
+- Adds a contextual Similarity column with red-yellow-green bars and percentages, kept in descending similarity order.
+- Idle warmup yields during playback, scans, imports and active interaction; uncached features are still generated incrementally to keep the UI responsive.
+
 ## 0.9.0 Beta 4.2
 
 ### UCS search and directory consistency fixes

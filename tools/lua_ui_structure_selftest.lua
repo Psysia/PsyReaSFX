@@ -133,6 +133,25 @@ local toolbar = function_region(
   "function draw_toolbar()",
   "function draw_sub_toolbar()"
 )
+
+local result_columns = function_region(
+  "local COLUMN_DEFS = {",
+  "function column_text(asset, key)"
+)
+assert(
+  result_columns:find('key = "similarity"', 1, true)
+    and result_columns:find('contextual = true', 1, true)
+    and result_columns:find('"similar" == state.view', 1, true),
+  "similarity results must expose an automatic contextual score column"
+)
+assert(
+  source:find("function similarity_score_color(score)", 1, true)
+    and source:find("function draw_similarity_score_bar(", 1, true)
+    and source:find("0xE0524DFF", 1, true)
+    and source:find("0xE7C447FF", 1, true)
+    and source:find("0x43C96BFF", 1, true),
+  "similarity scores must use a red-yellow-green bar"
+)
 local focus_at = assert(
   toolbar:find("if state.focus_search then", 1, true),
   "toolbar must support focusing the search input"
@@ -158,6 +177,15 @@ assert(
 local wave_job = function_region(
   "function read_waveform_from_source(",
   "function memory_wave_key("
+)
+local wave_queue = function_region(
+  "function queue_wave(",
+  "function process_wave_queue()"
+)
+assert(
+  wave_queue:find("state.wave_queued[key] and priority", 1, true)
+    and wave_queue:find("table.insert(state.wave_queue, 1, queued)", 1, true),
+  "foreground waveform requests must promote an existing idle queued job"
 )
 assert(
   wave_job:find('job.phase = "read_wait"', 1, true)
