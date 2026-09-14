@@ -12,6 +12,7 @@ HOST_BOUNDARY_MODULES = (
     "20_jobs_storage.lua",
     "30_catalog.lua",
     "40_analysis.lua",
+    "42_similarity.lua",
     "45_duplicate_confirmation.lua",
 )
 
