@@ -2119,6 +2119,8 @@ I18N_EN["相似特征会在首次检索时逐文件建立；清空后可从源�
   "Similarity features are generated per file during the first search and can be rebuilt from source audio after clearing."
 I18N_EN["已清空相似声音特征缓存"] =
   "Similar-sound feature cache cleared"
+I18N_EN["没有可显示的相似声音结果。"] =
+  "There are no similar-sound results to display."
 I18N_PREFIX_EN["无法清空相似声音特征缓存："] =
   "Could not clear the similar-sound feature cache: "
 
@@ -2138,6 +2140,14 @@ I18N_PATTERNS_EN = {
   {
     "^相似声音分析  (%d+) / (%d+)  新分析 (%d+)  缓存 (%d+)  失败 (%d+)$",
     "Similar-sound analysis  %1 / %2  analyzed %3  cached %4  failed %5",
+  },
+  {
+    "^当前会话已载入 (%d+) 条$",
+    "Loaded in this session: %1 records",
+  },
+  {
+    "^相似声音分析完成：检查 (%d+)，命中 (%d+)，失败 (%d+)$",
+    "Similar-sound analysis complete: %1 checked, %2 matches, %3 failed",
   },
   {
     "^已确认 UCS 分类：(.+)$",
@@ -11447,15 +11457,14 @@ function finish_similarity_search(canceled)
       explanation = entry.explanation,
     }
   end
-  if session.scope == "all" then
-    AppState.apply({
-      search = "",
-    })
-    AppState.set("active_collection_id", nil)
-    AppState.set("root_filter", nil)
-    AppState.set("library_filter_id", nil)
-    AppState.set("status_filter", nil)
-  end
+  -- The source snapshot already freezes the requested scope. Clear the old
+  -- UI filters before showing that snapshot so collection/library state does
+  -- not filter the completed similarity result a second time.
+  AppState.apply({ search = "" })
+  AppState.set("active_collection_id", nil)
+  AppState.set("root_filter", nil)
+  AppState.set("library_filter_id", nil)
+  AppState.set("status_filter", nil)
   AppState.apply({
     view = "similar",
     sort_mode = "similarity",
@@ -28911,7 +28920,20 @@ function draw_results()
         ]
         or nil
 
-      if active_collection then
+      if "similar" == state.view then
+        ImGui.TextDisabled(
+          ctx,
+          "没有可显示的相似声音结果。"
+        )
+        if dark_button("返回全部素材", 112) then
+          AppState.apply({
+            view = "all",
+            sort_mode = "name",
+            sort_desc = false,
+            results_dirty = true,
+          })
+        end
+      elseif active_collection then
         ImGui.TextColored(
           ctx,
           COLOR.text,
