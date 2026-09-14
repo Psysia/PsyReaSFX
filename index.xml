@@ -9,6 +9,18 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.9.0-beta4.3" author="Psysia" time="2026-09-14T09:19:53Z">
+        <changelog><![CDATA[
+- Builds and reuses a full-library similarity index during idle time for near-instant repeated searches.
+- Uses exact bucket-bound pruning and a fixed Top-200 heap while preserving exhaustive ranking results.
+- Adds a contextual red-yellow-green Similarity bar and percentage column.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.3/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.3/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.3/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.3/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.0-beta4.2" author="Psysia" time="2026-09-14T06:44:51Z">
         <changelog><![CDATA[
 - Reopens UCS suggestions on every search without stealing the input focus, caret, or Backspace editing.
