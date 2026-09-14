@@ -105,8 +105,30 @@ assert(
 assert(
   source:find("function draw_ucs_search_suggestion_popup(", 1, true)
     and source:find("ucs_search_suggestions(", 1, true)
-    and source:find("ucs_apply_search_suggestion(", 1, true),
+    and source:find("ucs_apply_search_suggestion(", 1, true)
+    and source:find("ImGui.WindowFlags_NoFocusOnAppearing", 1, true),
   "toolbar must expose bounded UCS search suggestions"
+)
+
+local toolbar = function_region(
+  "function draw_toolbar()",
+  "function draw_sub_toolbar()"
+)
+local focus_at = assert(
+  toolbar:find("if state.focus_search then", 1, true),
+  "toolbar must support focusing the search input"
+)
+local input_at = assert(
+  toolbar:find("ImGui.InputTextWithHint(", 1, true),
+  "toolbar must render the search input"
+)
+local previous_item_at = assert(
+  toolbar:find("ImGui.SetNextItemWidth(ctx, -228)", 1, true),
+  "search input width marker is missing"
+)
+assert(
+  previous_item_at < focus_at and focus_at < input_at,
+  "search focus must be requested immediately before the search input"
 )
 
 assert(

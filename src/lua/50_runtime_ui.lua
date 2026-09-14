@@ -15017,6 +15017,7 @@ function draw_ucs_search_suggestion_popup(active, x, y, width)
     ctx,
     "UCS 搜索提示##ucs_search_suggestions",
     ImGui.WindowFlags_NoMove
+      | ImGui.WindowFlags_NoFocusOnAppearing
       | ImGui.WindowFlags_AlwaysAutoResize
   ) then
     AppState.set("ucs_search_popup_visible", false)
@@ -15072,11 +15073,6 @@ function draw_ucs_search_suggestion_popup(active, x, y, width)
 end
 
 function draw_toolbar()
-  if state.focus_search then
-    ImGui.SetKeyboardFocusHere(ctx)
-    state.focus_search = false
-  end
-
   local toolbar_width =
     select(1, ImGui.GetContentRegionAvail(ctx))
 
@@ -15195,6 +15191,11 @@ function draw_toolbar()
     select(1, ImGui.GetContentRegionAvail(ctx)) - 228
   )
   ImGui.SetNextItemWidth(ctx, -228)
+
+  if state.focus_search then
+    ImGui.SetKeyboardFocusHere(ctx)
+    state.focus_search = false
+  end
 
   local changed
   changed, state.search =

@@ -1,5 +1,13 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 4.1
+
+### Search input focus fix
+
+- Fixes the UCS suggestion popup stealing keyboard focus after the second typed character.
+- The search field now keeps accepting text, supports Backspace editing, and retains its visible text cursor.
+- `Ctrl+F` and UCS suggestion selection now refocus the search field instead of a toolbar button.
+
 ## 0.9.0 Beta 4
 
 ### Audio-content similar sounds
