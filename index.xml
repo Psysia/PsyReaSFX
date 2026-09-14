@@ -9,6 +9,17 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.9.0-beta4.5" author="Psysia" time="2026-09-14T10:09:00Z">
+        <changelog><![CDATA[
+- Preserves full-file reverse preview when menus, shortcuts, or auto-preview request the zero position.
+- Includes the Beta 4.4 playhead seek stabilization and forward/reverse position mapping fixes.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.5/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.5/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.5/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.5/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta4.5/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.0-beta4.4" author="Psysia" time="2026-09-14T09:56:25Z">
         <changelog><![CDATA[
 - Prevents the preview playhead from flashing at the waveform start before a requested seek is applied.

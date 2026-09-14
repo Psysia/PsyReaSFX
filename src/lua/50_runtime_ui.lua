@@ -6632,7 +6632,9 @@ function play_preview(
     or duration
   local seek_position = 0
 
-  if not selection and start_percent ~= nil then
+  if not selection
+    and start_percent
+    and start_percent > 0 then
     seek_position = preview_position_from_percent(
       clamp(start_percent, 0, 1),
       preview_length,
