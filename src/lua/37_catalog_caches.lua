@@ -42,7 +42,7 @@ function new_ucs_count_job()
   }
 end
 
-function step_ucs_count_job(job, assets, batch_size)
+function step_ucs_count_job(job, assets, batch_size, hierarchy_resolver)
   if type(job) ~= "table" or type(assets) ~= "table"
     or type(job.counts) ~= "table" then
     return false, nil, "invalid_input"
@@ -51,9 +51,16 @@ function step_ucs_count_job(job, assets, batch_size)
   local last = math.min(#assets, job.index + batch_size - 1)
   for index = job.index, last do
     local asset = assets[index]
-    local catid = asset and ucs_count_key(asset.catid) or ""
-    local category = asset and ucs_count_key(asset.category) or ""
-    local subcategory = asset and ucs_count_key(asset.subcategory) or ""
+    local category_value = asset and asset.category or ""
+    local subcategory_value = asset and asset.subcategory or ""
+    local catid_value = asset and asset.catid or ""
+    if asset and type(hierarchy_resolver) == "function" then
+      category_value, subcategory_value, catid_value =
+        hierarchy_resolver(asset)
+    end
+    local catid = ucs_count_key(catid_value)
+    local category = ucs_count_key(category_value)
+    local subcategory = ucs_count_key(subcategory_value)
     if asset and asset.ready and catid ~= "" then
       job.counts.catids[catid] = (job.counts.catids[catid] or 0) + 1
       if category ~= "" then

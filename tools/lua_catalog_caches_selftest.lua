@@ -45,6 +45,30 @@ assert(
 assert((ucs_counts.catids.AIRBRST or 0) == math.floor(asset_count / 2))
 assert((ucs_counts.catids.METLIMPT or 0) == math.ceil(asset_count / 2))
 
+local legacy_assets = {
+  { ready = true, catid = "CHEMAcid", category = "", subcategory = "" },
+  { ready = true, catid = "chemacid", category = "WRONG", subcategory = "WRONG" },
+}
+local function resolve_legacy_ucs(asset)
+  if string.upper(asset.catid or "") == "CHEMACID" then
+    return "CHEMICALS", "ACID", "CHEMAcid"
+  end
+  return asset.category, asset.subcategory, asset.catid
+end
+local legacy_job = new_ucs_count_job()
+local legacy_complete, legacy_counts = step_ucs_count_job(
+  legacy_job,
+  legacy_assets,
+  10,
+  resolve_legacy_ucs
+)
+assert(legacy_complete)
+assert(legacy_counts.categories.CHEMICALS == 2)
+assert(legacy_counts.subcategories[
+  ucs_subcategory_count_key("CHEMICALS", "ACID")
+] == 2)
+assert(legacy_counts.catids.CHEMACID == 2)
+
 local history = {}
 local by_path = {}
 local function key(path) return tostring(path):lower() end

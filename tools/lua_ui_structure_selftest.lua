@@ -80,6 +80,10 @@ assert(
     and asset_view:find('"ucs_catid" == state.view', 1, true),
   "UCS virtual-directory levels must filter the catalog"
 )
+assert(
+  asset_view:find("ucs_asset_hierarchy(asset)", 1, true),
+  "UCS directory filtering must resolve official hierarchy from CatID"
+)
 
 local ucs_sidebar = function_region(
   "function activate_ucs_filter(",
@@ -90,6 +94,10 @@ assert(
     and ucs_sidebar:find("ucs_subcategory_count_key", 1, true)
     and ucs_sidebar:find("activate_ucs_filter(", 1, true),
   "sidebar must expose Category, SubCategory and CatID UCS navigation"
+)
+assert(
+  ucs_sidebar:find('AppState.set("search", "")', 1, true),
+  "activating a UCS directory must clear stale free-text search"
 )
 assert(
   source:find("process_ucs_count_rebuild()", 1, true)
@@ -108,6 +116,17 @@ assert(
     and source:find("ucs_apply_search_suggestion(", 1, true)
     and source:find("ImGui.WindowFlags_NoFocusOnAppearing", 1, true),
   "toolbar must expose bounded UCS search suggestions"
+)
+local suggestion_window = function_region(
+  "function draw_ucs_search_suggestion_popup(",
+  "function draw_toolbar()"
+)
+assert(
+  suggestion_window:find("ImGui.Begin(", 1, true)
+    and suggestion_window:find("ImGui.End(ctx)", 1, true)
+    and not suggestion_window:find("ImGui.BeginPopup(", 1, true)
+    and not suggestion_window:find("ImGui.OpenPopup(", 1, true),
+  "UCS search suggestions must use a non-modal window that preserves input focus"
 )
 
 local toolbar = function_region(

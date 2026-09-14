@@ -176,6 +176,15 @@ local confirmed = assert(ucs_manual_classification_result("AIRBrst"))
 assert(confirmed.ucs_status == "manual" and confirmed.ucs_source == "manual")
 assert(confirmed.catid == "AIRBrst" and confirmed.ucs_candidates == "")
 assert(ucs_manual_classification_result("NOTREAL") == nil)
+local resolved_category, resolved_subcategory, resolved_catid =
+  ucs_asset_hierarchy({
+    catid = "airbrst",
+    category = "WRONG",
+    subcategory = "WRONG",
+  })
+assert(resolved_category == "AIR")
+assert(resolved_subcategory == "BURST")
+assert(resolved_catid == "AIRBrst")
 
 local suggestions = ucs_search_suggestions("burst", "en", 7)
 assert(#suggestions > 0 and #suggestions <= 7)

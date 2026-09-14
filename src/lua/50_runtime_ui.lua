@@ -4432,6 +4432,12 @@ function asset_in_view(asset)
     return false
   end
 
+  local ucs_category, ucs_subcategory, ucs_catid
+  if ucs_directory_view(state.view) then
+    ucs_category, ucs_subcategory, ucs_catid =
+      ucs_asset_hierarchy(asset)
+  end
+
   if state.view == "favorites"
     and not state.favorites[path_key(asset.path)] then
     return false
@@ -4445,15 +4451,14 @@ function asset_in_view(asset)
     and asset.ucs_status ~= "pending" then
     return false
   elseif "ucs_category" == state.view
-    and tostring(asset.category or "") ~= state.ucs_filter_category then
+    and ucs_category ~= state.ucs_filter_category then
     return false
   elseif "ucs_subcategory" == state.view
-    and (tostring(asset.category or "") ~= state.ucs_filter_category
-      or tostring(asset.subcategory or "")
-        ~= state.ucs_filter_subcategory) then
+    and (ucs_category ~= state.ucs_filter_category
+      or ucs_subcategory ~= state.ucs_filter_subcategory) then
     return false
   elseif "ucs_catid" == state.view
-    and tostring(asset.catid or "") ~= state.ucs_filter_catid then
+    and ucs_catid ~= state.ucs_filter_catid then
     return false
   elseif "similar" == state.view
     and not state.similarity_lookup[path_key(asset.path)] then
@@ -12895,7 +12900,8 @@ function process_ucs_count_rebuild()
   local complete, counts = step_ucs_count_job(
     job,
     state.assets,
-    UCS_COUNT_ASSETS_PER_FRAME
+    UCS_COUNT_ASSETS_PER_FRAME,
+    ucs_asset_hierarchy
   )
   if complete then
     AppState.set("ucs_counts", counts)
@@ -13447,6 +13453,8 @@ function activate_ucs_filter(category, subcategory, catid)
   AppState.set("root_filter", nil)
   AppState.set("library_filter_id", nil)
   AppState.set("status_filter", nil)
+  AppState.set("search", "")
+  AppState.set("ucs_search_popup_visible", false)
   clear_row_selection()
   AppState.mark_dirty("results_dirty")
   AppState.mark_dirty("config_dirty")
@@ -14999,35 +15007,31 @@ function draw_sidebar()
 end
 
 function draw_ucs_search_suggestion_popup(active, x, y, width)
-  if not active and not state.ucs_search_popup_visible then return end
   local suggestions = ucs_search_suggestions(
     state.search,
     state.language,
     7
   )
-  if active and #suggestions > 0
-    and not state.ucs_search_popup_visible then
-    AppState.set("ucs_search_popup_visible", true)
-    ImGui.OpenPopup(ctx, "UCS 搜索提示##ucs_search_suggestions")
-  end
   if not state.ucs_search_popup_visible then return end
-  ImGui.SetNextWindowPos(ctx, x, y, ImGui.Cond_Always)
-  ImGui.SetNextWindowSize(ctx, width, 0, ImGui.Cond_Always)
-  if not ImGui.BeginPopup(
-    ctx,
-    "UCS 搜索提示##ucs_search_suggestions",
-    ImGui.WindowFlags_NoMove
-      | ImGui.WindowFlags_NoFocusOnAppearing
-      | ImGui.WindowFlags_AlwaysAutoResize
-  ) then
+  if #suggestions == 0 then
     AppState.set("ucs_search_popup_visible", false)
     return
   end
-
-  if #suggestions == 0 then
-    ImGui.CloseCurrentPopup(ctx)
-    AppState.set("ucs_search_popup_visible", false)
-  else
+  ImGui.SetNextWindowPos(ctx, x, y, ImGui.Cond_Always)
+  ImGui.SetNextWindowSize(ctx, width, 0, ImGui.Cond_Always)
+  local visible = ImGui.Begin(
+    ctx,
+    "##ucs_search_suggestions",
+    true,
+    ImGui.WindowFlags_NoTitleBar
+      | ImGui.WindowFlags_NoResize
+      | ImGui.WindowFlags_NoMove
+      | ImGui.WindowFlags_NoFocusOnAppearing
+      | ImGui.WindowFlags_NoSavedSettings
+      | ImGui.WindowFlags_NoNavFocus
+      | ImGui.WindowFlags_AlwaysAutoResize
+  )
+  if visible then
     ImGui.TextDisabled(ctx, "UCS 搜索提示")
     ImGui.Separator(ctx)
     local matched_labels = {
@@ -15058,7 +15062,6 @@ function draw_ucs_search_suggestion_popup(active, x, y, width)
         )
         AppState.mark_dirty("results_dirty")
         AppState.set("focus_search", true)
-        ImGui.CloseCurrentPopup(ctx)
         AppState.set("ucs_search_popup_visible", false)
       end
       local detail = "en" == state.language
@@ -15069,7 +15072,11 @@ function draw_ucs_search_suggestion_popup(active, x, y, width)
       tooltip(detail)
     end
   end
-  ImGui.EndPopup(ctx)
+  local suggestion_hovered = ImGui.IsWindowHovered(ctx)
+  ImGui.End(ctx)
+  if not active and not suggestion_hovered then
+    AppState.set("ucs_search_popup_visible", false)
+  end
 end
 
 function draw_toolbar()
@@ -15219,6 +15226,7 @@ function draw_toolbar()
 
   if changed then
     state.results_dirty = true
+    AppState.set("ucs_search_popup_visible", true)
   end
 
   ImGui.SameLine(ctx)
@@ -15232,6 +15240,7 @@ function draw_toolbar()
   ) then
     state.search = ""
     state.results_dirty = true
+    AppState.set("ucs_search_popup_visible", false)
   end
 
   ImGui.SameLine(ctx)
