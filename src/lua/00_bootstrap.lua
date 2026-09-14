@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta3
+-- @version 0.9.0-beta4-dev
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -164,6 +164,7 @@
 --   - 0.9.0 Beta 1：UCS 自动分类、虚拟目录、候选确认与搜索提示
 --   - 0.9.0 Beta 2：侧栏双语、无阻塞启动快路与波形容错恢复
 --   - 0.9.0 Beta 3：当前素材按需频谱峰值分析与独立 RWF4 缓存
+--   - 0.9.0 Beta 4：基于音频内容的可解释相似声音检索与紧凑特征缓存
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -172,7 +173,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 3"
+local VERSION = "0.9.0 Beta 4 Dev"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -875,6 +876,18 @@ local state = {
   multichannel_waveform = true,
   -- 频谱峰值只为当前大波形按需读取，不进入列表缩略图任务。
   spectral_peaks_enabled = false,
+
+  -- 0.9 Beta 4：相似声音只使用音频特征，不使用文件名或标签伪装
+  -- 内容相似度。缓存延迟加载，分析任务逐帧推进。
+  similarity_cache = {},
+  similarity_cache_count = 0,
+  similarity_cache_loaded = false,
+  similarity_cache_reset_required = false,
+  similarity_session = nil,
+  similarity_lookup = {},
+  similarity_result_count = 0,
+  similarity_reference_path = nil,
+  similarity_reference_name = nil,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -2079,8 +2092,63 @@ I18N_EN["无法撤销 UCS 确认"] = "Unable to undo UCS confirmation"
 I18N_EN["只读保护下不能修改 UCS 分类"] =
   "UCS classification cannot be changed in read-only mode"
 I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
+I18N_EN["查找相似声音"] = "Find similar sounds"
+I18N_EN["在当前结果中分析"] = "Analyze current results"
+I18N_EN["在全部音效库中分析"] = "Analyze all libraries"
+I18N_EN["相似度"] = "Similarity"
+I18N_EN["相似声音"] = "Similar sounds"
+I18N_EN["载入缓存"] = "Loading cache"
+I18N_EN["准备参考"] = "Preparing reference"
+I18N_EN["分析参考素材的音频特征"] =
+  "Analyzing the reference audio features"
+I18N_EN["正在准备相似声音分析…"] =
+  "Preparing similar-sound analysis…"
+I18N_EN["相似声音分析已经在运行"] =
+  "Similar-sound analysis is already running"
+I18N_EN["请等待当前后台任务完成后再分析相似声音"] =
+  "Wait for the current background task before analyzing similar sounds"
+I18N_EN["请先完成或取消相似声音分析"] =
+  "Finish or cancel the similar-sound analysis first"
+I18N_EN["已取消相似声音分析"] =
+  "Similar-sound analysis canceled"
+I18N_EN["无法分析参考素材的音频特征"] =
+  "Could not analyze the reference audio features"
+I18N_EN["相似声音特征缓存"] = "Similar-sound feature cache"
+I18N_EN["清空相似特征缓存"] = "Clear similarity feature cache"
+I18N_EN["相似特征会在首次检索时逐文件建立；清空后可从源音频重新生成。"] =
+  "Similarity features are generated per file during the first search and can be rebuilt from source audio after clearing."
+I18N_EN["已清空相似声音特征缓存"] =
+  "Similar-sound feature cache cleared"
+I18N_EN["没有可显示的相似声音结果。"] =
+  "There are no similar-sound results to display."
+I18N_PREFIX_EN["无法清空相似声音特征缓存："] =
+  "Could not clear the similar-sound feature cache: "
 
 I18N_PATTERNS_EN = {
+  {
+    "^相似声音  (%d+)$",
+    "Similar sounds  %1",
+  },
+  {
+    "^相似度 ([%d%.]+)%% · (.+)$",
+    "Similarity %1%% · %2",
+  },
+  {
+    "^载入相似特征缓存  (%d+) 条$",
+    "Loading similarity feature cache  %1 records",
+  },
+  {
+    "^相似声音分析  (%d+) / (%d+)  新分析 (%d+)  缓存 (%d+)  失败 (%d+)$",
+    "Similar-sound analysis  %1 / %2  analyzed %3  cached %4  failed %5",
+  },
+  {
+    "^当前会话已载入 (%d+) 条$",
+    "Loaded in this session: %1 records",
+  },
+  {
+    "^相似声音分析完成：检查 (%d+)，命中 (%d+)，失败 (%d+)$",
+    "Similar-sound analysis complete: %1 checked, %2 matches, %3 failed",
+  },
   {
     "^已确认 UCS 分类：(.+)$",
     "UCS classification confirmed: %1",

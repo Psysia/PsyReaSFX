@@ -224,6 +224,18 @@ whoosh category:movement -long
 
 A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
+### Find similar sounds
+
+Right-click any asset, or open Preview More Actions → Find Similar Sounds. Current
+Results compares only the visible candidate set; All Libraries compares the complete
+index. Missing audio features are generated one file at a time in the background with
+visible, cancelable progress, and later searches reuse the cache.
+
+Results use a fixed highest-first similarity order and name the closest feature groups.
+Scoring uses audio content only, never filenames, UCS categories or keywords. Formats
+without spectral data can still use time-domain features. Clear the rebuildable feature
+cache under Settings → Waveforms; source audio is never modified.
+
 ## 7. Result columns
 
 Right-click the pinned header to choose visible fields. Drag a divider to resize a column; double-click it to restore the default width.

@@ -88,6 +88,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 - Logical libraries with multiple physical source folders.
 - Inline waveforms and detailed mono, stereo, and multichannel preview.
 - Filename, path, metadata, UCS-field, library, and workflow-state search.
+- Explainable audio-content similarity using envelope, onset, dynamics and spectral features.
 - Favorites, playlists, project bins, workflow states, and non-destructive metadata.
 - Regions, transient suggestions, LUFS / True Peak display, Pitch / Rate / Gain, and channel audition.
 - Insert to current track, new track, BWF position, and drag selections directly into REAPER.
@@ -114,6 +115,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 - [Changelog — English](docs/CHANGELOG_en-US.md)
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
 - [0.9 → 1.0 roadmap (Chinese)](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
+- [0.9 similarity architecture (Chinese)](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 
 ## Repository structure
 

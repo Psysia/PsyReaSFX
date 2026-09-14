@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta3
+-- @version 0.9.0-beta4-dev
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -164,6 +164,7 @@
 --   - 0.9.0 Beta 1：UCS 自动分类、虚拟目录、候选确认与搜索提示
 --   - 0.9.0 Beta 2：侧栏双语、无阻塞启动快路与波形容错恢复
 --   - 0.9.0 Beta 3：当前素材按需频谱峰值分析与独立 RWF4 缓存
+--   - 0.9.0 Beta 4：基于音频内容的可解释相似声音检索与紧凑特征缓存
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -172,7 +173,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 3"
+local VERSION = "0.9.0 Beta 4 Dev"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -875,6 +876,18 @@ local state = {
   multichannel_waveform = true,
   -- 频谱峰值只为当前大波形按需读取，不进入列表缩略图任务。
   spectral_peaks_enabled = false,
+
+  -- 0.9 Beta 4：相似声音只使用音频特征，不使用文件名或标签伪装
+  -- 内容相似度。缓存延迟加载，分析任务逐帧推进。
+  similarity_cache = {},
+  similarity_cache_count = 0,
+  similarity_cache_loaded = false,
+  similarity_cache_reset_required = false,
+  similarity_session = nil,
+  similarity_lookup = {},
+  similarity_result_count = 0,
+  similarity_reference_path = nil,
+  similarity_reference_name = nil,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -2079,8 +2092,53 @@ I18N_EN["无法撤销 UCS 确认"] = "Unable to undo UCS confirmation"
 I18N_EN["只读保护下不能修改 UCS 分类"] =
   "UCS classification cannot be changed in read-only mode"
 I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
+I18N_EN["查找相似声音"] = "Find similar sounds"
+I18N_EN["在当前结果中分析"] = "Analyze current results"
+I18N_EN["在全部音效库中分析"] = "Analyze all libraries"
+I18N_EN["相似度"] = "Similarity"
+I18N_EN["相似声音"] = "Similar sounds"
+I18N_EN["载入缓存"] = "Loading cache"
+I18N_EN["准备参考"] = "Preparing reference"
+I18N_EN["分析参考素材的音频特征"] =
+  "Analyzing the reference audio features"
+I18N_EN["正在准备相似声音分析…"] =
+  "Preparing similar-sound analysis…"
+I18N_EN["相似声音分析已经在运行"] =
+  "Similar-sound analysis is already running"
+I18N_EN["请等待当前后台任务完成后再分析相似声音"] =
+  "Wait for the current background task before analyzing similar sounds"
+I18N_EN["请先完成或取消相似声音分析"] =
+  "Finish or cancel the similar-sound analysis first"
+I18N_EN["已取消相似声音分析"] =
+  "Similar-sound analysis canceled"
+I18N_EN["无法分析参考素材的音频特征"] =
+  "Could not analyze the reference audio features"
+I18N_EN["相似声音特征缓存"] = "Similar-sound feature cache"
+I18N_EN["清空相似特征缓存"] = "Clear similarity feature cache"
+I18N_EN["相似特征会在首次检索时逐文件建立；清空后可从源音频重新生成。"] =
+  "Similarity features are generated per file during the first search and can be rebuilt from source audio after clearing."
+I18N_EN["已清空相似声音特征缓存"] =
+  "Similar-sound feature cache cleared"
+I18N_PREFIX_EN["无法清空相似声音特征缓存："] =
+  "Could not clear the similar-sound feature cache: "
 
 I18N_PATTERNS_EN = {
+  {
+    "^相似声音  (%d+)$",
+    "Similar sounds  %1",
+  },
+  {
+    "^相似度 ([%d%.]+)%% · (.+)$",
+    "Similarity %1%% · %2",
+  },
+  {
+    "^载入相似特征缓存  (%d+) 条$",
+    "Loading similarity feature cache  %1 records",
+  },
+  {
+    "^相似声音分析  (%d+) / (%d+)  新分析 (%d+)  缓存 (%d+)  失败 (%d+)$",
+    "Similar-sound analysis  %1 / %2  analyzed %3  cached %4  failed %5",
+  },
   {
     "^已确认 UCS 分类：(.+)$",
     "UCS classification confirmed: %1",
@@ -10950,6 +11008,602 @@ function process_pending_transient_detection()
   end
 end
 
+-- Audio-content similarity service.
+--
+-- The cache intentionally stores a double FNV signature instead of a source
+-- path. At 500,000 records this keeps the on-disk index compact and avoids
+-- exposing library paths in a rebuildable analysis cache. Features are
+-- quantized to bytes; ranking decodes only the current candidate.
+
+Similarity = {
+  cache_magic = "PSYSFX_SIM1",
+  cache_version = 1,
+  feature_count = 15,
+  points = 2048,
+  result_limit = 200,
+  frame_records = 192,
+  cache_load_records = 4000,
+  frame_budget = 0.003,
+  weights = {
+    0.18, -- log duration
+    0.04, -- mean envelope
+    0.05, -- RMS envelope
+    0.03, -- peak
+    0.07, -- onset
+    0.05, -- temporal centroid
+    0.05, -- dynamics
+    0.09, -- transient activity
+    0.04, -- silence ratio
+    0.10, -- spectral centroid
+    0.08, -- low-band energy
+    0.08, -- mid-band energy
+    0.08, -- high-band energy
+    0.05, -- tonality
+    0.01, -- spectral availability
+  },
+}
+
+function similarity_cache_path()
+  return DATA_DIR .. SEP .. "similarity_features_v1.tsv"
+end
+
+function similarity_asset_signature(asset)
+  if not asset then return "" end
+  local size = tonumber(asset.size) or 0
+  if size <= 0 then
+    size = file_size(asset.path)
+    asset.size = size
+  end
+  local identity = table.concat({
+    path_key(asset.path),
+    tostring(size),
+    string.format("%.6f", tonumber(asset.duration) or 0),
+    "sim-v1",
+  }, "|")
+  return fnv1a(identity .. "|a") .. fnv1a("b|" .. identity)
+end
+
+function similarity_encode_features(features)
+  local encoded = {}
+  for index = 1, Similarity.feature_count do
+    local value = clamp(tonumber(features and features[index]) or 0, 0, 1)
+    encoded[index] = string.format("%02x", math.floor(value * 255 + 0.5))
+  end
+  return table.concat(encoded)
+end
+
+function similarity_decode_features(encoded)
+  encoded = tostring(encoded or "")
+  if #encoded ~= Similarity.feature_count * 2
+    or encoded:find("[^0-9a-fA-F]") then
+    return nil
+  end
+  local features = {}
+  for index = 1, Similarity.feature_count do
+    features[index] = (
+      tonumber(encoded:sub(index * 2 - 1, index * 2), 16) or 0
+    ) / 255
+  end
+  return features
+end
+
+function similarity_features_from_waveform(asset, waveform)
+  if not asset or not waveform or not waveform.peaks then return nil end
+  local count = math.min(tonumber(waveform.count) or 0, #waveform.peaks)
+  if count <= 0 then return nil end
+
+  local sum = 0
+  local squares = 0
+  local peak = 0
+  local delta = 0
+  local previous = tonumber(waveform.peaks[1]) or 0
+  for index = 1, count do
+    local value = clamp(tonumber(waveform.peaks[index]) or 0, 0, 1)
+    sum = sum + value
+    squares = squares + value * value
+    peak = math.max(peak, value)
+    if index > 1 then delta = delta + math.abs(value - previous) end
+    previous = value
+  end
+
+  local mean = sum / count
+  local rms = math.sqrt(squares / count)
+  local variance = math.max(0, squares / count - mean * mean)
+  local threshold = math.max(0.001, peak * 0.20)
+  local onset = 1
+  local active = 0
+  local temporal_weight = 0
+  local weighted_position = 0
+  for index = 1, count do
+    local value = clamp(tonumber(waveform.peaks[index]) or 0, 0, 1)
+    if value >= threshold then
+      active = active + 1
+      if onset == 1 then onset = (index - 1) / math.max(1, count - 1) end
+    end
+    temporal_weight = temporal_weight + value
+    weighted_position = weighted_position + value * ((index - 1) / math.max(1, count - 1))
+  end
+
+  local spectral_available = waveform.spectral_available == true
+    and waveform.spectral_frequency
+    and waveform.spectral_tonality
+  local spectral_weight = 0
+  local spectral_centroid = 0
+  local tonality = 0
+  local low = 0
+  local mid = 0
+  local high = 0
+  if spectral_available then
+    for index = 1, count do
+      local amplitude = clamp(tonumber(waveform.peaks[index]) or 0, 0, 1)
+      local frequency = math.max(20, tonumber(waveform.spectral_frequency[index]) or 20)
+      local normalized_frequency = clamp(
+        math.log(frequency / 20) / math.log(1000),
+        0,
+        1
+      )
+      spectral_weight = spectral_weight + amplitude
+      spectral_centroid = spectral_centroid + normalized_frequency * amplitude
+      tonality = tonality
+        + clamp(tonumber(waveform.spectral_tonality[index]) or 0, 0, 1) * amplitude
+      if frequency < 250 then
+        low = low + amplitude
+      elseif frequency < 2000 then
+        mid = mid + amplitude
+      else
+        high = high + amplitude
+      end
+    end
+  end
+  if spectral_weight > 0 then
+    spectral_centroid = spectral_centroid / spectral_weight
+    tonality = tonality / spectral_weight
+    low = low / spectral_weight
+    mid = mid / spectral_weight
+    high = high / spectral_weight
+  end
+
+  local duration = math.max(0, tonumber(asset.duration) or 0)
+  return {
+    clamp(math.log(1 + duration) / math.log(601), 0, 1),
+    mean,
+    rms,
+    peak,
+    onset,
+    temporal_weight > 0 and weighted_position / temporal_weight or 0.5,
+    clamp(math.sqrt(variance) * 2, 0, 1),
+    clamp((delta / math.max(1, count - 1)) * 6, 0, 1),
+    1 - active / count,
+    spectral_centroid,
+    low,
+    mid,
+    high,
+    tonality,
+    spectral_available and 1 or 0,
+  }
+end
+
+function similarity_feature_groups(reference, candidate)
+  local spectral = reference[15] >= 0.5 and candidate[15] >= 0.5
+  local labels = state and "en" == state.language
+    and {
+      duration = "duration",
+      envelope = "envelope",
+      onset = "onset",
+      dynamics = "dynamics",
+      spectrum = "spectrum",
+      tonality = "tonality",
+    }
+    or {
+      duration = "时长",
+      envelope = "包络",
+      onset = "起音",
+      dynamics = "动态",
+      spectrum = "频谱",
+      tonality = "音调性",
+    }
+  return {
+    { label = labels.duration, difference = math.abs(reference[1] - candidate[1]) },
+    { label = labels.envelope, difference = (
+      math.abs(reference[2] - candidate[2])
+      + math.abs(reference[3] - candidate[3])
+      + math.abs(reference[4] - candidate[4])
+      + math.abs(reference[9] - candidate[9])
+    ) / 4 },
+    { label = labels.onset, difference = math.abs(reference[5] - candidate[5]) },
+    { label = labels.dynamics, difference = (
+      math.abs(reference[6] - candidate[6])
+      + math.abs(reference[7] - candidate[7])
+      + math.abs(reference[8] - candidate[8])
+    ) / 3 },
+    { label = labels.spectrum, difference = spectral and (
+      math.abs(reference[10] - candidate[10])
+      + math.abs(reference[11] - candidate[11])
+      + math.abs(reference[12] - candidate[12])
+      + math.abs(reference[13] - candidate[13])
+    ) / 4 or 1 },
+    { label = labels.tonality, difference = spectral
+      and math.abs(reference[14] - candidate[14]) or 1 },
+  }
+end
+
+function similarity_compare_features(reference, candidate)
+  if not reference or not candidate then return 0, "" end
+  local spectral = reference[15] >= 0.5 and candidate[15] >= 0.5
+  local weighted = 0
+  local weight_total = 0
+  for index = 1, Similarity.feature_count - 1 do
+    local weight = Similarity.weights[index] or 0
+    if spectral or index < 10 then
+      local difference = (reference[index] or 0) - (candidate[index] or 0)
+      weighted = weighted + difference * difference * weight
+      weight_total = weight_total + weight
+    end
+  end
+  local distance = weight_total > 0 and math.sqrt(weighted / weight_total) or 1
+  local score = clamp((1 - distance) * 100, 0, 100)
+  local groups = similarity_feature_groups(reference, candidate)
+  table.sort(groups, function(left, right)
+    if left.difference == right.difference then return left.label < right.label end
+    return left.difference < right.difference
+  end)
+  local labels = {}
+  for _, group in ipairs(groups) do
+    if group.difference < 1 and #labels < 2 then labels[#labels + 1] = group.label end
+  end
+  return score, table.concat(labels, "、")
+end
+
+function similarity_cache_begin_load(session)
+  if state.similarity_cache_loaded then
+    session.phase = "reference"
+    return
+  end
+  AppState.set("similarity_cache", state.similarity_cache or {})
+  local file = io.open(similarity_cache_path(), "rb")
+  if not file then
+    AppState.set("similarity_cache_loaded", true)
+    session.phase = "reference"
+    return
+  end
+  local header = file:read("*l") or ""
+  if header ~= table.concat({
+    Similarity.cache_magic,
+    tostring(Similarity.cache_version),
+    tostring(Similarity.feature_count),
+  }, "\t") then
+    file:close()
+    AppState.set("similarity_cache_loaded", true)
+    AppState.set("similarity_cache_reset_required", true)
+    session.phase = "reference"
+    return
+  end
+  session.cache_file = file
+  session.cache_loaded_count = 0
+  session.phase = "load_cache"
+end
+
+function similarity_cache_step_load(session)
+  local processed = 0
+  local deadline = HostApi.time_precise() + Similarity.frame_budget
+  while processed < Similarity.cache_load_records
+    and HostApi.time_precise() < deadline do
+    local line = session.cache_file:read("*l")
+    if not line then
+      session.cache_file:close()
+      session.cache_file = nil
+      AppState.set("similarity_cache_loaded", true)
+      session.phase = "reference"
+      return
+    end
+    local signature, encoded = line:match("^([0-9a-fA-F]+)\t([0-9a-fA-F]+)$")
+    if signature and #signature == 16
+      and #encoded == Similarity.feature_count * 2
+      and not encoded:find("[^0-9a-fA-F]") then
+      if not state.similarity_cache[signature] then
+        AppState.set(
+          "similarity_cache_count",
+          (state.similarity_cache_count or 0) + 1
+        )
+      end
+      state.similarity_cache[signature] = encoded:lower()
+      session.cache_loaded_count = session.cache_loaded_count + 1
+    end
+    processed = processed + 1
+  end
+end
+
+function similarity_cache_open_append(session)
+  if session.cache_append_file then return true end
+  ensure_dirs()
+  local path = similarity_cache_path()
+  local reset = state.similarity_cache_reset_required
+  local existed = HostApi.file_exists(path) and not reset
+  local file = io.open(path, existed and "ab" or "wb")
+  if not file then return false end
+  if not existed then
+    file:write(table.concat({
+      Similarity.cache_magic,
+      tostring(Similarity.cache_version),
+      tostring(Similarity.feature_count),
+    }, "\t"), "\n")
+    AppState.set("similarity_cache_reset_required", false)
+  end
+  session.cache_append_file = file
+  return true
+end
+
+function similarity_cache_store(session, signature, features)
+  local encoded = similarity_encode_features(features)
+  if not state.similarity_cache[signature] then
+    AppState.set(
+      "similarity_cache_count",
+      (state.similarity_cache_count or 0) + 1
+    )
+  end
+  state.similarity_cache[signature] = encoded
+  if not similarity_cache_open_append(session) then return false end
+  session.cache_append_file:write(signature, "\t", encoded, "\n")
+  session.cache_appended = (session.cache_appended or 0) + 1
+  if session.cache_appended % 64 == 0 then session.cache_append_file:flush() end
+  return true
+end
+
+function clear_similarity_cache()
+  if state.similarity_session then
+    set_status("请先完成或取消相似声音分析", true)
+    return false
+  end
+  local path = similarity_cache_path()
+  if HostApi.file_exists(path) then
+    local removed, remove_error = os.remove(path)
+    if not removed then
+      set_status(
+        "无法清空相似声音特征缓存：" .. tostring(remove_error),
+        true
+      )
+      return false
+    end
+  end
+  AppState.apply({
+    similarity_cache = {},
+    similarity_cache_count = 0,
+    similarity_cache_loaded = true,
+    similarity_cache_reset_required = false,
+    similarity_lookup = {},
+    similarity_result_count = 0,
+  })
+  AppState.set("similarity_reference_path", nil)
+  AppState.set("similarity_reference_name", nil)
+  if "similar" == state.view then
+    AppState.apply({
+      view = "all",
+      sort_mode = "name",
+      sort_desc = false,
+      results_dirty = true,
+    })
+  end
+  set_status("已清空相似声音特征缓存")
+  return true
+end
+
+function similarity_close_files(session)
+  if not session then return end
+  if session.cache_file then session.cache_file:close(); session.cache_file = nil end
+  if session.cache_append_file then
+    session.cache_append_file:flush()
+    session.cache_append_file:close()
+    session.cache_append_file = nil
+  end
+end
+
+function similarity_insert_ranked(session, asset, score, explanation)
+  session.ranked[#session.ranked + 1] = {
+    asset = asset,
+    score = score,
+    explanation = explanation,
+  }
+  if #session.ranked >= Similarity.result_limit * 2 then
+    table.sort(session.ranked, function(left, right)
+      if left.score == right.score then
+        return path_key(left.asset.path) < path_key(right.asset.path)
+      end
+      return left.score > right.score
+    end)
+    while #session.ranked > Similarity.result_limit do
+      table.remove(session.ranked)
+    end
+  end
+end
+
+function finish_similarity_search(canceled)
+  local session = state.similarity_session
+  if not session then return end
+  similarity_close_files(session)
+  if canceled then
+    Jobs.cancel(session.job_token)
+    Jobs.finish(session.job_token, true, "canceled")
+    AppState.set("similarity_session", nil)
+    set_status("已取消相似声音分析")
+    return
+  end
+  table.sort(session.ranked, function(left, right)
+    if left.score == right.score then
+      return path_key(left.asset.path) < path_key(right.asset.path)
+    end
+    return left.score > right.score
+  end)
+  while #session.ranked > Similarity.result_limit do table.remove(session.ranked) end
+
+  AppState.apply({
+    similarity_lookup = {},
+    similarity_result_count = #session.ranked,
+    similarity_reference_path = session.reference.path,
+    similarity_reference_name = session.reference.name,
+  })
+  for _, entry in ipairs(session.ranked) do
+    state.similarity_lookup[path_key(entry.asset.path)] = {
+      score = entry.score,
+      explanation = entry.explanation,
+    }
+  end
+  if session.scope == "all" then
+    AppState.apply({
+      search = "",
+    })
+    AppState.set("active_collection_id", nil)
+    AppState.set("root_filter", nil)
+    AppState.set("library_filter_id", nil)
+    AppState.set("status_filter", nil)
+  end
+  AppState.apply({
+    view = "similar",
+    sort_mode = "similarity",
+    sort_desc = true,
+    results_dirty = true,
+    config_dirty = true,
+  })
+  AppState.set("similarity_session", nil)
+  Jobs.finish(session.job_token, true)
+  set_status(string.format(
+    "相似声音分析完成：检查 %d，命中 %d，失败 %d",
+    session.processed,
+    state.similarity_result_count,
+    session.failed
+  ), session.failed > 0)
+end
+
+function cancel_similarity_search()
+  if state.similarity_session then finish_similarity_search(true) end
+end
+
+function start_similarity_search(reference, scope)
+  if not reference or not reference.ready then
+    set_status("请先选择可用素材", true)
+    return false
+  end
+  if state.similarity_session then
+    set_status("相似声音分析已经在运行", true)
+    return false
+  end
+  if state.scan or state.import_session or state.precache_session
+    or state.root_removal_session or state.relink_plan_session
+    or state.transfer_running then
+    set_status("请等待当前后台任务完成后再分析相似声音", true)
+    return false
+  end
+  local token, reason = Jobs.begin("similarity", "catalog_exclusive", false, 45)
+  if not token then
+    set_status("无法启动相似声音分析：" .. tostring(reason), true)
+    return false
+  end
+  scope = scope == "all" and "all" or "current"
+  local source = scope == "all" and state.assets or state.results
+  AppState.set("similarity_session", {
+    reference = reference,
+    reference_signature = similarity_asset_signature(reference),
+    reference_features = nil,
+    source = source,
+    total = #source,
+    index = 1,
+    processed = 0,
+    analyzed = 0,
+    cached = 0,
+    failed = 0,
+    ranked = {},
+    scope = scope,
+    phase = "prepare",
+    current = nil,
+    job_token = token,
+    started = HostApi.time_precise(),
+  })
+  similarity_cache_begin_load(state.similarity_session)
+  set_status("正在准备相似声音分析…")
+  return true
+end
+
+function similarity_features_for_asset(session, asset)
+  local signature = similarity_asset_signature(asset)
+  local encoded = state.similarity_cache[signature]
+  if encoded then
+    session.cached = session.cached + 1
+    return similarity_decode_features(encoded), signature, "cached"
+  end
+  local waveform = queue_wave(asset, Similarity.points, true, false, true)
+  if not waveform then
+    if asset.wave_error then return nil, signature, "failed" end
+    return nil, signature, "waiting"
+  end
+  local features = similarity_features_from_waveform(asset, waveform)
+  if not features then return nil, signature, "failed" end
+  similarity_cache_store(session, signature, features)
+  session.analyzed = session.analyzed + 1
+  return features, signature, "analyzed"
+end
+
+function process_similarity_search()
+  local session = state.similarity_session
+  if not session then return end
+  if session.job_token.cancel_requested then
+    finish_similarity_search(true)
+    return
+  end
+  if not can_run_heavy_job() then return end
+  if session.phase == "load_cache" then
+    similarity_cache_step_load(session)
+    return
+  end
+  if session.phase == "reference" then
+    local features, _, status = similarity_features_for_asset(session, session.reference)
+    if features then
+      session.reference_features = features
+      session.phase = "candidates"
+    elseif status == "failed" then
+      similarity_close_files(session)
+      Jobs.finish(session.job_token, false, "reference_failed")
+      AppState.set("similarity_session", nil)
+      set_status("无法分析参考素材的音频特征", true)
+    end
+    return
+  end
+  if session.phase ~= "candidates" then return end
+
+  local processed_this_frame = 0
+  local deadline = HostApi.time_precise() + Similarity.frame_budget
+  while session.index <= session.total
+    and processed_this_frame < Similarity.frame_records
+    and HostApi.time_precise() < deadline do
+    local asset = session.source[session.index]
+    if not asset or not asset.ready
+      or path_key(asset.path) == path_key(session.reference.path) then
+      session.index = session.index + 1
+      session.processed = session.processed + 1
+      processed_this_frame = processed_this_frame + 1
+    else
+      session.current = asset
+      local features, _, status = similarity_features_for_asset(session, asset)
+      if status == "waiting" then break end
+      session.index = session.index + 1
+      session.processed = session.processed + 1
+      processed_this_frame = processed_this_frame + 1
+      if features then
+        local score, explanation = similarity_compare_features(
+          session.reference_features,
+          features
+        )
+        similarity_insert_ranked(session, asset, score, explanation)
+      else
+        session.failed = session.failed + 1
+      end
+    end
+  end
+  if session.index > session.total then finish_similarity_search(false) end
+end
+
+function similarity_result_for_asset(asset)
+  return asset and state.similarity_lookup[path_key(asset.path)] or nil
+end
+
 local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024
 local DUPLICATE_FINGERPRINT_VERSION = "sample-fnv1a-head-mid-tail-v1"
 local function duplicate_host_api()
@@ -14977,6 +15631,10 @@ function process_import_recovery_audit()
 end
 
 function start_scan(reason, roots_override, options)
+  if state.similarity_session then
+    set_status("请先完成或取消相似声音分析", true)
+    return
+  end
   local requested = roots_override or state.roots
   local silent =
     type(options) == "table"
@@ -15569,6 +16227,9 @@ function asset_in_view(asset)
   elseif "ucs_catid" == state.view
     and tostring(asset.catid or "") ~= state.ucs_filter_catid then
     return false
+  elseif "similar" == state.view
+    and not state.similarity_lookup[path_key(asset.path)] then
+    return false
   elseif state.view == "missing"
     and not state.missing_assets[path_key(asset.path)] then
     return false
@@ -15645,12 +16306,22 @@ local function result_sort_comparator()
   local sort_mode = state.sort_mode
   local duplicate_lookup = state.duplicate_lookup
   local confirmed_lookup = state.duplicate_confirmed_lookup
+  local similarity_lookup = state.similarity_lookup
 
   return function(a, b)
     local av
     local bv
 
-    if view == "duplicates" then
+    if view == "similar" then
+      av = similarity_lookup[cached_sort_path(a)]
+      bv = similarity_lookup[cached_sort_path(b)]
+      av = av and tonumber(av.score) or 0
+      bv = bv and tonumber(bv.score) or 0
+      if av == bv then
+        return cached_sort_path(a) < cached_sort_path(b)
+      end
+      return av > bv
+    elseif view == "duplicates" then
       av = duplicate_lookup[cached_sort_path(a)] or ""
       bv = duplicate_lookup[cached_sort_path(b)] or ""
     elseif view == "duplicates_confirmed" then
@@ -16513,7 +17184,7 @@ function wave_cache_file_exists(asset, points, preserve_channels)
 end
 
 function start_wave_precache(points, scope)
-  if state.scan or state.import_session then
+  if state.scan or state.import_session or state.similarity_session then
     set_status(
       "请等待当前扫描或导入完成后再预缓存",
       true
@@ -19497,6 +20168,10 @@ function run_transfer(assets, batch_mode)
   if state.transfer_running then
     return
   end
+  if state.similarity_session then
+    set_status("请先完成或取消相似声音分析", true)
+    return
+  end
 
   assets = assets or {}
 
@@ -20290,6 +20965,10 @@ function start_root_removal(records, library_id)
   end
   if state.root_removal_session then
     set_status("已有来源移除任务正在运行", true)
+    return false
+  end
+  if state.similarity_session then
+    set_status("请先完成或取消相似声音分析", true)
     return false
   end
   local roots = {}
@@ -21204,7 +21883,8 @@ function relink_root(record, supplied_path)
   if state.relink_plan_session or state.scan or state.import_session
     or state.root_removal_session or state.artwork_reset_session
     or state.precache_session or state.duplicate_scan
-    or state.duplicate_confirmation or state.missing_audit then
+    or state.duplicate_confirmation or state.missing_audit
+    or state.similarity_session then
     set_status("请等待当前后台任务完成后再重新定位来源", true)
     return false
   end
@@ -21910,6 +22590,9 @@ function reset_interface_settings()
 end
 
 function cancel_catalog_jobs(reason)
+  if state.similarity_session then
+    cancel_similarity_search()
+  end
   reason = tostring(reason or "canceled")
   cancel_auxiliary_save(reason)
   cancel_database_snapshot(reason)
@@ -21997,6 +22680,7 @@ function reset_database_keep_roots()
   state.status_filter = nil
   clear_row_selection()
   clear_wave_cache()
+  clear_similarity_cache()
   os.remove(DATABASE_FILE)
   os.remove(DATABASE_JOURNAL_FILE)
   os.remove(HISTORY_FILE)
@@ -22076,6 +22760,7 @@ function factory_reset()
   state.status_filter = nil
   clear_row_selection()
   clear_wave_cache()
+  clear_similarity_cache()
   reset_interface_settings()
   os.remove(CONFIG_FILE)
   os.remove(LIBRARIES_FILE)
@@ -25485,6 +26170,31 @@ function draw_sidebar()
     end
   )
 
+  if state.similarity_result_count > 0 then
+    sidebar_item(
+      string.format(
+        "相似声音  %d",
+        state.similarity_result_count
+      ),
+      "similar" == state.view
+        and not state.active_collection_id,
+      function()
+        AppState.apply({
+          view = "similar",
+          search = "",
+          sort_mode = "similarity",
+          sort_desc = true,
+          results_dirty = true,
+          config_dirty = true,
+        })
+        AppState.set("active_collection_id", nil)
+        AppState.set("root_filter", nil)
+        AppState.set("library_filter_id", nil)
+        AppState.set("status_filter", nil)
+      end
+    )
+  end
+
   if state.ucs_pending_count > 0 then
     sidebar_item(
       string.format("UCS 待确认  %d", state.ucs_pending_count),
@@ -26400,6 +27110,7 @@ function draw_sub_toolbar()
     library = "音效库",
     used = "最近插入",
     previewed = "最近试听",
+    similarity = "相似度",
   }
 
   local labels_en = {
@@ -26408,6 +27119,7 @@ function draw_sub_toolbar()
     library = "Library",
     used = "Recently inserted",
     previewed = "Recently previewed",
+    similarity = "Similarity",
   }
 
   local labels =
@@ -26459,6 +27171,13 @@ function draw_sub_toolbar()
     end
   end
 
+  if "similar" == state.view and state.similarity_reference_name then
+    breadcrumb = breadcrumb
+      .. "  /  "
+      .. ("en" == state.language and "Similar to " or "相似于 ")
+      .. state.similarity_reference_name
+  end
+
   if state.status_filter then
     breadcrumb =
       breadcrumb
@@ -26506,7 +27225,7 @@ function draw_sub_toolbar()
     state.language == "en"
       and 154
       or 118
-  ) then
+  ) and state.view ~= "similar" then
     local next_mode = {
       name = "duration",
       duration = "library",
@@ -26526,8 +27245,10 @@ function draw_sub_toolbar()
     state.sort_desc and "↓" or "↑",
     30
   ) then
-    state.sort_desc = not state.sort_desc
-    state.results_dirty = true
+    if state.view ~= "similar" then
+      state.sort_desc = not state.sort_desc
+      state.results_dirty = true
+    end
   end
 
   local active_collection =
@@ -26585,13 +27306,15 @@ function draw_import_progress()
   local visible_relink = state.relink_plan_session
   local visible_artwork_reset = state.artwork_reset_session
   local visible_root_removal = state.root_removal_session
+  local visible_similarity = state.similarity_session
 
   if not visible_scan
     and not visible_import
     and not state.precache_session
     and not visible_relink
     and not visible_artwork_reset
-    and not visible_root_removal then
+    and not visible_root_removal
+    and not visible_similarity then
     return
   end
 
@@ -26713,6 +27436,51 @@ function draw_import_progress()
         visible_relink.old_root .. " → " .. visible_relink.new_root,
         80
       ))
+    elseif visible_similarity then
+      local session = visible_similarity
+      local loading = session.phase == "load_cache"
+      local reference = session.phase == "reference"
+      local completed = session.processed or 0
+      local total = session.total or 0
+      local fraction = loading
+        and ((reaper.time_precise() * 0.28) % 1)
+        or reference
+          and 0
+          or total > 0 and clamp(completed / total, 0, 1) or 0
+      local label = loading
+        and string.format(
+          "载入相似特征缓存  %d 条",
+          session.cache_loaded_count or 0
+        )
+        or reference
+          and "分析参考素材的音频特征"
+          or string.format(
+            "相似声音分析  %d / %d  新分析 %d  缓存 %d  失败 %d",
+            completed,
+            total,
+            session.analyzed or 0,
+            session.cached or 0,
+            session.failed or 0
+          )
+      ImGui.Text(ctx, label)
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        loading and "载入缓存"
+          or reference and "准备参考"
+          or string.format("%.1f%%", fraction * 100)
+      )
+      ImGui.TextDisabled(
+        ctx,
+        compact(
+          session.current and session.current.name
+            or session.reference and session.reference.name
+            or "准备下一项",
+          80
+        )
+      )
     elseif state.precache_session then
       local session = state.precache_session
       local current_progress =
@@ -26917,6 +27685,8 @@ function draw_import_progress()
       elseif visible_relink then
         Jobs.cancel(visible_relink.job_token)
         set_status("正在取消来源重定位计划…")
+      elseif visible_similarity then
+        cancel_similarity_search()
       elseif state.precache_session then
         state.precache_cancel_requested = true
       elseif visible_scan then
@@ -27587,6 +28357,16 @@ function row_popup(asset)
     reveal_file(asset.path)
   end
 
+  if ImGui.BeginMenu(ctx, "查找相似声音") then
+    if ImGui.MenuItem(ctx, "在当前结果中分析") then
+      start_similarity_search(asset, "current")
+    end
+    if ImGui.MenuItem(ctx, "在全部音效库中分析") then
+      start_similarity_search(asset, "all")
+    end
+    ImGui.EndMenu(ctx)
+  end
+
   ImGui.EndPopup(ctx)
 end
 
@@ -27683,6 +28463,9 @@ function draw_result_row(
     is_row_selected(asset)
 
   local asset_key = path_key(asset.path)
+  local similarity_entry = "similar" == state.view
+    and similarity_result_for_asset(asset)
+    or nil
   local waveform_state, waveform_color =
     waveform_visual_state(asset, selected)
 
@@ -27879,7 +28662,10 @@ function draw_result_row(
           column_x + 7,
           centered_y,
           filename_color,
-          (favorite and "★ " or "")
+          (similarity_entry
+              and string.format("%.1f%%  ", similarity_entry.score)
+              or "")
+            .. (favorite and "★ " or "")
             .. asset.name,
           column_x + 2,
           y + 2,
@@ -27900,15 +28686,26 @@ function draw_result_row(
           y + ROW_H - 2
         )
 
-        local secondary =
-          table.concat(
-            {
-              asset.category or "",
-              asset.subcategory or "",
-            },
-            " · "
-          ):gsub("^ · ", "")
-            :gsub(" · $", "")
+        local secondary
+        if similarity_entry then
+          secondary = string.format(
+            "相似度 %.1f%% · %s",
+            similarity_entry.score,
+            similarity_entry.explanation ~= ""
+              and similarity_entry.explanation
+              or "en" == state.language and "audio features" or "音频特征"
+          )
+        else
+          secondary =
+            table.concat(
+              {
+                asset.category or "",
+                asset.subcategory or "",
+              },
+              " · "
+            ):gsub("^ · ", "")
+              :gsub(" · $", "")
+        end
 
         draw_clipped_text(
           draw_list,
@@ -29295,6 +30092,18 @@ function draw_more_actions_popup(asset)
 
   if ImGui.MenuItem(ctx, "重置波形缩放") then
     reset_wave_view()
+  end
+
+  if ImGui.BeginMenu(ctx, "查找相似声音") then
+    if ImGui.MenuItem(ctx, "在当前结果中分析") then
+      start_similarity_search(asset, "current")
+      ImGui.CloseCurrentPopup(ctx)
+    end
+    if ImGui.MenuItem(ctx, "在全部音效库中分析") then
+      start_similarity_search(asset, "all")
+      ImGui.CloseCurrentPopup(ctx)
+    end
+    ImGui.EndMenu(ctx)
   end
 
   if ImGui.MenuItem(ctx, "预览参数预设") then
@@ -33115,6 +33924,20 @@ function draw_settings_waveforms()
   )
 
   ImGui.Separator(ctx)
+  ImGui.Text(ctx, "相似声音特征缓存")
+  ImGui.TextDisabled(
+    ctx,
+    "相似特征会在首次检索时逐文件建立；清空后可从源音频重新生成。"
+  )
+  ImGui.TextDisabled(
+    ctx,
+    string.format("当前会话已载入 %d 条", state.similarity_cache_count or 0)
+  )
+  if dark_button("清空相似特征缓存", 170) then
+    clear_similarity_cache()
+  end
+
+  ImGui.Separator(ctx)
   ImGui.Text(ctx, "高精度预缓存")
 
   for _, points in ipairs(
@@ -34968,6 +35791,7 @@ function watch_folders()
     or state.root_removal_session
     or state.database_snapshot_session
     or state.precache_session
+    or state.similarity_session
     or state.transfer_running then
     return
   end
@@ -34990,6 +35814,15 @@ end
 
 function cleanup()
   Jobs.stop_accepting()
+  if state.similarity_session then
+    similarity_close_files(state.similarity_session)
+    Jobs.finish(
+      state.similarity_session.job_token,
+      true,
+      "shutdown"
+    )
+    AppState.set("similarity_session", nil)
+  end
   cancel_auxiliary_save("shutdown")
   if state.root_removal_session then
     local removal = state.root_removal_session
@@ -35270,6 +36103,7 @@ function loop()
     process_duplicate_scan()
     process_duplicate_confirmation()
     process_wave_precache()
+    process_similarity_search()
     process_wave_queue()
     process_pending_transient_detection()
     process_loudness_queue()

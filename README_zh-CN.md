@@ -88,6 +88,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - 一个逻辑音效库可聚合多个实体来源文件夹。
 - 列表内联波形，以及单声道、立体声和多声道详细预览。
 - 联合搜索文件名、路径、元数据、UCS 字段、音效库和工作流状态。
+- 使用包络、起音、动态与频谱特征进行可解释的音频内容相似检索。
 - 收藏、播放列表、项目素材箱、工作流状态与非破坏性元数据。
 - Region、瞬态建议、LUFS / True Peak、Pitch / Rate / Gain 与声道监听。
 - 插入当前轨、新轨、BWF 位置，以及把波形选区直接拖入 REAPER。
@@ -114,6 +115,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
 - [Changelog — English](docs/CHANGELOG_en-US.md)
 - [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
+- [0.9 相似声音架构](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 
 ## 仓库结构
 

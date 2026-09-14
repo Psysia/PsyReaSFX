@@ -23,6 +23,7 @@ $modules = @(
     "37_catalog_caches.lua",
     "38_incremental_persistence.lua",
     "40_analysis.lua",
+    "42_similarity.lua",
     "45_duplicate_confirmation.lua",
     "50_runtime_ui.lua"
 )

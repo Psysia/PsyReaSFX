@@ -1,5 +1,17 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 4
+
+### Audio-content similar sounds
+
+- Adds Find Similar Sounds to row context menus and Preview More Actions, with current-result and all-library scopes.
+- Ranks only audio duration, envelope, onset, dynamics, silence ratio, band energy, spectral centroid and tonality; filenames and tags never affect the score.
+- Keeps at most 200 results in a fixed descending similarity order and shows the two closest explainable feature groups on every result.
+- Builds missing features one file at a time through the existing 2,048-point RWF4 waveform worker. Cache loading and comparison are frame-bounded, visible and cancelable, with no catalog-wide startup scan.
+- Adds a compact double-hash quantized feature cache that stores no complete paths. A 500,000-record fixed payload is about 22.89 MiB and can be cleared and rebuilt from Settings.
+- Falls back to time-domain comparison with renormalized weights when the host supplies no spectral extra block, rather than treating missing spectral data as real zero values.
+- Adds regression gates for 500,000 collision-free signatures, quantization error, content ranking, state mutation and host boundaries.
+
 ## 0.9.0 Beta 3
 
 ### On-demand spectral peaks
