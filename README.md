@@ -36,7 +36,9 @@ Import this repository:
 https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
-Then synchronize packages and search for the tool you want.
+Then synchronize packages and search for the tool you want. For PsyReaSFX,
+install `PsyReaSFX.lua`; on Windows x64, also install the separate optional
+`PsyReaSFX Neural Similarity` package if you want neural similar-sound search.
 
 You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.
 
@@ -86,12 +88,12 @@ It combines library management, waveform browsing, search, audition, metadata, c
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 6** — expands the optional local EfficientAT path to common WAV sample rates and bit depths plus AIFF, FLAC, MP3 and M4A; FFmpeg, when installed, also enables OGG, Opus, WavPack and CAF.
+- **Preview channel: 0.9.0 Beta 6.1** — adds direct ReaPack installation and updates for the optional neural component while retaining Beta 6's broad in-memory audio decoding.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
-> **Important:** ReaPack installs and updates only the Lua package. After upgrading to Beta 6, download and run the Beta 6 neural component installer separately; installing it again safely replaces the previous component.
+> **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
 ### Main capabilities
 
@@ -107,8 +109,8 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 6 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6)
-- [Required separate download for the optional Beta 6 neural similarity component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 6.1 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6.1)
+- [Manual ZIP fallback for the optional Beta 6.1 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_1_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)

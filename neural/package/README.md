@@ -1,13 +1,24 @@
 # PsyReaSFX Neural Similarity component
 
-This is the optional Windows x64 local component for PsyReaSFX 0.9.0 Beta 6.
+This is the optional Windows x64 local component for PsyReaSFX 0.9.0 Beta 6.1.
 It generates audio embeddings with the frozen EfficientAT `mn04_as` model and
 uses HNSW for fast full-library similar-sound recall. Audio stays on this
 computer and is never uploaded.
 
-## Install
+## Recommended: install with ReaPack
 
-1. Install or update to PsyReaSFX 0.9.0 Beta 6 through ReaPack.
+1. Import and synchronize the PsyReaSFX repository.
+2. Install `PsyReaSFX.lua`.
+3. Install the separate `PsyReaSFX Neural Similarity` package.
+4. Restart PsyReaSFX.
+
+ReaPack installs the component under REAPER's `Data` directory and handles
+future component updates and uninstallation. Rebuildable embedding and HNSW
+caches remain separately under `Scripts/PsyReaSFX/neural_similarity`.
+
+## Manual ZIP fallback
+
+1. Install or update to PsyReaSFX 0.9.0 Beta 6.1 through ReaPack.
 2. Extract this ZIP and double-click `Install-NeuralSimilarity.cmd`.
 3. Restart PsyReaSFX after installation.
 

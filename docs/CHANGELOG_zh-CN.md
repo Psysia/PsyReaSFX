@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 6.1
+
+### 神经组件接入 ReaPack
+
+- 新增独立可选 Windows x64 ReaPack 数据包 `PsyReaSFX Neural Similarity`，可直接在 REAPER 内安装、更新和卸载 sidecar、模型、金样与第三方许可文件。
+- Lua 会优先从 `<REAPER 资源目录>/Data/PsyReaSFX/neural_similarity` 发现 ReaPack 管理的组件，同时保留旧手动安装路径兼容。
+- embedding 缓存、HNSW 索引、能力探测和任务文件仍保存在 `<REAPER 资源目录>/Scripts/PsyReaSFX/neural_similarity`，卸载可选包不会删除可重建的用户缓存。
+- 继续提供 Beta 6 手动 ZIP 安装方式作为备用，并为 ReaPack 发布独立 sidecar EXE；每个来源都带 SHA-256 多重哈希校验。
+
 ## 0.9.0 Beta 6
 
 ### 无转码副本的神经音频解码

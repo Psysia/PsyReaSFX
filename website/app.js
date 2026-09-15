@@ -5,10 +5,9 @@ const STABLE_FALLBACK = {
   url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5"
 };
 const PREVIEW_FALLBACK = {
-  version: "0.9.0 Beta 6",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6"
+  version: "0.9.0 Beta 6.1",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6.1"
 };
-const NEURAL_FALLBACK = "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip";
 
 const messages = {
   en: {
@@ -30,7 +29,7 @@ const messages = {
     heroLead: "Browse, organize, audition and deliver large sound libraries without leaving REAPER.",
     installReapack: "Install with ReaPack",
     downloadStable: "Download Stable",
-    viewPreview: "View Beta 6",
+    viewPreview: "View Beta 6.1",
     freeUpdate: "One repository · Automatic updates",
     inlineWaveforms: "Inline waveforms",
     visibleFirst: "Visible-first caching",
@@ -55,8 +54,8 @@ const messages = {
     previewChannel: "Preview channel",
     previewSummary: "Local EfficientAT recall with in-memory decoding and resampling for common audio formats.",
     getPreview: "View preview ↗",
-    neuralAddon: "Download optional neural component ↗",
-    neuralInstallNote: "Important: ReaPack updates only the Lua package. Install or update the neural component separately after upgrading to Beta 6.",
+    neuralAddon: "Install both packages with ReaPack ↓",
+    neuralInstallNote: "Install PsyReaSFX.lua, then install the separate optional PsyReaSFX Neural Similarity package on Windows x64. ReaPack updates both.",
     downloadDesktop: "Download Desktop Alpha 8",
     desktopGuide: "Desktop guide ↗",
     completeLoop: "THE COMPLETE SOUND-LIBRARY LOOP",
@@ -84,7 +83,7 @@ const messages = {
     loudnessStats: "LUFS and True Peak statistics",
     findKicker: "FIND BY STRUCTURE AND SOUND",
     findTitle: "Search the catalog.<br>Then search the audio itself.",
-    findText: "Beta 6 adds in-memory decoding and resampling to the optional EfficientAT path. Common WAV, AIFF, FLAC, MP3 and M4A files work without converted copies; FFmpeg extends support further.",
+    findText: "Beta 6.1 brings the optional EfficientAT component into ReaPack. Common WAV, AIFF, FLAC, MP3 and M4A files work without converted copies; FFmpeg extends support further.",
     ucsNavigation: "Browse Category, SubCategory and CatID without moving source files",
     similarSearch: "Use local neural recall across common sample rates, bit depths and formats, with safe automatic fallback",
     spectralPeaks: "Inspect on-demand spectral peaks in the detailed waveform",
@@ -109,10 +108,10 @@ const messages = {
     reaperText: "Insert on the current track, a new track, the BWF position or drag the selected range.",
     quickStart: "QUICK START",
     installOnce: "Install once.<br>Update inside REAPER.",
-    installLead: "Import the repository in ReaPack, synchronize, then install PsyReaSFX. Future stable updates arrive through the same URL.",
+    installLead: "Import the repository in ReaPack and install PsyReaSFX.lua. On Windows x64, add PsyReaSFX Neural Similarity as a second optional package. Both update through the same URL.",
     stepOne: "Open Extensions → ReaPack → Import repositories…",
     stepTwo: "Paste the repository URL below.",
-    stepThree: "Synchronize packages, search for PsyReaSFX and install.",
+    stepThree: "Install PsyReaSFX.lua; optionally also install PsyReaSFX Neural Similarity on Windows x64.",
     copy: "Copy",
     copied: "Copied",
     host: "Host",
@@ -153,7 +152,7 @@ const messages = {
     heroLead: "无需离开 REAPER，即可浏览、整理、试听并交付大型音效素材库。",
     installReapack: "通过 ReaPack 安装",
     downloadStable: "下载稳定版",
-    viewPreview: "查看 Beta 6",
+    viewPreview: "查看 Beta 6.1",
     freeUpdate: "一个仓库 · 自动更新",
     inlineWaveforms: "列表内联波形",
     visibleFirst: "可见内容优先缓存",
@@ -178,8 +177,8 @@ const messages = {
     previewChannel: "预发布通道",
     previewSummary: "本地 EfficientAT 召回支持常见音频格式的内存解码与重采样。",
     getPreview: "查看预发布版 ↗",
-    neuralAddon: "下载可选神经组件 ↗",
-    neuralInstallNote: "重要：ReaPack 只更新 Lua 主程序。升级到 Beta 6 后，神经组件必须另外下载并覆盖安装。",
+    neuralAddon: "通过 ReaPack 安装两个包 ↓",
+    neuralInstallNote: "先安装 PsyReaSFX.lua；Windows x64 用户如需神经检索，再安装独立可选包 PsyReaSFX Neural Similarity。两个包都由 ReaPack 更新。",
     downloadDesktop: "下载桌面 Alpha 8",
     desktopGuide: "桌面版说明 ↗",
     completeLoop: "完整的音效素材库工作闭环",
@@ -207,7 +206,7 @@ const messages = {
     loudnessStats: "LUFS 与 True Peak 数据",
     findKicker: "按结构与声音查找",
     findTitle: "先搜索目录，<br>再搜索声音本身。",
-    findText: "Beta 6 为可选 EfficientAT 路径加入内存解码与重采样。常见 WAV、AIFF、FLAC、MP3、M4A 无需转码副本即可使用，FFmpeg 还能扩展更多格式。",
+    findText: "Beta 6.1 已将可选 EfficientAT 组件接入 ReaPack。常见 WAV、AIFF、FLAC、MP3、M4A 无需转码副本即可使用，FFmpeg 还能扩展更多格式。",
     ucsNavigation: "按 Category、SubCategory 和 CatID 浏览，不移动源文件",
     similarSearch: "常见采样率、位深与格式均可使用本地神经召回，并在异常时安全回退",
     spectralPeaks: "在详细波形中按需查看频谱峰值",
@@ -232,10 +231,10 @@ const messages = {
     reaperText: "插入当前轨、新轨、BWF 原始位置，或拖入当前波形选区。",
     quickStart: "快速开始",
     installOnce: "安装一次，<br>以后在 REAPER 内更新。",
-    installLead: "在 ReaPack 中导入仓库、同步并安装 PsyReaSFX。之后的稳定版更新会继续使用同一个地址。",
+    installLead: "在 ReaPack 中导入仓库并安装 PsyReaSFX.lua；Windows x64 用户可再安装第二个可选包 PsyReaSFX Neural Similarity。两个包都通过同一地址更新。",
     stepOne: "打开 Extensions → ReaPack → Import repositories…",
     stepTwo: "粘贴下方仓库地址。",
-    stepThree: "同步软件包，搜索 PsyReaSFX 并安装。",
+    stepThree: "安装 PsyReaSFX.lua；Windows x64 如需神经检索，再安装 PsyReaSFX Neural Similarity。",
     copy: "复制",
     copied: "已复制",
     host: "宿主",
@@ -324,12 +323,6 @@ function findLuaArchive(release) {
   );
 }
 
-function findNeuralArchive(release) {
-  return (release?.assets || []).find((item) =>
-    /^PsyReaSFX_Neural_Similarity_.*_win_x64\.zip$/i.test(item.name)
-  );
-}
-
 function updateReleaseLink(selector, release, fallback) {
   const archive = findLuaArchive(release);
   const url = archive?.browser_download_url || release?.html_url || fallback.url;
@@ -362,10 +355,6 @@ async function updateReleaseChannels() {
     });
     updateReleaseLink("[data-stable-download]", stable, STABLE_FALLBACK);
     updateReleaseLink("[data-preview-download]", preview, PREVIEW_FALLBACK);
-    const neuralArchive = findNeuralArchive(preview);
-    document.querySelectorAll("[data-neural-download]").forEach((link) => {
-      link.href = neuralArchive?.browser_download_url || NEURAL_FALLBACK;
-    });
     document.querySelectorAll("[data-desktop-download]").forEach((link) => {
       if (desktopAsset) link.href = desktopAsset.browser_download_url;
     });

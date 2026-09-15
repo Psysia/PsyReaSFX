@@ -36,7 +36,9 @@
 https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
-同步软件包后，直接搜索需要的工具并安装即可。
+同步软件包后，直接搜索需要的工具并安装即可。使用 PsyReaSFX 时请安装
+`PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再安装同仓库中的独立可选包
+`PsyReaSFX Neural Similarity`。
 
 安装这些小型脚本时，**不需要同时安装 PsyReaSFX**。
 
@@ -86,12 +88,12 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 ### 当前开发状态
 
 - **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
-- **预发布通道：0.9.0 Beta 6** — 可选本地 EfficientAT 路径现已覆盖常见 WAV 采样率与位深，以及 AIFF、FLAC、MP3、M4A；安装 FFmpeg 后还可覆盖 OGG、Opus、WavPack 和 CAF。
+- **预发布通道：0.9.0 Beta 6.1** — 可选神经组件现可直接通过 ReaPack 安装和更新，并保留 Beta 6 的通用音频内存解码能力。
 - **不会建立转码素材库** — 源音频只在内存中解码、下混并重采样为模型所需的 32 kHz，不会生成转换后的音频副本；持久缓存只保存紧凑的 320 维 FP16 embedding 和 HNSW 索引。
 
 0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。神经相似度组件保持可选、仅在本地运行，不上传用户音频。
 
-> **重要：** ReaPack 只负责安装和更新 Lua 主程序。升级到 Beta 6 后，需要另外下载并运行 Beta 6 神经组件安装程序；再次安装会安全覆盖旧组件。
+> **ReaPack 安装方式：** 安装 `PsyReaSFX.lua` 即可使用主程序；Windows x64 用户如需神经检索，再从同一仓库安装第二个包 `PsyReaSFX Neural Similarity`。两个包都由 ReaPack 独立更新，手动 ZIP 仅作为备用方案。
 
 ### 主要能力
 
@@ -107,8 +109,8 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 ### PsyReaSFX 下载
 
 - [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 6 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6)
-- [Beta 6 可选神经相似度组件（必须单独下载安装）](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 6.1 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6.1)
+- [Beta 6.1 可选神经组件手动 ZIP 备用下载](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_1_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)
