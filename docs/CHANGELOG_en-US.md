@@ -7,7 +7,9 @@
 - Freezes a reproducible EfficientAT `mn04_as` ONNX profile with the full mel frontend, 320-dimensional multi-layer scene embeddings, pinned upstream hashes, and three cross-runtime golden audio cases.
 - Adds the optional .NET 8 neural sidecar foundation with model-manifest verification, `capabilities`, PCM16 32 kHz `embed`, same-directory atomic result writes, and a golden self-test.
 - Implements the frozen long-audio rule: 10-second windows, 2.5-second hop, raw-vector averaging, then final L2 normalization.
-- Adds model and sidecar verification to CI. HNSW indexing, persistent embedding caches, general media decoding, cancellation jobs, and Lua fallback integration remain under development and are not part of Beta 4.5.
+- Adds a `run-job` file protocol, incremental FP16 embedding cache, and exact cosine Top-K queries. The cache stores no complete paths and supports offline reuse, changed-file recomputation, stable tie ordering, and candidate-signature filtering.
+- Replaces cache, status, and result files atomically. Cancellation stops after the current asset without replacing the previous cache; corrupt, truncated, wrong-model, and duplicate-signature caches are rejected.
+- Adds model, cache-protocol, and real file-job verification to CI. HNSW indexing, general media decoding, and Lua fallback integration remain under development and are not part of Beta 4.5.
 
 ## 0.9.0 Beta 4.5
 

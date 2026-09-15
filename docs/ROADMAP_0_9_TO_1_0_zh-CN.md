@@ -83,8 +83,9 @@ UCS 虚拟目录和 UCS 搜索提示进入 0.9。
 - [x] 当前结果与全部音效库两种范围均逐帧运行、可取消，并复用 RWF4 频谱峰值。
 - [x] 冻结 EfficientAT embedding、可选 sidecar、HNSW 召回和现有特征重排架构。
 - [x] 导出并验证 `mn04_as` 320 维 ONNX 金样，固定模型与预处理哈希。
-- [ ] 完成 sidecar 增量 embedding 缓存、HNSW 索引和 Lua 故障回退协议；
-  `capabilities`、PCM16 `embed`、10 秒窗口/2.5 秒 hop、原子结果和金样自检基础已实现。
+- [x] 完成 sidecar 增量 FP16 embedding 缓存、离线复用、取消安全和精确 cosine Top-K
+  查询；`capabilities`、PCM16 `embed`、10 秒窗口/2.5 秒 hop 与金样自检已覆盖 CI。
+- [ ] 完成 HNSW 索引、通用媒体解码/重采样和 Lua 能力探测、进度、取消及故障回退。
 - [ ] 在真实 50,000 文件库中完成首次全库分析耗时、取消恢复和格式覆盖验收。
 
 ### DSP

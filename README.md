@@ -87,7 +87,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
 - **Preview channel: 0.9.0 Beta 4.5** — includes UCS 8.2.1 classification and navigation, on-demand spectral peaks, audio-content similarity, and waveform seek-preview fixes.
-- **Next phase** — the frozen EfficientAT `mn04_as` ONNX model, cross-runtime golden vectors, and optional sidecar `capabilities`/`embed` foundation are implemented; HNSW indexing and Lua integration are still in development and are not included in Beta 4.5.
+- **Next phase** — the optional EfficientAT sidecar now includes the frozen `mn04_as` model, cross-runtime golden vectors, incremental FP16 embedding cache, cancellation-safe file jobs, and exact cosine Top-K queries; HNSW indexing and Lua integration are still in development and are not included in Beta 4.5.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
