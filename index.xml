@@ -9,6 +9,19 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.9.0-beta5" author="Psysia" time="2026-09-15T07:03:29Z">
+        <changelog><![CDATA[
+- Adds optional local EfficientAT embeddings with persistent HNSW recall and hybrid acoustic reranking.
+- Keeps the neural component optional and transparently falls back to the existing 15-feature search.
+- Supports visible progress, cancellation, incremental cache reuse, and exact filtering for current results.
+- Protocol v1 activates only when the complete search scope is 32 kHz PCM16 WAV.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta5/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta5/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta5/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta5/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta5/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.0-beta4.5" author="Psysia" time="2026-09-14T10:09:00Z">
         <changelog><![CDATA[
 - Preserves full-file reverse preview when menus, shortcuts, or auto-preview request the zero position.

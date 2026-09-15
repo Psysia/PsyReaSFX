@@ -5,9 +5,10 @@ const STABLE_FALLBACK = {
   url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5"
 };
 const PREVIEW_FALLBACK = {
-  version: "0.9.0 Beta 4.5",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5"
+  version: "0.9.0 Beta 5",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5"
 };
+const NEURAL_FALLBACK = "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta5/PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip";
 
 const messages = {
   en: {
@@ -29,7 +30,7 @@ const messages = {
     heroLead: "Browse, organize, audition and deliver large sound libraries without leaving REAPER.",
     installReapack: "Install with ReaPack",
     downloadStable: "Download Stable",
-    viewPreview: "View Beta 4.5",
+    viewPreview: "View Beta 5",
     freeUpdate: "One repository · Automatic updates",
     inlineWaveforms: "Inline waveforms",
     visibleFirst: "Visible-first caching",
@@ -52,8 +53,9 @@ const messages = {
     stableSummary: "The default ReaPack release for everyday production work.",
     getStable: "Get Stable ↗",
     previewChannel: "Preview channel",
-    previewSummary: "UCS 8.2.1, spectral peaks, audio-content similarity and preview fixes.",
+    previewSummary: "Optional local EfficientAT embeddings, HNSW recall, hybrid reranking and safe fallback.",
     getPreview: "View preview ↗",
+    neuralAddon: "Download optional neural component ↗",
     downloadDesktop: "Download Desktop Alpha 8",
     desktopGuide: "Desktop guide ↗",
     completeLoop: "THE COMPLETE SOUND-LIBRARY LOOP",
@@ -81,9 +83,9 @@ const messages = {
     loudnessStats: "LUFS and True Peak statistics",
     findKicker: "FIND BY STRUCTURE AND SOUND",
     findTitle: "Search the catalog.<br>Then search the audio itself.",
-    findText: "Beta 4.5 ships explainable acoustic similarity. The next optional local EfficientAT path now connects Lua to incremental embeddings and HNSW, with progress, cancellation, hybrid reranking and automatic fallback; general media decoding is still in development.",
+    findText: "Beta 5 adds an optional local EfficientAT path with incremental embeddings, HNSW recall, progress, cancellation and hybrid reranking. The dependency-free 15-feature search remains the automatic fallback.",
     ucsNavigation: "Browse Category, SubCategory and CatID without moving source files",
-    similarSearch: "Keep the dependency-free 15-feature search, with optional local neural recall in development",
+    similarSearch: "Use optional local neural recall for 32 kHz PCM16 WAV scopes, with safe automatic fallback",
     spectralPeaks: "Inspect on-demand spectral peaks in the detailed waveform",
     similarityDetails: "Read the similarity architecture ↗",
     deliverWithoutLosing: "Deliver without losing the thread.",
@@ -150,7 +152,7 @@ const messages = {
     heroLead: "无需离开 REAPER，即可浏览、整理、试听并交付大型音效素材库。",
     installReapack: "通过 ReaPack 安装",
     downloadStable: "下载稳定版",
-    viewPreview: "查看 Beta 4.5",
+    viewPreview: "查看 Beta 5",
     freeUpdate: "一个仓库 · 自动更新",
     inlineWaveforms: "列表内联波形",
     visibleFirst: "可见内容优先缓存",
@@ -173,8 +175,9 @@ const messages = {
     stableSummary: "默认 ReaPack 版本，适合日常生产使用。",
     getStable: "获取稳定版 ↗",
     previewChannel: "预发布通道",
-    previewSummary: "包含 UCS 8.2.1、频谱峰值、音频内容相似检索与试听修复。",
+    previewSummary: "新增可选本地 EfficientAT embedding、HNSW 召回、混合重排和安全回退。",
     getPreview: "查看预发布版 ↗",
+    neuralAddon: "下载可选神经组件 ↗",
     downloadDesktop: "下载桌面 Alpha 8",
     desktopGuide: "桌面版说明 ↗",
     completeLoop: "完整的音效素材库工作闭环",
@@ -202,9 +205,9 @@ const messages = {
     loudnessStats: "LUFS 与 True Peak 数据",
     findKicker: "按结构与声音查找",
     findTitle: "先搜索目录，<br>再搜索声音本身。",
-    findText: "Beta 4.5 已提供可解释的声学相似检索；下一阶段的可选本地 EfficientAT 路径现已接通 Lua、增量 embedding 与 HNSW，支持进度、取消、混合重排和自动回退，通用媒体解码仍在开发。",
+    findText: "Beta 5 新增可选本地 EfficientAT 路径，支持增量 embedding、HNSW 召回、进度、取消和混合重排；无需依赖的 15 维检索继续作为自动回退。",
     ucsNavigation: "按 Category、SubCategory 和 CatID 浏览，不移动源文件",
-    similarSearch: "保留无需依赖的 15 维检索，并开发可选的本地神经召回",
+    similarSearch: "32 kHz PCM16 WAV 范围可使用本地神经召回，并在任何异常下安全回退",
     spectralPeaks: "在详细波形中按需查看频谱峰值",
     similarityDetails: "阅读相似声音架构 ↗",
     deliverWithoutLosing: "交付素材，不中断设计思路。",
@@ -319,6 +322,12 @@ function findLuaArchive(release) {
   );
 }
 
+function findNeuralArchive(release) {
+  return (release?.assets || []).find((item) =>
+    /^PsyReaSFX_Neural_Similarity_.*_win_x64\.zip$/i.test(item.name)
+  );
+}
+
 function updateReleaseLink(selector, release, fallback) {
   const archive = findLuaArchive(release);
   const url = archive?.browser_download_url || release?.html_url || fallback.url;
@@ -351,6 +360,10 @@ async function updateReleaseChannels() {
     });
     updateReleaseLink("[data-stable-download]", stable, STABLE_FALLBACK);
     updateReleaseLink("[data-preview-download]", preview, PREVIEW_FALLBACK);
+    const neuralArchive = findNeuralArchive(preview);
+    document.querySelectorAll("[data-neural-download]").forEach((link) => {
+      link.href = neuralArchive?.browser_download_url || NEURAL_FALLBACK;
+    });
     document.querySelectorAll("[data-desktop-download]").forEach((link) => {
       if (desktopAsset) link.href = desktopAsset.browser_download_url;
     });

@@ -1,6 +1,6 @@
 # PsyReaSFX 0.9 → 1.0 开发路线
 
-更新日期：2026-09-10
+更新日期：2026-09-15
 
 ## 当前阶段：0.9.x Beta 功能开发
 
@@ -15,8 +15,9 @@ Release、完整更新日志和 ReaPack 历史版本；内部开发快照不强�
 `SPECTRAL_ANALYSIS_ARCHITECTURE_0_9_zh-CN.md` 完成当前素材的按需频谱峰值分析。
 Beta 4 已按 `SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 建立基于时长、包络、起音、
 动态、频段与 tonality 的内容相似检索、解释标签和紧凑缓存。Beta 4.5 已完成波形
-定位试听与反向完整试听边界修复。神经相似度的第一阶段需求已在
-`NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 冻结；完整 FFT 时频图仍需单独
+定位试听与反向完整试听边界修复。Beta 5 已发布可选本地 EfficientAT embedding、
+增量缓存、HNSW 召回、Lua 混合重排与透明回退，并提供 Windows x64 自包含安装包。
+通用媒体解码/重采样与真实 50,000 文件库验收仍待完成；完整 FFT 时频图需单独
 冻结需求，DSP 尚未进入实现。
 
 ## 0.9：高级检索、频谱分析、相似声音和 DSP

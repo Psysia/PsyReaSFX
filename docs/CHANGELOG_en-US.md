@@ -1,8 +1,8 @@
 ﻿# PsyReaSFX Changelog
 
-## Unreleased 0.9.x development
+## 0.9.0 Beta 5
 
-### Neural similarity foundation
+### Optional local neural similarity
 
 - Upgrades the sidecar to `0.4.0` with atomic capability JSON output, a manifest sentinel that lets the sidecar capture exact UTC modification ticks, and below-normal Windows priority for file jobs.
 - Adds the optional Lua neural-similarity bridge: non-blocking startup discovery, status/result polling, progress, cancellation, full-library HNSW, exact current-result filtering, and hybrid Top-200 reranking with the existing 15 acoustic features.
@@ -14,7 +14,8 @@
 - Replaces cache, status, and result files atomically. Cancellation stops after the current asset without replacing the previous cache; corrupt, truncated, wrong-model, and duplicate-signature caches are rejected.
 - Adds a deterministic HNSW implementation without a new third-party dependency. Each index is bound to the complete embedding-cache SHA-256 and supports atomic construction, cancellation protection, explicit HNSW queries, and automatic exact fallback when the index is missing, corrupt, or stale.
 - Keeps candidate-signature filtering exact so a restricted UI result set cannot lose records through a fixed ANN recall stage; unrestricted queries may use HNSW.
-- Adds model, cache/HNSW protocol, Recall@20, and real file-job verification to CI. General media decoding and Lua fallback integration remain under development and are not part of Beta 4.5.
+- Ships a self-contained optional Windows x64 component with install/uninstall scripts, the model, and third-party notices. It requires no separate .NET installation and never uploads audio.
+- Adds model, cache/HNSW protocol, Recall@20, real file-job, and packaged install/uninstall verification to CI. General media decoding and resampling remain in development.
 
 ## 0.9.0 Beta 4.5
 

@@ -86,8 +86,8 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 ### 当前开发状态
 
 - **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
-- **预发布通道：0.9.0 Beta 4.5** — 已完成 UCS 8.2.1 分类与虚拟目录、按需频谱峰值、基于音频内容的相似检索，以及波形定位试听修复。
-- **下一阶段** — 可选 EfficientAT sidecar 已包含冻结的 `mn04_as` 模型、增量 FP16 embedding、持久化 HNSW 召回，以及不阻塞 REAPER 的 Lua 能力探测、进度、取消、混合重排和透明 15 维回退。协议 v1 目前只在搜索范围全部为 32 kHz PCM16 WAV 时启用；通用媒体解码仍在开发，且这些开发内容尚未改变 Beta 4.5。
+- **预发布通道：0.9.0 Beta 5** — 新增可选本地 EfficientAT embedding、增量 FP16 缓存、持久化 HNSW 召回和混合重排，并保留原有 15 维检索作为透明回退。
+- **当前限制** — 神经协议 v1 只在搜索范围全部为 32 kHz PCM16 WAV 时启用；其他格式自动使用基础检索，通用媒体解码与重采样仍在开发。
 
 0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。神经相似度组件保持可选、仅在本地运行，不上传用户音频。
 
@@ -105,7 +105,8 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 ### PsyReaSFX 下载
 
 - [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 4.5 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5)
+- [PsyReaSFX 0.9.0 Beta 5 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5)
+- [Beta 5 可选神经相似度组件](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta5/PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)

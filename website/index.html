@@ -24,8 +24,8 @@
   <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon-64.png">
   <link rel="manifest" href="site.webmanifest">
   <link rel="preload" href="assets/screenshots/compact-workspace.webp" as="image" type="image/webp">
-  <link rel="stylesheet" href="styles.css?v=20260915-1">
-  <script src="app.js?v=20260915-1" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20260915-2">
+  <script src="app.js?v=20260915-2" defer></script>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -89,7 +89,7 @@
           <div class="hero-actions">
             <a class="button primary" href="#install" data-i18n="installReapack">Install with ReaPack</a>
             <a class="button secondary" data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5" data-i18n="downloadStable">Download Stable</a>
-            <a class="button quiet" data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5" data-i18n="viewPreview">View Beta 4.5</a>
+            <a class="button quiet" data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5" data-i18n="viewPreview">View Beta 5</a>
           </div>
           <div class="hero-meta">
             <span data-i18n="freeUpdate">One repository · Automatic updates</span>
@@ -102,7 +102,7 @@
           <div class="window-chrome">
             <div class="window-bar">
               <span></span><span></span><span></span>
-              <p>PsyReaSFX <b data-preview-version>0.9.0 Beta 4.5</b></p>
+              <p>PsyReaSFX <b data-preview-version>0.9.0 Beta 5</b></p>
             </div>
             <picture>
               <source srcset="assets/screenshots/compact-workspace-960.webp 960w, assets/screenshots/compact-workspace.webp 1700w" sizes="(max-width: 760px) 145vw, (max-width: 1060px) 100vw, 62vw" type="image/webp">
@@ -141,9 +141,10 @@
             <span class="release-dot"></span>
             <span data-i18n="previewChannel">Preview channel</span>
           </div>
-          <strong data-preview-version>0.9.0 Beta 4.5</strong>
-          <p data-i18n="previewSummary">UCS 8.2.1, spectral peaks, audio-content similarity and preview fixes.</p>
-          <a data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5" data-i18n="getPreview">View preview ↗</a>
+          <strong data-preview-version>0.9.0 Beta 5</strong>
+          <p data-i18n="previewSummary">Optional local EfficientAT embeddings, HNSW recall, hybrid reranking and safe fallback.</p>
+          <a data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5" data-i18n="getPreview">View preview ↗</a>
+          <a class="release-sub-link" data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta5/PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip" data-i18n="neuralAddon">Download optional neural component ↗</a>
         </article>
       </div>
     </section>
@@ -182,10 +183,10 @@
         <div class="feature-copy">
           <p class="kicker" data-i18n="findKicker">FIND BY STRUCTURE AND SOUND</p>
           <h2 data-i18n="findTitle">Search the catalog.<br>Then search the audio itself.</h2>
-          <p data-i18n="findText">Beta 4.5 ships explainable acoustic similarity. The next optional local EfficientAT path now connects Lua to incremental embeddings and HNSW, with progress, cancellation, hybrid reranking and automatic fallback; general media decoding is still in development.</p>
+          <p data-i18n="findText">Beta 5 adds an optional local EfficientAT path with incremental embeddings, HNSW recall, progress, cancellation and hybrid reranking. The dependency-free 15-feature search remains the automatic fallback.</p>
           <ul class="check-list">
             <li data-i18n="ucsNavigation">Browse Category, SubCategory and CatID without moving source files</li>
-            <li data-i18n="similarSearch">Keep the dependency-free 15-feature search, with optional local neural recall in development</li>
+            <li data-i18n="similarSearch">Use optional local neural recall for 32 kHz PCM16 WAV scopes, with safe automatic fallback</li>
             <li data-i18n="spectralPeaks">Inspect on-demand spectral peaks in the detailed waveform</li>
           </ul>
           <a class="text-link feature-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md" data-i18n="similarityDetails">Read the similarity architecture ↗</a>
