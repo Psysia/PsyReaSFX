@@ -58,13 +58,18 @@ try {
         if ([string]$source.platform -ne "win64") { throw "Source is not restricted to win64: $target" }
         if (-not $target.StartsWith("PsyReaSFX/neural_similarity/")) { throw "Unsafe data target: $target" }
         if ($target.Contains("..") -or $targets.ContainsKey($target)) { throw "Duplicate or unsafe data target: $target" }
-        if ($hash -notmatch '^1220[0-9a-f]{64}$') { throw "Invalid ReaPack SHA-256 multihash: $target" }
+        $isSidecar = $target.EndsWith("/PsyReaSFX.NeuralSidecar.exe")
+        if (-not $isSidecar -and $hash -notmatch '^1220[0-9a-f]{64}$') {
+            throw "Invalid ReaPack SHA-256 multihash: $target"
+        }
         $targets[$target] = $true
 
         $local = Resolve-SourceFile $url
         if (-not (Test-Path -LiteralPath $local -PathType Leaf)) { throw "Missing local source for $target`: $local" }
-        $actual = "1220" + (Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actual -cne $hash) { throw "Hash mismatch for $target`: expected $hash, got $actual" }
+        if (-not [string]::IsNullOrWhiteSpace($hash)) {
+            $actual = "1220" + (Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -cne $hash) { throw "Hash mismatch for $target`: expected $hash, got $actual" }
+        }
 
         $destination = Join-Path $dataRoot ($target -replace '/', [IO.Path]::DirectorySeparatorChar)
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null

@@ -7,7 +7,7 @@
 - Adds `PsyReaSFX Neural Similarity` as a separate optional Windows x64 ReaPack data package, so the sidecar, model, golden assets, and third-party notices can be installed, updated, and removed inside REAPER.
 - Discovers ReaPack-managed component files under `<REAPER Resource>/Data/PsyReaSFX/neural_similarity` before the legacy manual-install location.
 - Keeps embedding caches, the HNSW index, capabilities, and job files under `<REAPER Resource>/Scripts/PsyReaSFX/neural_similarity`, so removing the optional package does not delete rebuildable user cache data.
-- Preserves compatibility with the Beta 6 manual ZIP installer and publishes a standalone sidecar executable for ReaPack delivery with per-source SHA-256 multihashes.
+- Preserves compatibility with the Beta 6 manual ZIP installer and publishes a standalone sidecar executable for ReaPack delivery; release assets include a SHA-256 checksum manifest, while static package sources also use ReaPack multihashes.
 
 ## 0.9.0 Beta 6
 
