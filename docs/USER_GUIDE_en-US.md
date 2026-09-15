@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 5
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -47,10 +47,10 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
-### Optional neural similarity component (Beta 5)
+### Optional neural similarity component (Beta 6)
 
-The Beta 5 neural component is not installed automatically by ReaPack. Download
-`PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip` from the Beta 5 GitHub
+The Beta 6 neural component is not installed automatically by ReaPack. Download
+`PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip` from the Beta 6 GitHub
 Release, extract it, and double-click `Install-NeuralSimilarity.cmd`. It is a
 self-contained Windows x64 application and does not require a separate .NET
 installation. Portable REAPER users can pass the resource path explicitly as
@@ -249,12 +249,15 @@ Scoring uses audio content only, never filenames, UCS categories or keywords. Fo
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
 
-With the optional Beta 5 component installed, PsyReaSFX uses EfficientAT
+With the optional Beta 6 component installed, PsyReaSFX uses EfficientAT
 embedding recall followed by the existing duration, onset, transient and
-envelope features when every asset in the complete Current Results or All
-Libraries scope is a 32 kHz PCM16 WAV. The first full-library search builds an
-incremental embedding cache and HNSW index with visible, cancelable progress.
-Missing components, unsupported formats, model/protocol mismatches, stalled
+envelope features. Common WAV sample rates and PCM16/PCM24/PCM32/float depths,
+AIFF, FLAC, MP3 and M4A use the built-in Windows decoder; an available FFmpeg
+also enables OGG, Opus, WavPack and CAF. Audio is downmixed and resampled to
+32 kHz in memory, without creating converted files. The first full-library
+search builds an incremental FP16 embedding cache and HNSW index with visible,
+cancelable progress. Individual decode failures are skipped and reported;
+missing components, unsupported formats, model/protocol mismatches, stalled
 jobs, and damaged cache data transparently fall back to the baseline search.
 
 ## 7. Result columns
@@ -663,8 +666,8 @@ Wait for visible-row waveform tasks, or run high-resolution precache. Later visi
 
 ### Neural similarity does not activate
 
-- Confirm that the optional Beta 5 neural component is installed, then restart PsyReaSFX.
-- Protocol v1 requires every asset in the requested scope to be a 32 kHz PCM16 WAV; other scopes fall back automatically.
+- Confirm that the optional Beta 6 neural component is installed, then restart PsyReaSFX.
+- Check whether the file extension is supported by the installed component. OGG, Opus, WavPack and CAF require FFmpeg; the other documented formats use Windows codecs.
 - Missing/damaged models, protocol mismatches, failed jobs, and timeouts safely use the baseline algorithm.
 - Re-run the installer to replace the executable and model. Existing embedding/HNSW data is reused or rebuilt by signature.
 
@@ -683,7 +686,7 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 ## 21. Stable support
 
 PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.9.0 Beta 5 as versions of the same package. Normal synchronization
+PsyReaSFX 0.9.0 Beta 6 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.

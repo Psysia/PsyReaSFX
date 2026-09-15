@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta5 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta6 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -209,6 +209,14 @@ jobs:
       - name: Run neural model golden self-test
         run: dotnet run --project neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj -c Release --no-build -- self-test assets/neural/mn04_as_scene_320_v1
 
+      - name: Run neural audio decode and resampling test
+        shell: pwsh
+        run: |
+          ./tools/Test-NeuralAudioFormats.ps1 `
+            -SidecarPath 'neural/PsyReaSFX.NeuralSidecar/bin/Release/net8.0/PsyReaSFX.NeuralSidecar.dll' `
+            -ModelDirectory 'assets/neural/mn04_as_scene_320_v1' `
+            -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-formats')
+
       - name: Run neural job protocol smoke test
         shell: pwsh
         run: |
@@ -222,9 +230,9 @@ jobs:
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-release-assets'
-          ./tools/Build-BetaRelease.ps1 -Version 0.9.0-beta5 -OutputDirectory $output
+          ./tools/Build-BetaRelease.ps1 -Version 0.9.0-beta6 -OutputDirectory $output
           ./tools/Test-NeuralPackage.ps1 `
-            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip') `
+            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip') `
             -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-package')
 
       - name: Run Desktop self-test

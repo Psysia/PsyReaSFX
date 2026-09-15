@@ -1040,14 +1040,21 @@ function finish_similarity_search(canceled)
   end
   Jobs.finish(session.job_token, true)
   session.processed = session.total
+  local reported_failed = session.failed
+  if session.neural_used then
+    reported_failed = math.max(
+      reported_failed,
+      tonumber(session.neural_decode_failed) or 0
+    )
+  end
   set_status(string.format(
     session.neural_used
       and "神经相似度分析完成：检查 %d，命中 %d，失败 %d"
       or "相似声音分析完成：检查 %d，命中 %d，失败 %d",
     session.processed,
     state.similarity_result_count,
-    session.failed
-  ), session.failed > 0)
+    reported_failed
+  ), reported_failed > 0)
 end
 
 function cancel_similarity_search()

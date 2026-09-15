@@ -1,13 +1,13 @@
 # PsyReaSFX Neural Similarity component
 
-This is the optional Windows x64 local component for PsyReaSFX 0.9.0 Beta 5.
+This is the optional Windows x64 local component for PsyReaSFX 0.9.0 Beta 6.
 It generates audio embeddings with the frozen EfficientAT `mn04_as` model and
 uses HNSW for fast full-library similar-sound recall. Audio stays on this
 computer and is never uploaded.
 
 ## Install
 
-1. Install or update to PsyReaSFX 0.9.0 Beta 5 through ReaPack.
+1. Install or update to PsyReaSFX 0.9.0 Beta 6 through ReaPack.
 2. Extract this ZIP and double-click `Install-NeuralSimilarity.cmd`.
 3. Restart PsyReaSFX after installation.
 
@@ -23,11 +23,17 @@ For portable REAPER, pass its resource directory in PowerShell:
 .\Install-NeuralSimilarity.ps1 -ReaperResourcePath "D:\REAPER Portable"
 ```
 
-## Current format scope
+## Audio format support
 
-The neural path currently activates only when every asset in the requested
-search scope is a **32 kHz PCM16 WAV**. Other sample rates, bit depths, and
-formats transparently use the existing 15-feature acoustic search.
+The built-in Windows path supports common sample rates and PCM16/PCM24/PCM32/
+float WAV, plus AIFF, FLAC, MP3, and M4A. If FFmpeg is installed, OGG, Opus,
+WavPack, and CAF are enabled too. Set `PSYREASFX_FFMPEG` to an explicit FFmpeg
+executable, place `ffmpeg.exe` beside the sidecar, or make it available on
+`PATH`.
+
+Audio is decoded, downmixed, and resampled to the model's 32 kHz input in
+memory. No converted audio copies are created. An unsupported or damaged file
+is skipped and reported; other successfully embedded assets remain searchable.
 
 The first full-library search builds an embedding cache and HNSW index with
 visible, cancelable progress. Later searches reuse data under:

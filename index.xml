@@ -9,6 +9,19 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.9.0-beta6" author="Psysia" time="2026-09-15T10:06:32Z">
+        <changelog><![CDATA[
+- Expands optional neural similarity to common WAV sample rates and bit depths, AIFF, FLAC, MP3, and M4A.
+- Uses in-memory downmixing and resampling without creating converted audio copies.
+- Uses FFmpeg when available for OGG, Opus, WavPack, and CAF, and skips individual decode failures safely.
+- Keeps the neural component optional and transparently falls back to the existing 15-feature search.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta6/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta6/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta6/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta6/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta6/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.0-beta5" author="Psysia" time="2026-09-15T07:03:29Z">
         <changelog><![CDATA[
 - Adds optional local EfficientAT embeddings with persistent HNSW recall and hybrid acoustic reranking.

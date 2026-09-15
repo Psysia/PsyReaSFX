@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 6
+
+### 无转码副本的神经音频解码
+
+- 可选神经 sidecar 升级到 `0.5.0`，在本机完成解码、单声道下混与 WDL 重采样，再送入冻结的 32 kHz 模型；不会写出转换后的音频文件。
+- 内建 Windows 路径支持常见采样率和 PCM16/PCM24/PCM32/float WAV，以及 AIFF、FLAC、MP3、M4A；检测到 FFmpeg 后还会启用 OGG、Opus、WavPack 与 CAF。
+- `capabilities` 会公布解码器版本和当前机器实际可用的扩展名；旧 Beta 5 sidecar 仍保持原有 32 kHz PCM16 WAV 安全限制。
+- 单个素材解码失败不再使整库神经缓存构建失败；失败素材会被报告并排除，其他成功生成 embedding 的素材仍可参与神经检索。
+- embedding 缓存升级为版本 2 并绑定解码器版本，避免旧输入规则产生的缓存被静默复用。
+- 新增 44.1 kHz PCM16、48 kHz PCM24、96 kHz PCM32、float WAV，以及真实 WAV/FLAC/MP3/OGG/Opus/WavPack/AIFF/CAF/M4A 的解码与重采样回归测试。
+
 ## 0.9.0 Beta 5
 
 ### 可选本地神经相似度

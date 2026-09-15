@@ -5,10 +5,10 @@ const STABLE_FALLBACK = {
   url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5"
 };
 const PREVIEW_FALLBACK = {
-  version: "0.9.0 Beta 5",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5"
+  version: "0.9.0 Beta 6",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6"
 };
-const NEURAL_FALLBACK = "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta5/PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip";
+const NEURAL_FALLBACK = "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip";
 
 const messages = {
   en: {
@@ -30,7 +30,7 @@ const messages = {
     heroLead: "Browse, organize, audition and deliver large sound libraries without leaving REAPER.",
     installReapack: "Install with ReaPack",
     downloadStable: "Download Stable",
-    viewPreview: "View Beta 5",
+    viewPreview: "View Beta 6",
     freeUpdate: "One repository · Automatic updates",
     inlineWaveforms: "Inline waveforms",
     visibleFirst: "Visible-first caching",
@@ -53,7 +53,7 @@ const messages = {
     stableSummary: "The default ReaPack release for everyday production work.",
     getStable: "Get Stable ↗",
     previewChannel: "Preview channel",
-    previewSummary: "Optional local EfficientAT embeddings, HNSW recall, hybrid reranking and safe fallback.",
+    previewSummary: "Local EfficientAT recall with in-memory decoding and resampling for common audio formats.",
     getPreview: "View preview ↗",
     neuralAddon: "Download optional neural component ↗",
     downloadDesktop: "Download Desktop Alpha 8",
@@ -83,9 +83,9 @@ const messages = {
     loudnessStats: "LUFS and True Peak statistics",
     findKicker: "FIND BY STRUCTURE AND SOUND",
     findTitle: "Search the catalog.<br>Then search the audio itself.",
-    findText: "Beta 5 adds an optional local EfficientAT path with incremental embeddings, HNSW recall, progress, cancellation and hybrid reranking. The dependency-free 15-feature search remains the automatic fallback.",
+    findText: "Beta 6 adds in-memory decoding and resampling to the optional EfficientAT path. Common WAV, AIFF, FLAC, MP3 and M4A files work without converted copies; FFmpeg extends support further.",
     ucsNavigation: "Browse Category, SubCategory and CatID without moving source files",
-    similarSearch: "Use optional local neural recall for 32 kHz PCM16 WAV scopes, with safe automatic fallback",
+    similarSearch: "Use local neural recall across common sample rates, bit depths and formats, with safe automatic fallback",
     spectralPeaks: "Inspect on-demand spectral peaks in the detailed waveform",
     similarityDetails: "Read the similarity architecture ↗",
     deliverWithoutLosing: "Deliver without losing the thread.",
@@ -152,7 +152,7 @@ const messages = {
     heroLead: "无需离开 REAPER，即可浏览、整理、试听并交付大型音效素材库。",
     installReapack: "通过 ReaPack 安装",
     downloadStable: "下载稳定版",
-    viewPreview: "查看 Beta 5",
+    viewPreview: "查看 Beta 6",
     freeUpdate: "一个仓库 · 自动更新",
     inlineWaveforms: "列表内联波形",
     visibleFirst: "可见内容优先缓存",
@@ -175,7 +175,7 @@ const messages = {
     stableSummary: "默认 ReaPack 版本，适合日常生产使用。",
     getStable: "获取稳定版 ↗",
     previewChannel: "预发布通道",
-    previewSummary: "新增可选本地 EfficientAT embedding、HNSW 召回、混合重排和安全回退。",
+    previewSummary: "本地 EfficientAT 召回支持常见音频格式的内存解码与重采样。",
     getPreview: "查看预发布版 ↗",
     neuralAddon: "下载可选神经组件 ↗",
     downloadDesktop: "下载桌面 Alpha 8",
@@ -205,9 +205,9 @@ const messages = {
     loudnessStats: "LUFS 与 True Peak 数据",
     findKicker: "按结构与声音查找",
     findTitle: "先搜索目录，<br>再搜索声音本身。",
-    findText: "Beta 5 新增可选本地 EfficientAT 路径，支持增量 embedding、HNSW 召回、进度、取消和混合重排；无需依赖的 15 维检索继续作为自动回退。",
+    findText: "Beta 6 为可选 EfficientAT 路径加入内存解码与重采样。常见 WAV、AIFF、FLAC、MP3、M4A 无需转码副本即可使用，FFmpeg 还能扩展更多格式。",
     ucsNavigation: "按 Category、SubCategory 和 CatID 浏览，不移动源文件",
-    similarSearch: "32 kHz PCM16 WAV 范围可使用本地神经召回，并在任何异常下安全回退",
+    similarSearch: "常见采样率、位深与格式均可使用本地神经召回，并在异常时安全回退",
     spectralPeaks: "在详细波形中按需查看频谱峰值",
     similarityDetails: "阅读相似声音架构 ↗",
     deliverWithoutLosing: "交付素材，不中断设计思路。",

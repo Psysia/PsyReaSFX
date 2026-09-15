@@ -2,9 +2,10 @@
 --
 -- The helper is never required for browsing or for the existing 15-feature
 -- search. It is used only after an explicit capability handshake succeeds and
--- only when every requested asset is already a 32 kHz PCM16 WAV accepted by
--- protocol v1. Any protocol, process, cache, or result failure returns the
--- active search to the dependency-free similarity implementation.
+-- only for source formats advertised by the installed sidecar. The sidecar
+-- decodes, downmixes, and resamples in memory without creating converted audio.
+-- Any protocol, process, cache, or result failure returns the active search to
+-- the dependency-free similarity implementation.
 
 NeuralSimilarity = {
   profile = "mn04_as_scene_320_v1",
@@ -282,8 +283,8 @@ function neural_similarity_paths()
     jobs = jobs,
     executable = executable,
     model_directory = model_directory,
-    cache = root .. SEP .. "embeddings-" .. NeuralSimilarity.profile .. "-v1.bin",
-    index = root .. SEP .. "hnsw-" .. NeuralSimilarity.profile .. "-v1.bin",
+    cache = root .. SEP .. "embeddings-" .. NeuralSimilarity.profile .. "-v2.bin",
+    index = root .. SEP .. "hnsw-" .. NeuralSimilarity.profile .. "-v2.bin",
     capabilities = root .. SEP .. "capabilities-v1.json",
   }
 end
@@ -405,14 +406,28 @@ end
 function neural_similarity_asset_supported(asset)
   local source_type = tostring(asset and asset.source_type or ""):lower()
   local path = tostring(asset and asset.path or ""):lower()
-  local is_wave = source_type == "wave" or source_type == "wav"
-    or path:match("%.wav$") or path:match("%.wave$")
-  if not (asset and asset.ready and is_wave
-      and tonumber(asset.sample_rate) == 32000
-      and tonumber(asset.bit_depth) == 16) then
+  if not (asset and asset.ready and path ~= "") then return false end
+  local extension = path:match("%.([^%.\\/]+)$") or source_type
+  if extension == "wave" then extension = "wav" end
+  local profile = nil
+  for _, candidate in ipairs(
+      state.neural_similarity_capabilities
+      and state.neural_similarity_capabilities.profiles or {}) do
+    if candidate.profile == NeuralSimilarity.profile then
+      profile = candidate
+      break
+    end
+  end
+  if profile and tonumber(profile.decoderVersion or 0) >= 1 then
+    for _, supported in ipairs(profile.supportedExtensions or {}) do
+      if tostring(supported):lower() == extension then return true end
+    end
     return false
   end
-  return true
+  local is_wave = extension == "wav"
+  return is_wave
+    and tonumber(asset.sample_rate) == 32000
+    and tonumber(asset.bit_depth) == 16
 end
 
 local function neural_add_prepared_asset(session, asset)
@@ -713,10 +728,15 @@ local function neural_complete_job(session, result)
   neural_cleanup_job(completed_job, true)
   if operation == "build-cache" then
     os.remove(completed_job.paths.assets)
-    if tonumber(result.written) ~= session.neural_asset_count then
+    local written = tonumber(result.written)
+    if not written or written < 1 or written > session.neural_asset_count then
       neural_fallback(session, "incomplete_embedding_cache")
       return
     end
+    session.neural_decode_failed = math.max(
+      tonumber(result.failed) or 0,
+      session.neural_asset_count - written
+    )
     if session.scope == "all"
       and (not neural_file_exists(state.neural_similarity_paths.index)
         or result.cacheChanged == true) then

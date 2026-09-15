@@ -16,8 +16,8 @@ Release、完整更新日志和 ReaPack 历史版本；内部开发快照不强�
 Beta 4 已按 `SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 建立基于时长、包络、起音、
 动态、频段与 tonality 的内容相似检索、解释标签和紧凑缓存。Beta 4.5 已完成波形
 定位试听与反向完整试听边界修复。Beta 5 已发布可选本地 EfficientAT embedding、
-增量缓存、HNSW 召回、Lua 混合重排与透明回退，并提供 Windows x64 自包含安装包。
-通用媒体解码/重采样与真实 50,000 文件库验收仍待完成；完整 FFT 时频图需单独
+增量缓存、HNSW 召回、Lua 混合重排与透明回退；Beta 6 已补齐不落盘的通用媒体
+解码/重采样、动态格式能力探测与单文件失败隔离。真实 50,000 文件库验收仍待完成；完整 FFT 时频图需单独
 冻结需求，DSP 尚未进入实现。
 
 ## 0.9：高级检索、频谱分析、相似声音和 DSP
@@ -85,10 +85,10 @@ UCS 虚拟目录和 UCS 搜索提示进入 0.9。
 - [x] 冻结 EfficientAT embedding、可选 sidecar、HNSW 召回和现有特征重排架构。
 - [x] 导出并验证 `mn04_as` 320 维 ONNX 金样，固定模型与预处理哈希。
 - [x] 完成 sidecar 增量 FP16 embedding 缓存、离线复用、取消安全和精确 cosine Top-K
-  查询；`capabilities`、PCM16 `embed`、10 秒窗口/2.5 秒 hop 与金样自检已覆盖 CI。
+  查询；`capabilities`、通用音频 `embed`、10 秒窗口/2.5 秒 hop 与金样自检已覆盖 CI。
 - [x] 完成持久化 HNSW 索引、缓存哈希绑定、Recall@20 门禁及损坏索引精确查询回退。
-- [x] 完成 Lua 可选能力探测、文件任务进度/取消、HNSW 查询、声学重排及 15 维检索故障回退；协议 v1 先覆盖 32 kHz PCM16 WAV。
-- [ ] 完成通用媒体解码/重采样，使神经检索覆盖当前支持的全部音频格式。
+- [x] 完成 Lua 可选能力探测、文件任务进度/取消、HNSW 查询、声学重排及 15 维检索故障回退。
+- [x] 完成通用媒体解码/重采样：Windows 原生路径覆盖 WAV/AIFF/FLAC/MP3/M4A，可选 FFmpeg 扩展 OGG/Opus/WavPack/CAF，且不生成转码音频。
 - [ ] 在真实 50,000 文件库中完成首次全库分析耗时、取消恢复和格式覆盖验收。
 
 ### DSP

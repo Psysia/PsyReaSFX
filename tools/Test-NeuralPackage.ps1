@@ -29,7 +29,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $model "manifest-v1.json") -PathType
 & $sidecar capabilities $model | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Installed sidecar capability test failed: $LASTEXITCODE" }
 
-$cache = Join-Path $target "embeddings-mn04_as_scene_320_v1-v1.bin"
+$cache = Join-Path $target "embeddings-mn04_as_scene_320_v1-v2.bin"
 [IO.File]::WriteAllText($cache, "package-test-cache")
 & $uninstaller -ReaperResourcePath $resource
 if (Test-Path -LiteralPath $sidecar) { throw "Uninstaller did not remove the sidecar." }
