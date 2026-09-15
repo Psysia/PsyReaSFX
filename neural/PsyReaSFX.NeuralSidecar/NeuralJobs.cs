@@ -5,7 +5,7 @@ using Microsoft.ML.OnnxRuntime;
 
 namespace PsyReaSFX.NeuralSidecar;
 
-internal static class NeuralJobs
+internal static partial class NeuralJobs
 {
     private const string JobSchema = "PsyReaSFX-Neural-Job-v1";
     private const string StatusSchema = "PsyReaSFX-Neural-Job-Status-v1";
@@ -38,6 +38,7 @@ internal static class NeuralJobs
             return request.Operation switch
             {
                 "build-cache" => RunBuildCache(model, request),
+                "build-index" => RunBuildIndex(model, request),
                 "query" => RunQuery(model, request),
                 _ => throw new InvalidDataException($"Unsupported neural job operation: {request.Operation}"),
             };
@@ -157,6 +158,8 @@ internal static class NeuralJobs
                 + $"0000000000000001\t101\t1001\t\"b.wav\"{Environment.NewLine}");
             ExpectInvalidData(() => ReadAssets(duplicateAssets), "Duplicate requested signature was accepted.");
             cases++;
+
+            cases += RunHnswSelfTest(model, root);
 
             return new { result = "passed", cases };
         }
@@ -310,8 +313,9 @@ internal static class NeuralJobs
         ValidateSignature(referenceSignature);
         Program.Require(request.TopK is >= 1 and <= MaximumTopK,
             $"query topK must be between 1 and {MaximumTopK}.");
-
-        var cache = ReadCache(request.CachePath, model);
+        var requestedMode = request.SearchMode;
+        Program.Require(requestedMode is "auto" or "exact" or "hnsw",
+            "query searchMode must be auto, exact, or hnsw.");
         HashSet<string>? candidates = null;
         if (request.CandidateSignaturesFile is not null)
         {
@@ -321,8 +325,44 @@ internal static class NeuralJobs
                 candidates = null;
             }
         }
+
+        var useHnsw = candidates is null && requestedMode != "exact" && request.IndexPath is not null;
+        string? cacheHash = null;
+        Dictionary<string, CacheRecord> cache;
+        if (useHnsw)
+        {
+            cacheHash = Program.HashFile(request.CachePath);
+            cache = ReadCache(request.CachePath, model);
+            Program.Require(Program.HashFile(request.CachePath) == cacheHash,
+                "Embedding cache changed while it was being loaded.");
+        }
+        else
+        {
+            cache = ReadCache(request.CachePath, model);
+        }
         Program.Require(cache.ContainsKey(referenceSignature),
             $"Reference signature is not present in the neural cache: {referenceSignature}");
+
+        HnswGraph? graph = null;
+        string? fallbackReason = null;
+        if (useHnsw)
+        {
+            try
+            {
+                graph = ReadHnsw(request.IndexPath!, model, cache, cacheHash!);
+            }
+            catch (Exception error) when (requestedMode == "auto"
+                && error is IOException or InvalidDataException or EndOfStreamException or OverflowException)
+            {
+                fallbackReason = error.Message;
+                useHnsw = false;
+            }
+        }
+        if (requestedMode == "hnsw" && candidates is null)
+        {
+            Program.Require(request.IndexPath is not null, "hnsw query requires indexPath.");
+            Program.Require(graph is not null, "HNSW index could not be loaded.");
+        }
 
         if (IsCancelled(request))
         {
@@ -333,18 +373,31 @@ internal static class NeuralJobs
 
         var scanned = 0;
         var totalCandidates = candidates?.Count ?? cache.Count;
-        WriteStatus(request, "running", "querying", 0, totalCandidates, false, null);
-        var matches = Rank(cache, referenceSignature, candidates, request.TopK,
-            () =>
-            {
-                scanned++;
-                if (scanned % 4_096 == 0)
+        var actualMode = useHnsw ? "hnsw" : candidates is null ? "exact" : "exact-filtered";
+        WriteStatus(request, "running", $"querying-{actualMode}", 0, totalCandidates, false, null);
+        var matches = useHnsw
+            ? QueryHnsw(graph!, cache, referenceSignature, request.TopK, request.EfSearch,
+                () =>
                 {
-                    WriteStatus(request, "running", "querying", scanned, totalCandidates, false, null);
-                    return IsCancelled(request);
-                }
-                return false;
-            });
+                    scanned++;
+                    if (scanned % 1_024 == 0)
+                    {
+                        WriteStatus(request, "running", "querying-hnsw", scanned, totalCandidates, false, null);
+                        return IsCancelled(request);
+                    }
+                    return false;
+                })
+            : Rank(cache, referenceSignature, candidates, request.TopK,
+                () =>
+                {
+                    scanned++;
+                    if (scanned % 4_096 == 0)
+                    {
+                        WriteStatus(request, "running", $"querying-{actualMode}", scanned, totalCandidates, false, null);
+                        return IsCancelled(request);
+                    }
+                    return false;
+                });
         if (IsCancelled(request))
         {
             WriteResult(request, new { referenceSignature, cancelled = true, matches = Array.Empty<object>() });
@@ -360,6 +413,9 @@ internal static class NeuralJobs
             availableCandidates = totalCandidates - missing,
             missingCandidates = missing,
             topK = request.TopK,
+            searchMode = actualMode,
+            request.EfSearch,
+            fallbackReason,
             cancelled = false,
             matches = matches.Select(match => new { signature = match.Signature, score = match.Score }),
         });
@@ -635,9 +691,19 @@ internal static class NeuralJobs
 
     private static void ValidateWritablePaths(string modelDirectory, string requestPath, JobRequest request)
     {
-        var outputs = new[] { request.CachePath, request.StatusPath, request.ResultPath };
+        var outputs = request.Operation switch
+        {
+            "build-cache" => new[] { request.CachePath, request.StatusPath, request.ResultPath },
+            "build-index" => new[]
+            {
+                request.IndexPath ?? throw new InvalidDataException("build-index requires indexPath."),
+                request.StatusPath,
+                request.ResultPath,
+            },
+            _ => new[] { request.StatusPath, request.ResultPath },
+        };
         Program.Require(outputs.Distinct(StringComparer.OrdinalIgnoreCase).Count() == outputs.Length,
-            "Neural cache, status, and result paths must be distinct.");
+            "Neural job output paths must be distinct.");
         var modelRoot = Path.GetFullPath(modelDirectory).TrimEnd(Path.DirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
         foreach (var path in outputs)
@@ -647,12 +713,19 @@ internal static class NeuralJobs
             Program.Require(!string.Equals(path, requestPath, StringComparison.OrdinalIgnoreCase),
                 "Neural job output must not overwrite its request file.");
         }
-        foreach (var input in new[] { request.AssetsFile, request.CandidateSignaturesFile })
+        var inputs = request.Operation switch
+        {
+            "build-cache" => new[] { request.AssetsFile },
+            "build-index" => new[] { request.CachePath },
+            "query" => new[] { request.CachePath, request.IndexPath, request.CandidateSignaturesFile },
+            _ => Array.Empty<string?>(),
+        };
+        foreach (var input in inputs)
         {
             if (input is not null)
             {
                 Program.Require(!outputs.Contains(input, StringComparer.OrdinalIgnoreCase),
-                    "Neural job output must not overwrite an input list.");
+                    "Neural job output must not overwrite an input file.");
             }
         }
         if (request.CancelPath is not null)
@@ -716,7 +789,7 @@ internal static class NeuralJobs
         {
             action();
         }
-        catch (InvalidDataException)
+        catch (Exception error) when (error is InvalidDataException or EndOfStreamException or OverflowException)
         {
             return;
         }
@@ -734,10 +807,15 @@ internal static class NeuralJobs
             Path.Combine(root, $"{name}-status.json"),
             Path.Combine(root, $"{name}-result.json"),
             Path.Combine(root, $"{name}-cancel"),
+            null,
             assetsFile,
             null,
             null,
-            200);
+            200,
+            16,
+            128,
+            800,
+            "auto");
 
     private sealed record AssetRequest(string Signature, long Size, long MtimeUtcTicks, string Path);
 
@@ -773,10 +851,15 @@ internal static class NeuralJobs
         string StatusPath,
         string ResultPath,
         string? CancelPath,
+        string? IndexPath,
         string? AssetsFile,
         string? CandidateSignaturesFile,
         string? ReferenceSignature,
-        int TopK)
+        int TopK,
+        int M,
+        int EfConstruction,
+        int EfSearch,
+        string SearchMode)
     {
         public static JobRequest Load(string requestPath)
         {
@@ -793,10 +876,19 @@ internal static class NeuralJobs
             var statusPath = ResolvePath(requestDirectory, GetRequiredString(root, "statusPath"));
             var resultPath = ResolvePath(requestDirectory, GetRequiredString(root, "resultPath"));
             var cancelPath = GetOptionalString(root, "cancelPath");
+            var indexPath = GetOptionalString(root, "indexPath");
             var assetsFile = GetOptionalString(root, "assetsFile");
             var candidatesFile = GetOptionalString(root, "candidateSignaturesFile");
             var referenceSignature = GetOptionalString(root, "referenceSignature");
             var topK = root.TryGetProperty("topK", out var topKElement) ? topKElement.GetInt32() : 200;
+            var m = root.TryGetProperty("m", out var mElement) ? mElement.GetInt32() : 16;
+            var efConstruction = root.TryGetProperty("efConstruction", out var efConstructionElement)
+                ? efConstructionElement.GetInt32()
+                : 128;
+            var efSearch = root.TryGetProperty("efSearch", out var efSearchElement)
+                ? efSearchElement.GetInt32()
+                : 800;
+            var searchMode = GetOptionalString(root, "searchMode") ?? "auto";
             return new JobRequest(
                 requestId,
                 operation,
@@ -804,10 +896,15 @@ internal static class NeuralJobs
                 statusPath,
                 resultPath,
                 cancelPath is null ? null : ResolvePath(requestDirectory, cancelPath),
+                indexPath is null ? null : ResolvePath(requestDirectory, indexPath),
                 assetsFile is null ? null : ResolvePath(requestDirectory, assetsFile),
                 candidatesFile is null ? null : ResolvePath(requestDirectory, candidatesFile),
                 referenceSignature,
-                topK);
+                topK,
+                m,
+                efConstruction,
+                efSearch,
+                searchMode);
         }
 
         private static string GetRequiredString(JsonElement root, string name)

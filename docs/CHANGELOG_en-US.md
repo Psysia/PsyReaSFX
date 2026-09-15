@@ -9,7 +9,9 @@
 - Implements the frozen long-audio rule: 10-second windows, 2.5-second hop, raw-vector averaging, then final L2 normalization.
 - Adds a `run-job` file protocol, incremental FP16 embedding cache, and exact cosine Top-K queries. The cache stores no complete paths and supports offline reuse, changed-file recomputation, stable tie ordering, and candidate-signature filtering.
 - Replaces cache, status, and result files atomically. Cancellation stops after the current asset without replacing the previous cache; corrupt, truncated, wrong-model, and duplicate-signature caches are rejected.
-- Adds model, cache-protocol, and real file-job verification to CI. HNSW indexing, general media decoding, and Lua fallback integration remain under development and are not part of Beta 4.5.
+- Adds a deterministic HNSW implementation without a new third-party dependency. Each index is bound to the complete embedding-cache SHA-256 and supports atomic construction, cancellation protection, explicit HNSW queries, and automatic exact fallback when the index is missing, corrupt, or stale.
+- Keeps candidate-signature filtering exact so a restricted UI result set cannot lose records through a fixed ANN recall stage; unrestricted queries may use HNSW.
+- Adds model, cache/HNSW protocol, Recall@20, and real file-job verification to CI. General media decoding and Lua fallback integration remain under development and are not part of Beta 4.5.
 
 ## 0.9.0 Beta 4.5
 

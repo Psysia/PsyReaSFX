@@ -27,15 +27,20 @@ to mono. General media decoding and resampling are intentionally deferred to
 the next sidecar phase. Output files are written through same-directory atomic
 replacement.
 
-`run-job` supports two operations through `PsyReaSFX-Neural-Job-v1` JSON
+`run-job` supports three operations through `PsyReaSFX-Neural-Job-v1` JSON
 requests:
 
 - `build-cache` incrementally writes a versioned binary cache keyed by the
   existing 16-character asset signature. Each record stores file size, UTC
   modification ticks, and a 320-dimensional FP16 embedding, but no path.
-- `query` performs exact cosine search over all cached records or a supplied
-  signature set, excludes the reference, and returns a stable score-descending,
-  signature-ascending Top-K list.
+- `build-index` creates a deterministic, versioned HNSW graph bound to the
+  complete embedding-cache SHA-256. The graph is atomically replaced only
+  after construction succeeds.
+- `query` uses HNSW for unrestricted searches, or exact cosine for a supplied
+  candidate-signature set. It excludes the reference and returns a stable
+  score-descending, signature-ascending Top-K list. `searchMode` may be `auto`,
+  `exact`, or `hnsw`; `auto` falls back to exact search if an index is missing,
+  corrupt, or stale.
 
 Build inputs use UTF-8 TSV rows in the form
 `signature<TAB>size<TAB>mtimeUtcTicks<TAB>JSON-string-path`. Unchanged records
@@ -65,6 +70,12 @@ dotnet run --project neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.cspr
   -c Release --no-build -- self-test assets/neural/mn04_as_scene_320_v1
 ```
 
-HNSW indexing, general media decoding/resampling, Lua capability discovery, and
-transparent fallback to the existing 15-dimensional search remain the next
-implementation phase.
+The in-tree HNSW implementation adds no new runtime dependency. Its current
+defaults are `m = 16`, `efConstruction = 128`, and `efSearch = 800`; all are
+validated by the sidecar protocol. Candidate-filtered searches intentionally
+remain exact so a small UI result scope cannot lose relevant records before
+reranking.
+
+General media decoding/resampling, Lua capability discovery, and transparent
+fallback to the existing 15-dimensional search remain the next implementation
+phase.

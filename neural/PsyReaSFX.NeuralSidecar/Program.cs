@@ -8,7 +8,7 @@ namespace PsyReaSFX.NeuralSidecar;
 
 internal static class Program
 {
-    internal const string SidecarVersion = "0.2.0";
+    internal const string SidecarVersion = "0.3.0";
     internal const string ExpectedSchema = "PsyReaSFX-Neural-Model-v1";
     internal const string ExpectedProfile = "mn04_as_scene_320_v1";
     internal const string ExpectedModelSha256 = "5efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054";
@@ -66,7 +66,16 @@ internal static class Program
             sidecarVersion = SidecarVersion,
             protocolVersion = 1,
             operations = new[] { "capabilities", "embed", "run-job", "self-test" },
-            jobOperations = new[] { "build-cache", "query" },
+            jobOperations = new[] { "build-cache", "build-index", "query" },
+            hnsw = new
+            {
+                indexFormatVersion = 1,
+                defaultM = 16,
+                defaultEfConstruction = 128,
+                defaultEfSearch = 800,
+                maximumEf = 10_000,
+                exactCandidateFiltering = true,
+            },
             profiles = new[]
             {
                 new
