@@ -8,15 +8,15 @@ namespace PsyReaSFX.NeuralSidecar;
 
 internal static class Program
 {
-    private const string SidecarVersion = "0.1.0";
-    private const string ExpectedSchema = "PsyReaSFX-Neural-Model-v1";
-    private const string ExpectedProfile = "mn04_as_scene_320_v1";
-    private const string ExpectedModelSha256 = "5efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054";
-    private const int ExpectedDimensions = 320;
-    private const int ExpectedSampleRate = 32_000;
-    private const int MinimumSamples = 514;
-    private const int MaximumSamples = ExpectedSampleRate * 10;
-    private const int SceneHopSamples = ExpectedSampleRate * 5 / 2;
+    internal const string SidecarVersion = "0.2.0";
+    internal const string ExpectedSchema = "PsyReaSFX-Neural-Model-v1";
+    internal const string ExpectedProfile = "mn04_as_scene_320_v1";
+    internal const string ExpectedModelSha256 = "5efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054";
+    internal const int ExpectedDimensions = 320;
+    internal const int ExpectedSampleRate = 32_000;
+    internal const int MinimumSamples = 514;
+    internal const int MaximumSamples = ExpectedSampleRate * 10;
+    internal const int SceneHopSamples = ExpectedSampleRate * 5 / 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -41,6 +41,7 @@ internal static class Program
                 "capabilities" => RunCapabilities(modelDirectory),
                 "self-test" => RunSelfTest(modelDirectory),
                 "embed" => RunEmbed(modelDirectory, args.Skip(2).ToArray()),
+                "run-job" => NeuralJobs.Run(modelDirectory, args.Skip(2).ToArray()),
                 _ => throw new ArgumentException($"Unknown command: {command}"),
             };
         }
@@ -64,7 +65,8 @@ internal static class Program
             schema = "PsyReaSFX-Neural-Capabilities-v1",
             sidecarVersion = SidecarVersion,
             protocolVersion = 1,
-            operations = new[] { "capabilities", "embed", "self-test" },
+            operations = new[] { "capabilities", "embed", "run-job", "self-test" },
+            jobOperations = new[] { "build-cache", "query" },
             profiles = new[]
             {
                 new
@@ -118,6 +120,7 @@ internal static class Program
             profile = model.Profile,
             result = "passed",
             cases = reports,
+            cacheProtocol = NeuralJobs.RunSelfTest(model),
         });
         return 0;
     }
@@ -171,7 +174,7 @@ internal static class Program
         return 0;
     }
 
-    private static InferenceSession CreateSession(string modelPath)
+    internal static InferenceSession CreateSession(string modelPath)
     {
         var options = new SessionOptions
         {
@@ -183,7 +186,7 @@ internal static class Program
         return new InferenceSession(modelPath, options);
     }
 
-    private static float[] RunSceneEmbedding(InferenceSession session, float[] samples, int dimensions)
+    internal static float[] RunSceneEmbedding(InferenceSession session, float[] samples, int dimensions)
     {
         if (samples.Length <= MaximumSamples)
         {
@@ -268,7 +271,7 @@ internal static class Program
         return (maxAbsolute, (float)(dot / Math.Sqrt(expectedNorm * actualNorm)));
     }
 
-    private static string HashFloats(float[] values)
+    internal static string HashFloats(float[] values)
     {
         var bytes = new byte[values.Length * sizeof(float)];
         for (var index = 0; index < values.Length; index++)
@@ -278,13 +281,13 @@ internal static class Program
         return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     }
 
-    private static string HashFile(string path)
+    internal static string HashFile(string path)
     {
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
-    private static void AtomicWrite(string path, string content)
+    internal static void AtomicWrite(string path, string content)
     {
         var directory = Path.GetDirectoryName(path);
         if (string.IsNullOrEmpty(directory))
@@ -310,7 +313,7 @@ internal static class Program
     private static void WriteJson(object value) =>
         Console.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
 
-    private static void Require(bool condition, string message)
+    internal static void Require(bool condition, string message)
     {
         if (!condition)
         {
@@ -319,9 +322,9 @@ internal static class Program
     }
 
     private static void WriteUsage() => Console.Error.WriteLine(
-        "Usage: PsyReaSFX.NeuralSidecar <capabilities|self-test|embed> <model-directory> [input.wav] [output.json]");
+        "Usage: PsyReaSFX.NeuralSidecar <capabilities|self-test|embed|run-job> <model-directory> [arguments]");
 
-    private sealed record ModelBundle(string Profile, int Dimensions, int SampleRate, string ModelPath)
+    internal sealed record ModelBundle(string Profile, int Dimensions, int SampleRate, string ModelPath)
     {
         public static ModelBundle LoadAndVerify(string directory)
         {
@@ -363,7 +366,7 @@ internal static class Program
         }
     }
 
-    private static class WavePcm16
+    internal static class WavePcm16
     {
         public static float[] ReadMono32k(string path)
         {

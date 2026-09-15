@@ -19,12 +19,30 @@ The current sidecar foundation exposes:
 PsyReaSFX.NeuralSidecar capabilities <model-directory>
 PsyReaSFX.NeuralSidecar self-test <model-directory>
 PsyReaSFX.NeuralSidecar embed <model-directory> <input.wav> [output.json]
+PsyReaSFX.NeuralSidecar run-job <model-directory> <request.json>
 ```
 
 Protocol v1 accepts PCM16 WAV input at 32 kHz and downmixes multiple channels
 to mono. General media decoding and resampling are intentionally deferred to
 the next sidecar phase. Output files are written through same-directory atomic
 replacement.
+
+`run-job` supports two operations through `PsyReaSFX-Neural-Job-v1` JSON
+requests:
+
+- `build-cache` incrementally writes a versioned binary cache keyed by the
+  existing 16-character asset signature. Each record stores file size, UTC
+  modification ticks, and a 320-dimensional FP16 embedding, but no path.
+- `query` performs exact cosine search over all cached records or a supplied
+  signature set, excludes the reference, and returns a stable score-descending,
+  signature-ascending Top-K list.
+
+Build inputs use UTF-8 TSV rows in the form
+`signature<TAB>size<TAB>mtimeUtcTicks<TAB>JSON-string-path`. Unchanged records
+are reusable while their source drive is offline. Changed or new records are
+validated before and after reading. A cancellation file stops after the current
+asset and leaves the previous cache generation untouched. Cache, status, and
+result files are all replaced atomically.
 
 ## Reproduce the frozen model
 
@@ -47,6 +65,6 @@ dotnet run --project neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.cspr
   -c Release --no-build -- self-test assets/neural/mn04_as_scene_320_v1
 ```
 
-HNSW indexing, persistent embedding caches, cancellation files, Lua capability
-discovery, and transparent fallback to the existing 15-dimensional search are
-the next implementation phase.
+HNSW indexing, general media decoding/resampling, Lua capability discovery, and
+transparent fallback to the existing 15-dimensional search remain the next
+implementation phase.

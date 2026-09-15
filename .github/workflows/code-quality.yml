@@ -204,6 +204,15 @@ jobs:
       - name: Run neural model golden self-test
         run: dotnet run --project neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj -c Release --no-build -- self-test assets/neural/mn04_as_scene_320_v1
 
+      - name: Run neural job protocol smoke test
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-jobs'
+          ./tools/Test-NeuralJobs.ps1 `
+            -SidecarPath 'neural/PsyReaSFX.NeuralSidecar/bin/Release/net8.0/PsyReaSFX.NeuralSidecar.dll' `
+            -ModelDirectory 'assets/neural/mn04_as_scene_320_v1' `
+            -FixtureDirectory $fixture
+
       - name: Run Desktop self-test
         shell: pwsh
         run: |
