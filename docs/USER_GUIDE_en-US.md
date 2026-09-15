@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.7.23 Stable / 0.8.0 Beta 2
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 5
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -46,6 +46,19 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
 5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
+
+### Optional neural similarity component (Beta 5)
+
+The Beta 5 neural component is not installed automatically by ReaPack. Download
+`PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip` from the Beta 5 GitHub
+Release, extract it, and double-click `Install-NeuralSimilarity.cmd`. It is a
+self-contained Windows x64 application and does not require a separate .NET
+installation. Portable REAPER users can pass the resource path explicitly as
+described inside the ZIP.
+
+The component processes audio locally and never uploads files. Double-click
+`Uninstall-NeuralSimilarity.cmd` to remove it. The default uninstall preserves
+the rebuildable cache; `-RemoveCache` removes that data too.
 
 ### Manual installation
 
@@ -235,6 +248,14 @@ Results use a fixed highest-first similarity order and name the closest feature 
 Scoring uses audio content only, never filenames, UCS categories or keywords. Formats
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
+
+With the optional Beta 5 component installed, PsyReaSFX uses EfficientAT
+embedding recall followed by the existing duration, onset, transient and
+envelope features when every asset in the complete Current Results or All
+Libraries scope is a 32 kHz PCM16 WAV. The first full-library search builds an
+incremental embedding cache and HNSW index with visible, cancelable progress.
+Missing components, unsupported formats, model/protocol mismatches, stalled
+jobs, and damaged cache data transparently fall back to the baseline search.
 
 ## 7. Result columns
 
@@ -544,6 +565,7 @@ Important data includes:
 | `project_usage_v1.tsv` | per-REAPER-project insert and Transfer-insert usage |
 | `backups/` | automatic and manual data snapshots |
 | `cache_quarantine/` | damaged RWF files isolated by cache verification |
+| `neural_similarity/` | optional sidecar, model, and rebuildable embedding/HNSW cache |
 
 Back up the entire data directory. Starting with 0.8, `Settings →
 Maintenance` can create one automatic snapshot per day, create a manual backup,
@@ -639,6 +661,13 @@ current project` view expose that history. Unsaved projects are not bound.
 
 Wait for visible-row waveform tasks, or run high-resolution precache. Later visits reuse the cache.
 
+### Neural similarity does not activate
+
+- Confirm that the optional Beta 5 neural component is installed, then restart PsyReaSFX.
+- Protocol v1 requires every asset in the requested scope to be a 32 kHz PCM16 WAV; other scopes fall back automatically.
+- Missing/damaged models, protocol mismatches, failed jobs, and timeouts safely use the baseline algorithm.
+- Re-run the installer to replace the executable and model. Existing embedding/HNSW data is reused or rebuilt by signature.
+
 ### Seek or drag placement is inaccurate
 
 Install or update SWS. For drag placement, release over the REAPER arrange view.
@@ -653,8 +682,8 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 
 ## 21. Stable support
 
-PsyReaSFX 0.7.23 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.8.0 Beta 2 as versions of the same package. Normal synchronization
+PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
+PsyReaSFX 0.9.0 Beta 5 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.

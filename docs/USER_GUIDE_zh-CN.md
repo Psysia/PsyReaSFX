@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.7.23 Stable / 0.8.0 Beta 2
+**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 5
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -46,6 +46,17 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
 5. 打开 REAPER 动作列表，运行 PsyReaSFX；需要时给它绑定快捷键。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
+
+### 可选神经相似度组件（Beta 5）
+
+Beta 5 的神经相似度组件不随 ReaPack 自动安装。请从 Beta 5 GitHub Release
+下载 `PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip`，解压后双击
+`Install-NeuralSimilarity.cmd`。它是 Windows x64 自包含程序，不要求另装 .NET，
+并会安装到 PsyReaSFX 数据目录。便携版 REAPER 请按 ZIP 内说明显式传入资源目录。
+
+组件只在本机处理音频，不上传文件。卸载时双击包内
+`Uninstall-NeuralSimilarity.cmd`；默认保留可重建缓存，也可以使用
+`-RemoveCache` 一并清理。
 
 ### 手动安装
 
@@ -226,6 +237,12 @@ whoosh category:movement -long
 结果按相似度从高到低固定排序，并标出最接近的特征组。相似度只比较音频内容，
 不使用文件名、UCS 分类或关键词。没有频谱数据的格式仍可使用时间域特征比较。
 设置 → 波形中可以清空相似特征缓存，源音频不会被修改。
+
+安装 Beta 5 可选组件后，当“当前结果”或“全部音效库”的完整候选范围全部为
+32 kHz PCM16 WAV 时，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
+现有时长、起音、瞬态和包络特征混合重排。首次全库搜索会增量建立 embedding
+缓存与 HNSW 索引，进度可见且可取消。组件缺失、格式不兼容、模型/协议不符、
+任务超时或缓存损坏时会自动回退，不需要用户切换模式。
 
 ## 7. 结果分栏
 
@@ -522,6 +539,7 @@ PsyReaSFX 优先保证鼠标和滚动交互：
 | `project_usage_v1.tsv` | 按 REAPER 工程记录插入素材和 Transfer 插入 |
 | `backups/` | 自动和手动数据快照 |
 | `cache_quarantine/` | 缓存检查隔离的损坏 RWF 文件 |
+| `neural_similarity/` | 可选 sidecar、模型及可重建的 embedding/HNSW 缓存 |
 
 建议备份整个 PsyReaSFX 数据目录。0.8 起可以在
 `设置 → 维护` 每日自动建立一份数据快照、手动建立备份、设置保留数量，
@@ -606,6 +624,13 @@ PsyReaSFX 会记录插入当前已保存 `.rpp` 工程的素材。项目素材�
 
 等待可见行波形任务完成，或执行高精度预缓存。之后会复用缓存。
 
+### 神经相似度没有启用
+
+- 确认已安装 Beta 5 可选神经组件，并在安装后重新启动 PsyReaSFX。
+- 当前协议要求本次搜索范围内的全部素材都是 32 kHz PCM16 WAV；否则会自动回退。
+- 删除或损坏的模型、协议版本不匹配、任务失败和超时都会安全回退到基础算法。
+- 可以重新运行安装脚本覆盖程序与模型；已有 embedding/HNSW 缓存会按文件签名复用或重建。
+
 ### 点击定位或拖放位置不准
 
 安装或更新 SWS。拖放时请在 REAPER 编排区内释放鼠标。
@@ -620,7 +645,7 @@ PsyReaSFX 内部统一使用 UTF-8。个别源文件元数据可能采用旧编�
 
 ## 21. 稳定版支持与问题反馈
 
-PsyReaSFX 0.7.23 仍是当前稳定版本。ReaPack 会把它与 0.8.0 Beta 2
+PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 5
 作为同一个包的不同版本发布。普通同步默认留在 Stable；需要测试新版时，
 右键 PsyReaSFX，启用单包预发布版本，然后从“Versions”选择目标版本。
 GitHub Release 仍永久保留 0.7.23 Stable ZIP。

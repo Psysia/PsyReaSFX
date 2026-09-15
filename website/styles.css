@@ -539,6 +539,16 @@ h1 span {
   font-weight: 700;
 }
 
+.release-card .release-sub-link {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.release-card .release-sub-link:hover {
+  color: var(--cyan);
+}
+
 .desktop-preview-bar {
   border-bottom: 1px solid var(--line);
   background: linear-gradient(90deg, rgba(25, 216, 255, .08), rgba(50, 118, 239, .045) 52%, rgba(7, 9, 13, 0));

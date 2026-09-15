@@ -3,6 +3,11 @@
 This directory contains the optional local neural-audio component. It is not
 required by the default ReaPack installation and does not upload audio.
 
+Beta 5 users can download the self-contained Windows x64 component from the
+GitHub Release and run `Install-NeuralSimilarity.cmd`; no separate .NET runtime
+is required. Package and installation smoke tests are implemented by
+`tools/Build-BetaRelease.ps1` and `tools/Test-NeuralPackage.ps1`.
+
 The first frozen profile is `mn04_as_scene_320_v1`:
 
 - EfficientAT `mn04_as` AudioSet weights;

@@ -86,8 +86,8 @@ It combines library management, waveform browsing, search, audition, metadata, c
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 4.5** — includes UCS 8.2.1 classification and navigation, on-demand spectral peaks, audio-content similarity, and waveform seek-preview fixes.
-- **Next phase** — the optional EfficientAT sidecar now includes the frozen `mn04_as` model, incremental FP16 embeddings, persistent HNSW recall, plus non-blocking Lua discovery, progress, cancellation, hybrid reranking and transparent 15-feature fallback. Protocol v1 currently activates only for 32 kHz PCM16 WAV scopes; general media decoding remains in development and none of this changes Beta 4.5.
+- **Preview channel: 0.9.0 Beta 5** — adds optional local EfficientAT embeddings, an incremental FP16 cache, persistent HNSW recall and hybrid reranking while preserving the existing 15-feature search as a transparent fallback.
+- **Current limitation** — neural protocol v1 activates only when the complete search scope consists of 32 kHz PCM16 WAV files. Other formats automatically use the baseline search while general media decoding and resampling remain in development.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
@@ -105,7 +105,8 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 4.5 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5)
+- [PsyReaSFX 0.9.0 Beta 5 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5)
+- [Optional Beta 5 neural similarity component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta5/PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
