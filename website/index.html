@@ -4,42 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07090d">
-  <meta name="description" content="PsyReaSFX is a high-performance sound asset browser, audition and delivery workflow built inside REAPER.">
+  <meta name="description" content="PsyReaSFX is a high-performance REAPER sound library browser with UCS classification, waveform audition, audio-content similarity and delivery tools.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://psysia.github.io/PsyReaSFX/">
   <meta property="og:title" content="PsyReaSFX — Sound Assets Organized">
-  <meta property="og:description" content="Browse, organize, preview and deliver large sound libraries without leaving REAPER.">
-  <meta property="og:image" content="https://psysia.github.io/PsyReaSFX/assets/brand/psyreasfx-hero.png">
+  <meta property="og:description" content="Browse, classify, find similar sounds, audition and deliver large sound libraries without leaving REAPER.">
+  <meta property="og:image" content="https://psysia.github.io/PsyReaSFX/assets/brand/psyreasfx-og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="PsyReaSFX — Sound Assets Organized">
+  <meta property="og:site_name" content="PsyReaSFX">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://psysia.github.io/PsyReaSFX/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PsyReaSFX — Sound Assets Organized">
+  <meta name="twitter:description" content="A high-performance sound library workspace built inside REAPER.">
+  <meta name="twitter:image" content="https://psysia.github.io/PsyReaSFX/assets/brand/psyreasfx-og.jpg">
   <title>PsyReaSFX — Sound Assets Organized</title>
-  <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon.png">
-  <link rel="preload" href="assets/screenshots/compact-workspace.png" as="image">
-  <link rel="stylesheet" href="styles.css?v=20260806-1">
-  <script src="app.js?v=20260806-1" defer></script>
+  <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon-64.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="assets/screenshots/compact-workspace.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="styles.css?v=20260915-1">
+  <script src="app.js?v=20260915-1" defer></script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "PsyReaSFX",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Windows",
+      "softwareVersion": "0.8.5",
+      "description": "A high-performance sound library browser, audition and delivery workflow built inside REAPER.",
+      "url": "https://psysia.github.io/PsyReaSFX/",
+      "downloadUrl": "https://github.com/Psysia/PsyReaSFX/releases/latest",
+      "license": "https://github.com/Psysia/PsyReaSFX/blob/main/LICENSE",
+      "author": { "@type": "Person", "name": "Psysia" }
+    }
+  </script>
 </head>
 <body>
   <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
 
   <header class="site-header" id="top">
     <div class="shell header-inner">
-      <a class="brand" href="#top" aria-label="PsyReaSFX home">
-        <img src="assets/brand/psyreasfx-icon.png" alt="" width="44" height="44">
+      <a class="brand" href="#top" aria-label="PsyReaSFX home" data-i18n-aria-label="homeLabel">
+        <img src="assets/brand/psyreasfx-icon-64.png" alt="" width="44" height="44">
         <span class="wordmark">PsyRea<span>SFX</span></span>
       </a>
 
-      <nav class="desktop-nav" aria-label="Primary navigation">
+      <nav class="desktop-nav" aria-label="Primary navigation" data-i18n-aria-label="primaryNavLabel">
         <a href="#product" data-i18n="navProduct">Product</a>
+        <a href="#status" data-i18n="navStatus">Releases</a>
         <a href="#workflow" data-i18n="navWorkflow">Workflow</a>
         <a href="#install" data-i18n="navInstall">Install</a>
         <a href="#docs" data-i18n="navDocs">Docs</a>
       </nav>
 
       <div class="header-actions">
-        <button class="language-toggle" type="button" data-language-toggle aria-label="Switch language">
+        <button class="language-toggle" type="button" data-language-toggle aria-label="Switch language" data-i18n-aria-label="languageLabel">
           <span class="language-current">EN</span>
           <span class="language-divider">/</span>
           <span class="language-other">中文</span>
         </button>
-        <a class="icon-link" href="https://github.com/Psysia/PsyReaSFX" aria-label="View PsyReaSFX on GitHub">
+        <a class="icon-link" href="https://github.com/Psysia/PsyReaSFX" aria-label="View PsyReaSFX on GitHub" data-i18n-aria-label="githubLabel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.24c-3.24.7-3.92-1.38-3.92-1.38-.53-1.35-1.3-1.71-1.3-1.71-1.06-.73.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.79 2.73 1.27 3.4.97.1-.75.4-1.27.74-1.56-2.59-.3-5.31-1.29-5.31-5.72 0-1.26.45-2.3 1.2-3.11-.12-.3-.52-1.48.11-3.07 0 0 .98-.31 3.16 1.19a10.8 10.8 0 0 1 5.76 0c2.18-1.5 3.16-1.19 3.16-1.19.63 1.59.23 2.77.11 3.07.75.81 1.2 1.85 1.2 3.11 0 4.45-2.73 5.42-5.33 5.71.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
         </a>
       </div>
@@ -53,7 +80,7 @@
         <div class="hero-copy">
           <div class="eyebrow">
             <span class="status-dot"></span>
-            <span data-i18n="stable">0.7.23 Stable</span>
+            <span><b data-stable-version>0.8.5</b> <span data-i18n="stableChannelShort">Stable</span></span>
             <span class="eyebrow-divider"></span>
             <span data-i18n="builtFor">Built for REAPER</span>
           </div>
@@ -61,7 +88,8 @@
           <p class="hero-lead" data-i18n="heroLead">Browse, organize, audition and deliver large sound libraries without leaving REAPER.</p>
           <div class="hero-actions">
             <a class="button primary" href="#install" data-i18n="installReapack">Install with ReaPack</a>
-            <a class="button secondary" data-latest-download href="https://github.com/Psysia/PsyReaSFX/releases/latest" data-i18n="downloadStable">Download Stable</a>
+            <a class="button secondary" data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5" data-i18n="downloadStable">Download Stable</a>
+            <a class="button quiet" data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5" data-i18n="viewPreview">View Beta 4.5</a>
           </div>
           <div class="hero-meta">
             <span data-i18n="freeUpdate">One repository · Automatic updates</span>
@@ -74,9 +102,12 @@
           <div class="window-chrome">
             <div class="window-bar">
               <span></span><span></span><span></span>
-              <p>PsyReaSFX <b data-version>0.7.23</b></p>
+              <p>PsyReaSFX <b data-preview-version>0.9.0 Beta 4.5</b></p>
             </div>
-            <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation, inline waveforms and metadata inspector" width="1700" height="1050">
+            <picture>
+              <source srcset="assets/screenshots/compact-workspace-960.webp 960w, assets/screenshots/compact-workspace.webp 1700w" sizes="(max-width: 760px) 145vw, (max-width: 1060px) 100vw, 62vw" type="image/webp">
+              <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation, inline waveforms and metadata inspector" width="1700" height="1050" decoding="async" fetchpriority="high">
+            </picture>
           </div>
           <div class="floating-stat stat-top">
             <strong data-i18n="inlineWaveforms">Inline waveforms</strong>
@@ -87,6 +118,33 @@
             <span data-i18n="sourceSafe">Source media stays untouched</span>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="release-strip" id="status" aria-labelledby="release-heading">
+      <div class="shell release-grid">
+        <div class="release-heading">
+          <p class="kicker" data-i18n="releaseKicker">CHOOSE YOUR RELEASE TRACK</p>
+          <h2 id="release-heading" data-i18n="releaseHeading">Stable for production. Preview what is next.</h2>
+        </div>
+        <article class="release-card stable-release">
+          <div class="release-card-head">
+            <span class="release-dot"></span>
+            <span data-i18n="stableChannel">Stable channel</span>
+          </div>
+          <strong data-stable-version>0.8.5</strong>
+          <p data-i18n="stableSummary">The default ReaPack release for everyday production work.</p>
+          <a data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5" data-i18n="getStable">Get Stable ↗</a>
+        </article>
+        <article class="release-card preview-release">
+          <div class="release-card-head">
+            <span class="release-dot"></span>
+            <span data-i18n="previewChannel">Preview channel</span>
+          </div>
+          <strong data-preview-version>0.9.0 Beta 4.5</strong>
+          <p data-i18n="previewSummary">UCS 8.2.1, spectral peaks, audio-content similarity and preview fixes.</p>
+          <a data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5" data-i18n="getPreview">View preview ↗</a>
+        </article>
       </div>
     </section>
 
@@ -107,8 +165,30 @@
           <p data-i18n="desktopPreviewText">A standalone Windows x64 companion for logical libraries, fast search, waveforms, preview, Artwork, favorites and file drag into REAPER.</p>
         </div>
         <div class="desktop-preview-actions">
-          <a class="button primary" data-desktop-download href="https://github.com/Psysia/PsyReaSFX/releases/latest/download/PsyReaSFX_Desktop_v0_7_23_Alpha_1_win_x64.zip" data-i18n="downloadDesktop">Download Desktop Alpha</a>
+          <a class="button primary" data-desktop-download href="https://github.com/Psysia/PsyReaSFX/releases/download/desktop-v0.7.23-alpha8-light-rc1/PsyReaSFX_Desktop_v0_7_23_Alpha_8_Light_RC1.zip" data-i18n="downloadDesktop">Download Desktop Alpha 8</a>
           <a class="text-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/DESKTOP_PREVIEW_en-US.md" data-desktop-guide data-i18n="desktopGuide">Desktop guide ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section feature-band" id="highlights">
+      <div class="shell split-layout">
+        <div class="media-card wide-media">
+          <picture>
+            <source srcset="assets/screenshots/focus-workspace-960.webp 960w, assets/screenshots/focus-workspace.webp 1700w" sizes="(max-width: 1060px) calc(100vw - 40px), 55vw" type="image/webp">
+            <img src="assets/screenshots/focus-workspace.png" alt="PsyReaSFX focused workspace with search, waveforms and detailed preview" loading="lazy" decoding="async" width="1700" height="1050">
+          </picture>
+        </div>
+        <div class="feature-copy">
+          <p class="kicker" data-i18n="findKicker">FIND BY STRUCTURE AND SOUND</p>
+          <h2 data-i18n="findTitle">Search the catalog.<br>Then search the audio itself.</h2>
+          <p data-i18n="findText">Beta 4.5 combines UCS 8.2.1 navigation with explainable audio-content similarity built from envelope, onset, dynamics and spectral features.</p>
+          <ul class="check-list">
+            <li data-i18n="ucsNavigation">Browse Category, SubCategory and CatID without moving source files</li>
+            <li data-i18n="similarSearch">Find similar sounds in the current result or the complete library</li>
+            <li data-i18n="spectralPeaks">Inspect on-demand spectral peaks in the detailed waveform</li>
+          </ul>
+          <a class="text-link feature-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md" data-i18n="similarityDetails">Read the similarity architecture ↗</a>
         </div>
       </div>
     </section>
@@ -153,7 +233,7 @@
     <section class="section feature-band">
       <div class="shell split-layout">
         <div class="media-card portrait-media">
-          <img src="assets/screenshots/logical-library-workflow.gif" alt="A logical PsyReaSFX library expanding to show independent source folders" loading="lazy" width="528" height="318">
+          <img src="assets/screenshots/logical-library-workflow.gif" alt="A logical PsyReaSFX library expanding to show independent source folders" loading="lazy" decoding="async" width="528" height="318">
         </div>
         <div class="feature-copy">
           <p class="kicker" data-i18n="librariesKicker">LIBRARIES THAT MATCH REAL STORAGE</p>
@@ -181,7 +261,7 @@
           </ul>
         </div>
         <div class="media-card wide-media">
-          <img src="assets/screenshots/waveform-edit-drag-reaper.gif" alt="Selecting a range in the PsyReaSFX waveform and dragging it into REAPER" loading="lazy" width="1262" height="726">
+          <img src="assets/screenshots/waveform-edit-drag-reaper.gif" alt="Selecting a range in the PsyReaSFX waveform and dragging it into REAPER" loading="lazy" decoding="async" width="1262" height="726">
         </div>
       </div>
     </section>
@@ -195,8 +275,8 @@
         </div>
         <div class="transfer-stage">
           <picture>
-            <source data-transfer-source media="(min-width: 1px)" srcset="assets/screenshots/transfer-settings-en.png">
-            <img data-transfer-image src="assets/screenshots/transfer-settings-en.png" alt="PsyReaSFX Transfer settings" loading="lazy" width="1700" height="1050">
+            <source data-transfer-source type="image/webp" srcset="assets/screenshots/transfer-settings-en-960.webp 960w, assets/screenshots/transfer-settings-en.webp 1700w" sizes="(max-width: 1060px) calc(100vw - 40px), 1210px">
+            <img data-transfer-image src="assets/screenshots/transfer-settings-en.png" alt="PsyReaSFX Transfer settings" loading="lazy" decoding="async" width="1700" height="1050">
           </picture>
           <div class="transfer-caps">
             <span>WAV 16/24/32-bit</span>
@@ -241,18 +321,18 @@
         <div class="install-card">
           <div class="install-card-head">
             <span>ReaPack repository</span>
-            <span class="stable-pill"><span class="status-dot"></span><span data-version>0.7.23</span></span>
+            <span class="stable-pill"><span class="status-dot"></span><span data-stable-version>0.8.5</span></span>
           </div>
           <div class="copy-field">
             <code id="reapack-url">https://github.com/Psysia/PsyReaSFX/raw/main/index.xml</code>
-            <button type="button" data-copy-reapack><span data-i18n="copy">Copy</span></button>
+            <button type="button" data-copy-reapack aria-live="polite"><span data-i18n="copy">Copy</span></button>
           </div>
           <div class="requirements">
             <div><span data-i18n="host">Host</span><strong>REAPER 7.x</strong></div>
             <div><span data-i18n="required">Required</span><strong>ReaImGui 0.10+</strong></div>
             <div><span data-i18n="recommended">Recommended</span><strong>SWS Extension</strong></div>
           </div>
-          <a class="button primary full-width" data-latest-download href="https://github.com/Psysia/PsyReaSFX/releases/latest" data-i18n="downloadLatest">Download latest Stable</a>
+          <a class="button primary full-width" data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5" data-i18n="downloadLatest">Download latest Stable</a>
         </div>
       </div>
     </section>
@@ -273,13 +353,16 @@
           <a href="https://github.com/Psysia/PsyReaSFX/issues">
             <span>03</span><div><h3 data-i18n="issueTracker">Issue tracker</h3><p data-i18n="issueText">Report a reproducible problem or follow development.</p></div><b>↗</b>
           </a>
+          <a href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/ROADMAP_0_9_TO_1_0_zh-CN.md">
+            <span>04</span><div><h3 data-i18n="roadmap">0.9 → 1.0 Roadmap</h3><p data-i18n="roadmapText">Follow the feature boundaries, validation gates and neural similarity plan.</p></div><b>↗</b>
+          </a>
         </div>
       </div>
     </section>
 
     <section class="final-cta">
       <div class="shell final-cta-inner">
-        <img src="assets/brand/psyreasfx-icon.png" alt="" width="92" height="92" loading="lazy">
+        <img src="assets/brand/psyreasfx-icon-256.webp" alt="" width="92" height="92" loading="lazy">
         <div>
           <p class="kicker" data-i18n="soundAssetsOrganized">SOUND ASSETS, ORGANIZED</p>
           <h2 data-i18n="stayInFlow">Stay in the sound. Stay in the flow.</h2>
@@ -291,8 +374,8 @@
 
   <footer>
     <div class="shell footer-inner">
-      <a class="brand footer-brand" href="#top">
-        <img src="assets/brand/psyreasfx-icon.png" alt="" width="36" height="36" loading="lazy">
+      <a class="brand footer-brand" href="#top" aria-label="PsyReaSFX home" data-i18n-aria-label="homeLabel">
+        <img src="assets/brand/psyreasfx-icon-64.png" alt="" width="36" height="36" loading="lazy">
         <span class="wordmark">PsyRea<span>SFX</span></span>
       </a>
       <p>Copyright © 2026 Psysia. All rights reserved.</p>

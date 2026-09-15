@@ -1,19 +1,35 @@
 const REPOSITORY = "Psysia/PsyReaSFX";
 const REAPACK_URL = "https://github.com/Psysia/PsyReaSFX/raw/main/index.xml";
+const STABLE_FALLBACK = {
+  version: "0.8.5",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5"
+};
+const PREVIEW_FALLBACK = {
+  version: "0.9.0 Beta 4.5",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5"
+};
 
 const messages = {
   en: {
     skip: "Skip to content",
+    homeLabel: "PsyReaSFX home",
+    primaryNavLabel: "Primary navigation",
+    languageLabel: "Switch language",
+    githubLabel: "View PsyReaSFX on GitHub",
+    pageTitle: "PsyReaSFX — Sound Assets Organized",
+    pageDescription: "A high-performance REAPER sound library browser with UCS classification, waveform audition, audio-content similarity and delivery tools.",
     navProduct: "Product",
+    navStatus: "Releases",
     navWorkflow: "Workflow",
     navInstall: "Install",
     navDocs: "Docs",
-    stable: "0.7.23 Stable",
+    stableChannelShort: "Stable",
     builtFor: "Built for REAPER",
     heroTitle: "Your sound library,<br><span>finally in flow.</span>",
     heroLead: "Browse, organize, audition and deliver large sound libraries without leaving REAPER.",
     installReapack: "Install with ReaPack",
     downloadStable: "Download Stable",
+    viewPreview: "View Beta 4.5",
     freeUpdate: "One repository · Automatic updates",
     inlineWaveforms: "Inline waveforms",
     visibleFirst: "Visible-first caching",
@@ -27,10 +43,18 @@ const messages = {
     seekSelect: "Seek, select and deliver",
     bilingual: "Bilingual",
     englishChinese: "English and Simplified Chinese",
-    desktopPreviewLabel: "NEW · DESKTOP ALPHA",
+    desktopPreviewLabel: "DESKTOP COMPANION · ALPHA 8",
     desktopPreviewTitle: "Browse before you open the project.",
     desktopPreviewText: "A standalone Windows x64 companion for logical libraries, fast search, waveforms, preview, Artwork, favorites and file drag into REAPER.",
-    downloadDesktop: "Download Desktop Alpha",
+    releaseKicker: "CHOOSE YOUR RELEASE TRACK",
+    releaseHeading: "Stable for production. Preview what is next.",
+    stableChannel: "Stable channel",
+    stableSummary: "The default ReaPack release for everyday production work.",
+    getStable: "Get Stable ↗",
+    previewChannel: "Preview channel",
+    previewSummary: "UCS 8.2.1, spectral peaks, audio-content similarity and preview fixes.",
+    getPreview: "View preview ↗",
+    downloadDesktop: "Download Desktop Alpha 8",
     desktopGuide: "Desktop guide ↗",
     completeLoop: "THE COMPLETE SOUND-LIBRARY LOOP",
     fourMoves: "Four moves. One workspace.",
@@ -55,6 +79,13 @@ const messages = {
     channelLanes: "Mono, stereo and multichannel lanes",
     regionsTransient: "Regions and transient suggestions",
     loudnessStats: "LUFS and True Peak statistics",
+    findKicker: "FIND BY STRUCTURE AND SOUND",
+    findTitle: "Search the catalog.<br>Then search the audio itself.",
+    findText: "Beta 4.5 combines UCS 8.2.1 navigation with explainable audio-content similarity built from envelope, onset, dynamics and spectral features.",
+    ucsNavigation: "Browse Category, SubCategory and CatID without moving source files",
+    similarSearch: "Find similar sounds in the current result or the complete library",
+    spectralPeaks: "Inspect on-demand spectral peaks in the detailed waveform",
+    similarityDetails: "Read the similarity architecture ↗",
     deliverWithoutLosing: "Deliver without losing the thread.",
     transferLead: "Turn the full source, a waveform selection or a controlled batch of variants into new files with repeatable settings.",
     smartTail: "Smart source tail",
@@ -93,6 +124,8 @@ const messages = {
     changelogText: "What changed, why it changed and compatibility notes.",
     issueTracker: "Issue tracker",
     issueText: "Report a reproducible problem or follow development.",
+    roadmap: "0.9 → 1.0 Roadmap",
+    roadmapText: "Follow the feature boundaries, validation gates and neural similarity plan.",
     soundAssetsOrganized: "SOUND ASSETS, ORGANIZED",
     stayInFlow: "Stay in the sound. Stay in the flow.",
     getPsy: "Get PsyReaSFX",
@@ -100,16 +133,24 @@ const messages = {
   },
   zh: {
     skip: "跳到主要内容",
+    homeLabel: "PsyReaSFX 首页",
+    primaryNavLabel: "主导航",
+    languageLabel: "切换语言",
+    githubLabel: "在 GitHub 查看 PsyReaSFX",
+    pageTitle: "PsyReaSFX — 让音效素材进入工作流",
+    pageDescription: "运行在 REAPER 内的高性能音效素材库，支持 UCS 分类、波形试听、音频内容相似检索与交付工具。",
     navProduct: "产品",
+    navStatus: "版本",
     navWorkflow: "工作流",
     navInstall: "安装",
     navDocs: "文档",
-    stable: "0.7.23 稳定版",
+    stableChannelShort: "稳定版",
     builtFor: "为 REAPER 打造",
     heroTitle: "让你的音效库，<br><span>真正进入工作流。</span>",
     heroLead: "无需离开 REAPER，即可浏览、整理、试听并交付大型音效素材库。",
     installReapack: "通过 ReaPack 安装",
     downloadStable: "下载稳定版",
+    viewPreview: "查看 Beta 4.5",
     freeUpdate: "一个仓库 · 自动更新",
     inlineWaveforms: "列表内联波形",
     visibleFirst: "可见内容优先缓存",
@@ -123,10 +164,18 @@ const messages = {
     seekSelect: "定位、选区与交付",
     bilingual: "双语界面",
     englishChinese: "English 与简体中文",
-    desktopPreviewLabel: "全新 · 桌面 Alpha",
+    desktopPreviewLabel: "桌面伴侣 · ALPHA 8",
     desktopPreviewTitle: "打开工程前，先进入你的音效库。",
     desktopPreviewText: "Windows x64 独立伴侣：逻辑库、快速搜索、波形、试听、Artwork、收藏和把文件拖入 REAPER。",
-    downloadDesktop: "下载桌面 Alpha",
+    releaseKicker: "选择适合你的发布通道",
+    releaseHeading: "稳定版用于生产，预发布体验下一阶段。",
+    stableChannel: "稳定通道",
+    stableSummary: "默认 ReaPack 版本，适合日常生产使用。",
+    getStable: "获取稳定版 ↗",
+    previewChannel: "预发布通道",
+    previewSummary: "包含 UCS 8.2.1、频谱峰值、音频内容相似检索与试听修复。",
+    getPreview: "查看预发布版 ↗",
+    downloadDesktop: "下载桌面 Alpha 8",
     desktopGuide: "桌面版说明 ↗",
     completeLoop: "完整的音效素材库工作闭环",
     fourMoves: "四个环节，一个工作区。",
@@ -151,6 +200,13 @@ const messages = {
     channelLanes: "单声道、立体声与多声道波形",
     regionsTransient: "Region 与瞬态建议",
     loudnessStats: "LUFS 与 True Peak 数据",
+    findKicker: "按结构与声音查找",
+    findTitle: "先搜索目录，<br>再搜索声音本身。",
+    findText: "Beta 4.5 将 UCS 8.2.1 导航与可解释的音频内容相似检索结合，通过包络、起音、动态和频谱特征寻找相关声音。",
+    ucsNavigation: "按 Category、SubCategory 和 CatID 浏览，不移动源文件",
+    similarSearch: "在当前结果或全部音效库中查找相似声音",
+    spectralPeaks: "在详细波形中按需查看频谱峰值",
+    similarityDetails: "阅读相似声音架构 ↗",
     deliverWithoutLosing: "交付素材，不中断设计思路。",
     transferLead: "通过可重复使用的设置，将完整源文件、波形选区或受控批量变体生成新的音频文件。",
     smartTail: "智能源文件尾音",
@@ -189,6 +245,8 @@ const messages = {
     changelogText: "了解修改内容、修改原因和兼容性说明。",
     issueTracker: "问题反馈",
     issueText: "提交可复现问题，或跟进项目开发进度。",
+    roadmap: "0.9 → 1.0 路线图",
+    roadmapText: "查看功能边界、验收门槛与神经相似度计划。",
     soundAssetsOrganized: "让音效素材井然有序",
     stayInFlow: "专注声音，保持工作流。",
     getPsy: "获取 PsyReaSFX",
@@ -205,12 +263,24 @@ function applyLanguage(language) {
       element.innerHTML = value;
     }
   });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+    const value = messages[selected][element.dataset.i18nAriaLabel];
+    if (typeof value === "string") element.setAttribute("aria-label", value);
+  });
+  document.title = messages[selected].pageTitle;
+  document.querySelector('meta[name="description"]')
+    ?.setAttribute("content", messages[selected].pageDescription);
 
   const current = document.querySelector(".language-current");
   const other = document.querySelector(".language-other");
   if (current && other) {
     current.textContent = selected === "zh" ? "中文" : "EN";
     other.textContent = selected === "zh" ? "EN" : "中文";
+    const toggle = document.querySelector("[data-language-toggle]");
+    toggle?.setAttribute(
+      "aria-label",
+      `${current.textContent} / ${other.textContent} — ${messages[selected].languageLabel}`
+    );
   }
 
   document.querySelectorAll("[data-transfer-image]").forEach((image) => {
@@ -220,8 +290,8 @@ function applyLanguage(language) {
   });
   document.querySelectorAll("[data-transfer-source]").forEach((source) => {
     source.srcset = selected === "zh"
-      ? "assets/screenshots/transfer-settings-zh.png"
-      : "assets/screenshots/transfer-settings-en.png";
+      ? "assets/screenshots/transfer-settings-zh-960.webp 960w, assets/screenshots/transfer-settings-zh.webp 1700w"
+      : "assets/screenshots/transfer-settings-en-960.webp 960w, assets/screenshots/transfer-settings-en.webp 1700w";
   });
 
   document.querySelectorAll('a[href*="USER_GUIDE_"]').forEach((link) => {
@@ -237,26 +307,52 @@ function applyLanguage(language) {
   localStorage.setItem("psyreasfx-language", selected);
 }
 
-async function updateLatestRelease() {
+function formatReleaseVersion(tagName) {
+  return String(tagName || "")
+    .replace(/^v/, "")
+    .replace(/-beta/i, " Beta ");
+}
+
+function findLuaArchive(release) {
+  return (release?.assets || []).find((item) =>
+    /^PsyReaSFX_v(?!.*Desktop).*\.zip$/i.test(item.name)
+  );
+}
+
+function updateReleaseLink(selector, release, fallback) {
+  const archive = findLuaArchive(release);
+  const url = archive?.browser_download_url || release?.html_url || fallback.url;
+  document.querySelectorAll(selector).forEach((link) => {
+    link.href = url;
+  });
+}
+
+async function updateReleaseChannels() {
   try {
-    const response = await fetch(`https://api.github.com/repos/${REPOSITORY}/releases/latest`, {
+    const response = await fetch(`https://api.github.com/repos/${REPOSITORY}/releases?per_page=30`, {
       headers: { Accept: "application/vnd.github+json" }
     });
     if (!response.ok) return;
-    const release = await response.json();
-    const assets = release.assets || [];
-    const stableAsset = assets.find((item) => /PsyReaSFX_v0_7_23_Stable\.zip$/i.test(item.name));
-    const desktopAsset = assets.find((item) => /PsyReaSFX_Desktop_.*win_x64\.zip$/i.test(item.name));
-    const version = String(release.tag_name || "v0.7.23").replace(/^v/, "");
+    const releases = await response.json();
+    const stable = releases.find((release) =>
+      !release.draft && !release.prerelease && /^v\d/i.test(release.tag_name)
+    );
+    const preview = releases.find((release) =>
+      !release.draft && release.prerelease && /^v\d/i.test(release.tag_name)
+    );
+    const desktopAsset = releases.flatMap((release) => release.assets || [])
+      .find((item) => /PsyReaSFX_Desktop_.*win_x64\.zip$/i.test(item.name));
 
-    document.querySelectorAll("[data-version]").forEach((element) => {
-      element.textContent = version;
+    document.querySelectorAll("[data-stable-version]").forEach((element) => {
+      element.textContent = formatReleaseVersion(stable?.tag_name) || STABLE_FALLBACK.version;
     });
-    document.querySelectorAll("[data-latest-download]").forEach((link) => {
-      link.href = stableAsset?.browser_download_url || release.html_url;
+    document.querySelectorAll("[data-preview-version]").forEach((element) => {
+      element.textContent = formatReleaseVersion(preview?.tag_name) || PREVIEW_FALLBACK.version;
     });
+    updateReleaseLink("[data-stable-download]", stable, STABLE_FALLBACK);
+    updateReleaseLink("[data-preview-download]", preview, PREVIEW_FALLBACK);
     document.querySelectorAll("[data-desktop-download]").forEach((link) => {
-      link.href = desktopAsset?.browser_download_url || release.html_url;
+      if (desktopAsset) link.href = desktopAsset.browser_download_url;
     });
   } catch {
     // Static fallbacks remain fully usable when the GitHub API is unavailable.
@@ -287,12 +383,14 @@ function installCopyAction() {
 
 document.addEventListener("DOMContentLoaded", () => {
   const storedLanguage = localStorage.getItem("psyreasfx-language");
-  applyLanguage(storedLanguage === "zh" ? "zh" : "en");
+  const preferredLanguage = storedLanguage
+    || (navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
+  applyLanguage(preferredLanguage === "zh" ? "zh" : "en");
 
   document.querySelector("[data-language-toggle]")?.addEventListener("click", () => {
     applyLanguage(document.documentElement.lang.startsWith("zh") ? "en" : "zh");
   });
 
   installCopyAction();
-  updateLatestRelease();
+  updateReleaseChannels();
 });
