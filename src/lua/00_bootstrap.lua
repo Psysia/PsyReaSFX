@@ -896,6 +896,11 @@ local state = {
   similarity_result_count = 0,
   similarity_reference_path = nil,
   similarity_reference_name = nil,
+  neural_similarity_state = "unknown",
+  neural_similarity_reason = "",
+  neural_similarity_paths = nil,
+  neural_similarity_capabilities = nil,
+  neural_similarity_probe_started = 0,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -2124,6 +2129,12 @@ I18N_EN["已取消相似声音分析"] =
   "Similar-sound analysis canceled"
 I18N_EN["无法分析参考素材的音频特征"] =
   "Could not analyze the reference audio features"
+I18N_EN["正在查询已有神经相似度缓存…"] =
+  "Querying the existing neural-similarity cache…"
+I18N_EN["正在建立神经相似度索引…"] =
+  "Building the neural-similarity index…"
+I18N_EN["神经相似度不可用，已回退到基础声学检索"] =
+  "Neural similarity is unavailable; using the acoustic fallback"
 I18N_EN["相似声音特征缓存"] = "Similar-sound feature cache"
 I18N_EN["清空相似特征缓存"] = "Clear similarity feature cache"
 I18N_EN["相似特征会在首次检索时逐文件建立；清空后可从源音频重新生成。"] =
@@ -2159,6 +2170,26 @@ I18N_PATTERNS_EN = {
   {
     "^相似声音分析完成：检查 (%d+)，命中 (%d+)，失败 (%d+)$",
     "Similar-sound analysis complete: %1 checked, %2 matches, %3 failed",
+  },
+  {
+    "^神经相似度分析完成：检查 (%d+)，命中 (%d+)，失败 (%d+)$",
+    "Neural-similarity analysis complete: %1 checked, %2 matches, %3 failed",
+  },
+  {
+    "^正在准备神经相似度范围：(%d+) / (%d+)$",
+    "Preparing neural-similarity scope: %1 / %2",
+  },
+  {
+    "^正在写入神经相似度清单：(%d+) / (%d+)$",
+    "Writing neural-similarity manifest: %1 / %2",
+  },
+  {
+    "^正在建立神经相似度缓存：(%d+) / (%d+)$",
+    "Building neural-similarity cache: %1 / %2",
+  },
+  {
+    "^神经相似度 (.-)：(%d+) / (%d+)$",
+    "Neural similarity %1: %2 / %3",
   },
   {
     "^已确认 UCS 分类：(.+)$",

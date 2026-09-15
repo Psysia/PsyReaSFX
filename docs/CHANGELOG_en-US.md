@@ -4,6 +4,9 @@
 
 ### Neural similarity foundation
 
+- Upgrades the sidecar to `0.4.0` with atomic capability JSON output, a manifest sentinel that lets the sidecar capture exact UTC modification ticks, and below-normal Windows priority for file jobs.
+- Adds the optional Lua neural-similarity bridge: non-blocking startup discovery, status/result polling, progress, cancellation, full-library HNSW, exact current-result filtering, and hybrid Top-200 reranking with the existing 15 acoustic features.
+- Missing components, incompatible models/protocols or formats, stalled/crashed jobs, and damaged cache/result files transparently fall back to the existing 15-feature search. Protocol v1 currently activates only for 32 kHz PCM16 WAV; general media decoding remains pending.
 - Freezes a reproducible EfficientAT `mn04_as` ONNX profile with the full mel frontend, 320-dimensional multi-layer scene embeddings, pinned upstream hashes, and three cross-runtime golden audio cases.
 - Adds the optional .NET 8 neural sidecar foundation with model-manifest verification, `capabilities`, PCM16 32 kHz `embed`, same-directory atomic result writes, and a golden self-test.
 - Implements the frozen long-audio rule: 10-second windows, 2.5-second hop, raw-vector averaging, then final L2 normalization.

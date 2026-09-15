@@ -627,10 +627,13 @@ function similarity_insert_ranked(session, asset, score, features)
   if #session.ranked < Similarity.result_limit then
     session.ranked[#session.ranked + 1] = entry
     similarity_heap_sift_up(session.ranked, #session.ranked)
+    return entry
   elseif similarity_rank_is_better(entry, session.ranked[1]) then
     session.ranked[1] = entry
     similarity_heap_sift_down(session.ranked, 1)
+    return entry
   end
+  return nil
 end
 
 function similarity_prepare_bucket_queue(session)
@@ -962,6 +965,12 @@ function finish_similarity_search(canceled)
   if not session then return end
   similarity_close_files(session)
   if canceled then
+    if type(neural_similarity_cancel) == "function" then
+      neural_similarity_cancel(session)
+    end
+    if type(neural_similarity_cleanup_session) == "function" then
+      neural_similarity_cleanup_session(session, true)
+    end
     Jobs.cancel(session.job_token)
     Jobs.finish(session.job_token, true, "canceled")
     AppState.set("similarity_session", nil)
@@ -1001,9 +1010,13 @@ function finish_similarity_search(canceled)
     state.similarity_lookup[path_key(entry.asset.path)] = {
       score = entry.score,
       explanation = table.concat(labels, "、"),
+      neural_score = entry.neural_score,
+      acoustic_score = entry.acoustic_score,
     }
   end
-  if session.scope == "all" and session.source == state.assets then
+  if not session.neural_used
+    and session.scope == "all"
+    and session.source == state.assets then
     similarity_publish_index(session, session.failed_assets)
   end
   -- The source snapshot already freezes the requested scope. Clear the old
@@ -1022,10 +1035,15 @@ function finish_similarity_search(canceled)
     config_dirty = true,
   })
   AppState.set("similarity_session", nil)
+  if type(neural_similarity_cleanup_session) == "function" then
+    neural_similarity_cleanup_session(session)
+  end
   Jobs.finish(session.job_token, true)
   session.processed = session.total
   set_status(string.format(
-    "相似声音分析完成：检查 %d，命中 %d，失败 %d",
+    session.neural_used
+      and "神经相似度分析完成：检查 %d，命中 %d，失败 %d"
+      or "相似声音分析完成：检查 %d，命中 %d，失败 %d",
     session.processed,
     state.similarity_result_count,
     session.failed
@@ -1083,6 +1101,7 @@ function start_similarity_search(reference, scope)
     current = nil,
     job_token = token,
     started = HostApi.time_precise(),
+    neural_attempted = false,
   })
   similarity_cache_begin_load(state.similarity_session)
   set_status("正在准备相似声音分析…")
@@ -1126,6 +1145,10 @@ function process_similarity_search()
     finish_similarity_search(true)
     return
   end
+  if type(process_neural_similarity_search) == "function"
+    and process_neural_similarity_search(session) then
+    return
+  end
   if not can_run_heavy_job() then return end
   if session.phase == "load_cache" then
     similarity_cache_step_load(session)
@@ -1135,11 +1158,18 @@ function process_similarity_search()
     local features, _, status = similarity_features_for_asset(session, session.reference)
     if features then
       session.reference_features = features
-      similarity_begin_candidate_index(session)
+      if session.neural_attempted
+        or type(neural_similarity_try_start) ~= "function"
+        or not neural_similarity_try_start(session) then
+        similarity_begin_candidate_index(session)
+      end
     elseif status == "failed" then
       similarity_close_files(session)
       Jobs.finish(session.job_token, false, "reference_failed")
       AppState.set("similarity_session", nil)
+      if type(neural_similarity_cleanup_session) == "function" then
+        neural_similarity_cleanup_session(session)
+      end
       set_status("无法分析参考素材的音频特征", true)
     end
     return
