@@ -1,0 +1,21 @@
+{
+  "name": "PsyReaSFX",
+  "short_name": "PsyReaSFX",
+  "description": "A high-performance sound library workspace built inside REAPER.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    {
+      "src": "assets/brand/psyreasfx-icon-64.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/brand/psyreasfx-icon-256.webp",
+      "sizes": "256x256",
+      "type": "image/webp"
+    }
+  ]
+}

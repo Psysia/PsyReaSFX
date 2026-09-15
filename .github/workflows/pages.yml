@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "website/**"
+      - "tools/validate_website.mjs"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -31,6 +32,9 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+
+      - name: Validate website
+        run: node tools/validate_website.mjs
 
       - name: Upload website
         uses: actions/upload-pages-artifact@v3
