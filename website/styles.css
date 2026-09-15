@@ -531,6 +531,13 @@ h1 span {
   font-size: 12px;
 }
 
+.release-card .release-install-note {
+  margin: -7px 0 17px;
+  padding-left: 9px;
+  border-left: 2px solid var(--cyan);
+  color: var(--text);
+}
+
 .release-card a {
   width: fit-content;
   margin-top: auto;
