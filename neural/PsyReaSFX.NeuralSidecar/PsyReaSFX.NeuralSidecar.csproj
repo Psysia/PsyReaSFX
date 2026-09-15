@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>PsyReaSFX.NeuralSidecar</AssemblyName>
     <RootNamespace>PsyReaSFX.NeuralSidecar</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Psysia</Authors>
     <Product>PsyReaSFX Neural Similarity Sidecar</Product>
     <Description>Optional local neural audio embedding helper for PsyReaSFX.</Description>
