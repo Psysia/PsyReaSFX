@@ -24280,6 +24280,12 @@ function cleanup()
     similarity_cancel_warmup(false)
   end
   if state.similarity_session then
+    if type(neural_similarity_cancel) == "function" then
+      neural_similarity_cancel(state.similarity_session)
+    end
+    if type(neural_similarity_cleanup_session) == "function" then
+      neural_similarity_cleanup_session(state.similarity_session, true)
+    end
     similarity_close_files(state.similarity_session)
     Jobs.finish(
       state.similarity_session.job_token,
@@ -24454,6 +24460,7 @@ reaper.atexit(cleanup)
 ensure_dirs()
 recover_atomic_data_files()
 preflight_persistence_schemas()
+initialize_neural_similarity()
 if not state.persistence_read_only then
   migrate_legacy_data()
 end
@@ -24540,6 +24547,7 @@ function loop()
   end
 
   process_asset_library_binding_refresh()
+  process_neural_similarity_probe()
   process_import_recovery_audit()
 
   if state.transfer_running then

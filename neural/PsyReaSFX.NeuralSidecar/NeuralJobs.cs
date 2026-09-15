@@ -159,6 +159,17 @@ internal static partial class NeuralJobs
             ExpectInvalidData(() => ReadAssets(duplicateAssets), "Duplicate requested signature was accepted.");
             cases++;
 
+            var inferredMtimeSource = Path.Combine(root, "mtime-source.wav");
+            File.WriteAllBytes(inferredMtimeSource, new byte[] { 1, 2, 3, 4 });
+            var inferredMtimeAssets = Path.Combine(root, "mtime-assets.tsv");
+            File.WriteAllText(inferredMtimeAssets,
+                $"0000000000000005\t4\t-1\t{JsonSerializer.Serialize(inferredMtimeSource)}{Environment.NewLine}");
+            var inferred = ReadAssets(inferredMtimeAssets);
+            Program.Require(inferred.Count == 1
+                && inferred[0].MtimeUtcTicks == File.GetLastWriteTimeUtc(inferredMtimeSource).Ticks,
+                "Sentinel neural asset mtime was not resolved by the sidecar.");
+            cases++;
+
             cases += RunHnswSelfTest(model, root);
 
             return new { result = "passed", cases };
@@ -184,11 +195,13 @@ internal static partial class NeuralJobs
         }
 
         Dictionary<string, CacheRecord> oldCache;
+        string? previousCacheHash = null;
         string? rejectedCacheError = null;
         if (File.Exists(request.CachePath))
         {
             try
             {
+                previousCacheHash = Program.HashFile(request.CachePath);
                 oldCache = ReadCache(request.CachePath, model);
             }
             catch (Exception error) when (error is InvalidDataException or EndOfStreamException or OverflowException)
@@ -277,6 +290,7 @@ internal static partial class NeuralJobs
             failed,
             cancelled = false,
             cacheSha256 = cacheHash,
+            cacheChanged = previousCacheHash != cacheHash,
             rejectedCacheError,
             failures,
         });
@@ -606,13 +620,22 @@ internal static partial class NeuralJobs
             Program.Require(signatures.Add(fields[0]), $"Duplicate requested signature: {fields[0]}");
             Program.Require(long.TryParse(fields[1], out var size) && size >= 0,
                 $"Invalid asset size on line {lineNumber}.");
-            Program.Require(long.TryParse(fields[2], out var mtime) && mtime >= 0,
+            Program.Require(long.TryParse(fields[2], out var mtime) && mtime >= -1,
                 $"Invalid asset mtime on line {lineNumber}.");
             var assetPath = JsonSerializer.Deserialize<string>(fields[3]);
             Program.Require(!string.IsNullOrWhiteSpace(assetPath), $"Invalid asset path on line {lineNumber}.");
             var decodedPath = assetPath!;
-            assets.Add(new AssetRequest(fields[0], size, mtime,
-                Path.GetFullPath(Path.IsPathRooted(decodedPath) ? decodedPath : Path.Combine(directory, decodedPath))));
+            var resolvedPath = Path.GetFullPath(Path.IsPathRooted(decodedPath)
+                ? decodedPath
+                : Path.Combine(directory, decodedPath));
+            if (mtime == -1)
+            {
+                var info = new FileInfo(resolvedPath);
+                Program.Require(info.Exists, $"Audio file is unavailable on line {lineNumber}: {resolvedPath}");
+                Program.Require(info.Length == size, $"Audio file size changed on line {lineNumber}: {resolvedPath}");
+                mtime = info.LastWriteTimeUtc.Ticks;
+            }
+            assets.Add(new AssetRequest(fields[0], size, mtime, resolvedPath));
         }
         return assets;
     }

@@ -87,7 +87,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
 - **Preview channel: 0.9.0 Beta 4.5** — includes UCS 8.2.1 classification and navigation, on-demand spectral peaks, audio-content similarity, and waveform seek-preview fixes.
-- **Next phase** — the optional EfficientAT sidecar now includes the frozen `mn04_as` model, incremental FP16 embeddings, persistent HNSW recall, cancellation-safe file jobs, and exact-search fallback; general media decoding and Lua integration are still in development and are not included in Beta 4.5.
+- **Next phase** — the optional EfficientAT sidecar now includes the frozen `mn04_as` model, incremental FP16 embeddings, persistent HNSW recall, plus non-blocking Lua discovery, progress, cancellation, hybrid reranking and transparent 15-feature fallback. Protocol v1 currently activates only for 32 kHz PCM16 WAV scopes; general media decoding remains in development and none of this changes Beta 4.5.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 

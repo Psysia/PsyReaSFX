@@ -157,6 +157,11 @@ jobs:
           New-Item -ItemType Directory -Path $fixture -Force | Out-Null
           lua tools/lua_similarity_selftest.lua (Resolve-Path 'src/lua/42_similarity.lua') 500000 $fixture
 
+      - name: Run Lua neural similarity protocol self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_neural_similarity_selftest.lua (Resolve-Path 'src/lua/43_neural_similarity.lua')
+
       - name: Run Lua Enter shortcut self-test
         shell: pwsh
         run: |

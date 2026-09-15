@@ -16,7 +16,7 @@ The first frozen profile is `mn04_as_scene_320_v1`:
 The current sidecar foundation exposes:
 
 ```text
-PsyReaSFX.NeuralSidecar capabilities <model-directory>
+PsyReaSFX.NeuralSidecar capabilities <model-directory> [output.json]
 PsyReaSFX.NeuralSidecar self-test <model-directory>
 PsyReaSFX.NeuralSidecar embed <model-directory> <input.wav> [output.json]
 PsyReaSFX.NeuralSidecar run-job <model-directory> <request.json>
@@ -49,6 +49,11 @@ validated before and after reading. A cancellation file stops after the current
 asset and leaves the previous cache generation untouched. Cache, status, and
 result files are all replaced atomically.
 
+Sidecar `0.4.0` adds the Lua integration contract: capability discovery may
+write directly to an atomic JSON output, `-1` in the TSV mtime column asks the
+sidecar to capture the exact UTC timestamp before processing, and job
+processes lower their Windows priority so REAPER remains responsive.
+
 ## Reproduce the frozen model
 
 Run from the repository root:
@@ -76,6 +81,10 @@ validated by the sidecar protocol. Candidate-filtered searches intentionally
 remain exact so a small UI result scope cannot lose relevant records before
 reranking.
 
-General media decoding/resampling, Lua capability discovery, and transparent
-fallback to the existing 15-dimensional search remain the next implementation
-phase.
+Lua now discovers the optional component without blocking REAPER, polls job
+status/result files, exposes progress and cancellation, uses HNSW for complete
+library searches, preserves exact candidate filtering for current-result
+searches, and transparently falls back to the existing 15-dimensional search.
+Protocol v1 is deliberately enabled only when the requested scope consists of
+32 kHz PCM16 WAV files; general media decoding/resampling remains the next
+sidecar phase.
