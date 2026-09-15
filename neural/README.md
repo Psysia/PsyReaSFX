@@ -1,12 +1,14 @@
 # PsyReaSFX neural similarity sidecar
 
-This directory contains the optional local neural-audio component. It is not
-required by the default ReaPack installation and does not upload audio.
+This directory contains the optional local neural-audio component. It is a
+separate optional ReaPack data package and does not upload audio.
 
-Beta 6 users can download the self-contained Windows x64 component from the
-GitHub Release and run `Install-NeuralSimilarity.cmd`; no separate .NET runtime
-is required. Package and installation smoke tests are implemented by
-`tools/Build-BetaRelease.ps1` and `tools/Test-NeuralPackage.ps1`.
+Beta 6.1 users can install `PsyReaSFX Neural Similarity` directly through the
+same ReaPack repository as the Lua package. The self-contained Windows x64 ZIP
+and `Install-NeuralSimilarity.cmd` remain a manual fallback; no separate .NET
+runtime is required. Package and layout smoke tests are implemented by
+`tools/Build-BetaRelease.ps1`, `tools/Test-NeuralPackage.ps1`, and
+`tools/Test-ReaPackNeuralPackage.ps1`.
 
 The first frozen profile is `mn04_as_scene_320_v1`:
 

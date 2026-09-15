@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta6
+-- @version 0.9.0-beta6.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -75,6 +75,7 @@
 --   - 大型库扫描使用目录游标、已知根路径绑定和批量刷新，减少主线程重复遍历
 --   - 0.7.4：逻辑库箭头可直接折叠或展开来源路径
 --   - Artwork 增加逻辑库封面、来源根目录与常见封面子目录回退
+--   - Beta 6.1：神经相似度组件可作为独立可选包通过 ReaPack 安装和更新
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -180,7 +181,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 6"
+local VERSION = "0.9.0 Beta 6.1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -12547,15 +12548,19 @@ end
 function neural_similarity_paths()
   local root = DATA_DIR .. SEP .. "neural_similarity"
   local jobs = root .. SEP .. "jobs"
+  local component_root = RESOURCE_PATH .. SEP .. "Data" .. SEP
+    .. "PsyReaSFX" .. SEP .. "neural_similarity"
   local development_output = SCRIPT_DIR .. "neural" .. SEP
     .. "PsyReaSFX.NeuralSidecar" .. SEP .. "bin" .. SEP .. "Release"
     .. SEP .. "net8.0" .. SEP .. "PsyReaSFX.NeuralSidecar.exe"
   local executable = neural_first_file({
+    component_root .. SEP .. "PsyReaSFX.NeuralSidecar.exe",
     root .. SEP .. "PsyReaSFX.NeuralSidecar.exe",
     SCRIPT_DIR .. "PsyReaSFX.NeuralSidecar.exe",
     development_output,
   })
   local model_candidates = {
+    component_root .. SEP .. "models" .. SEP .. NeuralSimilarity.profile,
     root .. SEP .. "models" .. SEP .. NeuralSimilarity.profile,
     SCRIPT_DIR .. "assets" .. SEP .. "neural" .. SEP .. NeuralSimilarity.profile,
   }
@@ -12568,6 +12573,7 @@ function neural_similarity_paths()
   end
   return {
     root = root,
+    component_root = component_root,
     jobs = jobs,
     executable = executable,
     model_directory = model_directory,

@@ -1,0 +1,7 @@
+# Frozen neural model artifacts are byte-addressed by manifest-v1.json.
+# Preserve their checked-in bytes so GitHub Raw matches the manifest hashes.
+/LICENSE -text
+/assets/neural/mn04_as_scene_320_v1/*.json -text
+/assets/neural/mn04_as_scene_320_v1/*.txt -text
+/neural/package/*.md -text
+/neural/package/*.txt -text

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.0-beta6",
+    [string]$Version = "0.9.0-beta6.1",
     [string]$OutputDirectory = ""
 )
 
@@ -17,6 +17,7 @@ $displayVersion = $Version -replace '-beta', ' Beta '
 $fileVersion = $Version.Replace('.', '_').Replace('-', '_')
 $luaPackageName = "PsyReaSFX_v$fileVersion"
 $neuralPackageName = "PsyReaSFX_Neural_Similarity_v${fileVersion}_win_x64"
+$sidecarAssetName = "PsyReaSFX.NeuralSidecar_v${fileVersion}_win_x64.exe"
 $workRoot = Join-Path ([IO.Path]::GetTempPath()) ("PsyReaSFX-release-" + [guid]::NewGuid().ToString("N"))
 $luaRoot = Join-Path $workRoot $luaPackageName
 $neuralRoot = Join-Path $workRoot $neuralPackageName
@@ -79,6 +80,8 @@ try {
     $payloadDirectory = Join-Path $neuralRoot "payload"
     New-Item -ItemType Directory -Path (Join-Path $payloadDirectory "models") -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $publishDirectory "PsyReaSFX.NeuralSidecar.exe") -Destination $payloadDirectory
+    $sidecarAsset = Join-Path $OutputDirectory $sidecarAssetName
+    Copy-Item -LiteralPath (Join-Path $publishDirectory "PsyReaSFX.NeuralSidecar.exe") -Destination $sidecarAsset -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot "assets/neural/mn04_as_scene_320_v1") `
         -Destination (Join-Path $payloadDirectory "models") -Recurse
 
@@ -104,14 +107,14 @@ try {
     Compress-Archive -LiteralPath $neuralRoot -DestinationPath $neuralZip -CompressionLevel Optimal
 
     $checksumPath = Join-Path $OutputDirectory "SHA256SUMS-$Version.txt"
-    $checksumLines = foreach ($archive in @($luaZip, $neuralZip)) {
+    $checksumLines = foreach ($archive in @($luaZip, $neuralZip, $sidecarAsset)) {
         $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         "$hash  $([IO.Path]::GetFileName($archive))"
     }
     [IO.File]::WriteAllLines($checksumPath, $checksumLines, [Text.UTF8Encoding]::new($false))
 
     Write-Host "Built $displayVersion release assets:"
-    Get-Item -LiteralPath $luaZip, $neuralZip, $checksumPath | Select-Object Name, Length
+    Get-Item -LiteralPath $luaZip, $neuralZip, $sidecarAsset, $checksumPath | Select-Object Name, Length
 }
 finally {
     if (Test-Path -LiteralPath $workRoot) {

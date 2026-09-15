@@ -259,15 +259,19 @@ end
 function neural_similarity_paths()
   local root = DATA_DIR .. SEP .. "neural_similarity"
   local jobs = root .. SEP .. "jobs"
+  local component_root = RESOURCE_PATH .. SEP .. "Data" .. SEP
+    .. "PsyReaSFX" .. SEP .. "neural_similarity"
   local development_output = SCRIPT_DIR .. "neural" .. SEP
     .. "PsyReaSFX.NeuralSidecar" .. SEP .. "bin" .. SEP .. "Release"
     .. SEP .. "net8.0" .. SEP .. "PsyReaSFX.NeuralSidecar.exe"
   local executable = neural_first_file({
+    component_root .. SEP .. "PsyReaSFX.NeuralSidecar.exe",
     root .. SEP .. "PsyReaSFX.NeuralSidecar.exe",
     SCRIPT_DIR .. "PsyReaSFX.NeuralSidecar.exe",
     development_output,
   })
   local model_candidates = {
+    component_root .. SEP .. "models" .. SEP .. NeuralSimilarity.profile,
     root .. SEP .. "models" .. SEP .. NeuralSimilarity.profile,
     SCRIPT_DIR .. "assets" .. SEP .. "neural" .. SEP .. NeuralSimilarity.profile,
   }
@@ -280,6 +284,7 @@ function neural_similarity_paths()
   end
   return {
     root = root,
+    component_root = component_root,
     jobs = jobs,
     executable = executable,
     model_directory = model_directory,

@@ -4,11 +4,13 @@ local source = source_file:read("*a")
 source_file:close()
 
 local separator = package.config:sub(1, 1)
+local virtual_files = {}
 state = { persistence_read_only = false, neural_similarity_state = "available" }
 Host = {
   GetOS = function() return "Win64" end,
   time_precise = function() return 123.25 end,
   file_exists = function(path)
+    if virtual_files[path] then return true end
     local file = io.open(path, "rb")
     if file then file:close() return true end
     return false
@@ -27,6 +29,7 @@ AppState = {
   end,
 }
 DATA_DIR = os.tmpname() .. "-psyreasfx-neural"
+RESOURCE_PATH = DATA_DIR .. "-resource"
 SCRIPT_DIR = DATA_DIR .. separator
 SEP = separator
 Similarity = { frame_budget = 0.006, frame_records = 8192 }
@@ -55,6 +58,32 @@ function set_status() end
 function can_run_heavy_job() return true end
 
 assert(load(source, "@" .. source_path, "t", _ENV))()
+
+local cache_root = DATA_DIR .. separator .. "neural_similarity"
+local component_root = RESOURCE_PATH .. separator .. "Data" .. separator
+  .. "PsyReaSFX" .. separator .. "neural_similarity"
+local component_executable = component_root .. separator
+  .. "PsyReaSFX.NeuralSidecar.exe"
+local component_model = component_root .. separator .. "models" .. separator
+  .. NeuralSimilarity.profile
+local legacy_executable = cache_root .. separator
+  .. "PsyReaSFX.NeuralSidecar.exe"
+local legacy_model = cache_root .. separator .. "models" .. separator
+  .. NeuralSimilarity.profile
+virtual_files[component_executable] = true
+virtual_files[component_model .. separator .. "manifest-v1.json"] = true
+virtual_files[legacy_executable] = true
+virtual_files[legacy_model .. separator .. "manifest-v1.json"] = true
+local paths = neural_similarity_paths()
+assert(paths.root == cache_root)
+assert(paths.component_root == component_root)
+assert(paths.executable == component_executable)
+assert(paths.model_directory == component_model)
+virtual_files[component_executable] = nil
+virtual_files[component_model .. separator .. "manifest-v1.json"] = nil
+paths = neural_similarity_paths()
+assert(paths.executable == legacy_executable)
+assert(paths.model_directory == legacy_model)
 
 local encoded = neural_json_encode({
   schema = "x",

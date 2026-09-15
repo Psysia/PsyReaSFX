@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6
+**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6.1
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -42,21 +42,21 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
    ```
 
 3. 同步软件包。
-4. 搜索并安装 `PsyReaSFX`。
+4. 搜索并安装 `PsyReaSFX.lua`。
 5. 打开 REAPER 动作列表，运行 PsyReaSFX；需要时给它绑定快捷键。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
 
-### 可选神经相似度组件（Beta 6）
+### 可选神经相似度组件（Beta 6.1）
 
-Beta 6 的神经相似度组件不随 ReaPack 自动安装。请从 Beta 6 GitHub Release
-下载 `PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip`，解压后双击
-`Install-NeuralSimilarity.cmd`。它是 Windows x64 自包含程序，不要求另装 .NET，
-并会安装到 PsyReaSFX 数据目录。便携版 REAPER 请按 ZIP 内说明显式传入资源目录。
+Windows x64 用户在同步仓库后，打开 ReaPack 软件包浏览器，搜索并安装第二个包
+`PsyReaSFX Neural Similarity`。它与 `PsyReaSFX.lua` 分开安装，ReaPack 会把程序和
+模型放到 REAPER 的 `Data` 目录，并独立负责后续更新与卸载。安装或更新后请重新
+启动 PsyReaSFX。
 
-组件只在本机处理音频，不上传文件。卸载时双击包内
-`Uninstall-NeuralSimilarity.cmd`；默认保留可重建缓存，也可以使用
-`-RemoveCache` 一并清理。
+该组件为自包含程序，不要求另装 .NET，只在本机处理音频且不会上传文件。GitHub
+Release 仍提供 ZIP 和 `Install-NeuralSimilarity.cmd` 作为手动备用方式；便携版也
+可以按 ZIP 内说明显式指定资源目录。
 
 ### 手动安装
 
@@ -238,7 +238,7 @@ whoosh category:movement -long
 不使用文件名、UCS 分类或关键词。没有频谱数据的格式仍可使用时间域特征比较。
 设置 → 波形中可以清空相似特征缓存，源音频不会被修改。
 
-安装 Beta 6 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
+安装 Beta 6.1 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
 现有时长、起音、瞬态和包络特征混合重排。内建 Windows 解码路径支持常见采样率
 与 PCM16/PCM24/PCM32/float WAV，以及 AIFF、FLAC、MP3、M4A；检测到 FFmpeg 后还
 支持 OGG、Opus、WavPack 与 CAF。音频只在内存中下混并重采样到 32 kHz，不会生成
@@ -541,7 +541,7 @@ PsyReaSFX 优先保证鼠标和滚动交互：
 | `project_usage_v1.tsv` | 按 REAPER 工程记录插入素材和 Transfer 插入 |
 | `backups/` | 自动和手动数据快照 |
 | `cache_quarantine/` | 缓存检查隔离的损坏 RWF 文件 |
-| `neural_similarity/` | 可选 sidecar、模型及可重建的 embedding/HNSW 缓存 |
+| `neural_similarity/` | 可重建的 embedding/HNSW 缓存和神经任务文件；ReaPack 管理的程序与模型位于 REAPER `Data` 目录 |
 
 建议备份整个 PsyReaSFX 数据目录。0.8 起可以在
 `设置 → 维护` 每日自动建立一份数据快照、手动建立备份、设置保留数量，
@@ -628,10 +628,10 @@ PsyReaSFX 会记录插入当前已保存 `.rpp` 工程的素材。项目素材�
 
 ### 神经相似度没有启用
 
-- 确认已安装 Beta 6 可选神经组件，并在安装后重新启动 PsyReaSFX。
+- 确认已安装 ReaPack 可选包 `PsyReaSFX Neural Similarity`，并在安装后重新启动 PsyReaSFX。
 - 检查素材扩展名是否在当前组件能力列表中；OGG、Opus、WavPack、CAF 需要 FFmpeg，其余文档列出的格式使用 Windows 解码能力。
 - 删除或损坏的模型、协议版本不匹配、任务失败和超时都会安全回退到基础算法。
-- 可以重新运行安装脚本覆盖程序与模型；已有 embedding/HNSW 缓存会按文件签名复用或重建。
+- 可以在 ReaPack 中重新安装组件包（或重新运行手动备用安装脚本）以覆盖程序与模型；已有 embedding/HNSW 缓存会按文件签名复用或重建。
 
 ### 点击定位或拖放位置不准
 
@@ -647,7 +647,7 @@ PsyReaSFX 内部统一使用 UTF-8。个别源文件元数据可能采用旧编�
 
 ## 21. 稳定版支持与问题反馈
 
-PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 6
+PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 6.1
 作为同一个包的不同版本发布。普通同步默认留在 Stable；需要测试新版时，
 右键 PsyReaSFX，启用单包预发布版本，然后从“Versions”选择目标版本。
 GitHub Release 仍永久保留 0.7.23 Stable ZIP。

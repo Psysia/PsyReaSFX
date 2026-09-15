@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6.1
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -42,23 +42,23 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
    ```
 
 3. Synchronize packages.
-4. Search for `PsyReaSFX` and install it.
+4. Search for `PsyReaSFX.lua` and install it.
 5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
-### Optional neural similarity component (Beta 6)
+### Optional neural similarity component (Beta 6.1)
 
-The Beta 6 neural component is not installed automatically by ReaPack. Download
-`PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip` from the Beta 6 GitHub
-Release, extract it, and double-click `Install-NeuralSimilarity.cmd`. It is a
-self-contained Windows x64 application and does not require a separate .NET
-installation. Portable REAPER users can pass the resource path explicitly as
-described inside the ZIP.
+On Windows x64, open ReaPack's package browser after synchronizing, search for
+`PsyReaSFX Neural Similarity`, and install it as a second package beside
+`PsyReaSFX.lua`. ReaPack places the executable and model under REAPER's `Data`
+directory and updates or uninstalls those files independently. Restart
+PsyReaSFX after installing or updating the component.
 
-The component processes audio locally and never uploads files. Double-click
-`Uninstall-NeuralSimilarity.cmd` to remove it. The default uninstall preserves
-the rebuildable cache; `-RemoveCache` removes that data too.
+The component is self-contained, needs no separate .NET runtime, processes
+audio locally, and never uploads files. The GitHub Release ZIP and
+`Install-NeuralSimilarity.cmd` remain available as a manual fallback, including
+for portable setups where you want to specify the resource path explicitly.
 
 ### Manual installation
 
@@ -249,7 +249,7 @@ Scoring uses audio content only, never filenames, UCS categories or keywords. Fo
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
 
-With the optional Beta 6 component installed, PsyReaSFX uses EfficientAT
+With the optional Beta 6.1 component installed, PsyReaSFX uses EfficientAT
 embedding recall followed by the existing duration, onset, transient and
 envelope features. Common WAV sample rates and PCM16/PCM24/PCM32/float depths,
 AIFF, FLAC, MP3 and M4A use the built-in Windows decoder; an available FFmpeg
@@ -568,7 +568,7 @@ Important data includes:
 | `project_usage_v1.tsv` | per-REAPER-project insert and Transfer-insert usage |
 | `backups/` | automatic and manual data snapshots |
 | `cache_quarantine/` | damaged RWF files isolated by cache verification |
-| `neural_similarity/` | optional sidecar, model, and rebuildable embedding/HNSW cache |
+| `neural_similarity/` | rebuildable embedding/HNSW cache and neural job files; ReaPack-managed executable/model files live under the REAPER `Data` directory |
 
 Back up the entire data directory. Starting with 0.8, `Settings →
 Maintenance` can create one automatic snapshot per day, create a manual backup,
@@ -666,10 +666,10 @@ Wait for visible-row waveform tasks, or run high-resolution precache. Later visi
 
 ### Neural similarity does not activate
 
-- Confirm that the optional Beta 6 neural component is installed, then restart PsyReaSFX.
+- Confirm that the optional `PsyReaSFX Neural Similarity` ReaPack package is installed, then restart PsyReaSFX.
 - Check whether the file extension is supported by the installed component. OGG, Opus, WavPack and CAF require FFmpeg; the other documented formats use Windows codecs.
 - Missing/damaged models, protocol mismatches, failed jobs, and timeouts safely use the baseline algorithm.
-- Re-run the installer to replace the executable and model. Existing embedding/HNSW data is reused or rebuilt by signature.
+- Reinstall the ReaPack component package (or re-run the manual fallback installer) to replace the executable and model. Existing embedding/HNSW data is reused or rebuilt by signature.
 
 ### Seek or drag placement is inaccurate
 
@@ -686,7 +686,7 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 ## 21. Stable support
 
 PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.9.0 Beta 6 as versions of the same package. Normal synchronization
+PsyReaSFX 0.9.0 Beta 6.1 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.
