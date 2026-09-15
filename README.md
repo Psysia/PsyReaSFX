@@ -86,8 +86,8 @@ It combines library management, waveform browsing, search, audition, metadata, c
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 5** — adds optional local EfficientAT embeddings, an incremental FP16 cache, persistent HNSW recall and hybrid reranking while preserving the existing 15-feature search as a transparent fallback.
-- **Current limitation** — neural protocol v1 activates only when the complete search scope consists of 32 kHz PCM16 WAV files. Other formats automatically use the baseline search while general media decoding and resampling remain in development.
+- **Preview channel: 0.9.0 Beta 6** — expands the optional local EfficientAT path to common WAV sample rates and bit depths plus AIFF, FLAC, MP3 and M4A; FFmpeg, when installed, also enables OGG, Opus, WavPack and CAF.
+- **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
@@ -105,8 +105,8 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 5 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta5)
-- [Optional Beta 5 neural similarity component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta5/PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 6 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6)
+- [Optional Beta 6 neural similarity component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)

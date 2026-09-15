@@ -31,10 +31,10 @@ vm.runInNewContext(`${script}\n;globalThis.__messages = messages;`, sandbox, {
 try {
   vm.runInNewContext(`
     updateReleaseLink("[data-test]", null, { url: "https://example.com/fallback" });
-    if (formatReleaseVersion("v0.9.0-beta5") !== "0.9.0 Beta 5") {
+    if (formatReleaseVersion("v0.9.0-beta6") !== "0.9.0 Beta 6") {
       throw new Error("Release tag formatting failed");
     }
-    if (findNeuralArchive({ assets: [{ name: "PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip" }] })?.name !== "PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip") {
+    if (findNeuralArchive({ assets: [{ name: "PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip" }] })?.name !== "PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip") {
       throw new Error("Neural release asset detection failed");
     }
   `, sandbox, { filename: scriptPath });

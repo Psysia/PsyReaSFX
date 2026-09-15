@@ -1,7 +1,7 @@
 # PsyReaSFX 0.9 神经音频相似度架构
 
 更新日期：2026-09-15
-状态：第三阶段进行中；Lua 可选接入、进度、取消、混合重排与故障回退已实现，通用媒体解码尚未完成，未进入公开 Beta
+状态：Beta 6；Lua 可选接入、进度、取消、混合重排、故障回退与通用媒体解码/重采样已实现
 
 ## 1. 目标与边界
 
@@ -67,13 +67,15 @@ sidecar 的第一阶段职责：
 4. 接收参考素材与候选范围，返回稳定签名和 ANN 分数；
 5. 响应取消文件，在当前素材完成后停止，不留下半条向量或半成品索引。
 
-当前实现已完成模型清单逐文件 SHA-256 校验、`capabilities`、PCM16 32 kHz WAV
-的 `embed`、10 秒窗口/2.5 秒 hop、三条金样自检，以及 `run-job` 文件协议下的增量
+当前实现已完成模型清单逐文件 SHA-256 校验、`capabilities`、通用音频 `embed`、
+10 秒窗口/2.5 秒 hop、三条金样自检，以及 `run-job` 文件协议下的增量
 FP16 embedding 缓存、取消、离线复用、候选签名过滤与精确 cosine Top-K 查询。
 当前还实现了不增加第三方运行时依赖的确定性 HNSW 图、原子索引替换、缓存 SHA-256
 绑定、取消保护和损坏/过期索引的精确查询回退。Lua 已通过原子文件任务接入能力
-探测、进度、取消、HNSW/精确查询、15 维声学重排与故障回退；协议 v1 只在整个搜索
-范围均为 32 kHz PCM16 WAV 时启用，通用媒体解码/重采样仍属于下一阶段。
+探测、进度、取消、HNSW/精确查询、15 维声学重排与故障回退。sidecar 通过 NAudio
+和 Windows Media Foundation 解码常见 WAV 位深/采样率、AIFF、FLAC、MP3、M4A，
+并在可用时通过 FFmpeg 扩展 OGG、Opus、WavPack、CAF。音频只在内存中下混和 WDL
+重采样到 32 kHz，不生成转码副本；单个文件失败不会中断整库缓存构建。
 
 sidecar 是可选组件。未安装、模型缺失、版本不匹配、进程崩溃或索引损坏时，
 “查找相似声音”必须自动回退到 Beta 4.5 的 15 维精确检索，并给出一次非阻塞状态
@@ -91,10 +93,9 @@ sidecar、模型与索引格式，但二者必须通过显式版本协议访问�
 
 ```text
 <PsyReaSFX data>/neural_similarity/
-  models/manifest-v1.tsv
-  embeddings-<profile>-v1.bin
-  embeddings-<profile>-v1.manifest
-  hnsw-<profile>-v1.bin
+  models/manifest-v1.json
+  embeddings-<profile>-v2.bin
+  hnsw-<profile>-v2.bin
   jobs/<request-id>.request
   jobs/<request-id>.status
   jobs/<request-id>.result
@@ -108,8 +109,8 @@ sidecar、模型与索引格式，但二者必须通过显式版本协议访问�
 - 损坏、截断、维度错误、模型哈希不符或重复签名必须拒绝载入并安全重建；
 - 清理缓存只删除神经相似度目录，不触碰 RWF、素材数据库或源音频。
 
-当前缓存版本使用 `PSYNEMB1` magic、格式版本、profile、模型 SHA-256、维度和记录数
-组成头部。每条固定记录只含 16 字符签名、文件大小、UTC 修改时间 ticks 与 320 个
+当前缓存版本使用 `PSYNEMB1` magic、格式版本、profile、模型 SHA-256、解码器版本、
+维度和记录数组成头部。每条固定记录只含 16 字符签名、文件大小、UTC 修改时间 ticks 与 320 个
 little-endian FP16 值。构建清单使用 UTF-8 TSV，路径列是 JSON string，避免制表符和
 非 ASCII 路径破坏字段边界。旧记录只有在大小和修改时间完全匹配时才复用，因此
 离线盘不阻止安全复用；需要重算但源文件不可用时只记录该素材失败。
@@ -184,8 +185,9 @@ HNSW 索引使用 `PSYHNSW1` magic，并保存格式版本、profile、模型哈
 2. [已完成] 建立 sidecar 的 `capabilities`、`embed`、`run-job build-cache`、精确 `query` 与 `cancel` 协议；
 3. [已完成] 建立确定性持久化 HNSW，并以穷举 cosine 验证固定测试集 Recall@20；
 4. [已完成] 接入 Lua 的可选能力探测、进度、取消、故障回退、混合重排与 Top-200 展示；
-5. 完成通用媒体解码/重采样，以及 5,000 条开发基准和 50,000 条真实素材验收；
-6. 质量数据证明有必要时，再评估 `mn10_as` 和向量量化。
+5. [已完成] 完成通用媒体解码/重采样，并覆盖常见采样率、位深与压缩格式；
+6. 完成 5,000 条开发基准和 50,000 条真实素材验收；
+7. 质量数据证明有必要时，再评估 `mn10_as` 和向量量化。
 
 ## 10. 上游依据
 

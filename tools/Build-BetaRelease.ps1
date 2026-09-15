@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.0-beta5",
+    [string]$Version = "0.9.0-beta6",
     [string]$OutputDirectory = ""
 )
 
@@ -69,6 +69,7 @@ try {
         "Install-NeuralSimilarity.ps1",
         "Uninstall-NeuralSimilarity.cmd",
         "Uninstall-NeuralSimilarity.ps1",
+        "LICENSE-NAudio.txt",
         "README.md",
         "README_zh-CN.md"
     )) {

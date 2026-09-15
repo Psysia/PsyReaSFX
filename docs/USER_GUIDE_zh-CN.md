@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 5
+**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -47,10 +47,10 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
 
-### 可选神经相似度组件（Beta 5）
+### 可选神经相似度组件（Beta 6）
 
-Beta 5 的神经相似度组件不随 ReaPack 自动安装。请从 Beta 5 GitHub Release
-下载 `PsyReaSFX_Neural_Similarity_v0_9_0_beta5_win_x64.zip`，解压后双击
+Beta 6 的神经相似度组件不随 ReaPack 自动安装。请从 Beta 6 GitHub Release
+下载 `PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip`，解压后双击
 `Install-NeuralSimilarity.cmd`。它是 Windows x64 自包含程序，不要求另装 .NET，
 并会安装到 PsyReaSFX 数据目录。便携版 REAPER 请按 ZIP 内说明显式传入资源目录。
 
@@ -238,10 +238,12 @@ whoosh category:movement -long
 不使用文件名、UCS 分类或关键词。没有频谱数据的格式仍可使用时间域特征比较。
 设置 → 波形中可以清空相似特征缓存，源音频不会被修改。
 
-安装 Beta 5 可选组件后，当“当前结果”或“全部音效库”的完整候选范围全部为
-32 kHz PCM16 WAV 时，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
-现有时长、起音、瞬态和包络特征混合重排。首次全库搜索会增量建立 embedding
-缓存与 HNSW 索引，进度可见且可取消。组件缺失、格式不兼容、模型/协议不符、
+安装 Beta 6 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
+现有时长、起音、瞬态和包络特征混合重排。内建 Windows 解码路径支持常见采样率
+与 PCM16/PCM24/PCM32/float WAV，以及 AIFF、FLAC、MP3、M4A；检测到 FFmpeg 后还
+支持 OGG、Opus、WavPack 与 CAF。音频只在内存中下混并重采样到 32 kHz，不会生成
+转码副本。首次全库搜索会增量建立 FP16 embedding 缓存与 HNSW 索引，进度可见且
+可取消。单个文件解码失败会被跳过并报告；组件缺失、格式不兼容、模型/协议不符、
 任务超时或缓存损坏时会自动回退，不需要用户切换模式。
 
 ## 7. 结果分栏
@@ -626,8 +628,8 @@ PsyReaSFX 会记录插入当前已保存 `.rpp` 工程的素材。项目素材�
 
 ### 神经相似度没有启用
 
-- 确认已安装 Beta 5 可选神经组件，并在安装后重新启动 PsyReaSFX。
-- 当前协议要求本次搜索范围内的全部素材都是 32 kHz PCM16 WAV；否则会自动回退。
+- 确认已安装 Beta 6 可选神经组件，并在安装后重新启动 PsyReaSFX。
+- 检查素材扩展名是否在当前组件能力列表中；OGG、Opus、WavPack、CAF 需要 FFmpeg，其余文档列出的格式使用 Windows 解码能力。
 - 删除或损坏的模型、协议版本不匹配、任务失败和超时都会安全回退到基础算法。
 - 可以重新运行安装脚本覆盖程序与模型；已有 embedding/HNSW 缓存会按文件签名复用或重建。
 
@@ -645,7 +647,7 @@ PsyReaSFX 内部统一使用 UTF-8。个别源文件元数据可能采用旧编�
 
 ## 21. 稳定版支持与问题反馈
 
-PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 5
+PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 6
 作为同一个包的不同版本发布。普通同步默认留在 Stable；需要测试新版时，
 右键 PsyReaSFX，启用单包预发布版本，然后从“Versions”选择目标版本。
 GitHub Release 仍永久保留 0.7.23 Stable ZIP。

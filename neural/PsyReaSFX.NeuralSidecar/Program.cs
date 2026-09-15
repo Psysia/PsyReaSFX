@@ -9,7 +9,7 @@ namespace PsyReaSFX.NeuralSidecar;
 
 internal static class Program
 {
-    internal const string SidecarVersion = "0.4.0";
+    internal const string SidecarVersion = "0.5.0";
     internal const string ExpectedSchema = "PsyReaSFX-Neural-Model-v1";
     internal const string ExpectedProfile = "mn04_as_scene_320_v1";
     internal const string ExpectedModelSha256 = "5efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054";
@@ -99,7 +99,10 @@ internal static class Program
                     model.Profile,
                     model.Dimensions,
                     model.SampleRate,
-                    input = "mono PCM16 WAV at 32000 Hz",
+                    input = "locally decoded audio, downmixed and resampled to mono 32000 Hz",
+                    decoderVersion = AudioDecoder.DecoderVersion,
+                    supportedExtensions = AudioDecoder.SupportedExtensions,
+                    ffmpegFallback = AudioDecoder.FfmpegAvailable,
                     minimumSamples = MinimumSamples,
                     maximumWindowSamples = MaximumSamples,
                     sceneHopSamples = SceneHopSamples,
@@ -138,13 +141,22 @@ internal static class Program
             var audioFile = testCase.GetProperty("audio_file").GetString() ?? throw new InvalidDataException("Golden audio file is missing.");
             var audioPath = Path.Combine(modelDirectory, audioFile);
             Require(HashFile(audioPath) == testCase.GetProperty("audio_sha256").GetString(), $"Golden audio hash mismatch: {name}");
-            var samples = WavePcm16.ReadMono32k(audioPath);
-            var actual = RunSceneEmbedding(session, samples, model.Dimensions);
+            var audio = AudioDecoder.DecodeMono32k(audioPath);
+            var actual = RunSceneEmbedding(session, audio.Samples, model.Dimensions);
             var expected = testCase.GetProperty("embedding").EnumerateArray().Select(value => value.GetSingle()).ToArray();
             var metrics = Compare(expected, actual);
             Require(metrics.MaxAbsolute <= maxAbsLimit, $"Golden max-absolute mismatch for {name}: {metrics.MaxAbsolute}");
             Require(metrics.Cosine >= minimumCosine, $"Golden cosine mismatch for {name}: {metrics.Cosine}");
-            reports.Add(new { name, samples = samples.Length, metrics.MaxAbsolute, metrics.Cosine });
+            reports.Add(new
+            {
+                name,
+                samples = audio.Samples.Length,
+                sourceSampleRate = audio.SourceSampleRate,
+                sourceChannels = audio.SourceChannels,
+                audio.Decoder,
+                metrics.MaxAbsolute,
+                metrics.Cosine,
+            });
         }
 
         WriteJson(new
@@ -154,6 +166,7 @@ internal static class Program
             profile = model.Profile,
             result = "passed",
             cases = reports,
+            audioDecoder = AudioDecoder.RunSelfTest(),
             cacheProtocol = NeuralJobs.RunSelfTest(model),
         });
         return 0;
@@ -163,7 +176,7 @@ internal static class Program
     {
         if (args.Length < 1)
         {
-            throw new ArgumentException("embed requires an input WAV path and optional output JSON path.");
+            throw new ArgumentException("embed requires an input audio path and optional output JSON path.");
         }
 
         var model = ModelBundle.LoadAndVerify(modelDirectory);
@@ -178,11 +191,12 @@ internal static class Program
             Require(!outputPath.StartsWith(modelRoot, StringComparison.OrdinalIgnoreCase),
                 "Embedding output must not be written into the read-only model directory.");
         }
-        var samples = WavePcm16.ReadMono32k(inputPath);
-        Require(samples.Length >= MinimumSamples, $"Audio is too short; at least {MinimumSamples} samples are required.");
+        var audio = AudioDecoder.DecodeMono32k(inputPath);
+        Require(audio.Samples.Length >= MinimumSamples,
+            $"Audio is too short; at least {MinimumSamples} samples are required after resampling.");
 
         using var session = CreateSession(model.ModelPath);
-        var embedding = RunSceneEmbedding(session, samples, model.Dimensions);
+        var embedding = RunSceneEmbedding(session, audio.Samples, model.Dimensions);
         var result = new
         {
             schema = "PsyReaSFX-Neural-Embedding-v1",
@@ -190,7 +204,10 @@ internal static class Program
             profile = model.Profile,
             dimensions = model.Dimensions,
             sampleRate = model.SampleRate,
-            samples = samples.Length,
+            samples = audio.Samples.Length,
+            sourceSampleRate = audio.SourceSampleRate,
+            sourceChannels = audio.SourceChannels,
+            decoder = audio.Decoder,
             audioSha256 = HashFile(inputPath),
             embeddingSha256Float32Le = HashFloats(embedding),
             embedding,
@@ -400,63 +417,4 @@ internal static class Program
         }
     }
 
-    internal static class WavePcm16
-    {
-        public static float[] ReadMono32k(string path)
-        {
-            using var stream = File.OpenRead(path);
-            using var reader = new BinaryReader(stream);
-            Require(new string(reader.ReadChars(4)) == "RIFF", "Only little-endian RIFF WAV is supported.");
-            _ = reader.ReadUInt32();
-            Require(new string(reader.ReadChars(4)) == "WAVE", "Invalid WAVE header.");
-
-            ushort format = 0;
-            ushort channels = 0;
-            uint sampleRate = 0;
-            ushort bitsPerSample = 0;
-            byte[]? data = null;
-            while (stream.Position + 8 <= stream.Length)
-            {
-                var chunkId = new string(reader.ReadChars(4));
-                var chunkSize = reader.ReadUInt32();
-                var next = stream.Position + chunkSize + (chunkSize & 1);
-                if (chunkId == "fmt ")
-                {
-                    format = reader.ReadUInt16();
-                    channels = reader.ReadUInt16();
-                    sampleRate = reader.ReadUInt32();
-                    _ = reader.ReadUInt32();
-                    _ = reader.ReadUInt16();
-                    bitsPerSample = reader.ReadUInt16();
-                }
-                else if (chunkId == "data")
-                {
-                    data = reader.ReadBytes(checked((int)chunkSize));
-                }
-                stream.Position = next;
-            }
-
-            Require(format == 1 && bitsPerSample == 16, "Protocol v1 supports PCM16 WAV only.");
-            Require(channels > 0, "WAV channel count is invalid.");
-            Require(sampleRate == ExpectedSampleRate, $"Protocol v1 requires {ExpectedSampleRate} Hz audio.");
-            Require(data is not null, "WAV data chunk is missing.");
-            var payload = data ?? throw new InvalidDataException("WAV data chunk is missing.");
-            Require(payload.Length % (channels * 2) == 0, "WAV PCM payload is truncated.");
-
-            var frames = payload.Length / (channels * 2);
-            var mono = new float[frames];
-            var offset = 0;
-            for (var frame = 0; frame < frames; frame++)
-            {
-                var sum = 0f;
-                for (var channel = 0; channel < channels; channel++)
-                {
-                    sum += BinaryPrimitives.ReadInt16LittleEndian(payload.AsSpan(offset, 2)) / 32768f;
-                    offset += 2;
-                }
-                mono[frame] = sum / channels;
-            }
-            return mono;
-        }
-    }
 }

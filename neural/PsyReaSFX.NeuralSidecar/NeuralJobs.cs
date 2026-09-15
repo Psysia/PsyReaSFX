@@ -11,7 +11,7 @@ internal static partial class NeuralJobs
     private const string StatusSchema = "PsyReaSFX-Neural-Job-Status-v1";
     private const string ResultSchema = "PsyReaSFX-Neural-Job-Result-v1";
     private const string CacheMagic = "PSYNEMB1";
-    private const uint CacheVersion = 1;
+    private const uint CacheVersion = 2;
     private const int SignatureLength = 16;
     private const int MaximumTopK = 1_000;
 
@@ -243,11 +243,11 @@ internal static partial class NeuralJobs
                     {
                         ValidateAssetFile(asset);
                         session ??= Program.CreateSession(model.ModelPath);
-                        var samples = Program.WavePcm16.ReadMono32k(asset.Path);
-                        Program.Require(samples.Length >= Program.MinimumSamples,
-                            $"Audio is too short; at least {Program.MinimumSamples} samples are required.");
+                        var audio = AudioDecoder.DecodeMono32k(asset.Path);
+                        Program.Require(audio.Samples.Length >= Program.MinimumSamples,
+                            $"Audio is too short; at least {Program.MinimumSamples} samples are required after resampling.");
                         ValidateAssetFile(asset);
-                        var vector = Program.RunSceneEmbedding(session, samples, model.Dimensions);
+                        var vector = Program.RunSceneEmbedding(session, audio.Samples, model.Dimensions);
                         ValidateAssetFile(asset);
                         output.Add(new CacheRecord(asset.Signature, asset.Size, asset.MtimeUtcTicks, ToHalf(vector)));
                         embedded++;
@@ -519,6 +519,8 @@ internal static partial class NeuralJobs
         Program.Require(profile == model.Profile, "Neural cache profile mismatch.");
         var modelHash = Convert.ToHexString(ReadExactly(reader, 32)).ToLowerInvariant();
         Program.Require(modelHash == Program.ExpectedModelSha256, "Neural cache model hash mismatch.");
+        Program.Require(reader.ReadUInt32() == AudioDecoder.DecoderVersion,
+            "Neural cache decoder version mismatch.");
 
         var recordBytes = SignatureLength + sizeof(long) + sizeof(long) + model.Dimensions * sizeof(ushort);
         var expectedLength = checked(stream.Position + (long)count * recordBytes);
@@ -582,6 +584,7 @@ internal static partial class NeuralJobs
         writer.Write((ushort)profile.Length);
         writer.Write(profile);
         writer.Write(Convert.FromHexString(Program.ExpectedModelSha256));
+        writer.Write((uint)AudioDecoder.DecoderVersion);
         foreach (var record in records)
         {
             ValidateSignature(record.Signature);

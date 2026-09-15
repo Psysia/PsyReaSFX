@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 6
+
+### Neural decoding without converted copies
+
+- Upgrades the optional neural sidecar to `0.5.0` and adds local decoding, mono downmixing, and WDL resampling to the frozen 32 kHz model input. No converted audio files are written.
+- Supports common WAV sample rates and PCM16/PCM24/PCM32/float bit depths, plus AIFF, FLAC, MP3, and M4A through the built-in Windows path. An available FFmpeg executable additionally enables OGG, Opus, WavPack, and CAF.
+- Publishes the decoder version and the extensions actually available on the current machine through `capabilities`; older Beta 5 sidecars retain the original 32 kHz PCM16 WAV safety restriction.
+- Lets a cache build continue when individual assets cannot be decoded. Failed assets are reported and excluded while successfully embedded files remain available to neural search.
+- Bumps the embedding cache to version 2 and binds it to the decoder version so caches created under the former input rules cannot be silently reused.
+- Adds decoder and resampling regression coverage for 44.1 kHz PCM16, 48 kHz PCM24, 96 kHz PCM32, float WAV, and real WAV/FLAC/MP3/OGG/Opus/WavPack/AIFF/CAF/M4A fixtures.
+
 ## 0.9.0 Beta 5
 
 ### Optional local neural similarity

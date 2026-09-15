@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta5
+-- @version 0.9.0-beta6
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -171,6 +171,7 @@
 --   - 0.9.0 Beta 4.4：修复波形定位试听时播放头先闪到起点的问题
 --   - 0.9.0 Beta 4.5：保留反向完整试听的零位置启动语义
 --   - 0.9.0 Beta 5：可选本地 EfficientAT embedding、HNSW 召回与混合重排
+--   - 0.9.0 Beta 6：内存解码与重采样覆盖常见采样率、位深和音频格式
 --
 --   必需：ReaImGui 0.10+
 --   推荐：SWS Extension（高级试听、Pitch、Rate、Loop、定位播放）
@@ -179,7 +180,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 5"
+local VERSION = "0.9.0 Beta 6"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -387,6 +388,7 @@ local AUDIO_EXT = {
   mp3 = true,
   wv = true,
   caf = true,
+  m4a = true,
 }
 
 local ROW_H = 42
@@ -12130,14 +12132,21 @@ function finish_similarity_search(canceled)
   end
   Jobs.finish(session.job_token, true)
   session.processed = session.total
+  local reported_failed = session.failed
+  if session.neural_used then
+    reported_failed = math.max(
+      reported_failed,
+      tonumber(session.neural_decode_failed) or 0
+    )
+  end
   set_status(string.format(
     session.neural_used
       and "神经相似度分析完成：检查 %d，命中 %d，失败 %d"
       or "相似声音分析完成：检查 %d，命中 %d，失败 %d",
     session.processed,
     state.similarity_result_count,
-    session.failed
-  ), session.failed > 0)
+    reported_failed
+  ), reported_failed > 0)
 end
 
 function cancel_similarity_search()
@@ -12281,9 +12290,10 @@ end
 --
 -- The helper is never required for browsing or for the existing 15-feature
 -- search. It is used only after an explicit capability handshake succeeds and
--- only when every requested asset is already a 32 kHz PCM16 WAV accepted by
--- protocol v1. Any protocol, process, cache, or result failure returns the
--- active search to the dependency-free similarity implementation.
+-- only for source formats advertised by the installed sidecar. The sidecar
+-- decodes, downmixes, and resamples in memory without creating converted audio.
+-- Any protocol, process, cache, or result failure returns the active search to
+-- the dependency-free similarity implementation.
 
 NeuralSimilarity = {
   profile = "mn04_as_scene_320_v1",
@@ -12561,8 +12571,8 @@ function neural_similarity_paths()
     jobs = jobs,
     executable = executable,
     model_directory = model_directory,
-    cache = root .. SEP .. "embeddings-" .. NeuralSimilarity.profile .. "-v1.bin",
-    index = root .. SEP .. "hnsw-" .. NeuralSimilarity.profile .. "-v1.bin",
+    cache = root .. SEP .. "embeddings-" .. NeuralSimilarity.profile .. "-v2.bin",
+    index = root .. SEP .. "hnsw-" .. NeuralSimilarity.profile .. "-v2.bin",
     capabilities = root .. SEP .. "capabilities-v1.json",
   }
 end
@@ -12684,14 +12694,28 @@ end
 function neural_similarity_asset_supported(asset)
   local source_type = tostring(asset and asset.source_type or ""):lower()
   local path = tostring(asset and asset.path or ""):lower()
-  local is_wave = source_type == "wave" or source_type == "wav"
-    or path:match("%.wav$") or path:match("%.wave$")
-  if not (asset and asset.ready and is_wave
-      and tonumber(asset.sample_rate) == 32000
-      and tonumber(asset.bit_depth) == 16) then
+  if not (asset and asset.ready and path ~= "") then return false end
+  local extension = path:match("%.([^%.\\/]+)$") or source_type
+  if extension == "wave" then extension = "wav" end
+  local profile = nil
+  for _, candidate in ipairs(
+      state.neural_similarity_capabilities
+      and state.neural_similarity_capabilities.profiles or {}) do
+    if candidate.profile == NeuralSimilarity.profile then
+      profile = candidate
+      break
+    end
+  end
+  if profile and tonumber(profile.decoderVersion or 0) >= 1 then
+    for _, supported in ipairs(profile.supportedExtensions or {}) do
+      if tostring(supported):lower() == extension then return true end
+    end
     return false
   end
-  return true
+  local is_wave = extension == "wav"
+  return is_wave
+    and tonumber(asset.sample_rate) == 32000
+    and tonumber(asset.bit_depth) == 16
 end
 
 local function neural_add_prepared_asset(session, asset)
@@ -12992,10 +13016,15 @@ local function neural_complete_job(session, result)
   neural_cleanup_job(completed_job, true)
   if operation == "build-cache" then
     os.remove(completed_job.paths.assets)
-    if tonumber(result.written) ~= session.neural_asset_count then
+    local written = tonumber(result.written)
+    if not written or written < 1 or written > session.neural_asset_count then
       neural_fallback(session, "incomplete_embedding_cache")
       return
     end
+    session.neural_decode_failed = math.max(
+      tonumber(result.failed) or 0,
+      session.neural_asset_count - written
+    )
     if session.scope == "all"
       and (not neural_file_exists(state.neural_similarity_paths.index)
         or result.cacheChanged == true) then

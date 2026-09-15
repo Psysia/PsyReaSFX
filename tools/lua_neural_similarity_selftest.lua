@@ -79,10 +79,23 @@ local valid, reason = neural_validate_capabilities({
   operations = { "capabilities", "run-job" },
   jobOperations = { "build-cache", "build-index", "query" },
   profiles = {
-    { profile = "mn04_as_scene_320_v1", dimensions = 320, sampleRate = 32000 },
+    {
+      profile = "mn04_as_scene_320_v1", dimensions = 320, sampleRate = 32000,
+      decoderVersion = 1,
+      supportedExtensions = { "wav", "wave", "aif", "aiff", "flac", "mp3", "ogg", "opus", "wv", "caf", "m4a" },
+    },
   },
 })
 assert(valid and reason == nil)
+state.neural_similarity_capabilities = {
+  profiles = {
+    {
+      profile = "mn04_as_scene_320_v1", dimensions = 320, sampleRate = 32000,
+      decoderVersion = 1,
+      supportedExtensions = { "wav", "wave", "aif", "aiff", "flac", "mp3", "ogg", "opus", "wv", "caf", "m4a" },
+    },
+  },
+}
 
 valid, reason = neural_validate_capabilities({
   schema = "PsyReaSFX-Neural-Capabilities-v1",
@@ -95,15 +108,19 @@ assert(not valid and reason == "protocol_mismatch")
 
 assert(neural_similarity_asset_supported({
   ready = true, path = "effect.wav", source_type = "WAVE",
-  sample_rate = 32000, bit_depth = 16,
+  sample_rate = 48000, bit_depth = 24,
 }))
-assert(not neural_similarity_asset_supported({
+assert(neural_similarity_asset_supported({
   ready = true, path = "effect.flac", source_type = "FLAC",
-  sample_rate = 32000, bit_depth = 16,
+  sample_rate = 96000, bit_depth = 24,
+}))
+assert(neural_similarity_asset_supported({
+  ready = true, path = "effect.opus", source_type = "OPUS",
+  sample_rate = 48000, bit_depth = 0,
 }))
 assert(not neural_similarity_asset_supported({
-  ready = true, path = "effect.wav", source_type = "WAVE",
-  sample_rate = 48000, bit_depth = 16,
+  ready = true, path = "effect.unknown", source_type = "UNKNOWN",
+  sample_rate = 48000, bit_depth = 24,
 }))
 
 local request_value = neural_json_decode(neural_json_encode({
@@ -132,8 +149,10 @@ assert(math.abs(result.matches[1].score - 0.875) < 0.000001)
 assert(source:find('session.neural_attempted = true', 1, true))
 assert(source:find('session.phase = "reference"', 1, true))
 assert(source:find('state.neural_similarity_state ~= "available"', 1, true))
-assert(source:find('tonumber(asset.sample_rate) == 32000', 1, true))
-assert(source:find('tonumber(asset.bit_depth) == 16', 1, true))
+assert(source:find('tonumber(profile.decoderVersion or 0) >= 1', 1, true))
+assert(source:find('profile.supportedExtensions or {}', 1, true))
+assert(source:find('written < 1 or written > session.neural_asset_count', 1, true))
+assert(source:find('session.neural_decode_failed = math.max', 1, true))
 
 Similarity.frame_records = 2
 local reference = {
@@ -155,8 +174,8 @@ local session = {
 assert(neural_similarity_try_start(session) and session.phase == "neural_prepare")
 assert(process_neural_similarity_search(session))
 assert(session.phase == "neural_prepare" and session.neural_prepare_index == 3)
-session.source[3].source_type = "FLAC"
-session.source[3].path = "third.flac"
+session.source[3].source_type = "UNKNOWN"
+session.source[3].path = "third.unknown"
 assert(process_neural_similarity_search(session))
 assert(session.phase == "reference" and session.neural_failure == "candidate_format")
 
