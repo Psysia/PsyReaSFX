@@ -1,0 +1,72 @@
+{
+  "schema": "PsyReaSFX-Neural-Model-v1",
+  "profile": "mn04_as_scene_320_v1",
+  "model": "mn04_as",
+  "dimensions": 320,
+  "sample_rate": 32000,
+  "input": "mono float32 PCM in [-1,1]",
+  "output": "raw per-window scene embedding; the sidecar averages windows then applies L2 normalization",
+  "feature_taps": [
+    "mel_avgs",
+    "b5",
+    "b11",
+    "b13",
+    "b15"
+  ],
+  "upstream": {
+    "repository": "https://github.com/fschmid56/EfficientAT_HEAR",
+    "commit": "738e57daca70f2762f84f1af481c46dd8b7ebfe5",
+    "release": "https://github.com/fschmid56/EfficientAT/releases/tag/v0.0.1",
+    "weights": "mn04_as_mAP_432.pt",
+    "weights_sha256": "899a8c6217063f6941793102a2780b3dd788ab11fce468d9cf5f0577c453321c",
+    "license": "MIT"
+  },
+  "preprocessing": {
+    "preemphasis": 0.97,
+    "n_fft": 1024,
+    "win_length": 800,
+    "hop_length": 320,
+    "hann_periodic": false,
+    "center": true,
+    "mel_bands": 128,
+    "fmin": 0.0,
+    "fmax": 15000.0,
+    "log_offset": 1e-05,
+    "normalization": "(x + 4.5) / 5",
+    "maximum_window_samples": 320000,
+    "scene_hop_samples": 80000
+  },
+  "export": {
+    "torch": "2.11.0+cpu",
+    "torchaudio": "2.11.0+cpu",
+    "onnx": "1.22.0",
+    "onnxruntime": "1.30.0",
+    "opset": 17
+  },
+  "artifacts": {
+    "chirp_impulse_1p5s.wav": {
+      "bytes": 96044,
+      "sha256": "a72b5e8574318217ccfb55928bd7317c00909f1ebe48f166a43d6b4863488e84"
+    },
+    "evolving_scene_12s.wav": {
+      "bytes": 768044,
+      "sha256": "97379fb8a8656cb39d6c620ec74237460cd80925f474f2cbb7edd35e36961008"
+    },
+    "golden-v1.json": {
+      "bytes": 31027,
+      "sha256": "03923df2754bf8a0c67b8dd72ffb1b23236a4a76124316c381117cd8fab9464d"
+    },
+    "LICENSE-EfficientAT.txt": {
+      "bytes": 1092,
+      "sha256": "7fecf57238d733faf76a0d178f4973e9d3423e49e400d312a43e647700ce41ff"
+    },
+    "mn04_as_scene_320_v1.onnx": {
+      "bytes": 6497345,
+      "sha256": "5efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054"
+    },
+    "modulated_texture_3s.wav": {
+      "bytes": 192044,
+      "sha256": "15a5227098377e9374b9eb0be5676028fb3837a5d3c7207a455a7cc53efefe69"
+    }
+  }
+}

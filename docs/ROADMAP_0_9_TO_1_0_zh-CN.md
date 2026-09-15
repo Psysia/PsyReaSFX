@@ -82,8 +82,9 @@ UCS 虚拟目录和 UCS 搜索提示进入 0.9。
   25 MiB 固定载荷门槛。
 - [x] 当前结果与全部音效库两种范围均逐帧运行、可取消，并复用 RWF4 频谱峰值。
 - [x] 冻结 EfficientAT embedding、可选 sidecar、HNSW 召回和现有特征重排架构。
-- [ ] 导出并验证 `mn04_as` 320 维 ONNX 金样，固定模型与预处理哈希。
-- [ ] 实现 sidecar、增量 embedding 缓存、HNSW 索引和 Lua 故障回退协议。
+- [x] 导出并验证 `mn04_as` 320 维 ONNX 金样，固定模型与预处理哈希。
+- [ ] 完成 sidecar 增量 embedding 缓存、HNSW 索引和 Lua 故障回退协议；
+  `capabilities`、PCM16 `embed`、10 秒窗口/2.5 秒 hop、原子结果和金样自检基础已实现。
 - [ ] 在真实 50,000 文件库中完成首次全库分析耗时、取消恢复和格式覆盖验收。
 
 ### DSP
