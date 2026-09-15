@@ -14,6 +14,8 @@ wave_cache_v3/
 Thumbs.db
 *.tmp
 *.bak
+__pycache__/
+*.pyc
 
 # .NET build outputs
 **/bin/

@@ -187,11 +187,22 @@ jobs:
       - name: Audit NuGet dependencies
         shell: pwsh
         run: |
-          $output = dotnet list desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj package --vulnerable --include-transitive
-          $output
-          if ($output -match 'has the following vulnerable packages') {
-            throw 'NuGet vulnerability audit found a vulnerable dependency.'
+          foreach ($project in @(
+            'desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj',
+            'neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj'
+          )) {
+            $output = dotnet list $project package --vulnerable --include-transitive
+            $output
+            if ($output -match 'has the following vulnerable packages') {
+              throw "NuGet vulnerability audit found a vulnerable dependency in $project."
+            }
           }
+
+      - name: Build neural similarity sidecar
+        run: dotnet build neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj -c Release
+
+      - name: Run neural model golden self-test
+        run: dotnet run --project neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj -c Release --no-build -- self-test assets/neural/mn04_as_scene_320_v1
 
       - name: Run Desktop self-test
         shell: pwsh

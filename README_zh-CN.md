@@ -87,9 +87,9 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 
 - **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
 - **预发布通道：0.9.0 Beta 4.5** — 已完成 UCS 8.2.1 分类与虚拟目录、按需频谱峰值、基于音频内容的相似检索，以及波形定位试听修复。
-- **下一阶段** — 已冻结 EfficientAT embedding、HNSW 召回和现有声学特征重排架构；神经相似度组件尚未包含在 Beta 4.5 中。
+- **下一阶段** — 已实现冻结的 EfficientAT `mn04_as` ONNX、跨运行时金样及可选 sidecar 的 `capabilities`/`embed` 基础；HNSW 索引与 Lua 接入仍在开发，尚未包含在 Beta 4.5 中。
 
-0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。未来的神经相似度将作为可选本地组件运行，不上传用户音频。
+0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。神经相似度组件保持可选、仅在本地运行，不上传用户音频。
 
 ### 主要能力
 
@@ -126,6 +126,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 - [0.9 相似声音架构](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 - [0.9 神经音频相似度架构](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
+- [神经相似度 sidecar 与可复现模型](neural/README.md)
 
 ## 仓库结构
 
@@ -134,6 +135,7 @@ Scripts/Psysia/    REAPER 小型工具脚本
 assets/            PsyReaSFX 图片、字体与截图
 docs/              使用手册与更新日志
 desktop/           PsyReaSFX Desktop 开发文件
+neural/            可选神经相似度 sidecar
 website/           项目网站
 index.xml          ReaPack 仓库索引
 ```

@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.x 开发中
+
+### 神经相似度基础
+
+- 冻结可复现的 EfficientAT `mn04_as` ONNX 配置，内含完整 mel 前处理、320 维多层 scene embedding、固定上游哈希和三条跨运行时音频金样。
+- 新增可选 .NET 8 神经 sidecar 基础，支持模型清单校验、`capabilities`、PCM16 32 kHz `embed`、同目录原子结果写入和金样自检。
+- 实现冻结的长音频规则：10 秒窗口、2.5 秒 hop，先平均原始向量，再执行最终 L2 归一化。
+- CI 新增模型与 sidecar 验证。HNSW 索引、持久 embedding 缓存、通用媒体解码、取消任务与 Lua 故障回退仍在开发，不属于 Beta 4.5。
+
 ## 0.9.0 Beta 4.5
 
 ### 反向完整试听边界修复

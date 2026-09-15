@@ -87,9 +87,9 @@ It combines library management, waveform browsing, search, audition, metadata, c
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
 - **Preview channel: 0.9.0 Beta 4.5** — includes UCS 8.2.1 classification and navigation, on-demand spectral peaks, audio-content similarity, and waveform seek-preview fixes.
-- **Next phase** — the architecture for EfficientAT embeddings, HNSW retrieval, and acoustic-feature reranking is frozen; neural similarity is not included in Beta 4.5.
+- **Next phase** — the frozen EfficientAT `mn04_as` ONNX model, cross-runtime golden vectors, and optional sidecar `capabilities`/`embed` foundation are implemented; HNSW indexing and Lua integration are still in development and are not included in Beta 4.5.
 
-The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The future neural similarity component will be optional, run locally, and never upload user audio.
+The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
 ### Main capabilities
 
@@ -126,6 +126,7 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 - [0.9 → 1.0 roadmap (Chinese)](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 - [0.9 similarity architecture (Chinese)](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 - [0.9 neural audio similarity architecture (Chinese)](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
+- [Neural similarity sidecar and reproducible model](neural/README.md)
 
 ## Repository structure
 
@@ -134,6 +135,7 @@ Scripts/Psysia/    REAPER utility scripts
 assets/            PsyReaSFX artwork, fonts, and screenshots
 docs/              User guides and changelogs
 desktop/           PsyReaSFX Desktop development files
+neural/            Optional neural similarity sidecar
 website/           Project website
 index.xml          ReaPack repository index
 ```
