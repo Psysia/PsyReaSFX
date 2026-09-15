@@ -83,6 +83,14 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 
 它把素材库管理、波形浏览、搜索、试听、元数据、集合、REAPER 放置与处理后导出集中在一个可停靠工作区中。
 
+### 当前开发状态
+
+- **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
+- **预发布通道：0.9.0 Beta 4.5** — 已完成 UCS 8.2.1 分类与虚拟目录、按需频谱峰值、基于音频内容的相似检索，以及波形定位试听修复。
+- **下一阶段** — 已冻结 EfficientAT embedding、HNSW 召回和现有声学特征重排架构；神经相似度组件尚未包含在 Beta 4.5 中。
+
+0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。未来的神经相似度将作为可选本地组件运行，不上传用户音频。
+
 ### 主要能力
 
 - 一个逻辑音效库可聚合多个实体来源文件夹。
@@ -97,6 +105,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 ### PsyReaSFX 下载
 
 - [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
+- [PsyReaSFX 0.9.0 Beta 4.5 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5)
 - [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)
@@ -116,6 +125,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - [Changelog — English](docs/CHANGELOG_en-US.md)
 - [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 - [0.9 相似声音架构](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
+- [0.9 神经音频相似度架构](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 
 ## 仓库结构
 

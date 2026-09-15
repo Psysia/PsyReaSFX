@@ -83,6 +83,14 @@ PsyReaSFX is designed for game-audio designers, sound designers, and REAPER user
 
 It combines library management, waveform browsing, search, audition, metadata, collections, REAPER placement, and processed delivery in one dockable workspace.
 
+### Development status
+
+- **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
+- **Preview channel: 0.9.0 Beta 4.5** — includes UCS 8.2.1 classification and navigation, on-demand spectral peaks, audio-content similarity, and waveform seek-preview fixes.
+- **Next phase** — the architecture for EfficientAT embeddings, HNSW retrieval, and acoustic-feature reranking is frozen; neural similarity is not included in Beta 4.5.
+
+The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The future neural similarity component will be optional, run locally, and never upload user audio.
+
 ### Main capabilities
 
 - Logical libraries with multiple physical source folders.
@@ -97,6 +105,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
+- [PsyReaSFX 0.9.0 Beta 4.5 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta4.5)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
@@ -116,6 +125,7 @@ It combines library management, waveform browsing, search, audition, metadata, c
 - [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
 - [0.9 → 1.0 roadmap (Chinese)](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 - [0.9 similarity architecture (Chinese)](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
+- [0.9 neural audio similarity architecture (Chinese)](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 
 ## Repository structure
 

@@ -14,8 +14,10 @@ Release、完整更新日志和 ReaPack 历史版本；内部开发快照不强�
 0.9.0 Beta 2 已完成侧栏双语、启动索引快路和波形峰值容错恢复。Beta 3 已按
 `SPECTRAL_ANALYSIS_ARCHITECTURE_0_9_zh-CN.md` 完成当前素材的按需频谱峰值分析。
 Beta 4 已按 `SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 建立基于时长、包络、起音、
-动态、频段与 tonality 的内容相似检索、解释标签和紧凑缓存。完整 FFT 时频图仍需
-单独冻结需求；下一阶段进入 DSP 功能冻结与实现。
+动态、频段与 tonality 的内容相似检索、解释标签和紧凑缓存。Beta 4.5 已完成波形
+定位试听与反向完整试听边界修复。神经相似度的第一阶段需求已在
+`NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 冻结；完整 FFT 时频图仍需单独
+冻结需求，DSP 尚未进入实现。
 
 ## 0.9：高级检索、频谱分析、相似声音和 DSP
 
@@ -79,6 +81,9 @@ UCS 虚拟目录和 UCS 搜索提示进入 0.9。
 - [x] 不把文件名相似冒充为音频内容相似；已加入 50 万双哈希签名无碰撞和
   25 MiB 固定载荷门槛。
 - [x] 当前结果与全部音效库两种范围均逐帧运行、可取消，并复用 RWF4 频谱峰值。
+- [x] 冻结 EfficientAT embedding、可选 sidecar、HNSW 召回和现有特征重排架构。
+- [ ] 导出并验证 `mn04_as` 320 维 ONNX 金样，固定模型与预处理哈希。
+- [ ] 实现 sidecar、增量 embedding 缓存、HNSW 索引和 Lua 故障回退协议。
 - [ ] 在真实 50,000 文件库中完成首次全库分析耗时、取消恢复和格式覆盖验收。
 
 ### DSP
