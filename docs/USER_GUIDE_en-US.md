@@ -42,7 +42,8 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
    ```
 
 3. Synchronize packages.
-4. Search for `PsyReaSFX.lua` and install it.
+4. Search for `PsyReaSFX.lua`, right-click it, enable pre-release versions for
+   that package, choose `0.9.0-beta6.1` under **Versions**, and install it.
 5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
@@ -50,8 +51,9 @@ ReaPack installs the script, application icon and Orbitron brand font. Updates a
 ### Optional neural similarity component (Beta 6.1)
 
 On Windows x64, open ReaPack's package browser after synchronizing, search for
-`PsyReaSFX Neural Similarity`, and install it as a second package beside
-`PsyReaSFX.lua`. ReaPack places the executable and model under REAPER's `Data`
+`PsyReaSFX Neural Similarity`, enable pre-release versions for that package,
+choose `0.9.0-beta6.1`, and install it beside `PsyReaSFX.lua`. ReaPack places
+the executable and model under REAPER's `Data`
 directory and updates or uninstalls those files independently. Restart
 PsyReaSFX after installing or updating the component.
 

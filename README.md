@@ -37,7 +37,8 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
 Then synchronize packages and search for the tool you want. For PsyReaSFX,
-install `PsyReaSFX.lua`; on Windows x64, also install the separate optional
+enable pre-release versions for the package and install `PsyReaSFX.lua` Beta
+6.1; on Windows x64, also enable/install the separate optional
 `PsyReaSFX Neural Similarity` package if you want neural similar-sound search.
 
 You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.

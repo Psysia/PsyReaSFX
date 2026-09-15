@@ -42,7 +42,8 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
    ```
 
 3. 同步软件包。
-4. 搜索并安装 `PsyReaSFX.lua`。
+4. 搜索 `PsyReaSFX.lua`，右键为该包启用预发布版本，在 **Versions** 中选择
+   `0.9.0-beta6.1` 并安装。
 5. 打开 REAPER 动作列表，运行 PsyReaSFX；需要时给它绑定快捷键。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
@@ -50,9 +51,10 @@ ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也�
 ### 可选神经相似度组件（Beta 6.1）
 
 Windows x64 用户在同步仓库后，打开 ReaPack 软件包浏览器，搜索并安装第二个包
-`PsyReaSFX Neural Similarity`。它与 `PsyReaSFX.lua` 分开安装，ReaPack 会把程序和
-模型放到 REAPER 的 `Data` 目录，并独立负责后续更新与卸载。安装或更新后请重新
-启动 PsyReaSFX。
+`PsyReaSFX Neural Similarity`。先为该包启用预发布版本并选择
+`0.9.0-beta6.1`；它与 `PsyReaSFX.lua` 分开安装。ReaPack 会把程序和模型放到
+REAPER 的 `Data` 目录，并独立负责后续更新与卸载。安装或更新后请重新启动
+PsyReaSFX。
 
 该组件为自包含程序，不要求另装 .NET，只在本机处理音频且不会上传文件。GitHub
 Release 仍提供 ZIP 和 `Install-NeuralSimilarity.cmd` 作为手动备用方式；便携版也

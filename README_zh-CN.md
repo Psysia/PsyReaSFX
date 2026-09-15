@@ -36,9 +36,9 @@
 https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
-同步软件包后，直接搜索需要的工具并安装即可。使用 PsyReaSFX 时请安装
-`PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再安装同仓库中的独立可选包
-`PsyReaSFX Neural Similarity`。
+同步软件包后，直接搜索需要的工具并安装即可。使用 Beta 6.1 时，先为软件包启用
+预发布版本并安装 `PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再为同仓库
+中的独立可选包 `PsyReaSFX Neural Similarity` 启用预发布并安装。
 
 安装这些小型脚本时，**不需要同时安装 PsyReaSFX**。
 
