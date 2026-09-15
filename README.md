@@ -91,6 +91,8 @@ It combines library management, waveform browsing, search, audition, metadata, c
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
+> **Important:** ReaPack installs and updates only the Lua package. After upgrading to Beta 6, download and run the Beta 6 neural component installer separately; installing it again safely replaces the previous component.
+
 ### Main capabilities
 
 - Logical libraries with multiple physical source folders.
@@ -106,7 +108,7 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
 - [PsyReaSFX 0.9.0 Beta 6 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6)
-- [Optional Beta 6 neural similarity component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip)
+- [Required separate download for the optional Beta 6 neural similarity component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
