@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.1
+
+### Unified search-field interaction
+
+- Makes the top search field the shared input for normal and AI semantic search.
+- Pressing `Enter` in the search field always performs the normal local search and never opens or starts AI search.
+- Clicking the gold `AI` button or pressing `Ctrl+Shift+F` directly runs AI semantic search with the search-field text and displays its results, without a second query window.
+- Moves provider, model, API key, connection testing, privacy scope, and usage guidance into `Settings → AI Search`.
+- Recalls AI candidates directly from the active library, folder, collection, and status scope so the natural-language request is not pre-filtered as literal keywords.
+
 ## 0.9.0 Beta 7
 
 ### Separate AI semantic search

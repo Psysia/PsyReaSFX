@@ -166,8 +166,23 @@ local previous_item_at = assert(
 )
 assert(
   toolbar:find('"ai_semantic"', 1, true)
-    and toolbar:find('"AI 语义搜索（Ctrl+Shift+F）"', 1, true),
-  "toolbar must expose the separate AI semantic-search entry point"
+    and toolbar:find("start_ai_semantic_search(state.search)", 1, true)
+    and not toolbar:find("ai_semantic_popup_requested", 1, true),
+  "toolbar AI button must directly search the shared query without a popup"
+)
+assert(
+  not source:find("function draw_ai_semantic_popup()", 1, true)
+    and source:find('settings_section_title(', 1, true)
+    and source:find('"搜索框与 AI 按钮"', 1, true),
+  "AI usage instructions must live in Settings instead of a search popup"
+)
+local search_matcher = function_region(
+  "function matches_search(asset)",
+  "function asset_in_view(asset)"
+)
+assert(
+  search_matcher:find('if "ai_semantic" == state.view then return true end', 1, true),
+  "AI results must retain the shared natural-language query without literal filtering"
 )
 assert(
   previous_item_at < focus_at and focus_at < input_at,

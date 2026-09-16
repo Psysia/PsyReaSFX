@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7
+-- @version 0.9.0-beta7.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -77,6 +77,7 @@
 --   - Artwork 增加逻辑库封面、来源根目录与常见封面子目录回退
 --   - Beta 6.1：神经相似度组件可作为独立可选包通过 ReaPack 安装和更新
 --   - Beta 7：独立 AI 语义搜索，支持 DeepSeek、OpenAI 与兼容接口
+--   - Beta 7.1：搜索框回车保持普通搜索，AI 按钮直接执行语义搜索，配置与说明集中到设置
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -182,7 +183,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7"
+local VERSION = "0.9.0 Beta 7.1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -916,9 +917,7 @@ local state = {
   ai_semantic_result_count = 0,
   ai_semantic_last_query = "",
   ai_semantic_last_summary = "",
-  ai_semantic_popup_requested = 0,
   settings_popup_requested = 0,
-  ai_query = "",
   ai_provider = "deepseek",
   ai_api_url = "https://api.deepseek.com/chat/completions",
   ai_model = "deepseek-chat",
@@ -2173,17 +2172,20 @@ I18N_PREFIX_EN["无法清空相似声音特征缓存："] =
 I18N_EN["AI 语义搜索"] = "AI semantic search"
 I18N_EN["AI 搜索"] = "AI search"
 I18N_EN["API、模型与隐私"] = "API, model and privacy"
-I18N_EN["AI 语义搜索（Ctrl+Shift+F）"] = "AI semantic search (Ctrl+Shift+F)"
-I18N_EN["用自然语言描述需要的声音。AI 会扩展中英文检索词，在本地召回候选，再依据文件名和元数据进行语义重排。不会上传音频文件。"] =
-  "Describe the sound you need in natural language. AI expands bilingual terms, recalls candidates locally, then reranks filenames and metadata. Audio is never uploaded."
+I18N_EN["使用搜索框内容执行 AI 语义搜索（Ctrl+Shift+F）"] =
+  "Run AI semantic search with the search field (Ctrl+Shift+F)"
+I18N_EN["取消正在运行的 AI 语义搜索"] = "Cancel the running AI semantic search"
+I18N_EN["输入关键词…  category:impact  status:candidate  -exclude；点击 AI 可按自然语言搜索"] =
+  "Enter keywords...  category:impact  status:candidate  -exclude; click AI for natural-language search"
+I18N_EN["搜索框与 AI 按钮"] = "Search field and AI button"
+I18N_EN["顶部搜索框是普通搜索与 AI 语义搜索的统一入口。"] =
+  "The top search field is the single entry point for normal and AI semantic search."
+I18N_EN["顶部搜索框是统一入口：输入关键词后按 Enter 执行普通本地搜索；输入自然语言描述后点击金色 AI 按钮，或按 Ctrl+Shift+F，直接执行 AI 语义搜索。"] =
+  "The top search field is the single entry point: press Enter after entering keywords for a normal local search, or enter a natural-language description and click the gold AI button (or press Ctrl+Shift+F) to run AI semantic search directly."
+I18N_EN["AI 会扩展中英文检索词，在当前音效库、目录和集合范围内本地召回候选，再依据文件名和元数据进行语义重排。搜索完成后直接显示 AI 语义结果。"] =
+  "AI expands bilingual retrieval terms, recalls candidates locally within the current library, folder and collection scope, then reranks filenames and metadata. AI semantic results are displayed when the search completes."
 I18N_EN["示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"] =
   "Example: a heavy chain dragged slowly in a damp basement, close and oppressive, without sharp highs"
-I18N_EN["本机接口可不使用 API Key"] = "A local endpoint may omit the API key"
-I18N_EN["范围：当前音效库/目录/集合条件；最多向 API 发送 120 条候选文本元数据"] =
-  "Scope: current library, folder, and collection filters; at most 120 candidate metadata records are sent to the API"
-I18N_EN["取消搜索"] = "Cancel search"
-I18N_EN["开始 AI 搜索"] = "Start AI search"
-I18N_EN["API 与模型设置"] = "API and model settings"
 I18N_EN["API 服务商"] = "API provider"
 I18N_EN["兼容接口"] = "Compatible endpoint"
 I18N_EN["API 地址"] = "API endpoint"

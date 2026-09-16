@@ -157,6 +157,7 @@ session.job_token = {}
 ai_semantic_finish(session, {}, false)
 assert(state.ai_semantic_result_count == 0)
 assert(next(state.ai_semantic_lookup) == nil)
+assert(state.search == "金属撞击")
 
 local decoded = assert(ai_semantic_extract_content(neural_json_encode({
   choices = {
@@ -180,6 +181,8 @@ local payload_end = assert(source:find("function ai_semantic_finish", payload_st
 local payload_source = source:sub(payload_start, payload_end - 1)
 assert(payload_source:find("name =", 1, true))
 assert(not payload_source:find("path =", 1, true))
+assert(source:find("source = state.assets", 1, true))
+assert(source:find("total = #state.assets", 1, true))
 assert(source:find("Audio is", 1, true))
 assert(source:find("ProtectedData", 1, true))
 assert(source:find("response_format", 1, true))

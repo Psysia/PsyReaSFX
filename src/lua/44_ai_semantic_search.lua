@@ -603,7 +603,7 @@ function ai_semantic_finish(session, matches, allow_local_fallback)
     ai_semantic_last_summary = session.plan and session.plan.summary or "",
     ai_semantic_session = nil,
     view = "ai_semantic",
-    search = "",
+    search = session.query,
     sort_mode = "ai_relevance",
     sort_desc = true,
     results_dirty = true,
@@ -637,7 +637,7 @@ function ai_semantic_cancel()
 end
 
 function start_ai_semantic_search(query)
-  query = trim(query or state.ai_query or "")
+  query = trim(query or state.search or "")
   if query == "" then set_status("请输入需要查找的声音描述", true) return false end
   if not state.ai_semantic_available then
     set_status("AI 语义搜索在当前环境不可用", true)
@@ -661,9 +661,11 @@ function start_ai_semantic_search(query)
     query = query,
     phase = "plan_wait",
     api_job = api_job,
-    source = "ai_semantic" == state.view and state.assets or state.results,
+    -- The shared toolbar field contains the natural-language request, so it
+    -- must not also narrow the candidate pool through ordinary text matching.
+    source = state.assets,
     source_index = 1,
-    total = "ai_semantic" == state.view and #state.assets or #state.results,
+    total = #state.assets,
     scanned = 0,
     candidates = {},
     job_token = token,
