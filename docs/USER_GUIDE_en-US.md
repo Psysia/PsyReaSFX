@@ -239,6 +239,27 @@ whoosh category:movement -long
 
 A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
+### AI semantic search (development branch)
+
+Use the gold `AI` toolbar button or `Ctrl+Shift+F` to open the separate AI semantic search. This is not part of Find Similar Sounds: similar-sound search starts from a reference recording, while AI semantic search starts from a natural-language request, for example:
+
+```text
+A heavy chain dragged slowly in a damp basement, close and oppressive, without sharp highs
+```
+
+Before the first search, open `Settings → AI Search` and configure a provider:
+
+- `DeepSeek`: defaults to `https://api.deepseek.com/chat/completions` and `deepseek-chat`.
+- `OpenAI`: defaults to the OpenAI Chat Completions endpoint.
+- `OpenAI-compatible`: accepts another compatible platform or a local model server. Remote endpoints must use HTTPS; local `127.0.0.1`, `localhost`, and `[::1]` endpoints may use HTTP.
+
+The API key is encrypted for the current Windows user with DPAPI and kept separately from `config.tsv`, backups, and logs. Factory Reset removes the saved key.
+API requests may incur provider charges; quota and retention policies are controlled by the selected service.
+
+Each search has two stages. The AI first converts the request into bilingual sound concepts. PsyReaSFX then scans the active library, folder, and collection scope locally and keeps at most 120 candidates. Only their filename, Description, Keywords, UCS fields, and duration are sent for reranking. The full catalog, full file paths, and audio are never sent. Results appear in a separate AI Semantic Results view, sorted by AI relevance.
+
+The first implementation depends on meaningful filenames and text metadata. Assets with opaque names and no Description, Keywords, or UCS data will have limited semantic quality; a future local audio-text embedding stage is intended to cover them.
+
 ### Find similar sounds
 
 Right-click any asset, or open Preview More Actions → Find Similar Sounds. Current
@@ -571,6 +592,7 @@ Important data includes:
 | `backups/` | automatic and manual data snapshots |
 | `cache_quarantine/` | damaged RWF files isolated by cache verification |
 | `neural_similarity/` | rebuildable embedding/HNSW cache and neural job files; ReaPack-managed executable/model files live under the REAPER `Data` directory |
+| `ai_semantic/` | AI request bridge and temporary job files; the API key is separately encrypted for the current Windows user with DPAPI and is excluded from data backups |
 
 Back up the entire data directory. Starting with 0.8, `Settings →
 Maintenance` can create one automatic snapshot per day, create a manual backup,

@@ -161,8 +161,13 @@ local input_at = assert(
   "toolbar must render the search input"
 )
 local previous_item_at = assert(
-  toolbar:find("ImGui.SetNextItemWidth(ctx, -228)", 1, true),
+  toolbar:find("ImGui.SetNextItemWidth(ctx, -267)", 1, true),
   "search input width marker is missing"
+)
+assert(
+  toolbar:find('"ai_semantic"', 1, true)
+    and toolbar:find('"AI 语义搜索（Ctrl+Shift+F）"', 1, true),
+  "toolbar must expose the separate AI semantic-search entry point"
 )
 assert(
   previous_item_at < focus_at and focus_at < input_at,

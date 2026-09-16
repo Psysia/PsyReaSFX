@@ -93,6 +93,8 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 
 0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。神经相似度组件保持可选、仅在本地运行，不上传用户音频。
 
+当前开发分支已加入第一版 **AI 语义搜索**。它与“查找相似声音”完全分离，允许用户配置 DeepSeek、OpenAI 或兼容接口的 API 地址、Key 和模型，通过自然语言描述查找声音。音频和完整文件路径不会上传；API 只会收到查询，以及本地召回出的最多 120 条候选文本元数据。Windows 下 API Key 使用当前用户的 DPAPI 加密保存。
+
 > **ReaPack 安装方式：** 安装 `PsyReaSFX.lua` 即可使用主程序；Windows x64 用户如需神经检索，再从同一仓库安装第二个包 `PsyReaSFX Neural Similarity`。两个包都由 ReaPack 独立更新，手动 ZIP 仅作为备用方案。
 
 ### 主要能力
@@ -100,6 +102,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - 一个逻辑音效库可聚合多个实体来源文件夹。
 - 列表内联波形，以及单声道、立体声和多声道详细预览。
 - 联合搜索文件名、路径、元数据、UCS 字段、音效库和工作流状态。
+- 独立 AI 语义搜索入口：支持 DeepSeek、OpenAI 与 OpenAI-compatible API，先在本地召回候选，再按声音描述进行语义重排。
 - 使用包络、起音、动态与频谱特征进行可解释的音频内容相似检索。
 - 收藏、播放列表、项目素材箱、工作流状态与非破坏性元数据。
 - Region、瞬态建议、LUFS / True Peak、Pitch / Rate / Gain 与声道监听。
@@ -131,6 +134,7 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 - [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 - [0.9 相似声音架构](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 - [0.9 神经音频相似度架构](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
+- [0.9 AI 语义搜索架构](docs/AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md)
 - [神经相似度 sidecar 与可复现模型](neural/README.md)
 
 ## 仓库结构

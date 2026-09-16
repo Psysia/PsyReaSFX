@@ -4466,6 +4466,9 @@ function asset_in_view(asset)
   elseif "similar" == state.view
     and not state.similarity_lookup[path_key(asset.path)] then
     return false
+  elseif "ai_semantic" == state.view
+    and not state.ai_semantic_lookup[path_key(asset.path)] then
+    return false
   elseif state.view == "missing"
     and not state.missing_assets[path_key(asset.path)] then
     return false
@@ -4543,6 +4546,7 @@ local function result_sort_comparator()
   local duplicate_lookup = state.duplicate_lookup
   local confirmed_lookup = state.duplicate_confirmed_lookup
   local similarity_lookup = state.similarity_lookup
+  local ai_semantic_lookup = state.ai_semantic_lookup
 
   return function(a, b)
     local av
@@ -4551,6 +4555,15 @@ local function result_sort_comparator()
     if view == "similar" then
       av = similarity_lookup[cached_sort_path(a)]
       bv = similarity_lookup[cached_sort_path(b)]
+      av = av and tonumber(av.score) or 0
+      bv = bv and tonumber(bv.score) or 0
+      if av == bv then
+        return cached_sort_path(a) < cached_sort_path(b)
+      end
+      return av > bv
+    elseif view == "ai_semantic" then
+      av = ai_semantic_lookup[cached_sort_path(a)]
+      bv = ai_semantic_lookup[cached_sort_path(b)]
       av = av and tonumber(av.score) or 0
       bv = bv and tonumber(bv.score) or 0
       if av == bv then
@@ -10759,6 +10772,9 @@ end
 
 function reset_interface_settings()
   stop_preview()
+  if state.ai_semantic_session then
+    ai_semantic_cancel()
+  end
   clear_row_selection()
   state.search = ""
   state.view = "all"
@@ -10920,6 +10936,8 @@ function reset_interface_settings()
     bit_depth = 90,
     path = 360,
   }
+  ai_semantic_clear_results()
+  AppState.set("ai_query", "")
   state.results_dirty = true
   state.config_dirty = true
   set_status("已重置界面与试听设置")
@@ -10928,6 +10946,9 @@ end
 function cancel_catalog_jobs(reason)
   if state.similarity_session then
     cancel_similarity_search()
+  end
+  if state.ai_semantic_session then
+    ai_semantic_cancel()
   end
   reason = tostring(reason or "canceled")
   cancel_auxiliary_save(reason)
@@ -11097,6 +11118,15 @@ function factory_reset()
   clear_row_selection()
   clear_wave_cache()
   clear_similarity_cache()
+  ai_semantic_delete_api_key()
+  if state.ai_semantic_paths then
+    os.remove(state.ai_semantic_paths.plaintext)
+  end
+  AppState.apply({
+    ai_provider = "deepseek",
+    ai_api_url = "https://api.deepseek.com/chat/completions",
+    ai_model = "deepseek-chat",
+  })
   reset_interface_settings()
   os.remove(CONFIG_FILE)
   os.remove(LIBRARIES_FILE)
@@ -11898,6 +11928,32 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
         thickness
       )
     end
+  elseif icon == "ai" then
+    ImGui.DrawList_AddText(
+      draw_list,
+      center_x - size * 0.32,
+      center_y - size * 0.34,
+      color_value,
+      "AI"
+    )
+    ImGui.DrawList_AddLine(
+      draw_list,
+      right - size * 0.02,
+      top - size * 0.02,
+      right - size * 0.02,
+      top + size * 0.17,
+      color_value,
+      thickness
+    )
+    ImGui.DrawList_AddLine(
+      draw_list,
+      right - size * 0.11,
+      top + size * 0.075,
+      right + size * 0.08,
+      top + size * 0.075,
+      color_value,
+      thickness
+    )
   elseif icon == "folder"
     or icon == "folder_search" then
     ImGui.DrawList_AddRect(draw_list, left, top + size * 0.10, right, bottom, color_value, 2, 0, thickness)
@@ -12030,8 +12086,9 @@ function draw_icon_glyph(draw_list, icon, x, y, size, color_value)
   end
 end
 
-function icon_button(id, icon, tooltip_text, active, size, pulse)
+function icon_button(id, icon, tooltip_text, active, size, pulse, accent_color)
   size = size or UI_METRIC.icon_button
+  accent_color = accent_color or COLOR.accent
 
   local x, y = ImGui.GetCursorScreenPos(ctx)
 
@@ -12062,8 +12119,8 @@ function icon_button(id, icon, tooltip_text, active, size, pulse)
       )
       or 0x32
     local background =
-      active and rgba_with_alpha(COLOR.accent, pulse_alpha)
-      or item_active and rgba_with_alpha(COLOR.accent, 0x26)
+      active and rgba_with_alpha(accent_color, pulse_alpha)
+      or item_active and rgba_with_alpha(accent_color, 0x26)
       or rgba_with_alpha(COLOR.text, 0x14)
 
     ImGui.DrawList_AddRectFilled(
@@ -12086,7 +12143,7 @@ function icon_button(id, icon, tooltip_text, active, size, pulse)
     y + glyph_padding,
     size - glyph_padding * 2,
     (active or hovered)
-      and COLOR.accent
+      and accent_color
       or COLOR.text
   )
 
@@ -12100,7 +12157,7 @@ function icon_button(id, icon, tooltip_text, active, size, pulse)
       y + math.max(5, size * 0.17),
       math.max(2, size * (0.055 + phase * 0.025)),
       rgba_with_alpha(
-        COLOR.accent,
+        accent_color,
         math.floor(0x90 + phase * 0x6F)
       ),
       16,
@@ -14534,6 +14591,31 @@ function draw_sidebar()
     )
   end
 
+  if state.ai_semantic_result_count > 0 then
+    sidebar_item(
+      string.format(
+        "AI 语义结果  %d",
+        state.ai_semantic_result_count
+      ),
+      "ai_semantic" == state.view
+        and not state.active_collection_id,
+      function()
+        AppState.apply({
+          view = "ai_semantic",
+          search = "",
+          sort_mode = "ai_relevance",
+          sort_desc = true,
+          results_dirty = true,
+          config_dirty = true,
+        })
+        AppState.set("active_collection_id", nil)
+        AppState.set("root_filter", nil)
+        AppState.set("library_filter_id", nil)
+        AppState.set("status_filter", nil)
+      end
+    )
+  end
+
   if state.ucs_pending_count > 0 then
     sidebar_item(
       string.format("UCS 待确认  %d", state.ucs_pending_count),
@@ -15298,9 +15380,9 @@ function draw_toolbar()
   local search_x, search_y = ImGui.GetCursorScreenPos(ctx)
   local search_width = math.max(
     260,
-    select(1, ImGui.GetContentRegionAvail(ctx)) - 228
+    select(1, ImGui.GetContentRegionAvail(ctx)) - 267
   )
-  ImGui.SetNextItemWidth(ctx, -228)
+  ImGui.SetNextItemWidth(ctx, -267)
 
   if state.focus_search then
     ImGui.SetKeyboardFocusHere(ctx)
@@ -15330,6 +15412,21 @@ function draw_toolbar()
   if changed then
     state.results_dirty = true
     AppState.set("ucs_search_popup_visible", true)
+  end
+
+  ImGui.SameLine(ctx)
+
+  if icon_button(
+    "ai_semantic",
+    "ai",
+    "AI 语义搜索（Ctrl+Shift+F）",
+    state.ai_semantic_session ~= nil
+      or "ai_semantic" == state.view,
+    control_size,
+    state.ai_semantic_session ~= nil,
+    0xE3A84BFF
+  ) then
+    AppState.set("ai_semantic_popup_requested", 1)
   end
 
   ImGui.SameLine(ctx)
@@ -15452,6 +15549,7 @@ function draw_sub_toolbar()
     used = "最近插入",
     previewed = "最近试听",
     similarity = "相似度",
+    ai_relevance = "AI 相关度",
   }
 
   local labels_en = {
@@ -15461,6 +15559,7 @@ function draw_sub_toolbar()
     used = "Recently inserted",
     previewed = "Recently previewed",
     similarity = "Similarity",
+    ai_relevance = "AI relevance",
   }
 
   local labels =
@@ -15519,6 +15618,13 @@ function draw_sub_toolbar()
       .. state.similarity_reference_name
   end
 
+  if "ai_semantic" == state.view and state.ai_semantic_last_query ~= "" then
+    breadcrumb = breadcrumb
+      .. "  /  "
+      .. ("en" == state.language and "AI Semantic: " or "AI 语义：")
+      .. compact(state.ai_semantic_last_query, 48)
+  end
+
   if state.status_filter then
     breadcrumb =
       breadcrumb
@@ -15566,7 +15672,7 @@ function draw_sub_toolbar()
     state.language == "en"
       and 154
       or 118
-  ) and state.view ~= "similar" then
+  ) and state.view ~= "similar" and state.view ~= "ai_semantic" then
     local next_mode = {
       name = "duration",
       duration = "library",
@@ -15586,7 +15692,7 @@ function draw_sub_toolbar()
     state.sort_desc and "↓" or "↑",
     30
   ) then
-    if state.view ~= "similar" then
+    if state.view ~= "similar" and state.view ~= "ai_semantic" then
       state.sort_desc = not state.sort_desc
       state.results_dirty = true
     end
@@ -15648,6 +15754,7 @@ function draw_import_progress()
   local visible_artwork_reset = state.artwork_reset_session
   local visible_root_removal = state.root_removal_session
   local visible_similarity = state.similarity_session
+  local visible_ai = state.ai_semantic_session
 
   if not visible_scan
     and not visible_import
@@ -15655,7 +15762,8 @@ function draw_import_progress()
     and not visible_relink
     and not visible_artwork_reset
     and not visible_root_removal
-    and not visible_similarity then
+    and not visible_similarity
+    and not visible_ai then
     return
   end
 
@@ -15777,6 +15885,37 @@ function draw_import_progress()
         visible_relink.old_root .. " → " .. visible_relink.new_root,
         80
       ))
+    elseif visible_ai then
+      local session = visible_ai
+      local phase = session.phase or ""
+      local completed = phase == "recall" and (session.scanned or 0) or 0
+      local total = phase == "recall" and (session.total or 0) or 0
+      local fraction = phase == "recall" and total > 0
+          and clamp(completed / total, 0, 1)
+        or ((reaper.time_precise() * 0.22) % 1)
+      local label = phase == "plan_wait"
+          and "AI 语义搜索：正在理解声音描述"
+        or phase == "recall"
+          and string.format("AI 语义搜索：本地召回候选  %d / %d", completed, total)
+        or phase == "rerank_wait"
+          and string.format("AI 语义搜索：正在重排 %d 条候选", #(session.candidates or {}))
+        or phase == "test_wait"
+          and "正在测试 AI API 连接"
+        or "AI 语义搜索"
+      ImGui.TextColored(ctx, 0xE3A84BFF, label)
+      ImGui.ProgressBar(
+        ctx,
+        fraction,
+        -100,
+        18,
+        phase == "recall"
+          and string.format("%.1f%%", fraction * 100)
+          or "AI"
+      )
+      ImGui.TextDisabled(
+        ctx,
+        compact(session.query ~= "" and session.query or "等待 API 响应", 80)
+      )
     elseif visible_similarity then
       local session = visible_similarity
       local loading = session.phase == "load_cache"
@@ -16047,6 +16186,8 @@ function draw_import_progress()
       elseif visible_relink then
         Jobs.cancel(visible_relink.job_token)
         set_status("正在取消来源重定位计划…")
+      elseif visible_ai then
+        ai_semantic_cancel()
       elseif visible_similarity then
         cancel_similarity_search()
       elseif state.precache_session then
@@ -16184,7 +16325,8 @@ function visible_column_definitions()
   local visible = {}
 
   for _, definition in ipairs(COLUMN_DEFS) do
-    if (definition.contextual and "similar" == state.view)
+    if (definition.contextual
+        and ("similar" == state.view or "ai_semantic" == state.view))
       or (not definition.contextual
         and state.column_visible[definition.key]) then
       visible[#visible + 1] = definition
@@ -16506,7 +16648,9 @@ function draw_list_header(
       column_x + 7,
       y + 6,
       COLOR.header_text,
-      item.definition.label,
+      item.definition.key == "similarity" and "ai_semantic" == state.view
+        and ("en" == state.language and "AI relevance" or "AI 相关度")
+        or item.definition.label,
       column_x + 2,
       y,
       column_end - 2,
@@ -16890,7 +17034,9 @@ function draw_result_row(
 
   local asset_key = path_key(asset.path)
   local similarity_entry = "similar" == state.view
-    and similarity_result_for_asset(asset)
+      and similarity_result_for_asset(asset)
+    or "ai_semantic" == state.view
+      and state.ai_semantic_lookup[asset_key]
     or nil
   local waveform_state, waveform_color =
     waveform_visual_state(asset, selected)
@@ -20470,6 +20616,11 @@ function draw_help_popup()
           "Focus the search field",
         },
         {
+          "Ctrl+Shift+F",
+          "打开 AI 语义搜索",
+          "Open AI semantic search",
+        },
+        {
           "Ctrl+R",
           "扫描当前音效库范围",
           "Scan the current library scope",
@@ -20603,6 +20754,116 @@ function draw_help_popup()
   if dark_button("关闭", 90) then
     ImGui.CloseCurrentPopup(ctx)
   end
+
+  ImGui.EndPopup(ctx)
+end
+
+----------------------------------------------------------------
+-- AI semantic search popup
+----------------------------------------------------------------
+
+function ai_semantic_provider_label(provider)
+  if provider == "openai" then return "OpenAI" end
+  if provider == "custom" then return "OpenAI-compatible" end
+  return "DeepSeek"
+end
+
+function select_ai_semantic_provider(provider)
+  local url, model = ai_semantic_provider_defaults(provider)
+  AppState.apply({
+    ai_provider = provider,
+    ai_api_url = url,
+    ai_model = model,
+    config_dirty = true,
+  })
+end
+
+function draw_ai_semantic_popup()
+  if state.ai_semantic_popup_requested > 0 then
+    AppState.set(
+      "ai_semantic_popup_requested",
+      state.ai_semantic_popup_requested - 1
+    )
+    if 0 == state.ai_semantic_popup_requested then
+      ImGui.OpenPopup(ctx, "AI 语义搜索##ai_semantic")
+    end
+  end
+
+  ImGui.SetNextWindowSize(ctx, 720, 390, ImGui.Cond_Appearing)
+  if not ImGui.BeginPopupModal(
+    ctx,
+    "AI 语义搜索##ai_semantic",
+    true,
+    ImGui.WindowFlags_NoScrollbar
+  ) then
+    return
+  end
+
+  ImGui.TextColored(ctx, 0xE3A84BFF, "AI 语义搜索")
+  ImGui.TextWrapped(
+    ctx,
+    "用自然语言描述需要的声音。AI 会扩展中英文检索词，在本地召回候选，"
+      .. "再依据文件名和元数据进行语义重排。不会上传音频文件。"
+  )
+  ImGui.Spacing(ctx)
+
+  ImGui.SetNextItemWidth(ctx, -1)
+  local changed
+  local query_value
+  changed, query_value = ImGui.InputTextMultiline(
+    ctx,
+    "##ai_semantic_query",
+    state.ai_query or "",
+    -1,
+    108
+  )
+  if changed then AppState.set("ai_query", query_value) end
+  if ImGui.IsItemActive(ctx) or ImGui.IsItemDeactivated(ctx) then
+    AppState.set("keyboard_consumed", true)
+  end
+
+  ImGui.TextDisabled(
+    ctx,
+    "示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"
+  )
+  ImGui.Spacing(ctx)
+
+  local provider = ai_semantic_provider_label(state.ai_provider)
+  local credential = ai_semantic_key_required()
+      and (state.ai_api_key_saved and "API Key 已安全保存" or "尚未保存 API Key")
+    or "本机接口可不使用 API Key"
+  ImGui.Text(ctx, "服务：" .. provider .. "  ·  模型：" .. (state.ai_model or ""))
+  ImGui.TextColored(
+    ctx,
+    (state.ai_api_key_saved or not ai_semantic_key_required())
+      and COLOR.success or COLOR.warning,
+    credential
+  )
+  ImGui.TextDisabled(
+    ctx,
+    "范围：当前音效库/目录/集合条件；最多向 API 发送 120 条候选文本元数据"
+  )
+
+  ImGui.Spacing(ctx)
+  local running = state.ai_semantic_session ~= nil
+  if running then
+    if dark_button("取消搜索", 120) then ai_semantic_cancel() end
+  else
+    if dark_button("开始 AI 搜索", 140) then
+      if start_ai_semantic_search(state.ai_query) then
+        ImGui.CloseCurrentPopup(ctx)
+      end
+    end
+  end
+
+  ImGui.SameLine(ctx)
+  if dark_button("API 与模型设置", 150) then
+    AppState.apply({ settings_tab = "ai", settings_popup_requested = 2 })
+    ImGui.CloseCurrentPopup(ctx)
+  end
+
+  ImGui.SameLine(ctx)
+  if dark_button("关闭", 90) then ImGui.CloseCurrentPopup(ctx) end
 
   ImGui.EndPopup(ctx)
 end
@@ -20864,6 +21125,128 @@ function draw_settings_general()
       100,
       "%.0f ms"
     )
+end
+
+function draw_settings_ai()
+  settings_section_title(
+    "AI 语义搜索",
+    "独立于相似声音：以自然语言查找素材，首版使用本地文本召回和云端语义重排。"
+  )
+
+  ImGui.Text(ctx, "API 服务商")
+  if dark_button("DeepSeek", 112) then select_ai_semantic_provider("deepseek") end
+  ImGui.SameLine(ctx)
+  if dark_button("OpenAI", 100) then select_ai_semantic_provider("openai") end
+  ImGui.SameLine(ctx)
+  if dark_button("兼容接口", 112) then select_ai_semantic_provider("custom") end
+  ImGui.TextDisabled(ctx, "当前选择：" .. ai_semantic_provider_label(state.ai_provider))
+
+  ImGui.SetNextItemWidth(ctx, -1)
+  local changed
+  local api_url
+  changed, api_url = ImGui.InputText(
+    ctx,
+    "API 地址",
+    state.ai_api_url or ""
+  )
+  if changed then
+    AppState.apply({ ai_api_url = api_url, config_dirty = true })
+  end
+
+  ImGui.SetNextItemWidth(ctx, -1)
+  local model
+  changed, model = ImGui.InputText(
+    ctx,
+    "模型",
+    state.ai_model or ""
+  )
+  if changed then
+    AppState.apply({ ai_model = model, config_dirty = true })
+  end
+
+  ImGui.TextDisabled(ctx, "常用模型")
+  if state.ai_provider == "deepseek" then
+    if dark_button("deepseek-chat", 142) then
+      AppState.apply({ ai_model = "deepseek-chat", config_dirty = true })
+    end
+    ImGui.SameLine(ctx)
+    if dark_button("deepseek-reasoner", 168) then
+      AppState.apply({ ai_model = "deepseek-reasoner", config_dirty = true })
+    end
+  elseif state.ai_provider == "openai" then
+    if dark_button("gpt-4.1-mini", 132) then
+      AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true })
+    end
+    ImGui.SameLine(ctx)
+    if dark_button("gpt-4.1", 106) then
+      AppState.apply({ ai_model = "gpt-4.1", config_dirty = true })
+    end
+  else
+    ImGui.TextDisabled(ctx, "兼容接口请填写服务实际提供的模型 ID")
+  end
+
+  ImGui.Separator(ctx)
+  settings_section_title(
+    "API Key",
+    "密钥使用 Windows DPAPI 按当前用户加密并单独保存，不写入 config.tsv、备份或日志。"
+  )
+
+  ImGui.SetNextItemWidth(ctx, -1)
+  local password_flags = ImGui.InputTextFlags_Password
+    | ImGui.InputTextFlags_AutoSelectAll
+  local api_key_input
+  changed, api_key_input = ImGui.InputText(
+    ctx,
+    "新 API Key",
+    state.ai_api_key_input or "",
+    password_flags
+  )
+  if changed then AppState.set("ai_api_key_input", api_key_input) end
+  if ImGui.IsItemActive(ctx) or ImGui.IsItemDeactivated(ctx) then
+    AppState.set("keyboard_consumed", true)
+  end
+
+  if dark_button("加密保存 Key", 132) then
+    local ok, reason = ai_semantic_save_api_key(state.ai_api_key_input)
+    set_status(ok and "API Key 已安全保存" or ("保存 API Key 失败：" .. tostring(reason)), not ok)
+  end
+
+  ImGui.SameLine(ctx)
+  if dark_button("删除已保存 Key", 142) then
+    ai_semantic_delete_api_key()
+    set_status("已删除保存的 API Key")
+  end
+
+  ImGui.SameLine(ctx)
+  if dark_button("测试连接", 108) then
+    local ok, reason = start_ai_semantic_connection_test()
+    if not ok then set_status("连接测试失败：" .. tostring(reason), true) end
+  end
+
+  ImGui.TextColored(
+    ctx,
+    state.ai_api_key_saved and COLOR.success or COLOR.warning,
+    state.ai_api_key_saved and "● API Key 已保存" or "○ 尚未保存 API Key"
+  )
+
+  local endpoint_valid, endpoint_reason = ai_semantic_validate_endpoint(state.ai_api_url)
+  if not endpoint_valid then ImGui.TextColored(ctx, COLOR.error, endpoint_reason) end
+
+  ImGui.Separator(ctx)
+  settings_section_title("隐私与范围", "每次搜索都先在本地压缩候选范围。")
+  ImGui.TextWrapped(
+    ctx,
+    "发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、Description、"
+      .. "Keywords、UCS 分类和时长。不会发送完整目录，不会发送文件路径，不会上传音频。"
+  )
+  ImGui.TextDisabled(
+    ctx,
+    "如果素材缺少有意义的文件名和元数据，本阶段的语义效果会受限；后续可接入本地音频语义 embedding。"
+  )
+  ImGui.TextDisabled(
+    ctx,
+    "API 请求可能由服务商计费；费用、配额和内容保留策略以所选服务商为准。"
+  )
 end
 
 function color_edit_flags()
@@ -23445,6 +23828,15 @@ function settings_nav_item(key, label, description)
 end
 
 function draw_settings_popup()
+  if state.settings_popup_requested > 0 then
+    AppState.set(
+      "settings_popup_requested",
+      state.settings_popup_requested - 1
+    )
+    if 0 == state.settings_popup_requested then
+      ImGui.OpenPopup(ctx, "设置##reasfx")
+    end
+  end
   ImGui.SetNextWindowSize(
     ctx,
     980,
@@ -23494,6 +23886,7 @@ function draw_settings_popup()
     settings_nav_item("general", "常规", "语言、面板与插入")
     settings_nav_item("appearance", "外观", "预设、颜色与 Artwork")
     settings_nav_item("waveforms", "波形", "精度、瞬态与响度")
+    settings_nav_item("ai", "AI 搜索", "API、模型与隐私")
     settings_nav_item("transfer", "传输", "处理、命名与导出")
     settings_nav_item("maintenance", "维护", "环境、缓存与重建")
     settings_nav_item("about", "关于", "版本、版权与项目主页")
@@ -23514,6 +23907,7 @@ function draw_settings_popup()
       general = "常规",
       appearance = "外观",
       waveforms = "波形",
+      ai = "AI 语义搜索",
       transfer = "Transfer 设置",
       maintenance = "维护",
       about = "关于",
@@ -23532,6 +23926,8 @@ function draw_settings_popup()
       draw_settings_appearance()
     elseif state.settings_tab == "waveforms" then
       draw_settings_waveforms()
+    elseif "ai" == state.settings_tab then
+      draw_settings_ai()
     elseif state.settings_tab == "transfer" then
       draw_settings_transfer()
     elseif state.settings_tab == "maintenance" then
@@ -23587,6 +23983,19 @@ function keyboard()
   local mods = ImGui.GetKeyMods(ctx)
   local ctrl =
     (mods & ImGui.Mod_Ctrl) ~= 0
+  local shift =
+    (mods & ImGui.Mod_Shift) ~= 0
+
+  if ctrl
+    and shift
+    and ImGui.IsKeyPressed(
+      ctx,
+      ImGui.Key_F,
+      false
+    ) then
+    AppState.set("ai_semantic_popup_requested", 1)
+    return
+  end
 
   if ctrl
     and ImGui.IsKeyPressed(
@@ -24185,6 +24594,7 @@ function draw_main()
     end
 
     draw_help_popup()
+    draw_ai_semantic_popup()
     draw_transient_detection_popup()
     draw_transfer_popup()
     draw_settings_popup()
@@ -24254,6 +24664,7 @@ function watch_folders()
     or state.database_snapshot_session
     or state.precache_session
     or state.similarity_session
+    or state.ai_semantic_session
     or state.transfer_running then
     return
   end
@@ -24276,6 +24687,9 @@ end
 
 function cleanup()
   Jobs.stop_accepting()
+  if state.ai_semantic_session then
+    ai_semantic_cancel()
+  end
   if state.similarity_warmup then
     similarity_cancel_warmup(false)
   end
@@ -24461,6 +24875,7 @@ ensure_dirs()
 recover_atomic_data_files()
 preflight_persistence_schemas()
 initialize_neural_similarity()
+ai_semantic_initialize()
 if not state.persistence_read_only then
   migrate_legacy_data()
 end
@@ -24548,6 +24963,7 @@ function loop()
 
   process_asset_library_binding_refresh()
   process_neural_similarity_probe()
+  process_ai_semantic_search()
   process_import_recovery_audit()
 
   if state.transfer_running then

@@ -94,6 +94,8 @@ It combines library management, waveform browsing, search, audition, metadata, c
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
+The development branch now includes the first **AI semantic search** implementation. It is separate from Find Similar Sounds and lets users configure a DeepSeek, OpenAI, or compatible API endpoint, key, and model. Audio and full file paths are never uploaded; only the query and up to 120 locally recalled metadata candidates are sent. On Windows, the API key is encrypted for the current user with DPAPI.
+
 > **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
 ### Main capabilities
@@ -101,6 +103,7 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 - Logical libraries with multiple physical source folders.
 - Inline waveforms and detailed mono, stereo, and multichannel preview.
 - Filename, path, metadata, UCS-field, library, and workflow-state search.
+- A separate AI semantic-search entry point with DeepSeek, OpenAI and OpenAI-compatible APIs, local candidate recall, and description-based reranking.
 - Explainable audio-content similarity using envelope, onset, dynamics and spectral features.
 - Favorites, playlists, project bins, workflow states, and non-destructive metadata.
 - Regions, transient suggestions, LUFS / True Peak display, Pitch / Rate / Gain, and channel audition.
@@ -132,6 +135,7 @@ The 0.9 preview retains the current 15-dimensional acoustic search as a dependen
 - [0.9 → 1.0 roadmap (Chinese)](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
 - [0.9 similarity architecture (Chinese)](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
 - [0.9 neural audio similarity architecture (Chinese)](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
+- [0.9 AI semantic search architecture (Chinese)](docs/AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md)
 - [Neural similarity sidecar and reproducible model](neural/README.md)
 
 ## Repository structure

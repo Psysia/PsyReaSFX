@@ -44,6 +44,7 @@ try {
     foreach ($document in @(
         "CHANGELOG_en-US.md",
         "CHANGELOG_zh-CN.md",
+        "AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md",
         "HARDENING_TECHNICAL_ARCHIVE_0_8_BETA4_zh-CN.md",
         "NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md",
         "ROADMAP_0_9_TO_1_0_zh-CN.md",
