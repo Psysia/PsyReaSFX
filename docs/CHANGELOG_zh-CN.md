@@ -1,5 +1,13 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.3
+
+### API Key 保存与旧日志兼容修复
+
+- 修复旧版 `index_v3.journal` 字段表与当前索引不一致时触发 `field_mismatch` 并进入只读保护的问题；旧日志现在会按字段名安全迁移并重写快照。
+- API Key 使用独立的原子写入路径，不再被素材库持久化只读保护错误阻断。
+- 保留 Beta 7.2 的 DeepSeek Flash / V4 Pro 模型更新、AI 设置布局修复和就地保存反馈。
+
 ## 0.9.0 Beta 7.2
 
 ### AI 设置与 DeepSeek 模型更新

@@ -136,12 +136,40 @@ local function journal_checksum(text)
   return string.format("%08x", second * 65536 + first)
 end
 
-local function journal_fields_equal(left, right)
+function asset_journal_fields_equal(left, right)
   if #left ~= #right then return false end
   for index = 1, #left do
     if left[index] ~= right[index] then return false end
   end
   return true
+end
+
+function asset_journal_remap_values(source_fields, values, target_fields)
+  if type(source_fields) ~= "table"
+    or type(values) ~= "table"
+    or type(target_fields) ~= "table"
+    or #source_fields ~= #values then
+    return nil, "invalid_fields"
+  end
+  local by_name = {}
+  local target_names = {}
+  for _, field in ipairs(target_fields) do
+    target_names[field] = true
+  end
+  for index, field in ipairs(source_fields) do
+    field = tostring(field or "")
+    if field == ""
+      or by_name[field] ~= nil
+      or not target_names[field] then
+      return nil, "invalid_fields"
+    end
+    by_name[field] = values[index] or ""
+  end
+  local remapped = {}
+  for index, field in ipairs(target_fields) do
+    remapped[index] = by_name[field] or ""
+  end
+  return remapped
 end
 
 function encode_asset_journal(generation, fields, entries)
@@ -199,7 +227,8 @@ function decode_asset_journal(text, expected_generation, expected_fields)
   local header = journal_split(lines[3])
   if header[1] ~= "op" then return nil, "invalid_header" end
   table.remove(header, 1)
-  if not journal_fields_equal(header, expected_fields or {}) then
+  if expected_fields
+    and not asset_journal_fields_equal(header, expected_fields) then
     return nil, "field_mismatch"
   end
 
@@ -223,7 +252,7 @@ function decode_asset_journal(text, expected_generation, expected_fields)
       entries[#entries + 1] = { op = operation, values = values }
     end
   end
-  return entries
+  return entries, nil, header
 end
 
 function read_asset_journal(path, expected_generation, expected_fields)

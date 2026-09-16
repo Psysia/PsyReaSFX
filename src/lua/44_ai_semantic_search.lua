@@ -39,14 +39,28 @@ function ai_semantic_read_file(path, maximum)
 end
 
 function ai_semantic_write_atomic(path, content)
-  local writer, reason = atomic_file_writer(path)
-  if not writer then return false, reason end
+  local temporary_path = path .. ".tmp"
+  local backup_path = path .. ".bak"
+  os.remove(temporary_path)
+  local writer, open_error = io.open(temporary_path, "wb")
+  if not writer then return false, open_error end
   local written, write_error = writer:write(content)
-  if not written then
-    writer:abort()
-    return false, write_error
+  local flushed, flush_error = writer:flush()
+  local closed, close_error = writer:close()
+  if not written or not flushed or not closed then
+    os.remove(temporary_path)
+    return false, write_error or flush_error or close_error or "write_failed"
   end
-  return writer:close()
+  local committed = commit_atomic_temporary(
+    path,
+    temporary_path,
+    backup_path
+  )
+  if not committed then
+    os.remove(temporary_path)
+    return false, "could_not_install_completed_file"
+  end
+  return true
 end
 
 function ai_semantic_bridge_source()
@@ -136,10 +150,6 @@ function ai_semantic_initialize()
     ai_api_key_saved = false,
   })
   local host = Host
-  if state.persistence_read_only then
-    AppState.set("ai_semantic_unavailable_reason", "persistence_read_only")
-    return false
-  end
   if not host or type(host.GetOS) ~= "function"
     or not tostring(host.GetOS()):match("Win") then
     return false

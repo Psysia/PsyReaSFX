@@ -255,10 +255,10 @@ function replay_database_journal(asset_positions)
   if not probe then return true end
   probe:close()
 
-  local entries, journal_error = read_asset_journal(
+  local entries, journal_error, journal_fields = read_asset_journal(
     DATABASE_JOURNAL_FILE,
     state.database_generation or 0,
-    DB_FIELDS
+    nil
   )
   if not entries then
     if journal_error == "generation_mismatch" then
@@ -271,9 +271,10 @@ function replay_database_journal(asset_positions)
     set_status("素材增量日志损坏，已进入只读保护", true)
     return false
   end
+  journal_fields = journal_fields or DB_FIELDS
 
   local path_field = nil
-  for index, field in ipairs(DB_FIELDS) do
+  for index, field in ipairs(journal_fields) do
     if field == "path" then path_field = index break end
   end
   if not path_field then return false end
@@ -291,10 +292,24 @@ function replay_database_journal(asset_positions)
     local action = {
       op = entry.op,
       key = path_key(path),
-      values = entry.values,
     }
+    local current_values, remap_error = asset_journal_remap_values(
+      journal_fields,
+      entry.values,
+      DB_FIELDS
+    )
+    if not current_values then
+      AppState.apply({
+        persistence_read_only = true,
+        persistence_read_only_reason =
+          "素材增量日志字段无法迁移：" .. tostring(remap_error),
+      })
+      set_status("素材增量日志损坏，已进入只读保护", true)
+      return false
+    end
+    action.values = current_values
     if entry.op == "upsert" then
-      action.asset = database_asset_from_values(DB_FIELDS, entry.values)
+      action.asset = database_asset_from_values(DB_FIELDS, current_values)
       if not action.asset then
         state.persistence_read_only = true
         state.persistence_read_only_reason =
@@ -338,6 +353,9 @@ function replay_database_journal(asset_positions)
     )
   end
   if #actions > 0 then
+    if not asset_journal_fields_equal(journal_fields, DB_FIELDS) then
+      require_asset_snapshot(state.database_changes)
+    end
     invalidate_similarity_index()
     -- `asset_positions` is built while the snapshot is already being read,
     -- so journal deletes do not require a second full catalog rebuild.
@@ -4438,7 +4456,6 @@ function asset_in_view(asset)
   if not asset.ready or asset.pending_batch then
     return false
   end
-
   local ucs_category, ucs_subcategory, ucs_catid
   if ucs_directory_view(state.view) then
     ucs_category, ucs_subcategory, ucs_catid =

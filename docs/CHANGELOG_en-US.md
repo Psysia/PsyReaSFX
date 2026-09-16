@@ -1,5 +1,13 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.3
+
+### API-key saving and legacy journal compatibility
+
+- Fixes `field_mismatch` read-only protection when an older `index_v3.journal` uses a previous catalog field set; legacy entries are now safely mapped by field name and compacted into a current snapshot.
+- Gives API-key files an independent atomic write path so unrelated catalog read-only protection no longer blocks DPAPI key storage.
+- Includes the Beta 7.2 DeepSeek Flash / V4 Pro update, AI-settings layout fix, and inline save feedback.
+
 ## 0.9.0 Beta 7.2
 
 ### AI settings and DeepSeek model update
