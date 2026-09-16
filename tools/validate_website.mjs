@@ -31,7 +31,7 @@ vm.runInNewContext(`${script}\n;globalThis.__messages = messages;`, sandbox, {
 try {
   vm.runInNewContext(`
     updateReleaseLink("[data-test]", null, { url: "https://example.com/fallback" });
-    if (formatReleaseVersion("v0.9.0-beta6.1") !== "0.9.0 Beta 6.1") {
+    if (formatReleaseVersion("v0.9.0-beta7") !== "0.9.0 Beta 7") {
       throw new Error("Release tag formatting failed");
     }
   `, sandbox, { filename: scriptPath });

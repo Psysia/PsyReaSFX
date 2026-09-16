@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta6.1
+-- @version 0.9.0-beta7
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -76,6 +76,7 @@
 --   - 0.7.4：逻辑库箭头可直接折叠或展开来源路径
 --   - Artwork 增加逻辑库封面、来源根目录与常见封面子目录回退
 --   - Beta 6.1：神经相似度组件可作为独立可选包通过 ReaPack 安装和更新
+--   - Beta 7：独立 AI 语义搜索，支持 DeepSeek、OpenAI 与兼容接口
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -181,7 +182,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 6.1"
+local VERSION = "0.9.0 Beta 7"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."

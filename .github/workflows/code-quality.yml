@@ -51,7 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta6.1 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta7 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -240,14 +240,14 @@ jobs:
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-release-assets'
-          ./tools/Build-BetaRelease.ps1 -Version 0.9.0-beta6.1 -OutputDirectory $output
+          ./tools/Build-BetaRelease.ps1 -Version 0.9.0-beta7 -OutputDirectory $output
           ./tools/Test-NeuralPackage.ps1 `
-            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_0_beta6_1_win_x64.zip') `
+            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_0_beta7_win_x64.zip') `
             -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-package')
           ./tools/Test-ReaPackNeuralPackage.ps1 `
             -IndexPath 'index.xml' `
-            -Version '0.9.0-beta6.1' `
-            -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_0_beta6_1_win_x64.exe')
+            -Version '0.9.0-beta7' `
+            -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_0_beta7_win_x64.exe')
 
       - name: Run Desktop self-test
         shell: pwsh
