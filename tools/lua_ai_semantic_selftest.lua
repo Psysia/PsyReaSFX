@@ -75,6 +75,21 @@ function atomic_file_writer(path)
     end,
   }
 end
+function commit_atomic_temporary(target_path, temporary_path, backup_path)
+  os.remove(backup_path)
+  local existing = io.open(target_path, "rb")
+  if existing then
+    existing:close()
+    os.rename(target_path, backup_path)
+  end
+  local installed = os.rename(temporary_path, target_path)
+  if installed then
+    os.remove(backup_path)
+    return true
+  end
+  os.rename(backup_path, target_path)
+  return false
+end
 function set_status() end
 function can_run_heavy_job() return true end
 
@@ -194,6 +209,8 @@ local key_secret_path = os.tmpname()
 os.remove(key_plaintext_path)
 os.remove(key_secret_path)
 state.ai_semantic_available = true
+state.persistence_read_only = true
+state.persistence_read_only_reason = "素材增量日志无法安全重放：field_mismatch"
 state.ai_semantic_paths = {
   plaintext = key_plaintext_path,
   secret = key_secret_path,
@@ -216,6 +233,7 @@ assert(state.ai_api_key_saved)
 assert(state.ai_api_key_input == "")
 assert(state.ai_api_key_status == "API Key 已安全保存")
 assert(not state.ai_api_key_status_error)
+assert(state.persistence_read_only, "AI key save must not disable catalog read-only protection")
 assert(not ai_semantic_save_api_key(""))
 assert(state.ai_api_key_status == "保存失败：API Key 不能为空")
 assert(state.ai_api_key_status_error)

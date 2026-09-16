@@ -76,6 +76,27 @@ local _, generation_error = decode_asset_journal(encoded, 18, fields)
 assert(generation_error == "generation_mismatch")
 local _, field_error = decode_asset_journal(encoded, 17, { "path", "name" })
 assert(field_error == "field_mismatch")
+local legacy_entries, legacy_error, legacy_fields =
+  decode_asset_journal(encoded, 17, nil)
+assert(legacy_entries and not legacy_error)
+assert(asset_journal_fields_equal(legacy_fields, fields))
+assert(asset_journal_fields_equal(fields, { "path", "name", "description" }))
+assert(not asset_journal_fields_equal(fields, { "path", "name" }))
+local remapped = assert(asset_journal_remap_values(
+  { "path", "name" },
+  { "C:/Library/old.wav", "old.wav" },
+  { "asset_id", "path", "name", "keywords" }
+))
+assert(remapped[1] == "")
+assert(remapped[2] == "C:/Library/old.wav")
+assert(remapped[3] == "old.wav")
+assert(remapped[4] == "")
+local _, unknown_field_error = asset_journal_remap_values(
+  { "path", "future_field" },
+  { "C:/Library/future.wav", "future" },
+  { "path", "name" }
+)
+assert(unknown_field_error == "invalid_fields")
 local _, truncated_error = decode_asset_journal(encoded:sub(1, #encoded - 5), 17, fields)
 assert(truncated_error == "truncated_payload")
 local corrupt = encoded:gsub("new value", "bad value", 1)

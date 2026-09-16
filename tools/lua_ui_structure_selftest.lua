@@ -80,6 +80,17 @@ assert(
     and asset_view:find('"ucs_catid" == state.view', 1, true),
   "UCS virtual-directory levels must filter the catalog"
 )
+
+local journal_replay = function_region(
+  "function replay_database_journal(",
+  "function write_database_asset_line("
+)
+assert(
+  journal_replay:find("asset_journal_remap_values(", 1, true)
+    and journal_replay:find("journal_fields,", 1, true)
+    and journal_replay:find("require_asset_snapshot(state.database_changes)", 1, true),
+  "legacy database journals must map fields by name and schedule a current snapshot"
+)
 assert(
   asset_view:find("ucs_asset_hierarchy(asset)", 1, true),
   "UCS directory filtering must resolve official hierarchy from CatID"

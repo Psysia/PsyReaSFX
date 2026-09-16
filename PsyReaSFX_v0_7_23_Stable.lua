@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.2
+-- @version 0.9.0-beta7.3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -79,6 +79,7 @@
 --   - Beta 7：独立 AI 语义搜索，支持 DeepSeek、OpenAI 与兼容接口
 --   - Beta 7.1：搜索框回车保持普通搜索，AI 按钮直接执行语义搜索，配置与说明集中到设置
 --   - Beta 7.2：更新 DeepSeek Flash / V4 Pro 模型，修复 AI 设置裁切并显示 Key 保存结果
+--   - Beta 7.3：兼容旧素材增量日志字段，并解除 API Key 保存与素材库只读状态的错误耦合
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -184,7 +185,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.2"
+local VERSION = "0.9.0 Beta 7.3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -8959,12 +8960,40 @@ local function journal_checksum(text)
   return string.format("%08x", second * 65536 + first)
 end
 
-local function journal_fields_equal(left, right)
+function asset_journal_fields_equal(left, right)
   if #left ~= #right then return false end
   for index = 1, #left do
     if left[index] ~= right[index] then return false end
   end
   return true
+end
+
+function asset_journal_remap_values(source_fields, values, target_fields)
+  if type(source_fields) ~= "table"
+    or type(values) ~= "table"
+    or type(target_fields) ~= "table"
+    or #source_fields ~= #values then
+    return nil, "invalid_fields"
+  end
+  local by_name = {}
+  local target_names = {}
+  for _, field in ipairs(target_fields) do
+    target_names[field] = true
+  end
+  for index, field in ipairs(source_fields) do
+    field = tostring(field or "")
+    if field == ""
+      or by_name[field] ~= nil
+      or not target_names[field] then
+      return nil, "invalid_fields"
+    end
+    by_name[field] = values[index] or ""
+  end
+  local remapped = {}
+  for index, field in ipairs(target_fields) do
+    remapped[index] = by_name[field] or ""
+  end
+  return remapped
 end
 
 function encode_asset_journal(generation, fields, entries)
@@ -9022,7 +9051,8 @@ function decode_asset_journal(text, expected_generation, expected_fields)
   local header = journal_split(lines[3])
   if header[1] ~= "op" then return nil, "invalid_header" end
   table.remove(header, 1)
-  if not journal_fields_equal(header, expected_fields or {}) then
+  if expected_fields
+    and not asset_journal_fields_equal(header, expected_fields) then
     return nil, "field_mismatch"
   end
 
@@ -9046,7 +9076,7 @@ function decode_asset_journal(text, expected_generation, expected_fields)
       entries[#entries + 1] = { op = operation, values = values }
     end
   end
-  return entries
+  return entries, nil, header
 end
 
 function read_asset_journal(path, expected_generation, expected_fields)
@@ -13426,14 +13456,28 @@ function ai_semantic_read_file(path, maximum)
 end
 
 function ai_semantic_write_atomic(path, content)
-  local writer, reason = atomic_file_writer(path)
-  if not writer then return false, reason end
+  local temporary_path = path .. ".tmp"
+  local backup_path = path .. ".bak"
+  os.remove(temporary_path)
+  local writer, open_error = io.open(temporary_path, "wb")
+  if not writer then return false, open_error end
   local written, write_error = writer:write(content)
-  if not written then
-    writer:abort()
-    return false, write_error
+  local flushed, flush_error = writer:flush()
+  local closed, close_error = writer:close()
+  if not written or not flushed or not closed then
+    os.remove(temporary_path)
+    return false, write_error or flush_error or close_error or "write_failed"
   end
-  return writer:close()
+  local committed = commit_atomic_temporary(
+    path,
+    temporary_path,
+    backup_path
+  )
+  if not committed then
+    os.remove(temporary_path)
+    return false, "could_not_install_completed_file"
+  end
+  return true
 end
 
 function ai_semantic_bridge_source()
@@ -13523,10 +13567,6 @@ function ai_semantic_initialize()
     ai_api_key_saved = false,
   })
   local host = Host
-  if state.persistence_read_only then
-    AppState.set("ai_semantic_unavailable_reason", "persistence_read_only")
-    return false
-  end
   if not host or type(host.GetOS) ~= "function"
     or not tostring(host.GetOS()):match("Win") then
     return false
@@ -14645,10 +14685,10 @@ function replay_database_journal(asset_positions)
   if not probe then return true end
   probe:close()
 
-  local entries, journal_error = read_asset_journal(
+  local entries, journal_error, journal_fields = read_asset_journal(
     DATABASE_JOURNAL_FILE,
     state.database_generation or 0,
-    DB_FIELDS
+    nil
   )
   if not entries then
     if journal_error == "generation_mismatch" then
@@ -14661,9 +14701,10 @@ function replay_database_journal(asset_positions)
     set_status("素材增量日志损坏，已进入只读保护", true)
     return false
   end
+  journal_fields = journal_fields or DB_FIELDS
 
   local path_field = nil
-  for index, field in ipairs(DB_FIELDS) do
+  for index, field in ipairs(journal_fields) do
     if field == "path" then path_field = index break end
   end
   if not path_field then return false end
@@ -14681,10 +14722,24 @@ function replay_database_journal(asset_positions)
     local action = {
       op = entry.op,
       key = path_key(path),
-      values = entry.values,
     }
+    local current_values, remap_error = asset_journal_remap_values(
+      journal_fields,
+      entry.values,
+      DB_FIELDS
+    )
+    if not current_values then
+      AppState.apply({
+        persistence_read_only = true,
+        persistence_read_only_reason =
+          "素材增量日志字段无法迁移：" .. tostring(remap_error),
+      })
+      set_status("素材增量日志损坏，已进入只读保护", true)
+      return false
+    end
+    action.values = current_values
     if entry.op == "upsert" then
-      action.asset = database_asset_from_values(DB_FIELDS, entry.values)
+      action.asset = database_asset_from_values(DB_FIELDS, current_values)
       if not action.asset then
         state.persistence_read_only = true
         state.persistence_read_only_reason =
@@ -14728,6 +14783,9 @@ function replay_database_journal(asset_positions)
     )
   end
   if #actions > 0 then
+    if not asset_journal_fields_equal(journal_fields, DB_FIELDS) then
+      require_asset_snapshot(state.database_changes)
+    end
     invalidate_similarity_index()
     -- `asset_positions` is built while the snapshot is already being read,
     -- so journal deletes do not require a second full catalog rebuild.
@@ -18828,7 +18886,6 @@ function asset_in_view(asset)
   if not asset.ready or asset.pending_batch then
     return false
   end
-
   local ucs_category, ucs_subcategory, ucs_catid
   if ucs_directory_view(state.view) then
     ucs_category, ucs_subcategory, ucs_catid =
