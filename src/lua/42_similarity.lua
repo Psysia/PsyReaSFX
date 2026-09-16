@@ -49,6 +49,9 @@ function invalidate_similarity_index()
     similarity_cancel_warmup(false)
   end
   if state then AppState.set("similarity_warmup_suspended", false) end
+  if type(ai_semantic_clear_results) == "function" then
+    ai_semantic_clear_results()
+  end
 end
 
 function similarity_asset_signature(asset)

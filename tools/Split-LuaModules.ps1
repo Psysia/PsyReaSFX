@@ -20,12 +20,16 @@ $boundaries = @(
     @{ File = "12_state_store.lua"; Marker = "-- Controlled mutation boundary for new modules." },
     @{ File = "15_host_adapter.lua"; Marker = "-- Injectable boundary for REAPER, SWS and ReaImGui host APIs." },
     @{ File = "20_jobs_storage.lua"; Marker = "-- Background jobs, atomic storage, recovery and cache maintenance." },
+    @{ File = "25_ucs_catalog.lua"; Marker = "-- Official UCS catalog loading and deterministic classification primitives." },
     @{ File = "30_catalog.lua"; Marker = "-- Catalog identity, metadata, configuration and library persistence." },
     @{ File = "35_incremental_results.lua"; Marker = "-- Incremental result construction keeps large catalogs out of a single UI" },
     @{ File = "36_asset_journal.lua"; Marker = "-- Generation-bound asset journal codec. Decoding validates the complete" },
     @{ File = "37_catalog_caches.lua"; Marker = "-- Sparse activity indexes and frame-budgeted aggregate caches for large" },
     @{ File = "38_incremental_persistence.lua"; Marker = "-- Frame-budgeted serializers for large auxiliary catalogs." },
     @{ File = "40_analysis.lua"; Marker = "-- Region, loudness, channel and transient analysis services." },
+    @{ File = "42_similarity.lua"; Marker = "-- Audio-content similarity service." },
+    @{ File = "43_neural_similarity.lua"; Marker = "-- Optional neural-similarity bridge." },
+    @{ File = "44_ai_semantic_search.lua"; Marker = "-- Optional AI semantic search service." },
     @{ File = "45_duplicate_confirmation.lua"; Marker = "local DUPLICATE_COMPARE_CHUNK_SIZE = 256 * 1024" },
     @{ File = "50_runtime_ui.lua"; Marker = "function load_database()" }
 )

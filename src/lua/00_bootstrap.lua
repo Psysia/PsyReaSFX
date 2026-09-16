@@ -784,7 +784,7 @@ local state = {
 
   results = {},
   search = "",
-  view = "all", -- all / favorites / recent / previewed / missing / duplicates / project_used
+  view = "all", -- all / favorites / recent / previewed / similar / ai_semantic / missing / duplicates / project_used
   root_filter = nil,
   sort_mode = "name",
   sort_desc = false,
@@ -905,6 +905,25 @@ local state = {
   neural_similarity_paths = nil,
   neural_similarity_capabilities = nil,
   neural_similarity_probe_started = 0,
+
+  -- AI 语义搜索是独立的“以描述找声音”入口，不与相似声音视图混用。
+  ai_semantic_available = false,
+  ai_semantic_unavailable_reason = "",
+  ai_semantic_paths = nil,
+  ai_semantic_session = nil,
+  ai_semantic_lookup = {},
+  ai_semantic_result_count = 0,
+  ai_semantic_last_query = "",
+  ai_semantic_last_summary = "",
+  ai_semantic_popup_requested = 0,
+  settings_popup_requested = 0,
+  ai_query = "",
+  ai_provider = "deepseek",
+  ai_api_url = "https://api.deepseek.com/chat/completions",
+  ai_model = "deepseek-chat",
+  ai_api_key_input = "",
+  ai_api_key_saved = false,
+  ai_request_sequence = 0,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -2150,7 +2169,59 @@ I18N_EN["没有可显示的相似声音结果。"] =
 I18N_PREFIX_EN["无法清空相似声音特征缓存："] =
   "Could not clear the similar-sound feature cache: "
 
+I18N_EN["AI 语义搜索"] = "AI semantic search"
+I18N_EN["AI 搜索"] = "AI search"
+I18N_EN["API、模型与隐私"] = "API, model and privacy"
+I18N_EN["AI 语义搜索（Ctrl+Shift+F）"] = "AI semantic search (Ctrl+Shift+F)"
+I18N_EN["用自然语言描述需要的声音。AI 会扩展中英文检索词，在本地召回候选，再依据文件名和元数据进行语义重排。不会上传音频文件。"] =
+  "Describe the sound you need in natural language. AI expands bilingual terms, recalls candidates locally, then reranks filenames and metadata. Audio is never uploaded."
+I18N_EN["示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"] =
+  "Example: a heavy chain dragged slowly in a damp basement, close and oppressive, without sharp highs"
+I18N_EN["本机接口可不使用 API Key"] = "A local endpoint may omit the API key"
+I18N_EN["范围：当前音效库/目录/集合条件；最多向 API 发送 120 条候选文本元数据"] =
+  "Scope: current library, folder, and collection filters; at most 120 candidate metadata records are sent to the API"
+I18N_EN["取消搜索"] = "Cancel search"
+I18N_EN["开始 AI 搜索"] = "Start AI search"
+I18N_EN["API 与模型设置"] = "API and model settings"
+I18N_EN["API 服务商"] = "API provider"
+I18N_EN["兼容接口"] = "Compatible endpoint"
+I18N_EN["API 地址"] = "API endpoint"
+I18N_EN["模型"] = "Model"
+I18N_EN["常用模型"] = "Common models"
+I18N_EN["兼容接口请填写服务实际提供的模型 ID"] =
+  "For compatible endpoints, enter a model ID provided by the service"
+I18N_EN["新 API Key"] = "New API key"
+I18N_EN["加密保存 Key"] = "Encrypt and save key"
+I18N_EN["删除已保存 Key"] = "Delete saved key"
+I18N_EN["测试连接"] = "Test connection"
+I18N_EN["● API Key 已保存"] = "● API key saved"
+I18N_EN["○ 尚未保存 API Key"] = "○ API key not saved"
+I18N_EN["隐私与范围"] = "Privacy and scope"
+I18N_EN["每次搜索都先在本地压缩候选范围。"] = "Every search narrows the candidate set locally first."
+I18N_EN["发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、Description、Keywords、UCS 分类和时长。不会发送完整目录，不会发送文件路径，不会上传音频。"] =
+  "Sent to the API: your query plus filenames, Description, Keywords, UCS fields and duration for at most 120 candidates. The full catalog, file paths and audio are never sent."
+I18N_EN["如果素材缺少有意义的文件名和元数据，本阶段的语义效果会受限；后续可接入本地音频语义 embedding。"] =
+  "This stage depends on meaningful filenames and metadata; a future local audio-text embedding can cover poorly described assets."
+I18N_EN["API 请求可能由服务商计费；费用、配额和内容保留策略以所选服务商为准。"] =
+  "API requests may incur provider charges; billing, quotas and retention policies depend on the selected service."
+I18N_EN["密钥使用 Windows DPAPI 按当前用户加密并单独保存，不写入 config.tsv、备份或日志。"] =
+  "The key is encrypted for the current Windows user with DPAPI and is never written to config.tsv, backups or logs."
+I18N_EN["独立于相似声音：以自然语言查找素材，首版使用本地文本召回和云端语义重排。"] =
+  "Separate from similar-sound search: use natural language with local text recall and cloud semantic reranking."
+
 I18N_PATTERNS_EN = {
+  {
+    "^AI 语义结果  (%d+)$",
+    "AI semantic results  %1",
+  },
+  {
+    "^AI 语义搜索完成：(%d+) 条结果$",
+    "AI semantic search complete: %1 results",
+  },
+  {
+    "^AI 重排不可用，已显示 (%d+) 条 AI 扩展词本地结果$",
+    "AI reranking unavailable; showing %1 local expanded-term results",
+  },
   {
     "^相似声音  (%d+)$",
     "Similar sounds  %1",

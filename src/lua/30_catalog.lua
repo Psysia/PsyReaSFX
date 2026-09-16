@@ -709,6 +709,16 @@ function load_config()
       elseif name == "language" then
         state.language =
           value == "en" and "en" or "zh"
+      elseif name == "ai_provider" then
+        if value == "deepseek"
+          or value == "openai"
+          or value == "custom" then
+          AppState.set("ai_provider", value)
+        end
+      elseif name == "ai_api_url" then
+        AppState.set("ai_api_url", trim(value or ""))
+      elseif name == "ai_model" then
+        AppState.set("ai_model", trim(value or ""))
       elseif name == "folder_browser_open" then
         -- 0.7.22 used a persistent inline tree. The 0.7.23 hover cascade is
         -- transient, so an old saved open state must not start background
@@ -1203,6 +1213,24 @@ function save_config()
   file:write(
     "setting\tlanguage\t",
     state.language,
+    "\n"
+  )
+
+  file:write(
+    "setting\tai_provider\t",
+    escape_tsv(state.ai_provider or "deepseek"),
+    "\n"
+  )
+
+  file:write(
+    "setting\tai_api_url\t",
+    escape_tsv(state.ai_api_url or ""),
+    "\n"
+  )
+
+  file:write(
+    "setting\tai_model\t",
+    escape_tsv(state.ai_model or ""),
     "\n"
   )
 

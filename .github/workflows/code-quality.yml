@@ -162,6 +162,16 @@ jobs:
         run: |
           lua tools/lua_neural_similarity_selftest.lua (Resolve-Path 'src/lua/43_neural_similarity.lua')
 
+      - name: Run Lua AI semantic search self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_ai_semantic_selftest.lua (Resolve-Path 'src/lua/43_neural_similarity.lua') (Resolve-Path 'src/lua/44_ai_semantic_search.lua')
+
+      - name: Run AI semantic bridge self-test
+        shell: pwsh
+        run: |
+          ./tools/Test-AISemanticBridge.ps1
+
       - name: Run Lua Enter shortcut self-test
         shell: pwsh
         run: |

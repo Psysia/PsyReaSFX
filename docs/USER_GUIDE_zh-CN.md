@@ -230,6 +230,27 @@ whoosh category:movement -long
 
 保存搜索可以记录查询文字、库、集合、工作流筛选和排序方向。适合建立重复使用的审核视图，不需要为了不同查看方式复制素材文件。
 
+### AI 语义搜索（开发分支）
+
+工具栏中的金色 `AI` 按钮，或 `Ctrl+Shift+F`，会打开独立的 AI 语义搜索。它不属于“查找相似声音”：相似声音以某个音频为参考，AI 语义搜索则直接接受自然语言描述，例如：
+
+```text
+潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频
+```
+
+首次使用前，在 `设置 → AI 搜索` 中选择服务商并填写 API：
+
+- `DeepSeek`：默认地址 `https://api.deepseek.com/chat/completions`，默认模型 `deepseek-chat`。
+- `OpenAI`：默认使用 OpenAI Chat Completions 地址。
+- `OpenAI-compatible`：可填写其他兼容平台或本机模型服务；远程地址必须使用 HTTPS，本机 `127.0.0.1`、`localhost` 或 `[::1]` 可以使用 HTTP。
+
+API Key 使用 Windows DPAPI 按当前 Windows 用户加密，单独保存在 PsyReaSFX 数据目录中，不写入 `config.tsv`、数据备份或日志。使用“恢复出厂”会删除已保存的 Key。
+API 请求可能产生服务商费用，配额和数据保留规则以用户选择的 API 服务为准。
+
+每次搜索分为两步：AI 先把描述转换为中英文声音概念；PsyReaSFX 在本地扫描当前音效库、目录和集合范围，并保留最多 120 条候选；随后只把这些候选的文件名、Description、Keywords、UCS 分类和时长交给 API 重排。不会发送完整目录、完整文件路径或音频内容。结果显示在独立的“AI 语义结果”视图中，按 AI 相关度排序。
+
+第一版依赖素材已有的文件名和文本元数据。对于名称无意义、没有 Description/Keywords/UCS 信息的素材，语义效果会受限；后续本地音频—文本 embedding 将解决这类素材的内容理解问题。
+
 ### 查找相似声音
 
 右键任意素材，或在下方预览区打开“更多操作 → 查找相似声音”。“当前结果”只比较
@@ -544,6 +565,7 @@ PsyReaSFX 优先保证鼠标和滚动交互：
 | `backups/` | 自动和手动数据快照 |
 | `cache_quarantine/` | 缓存检查隔离的损坏 RWF 文件 |
 | `neural_similarity/` | 可重建的 embedding/HNSW 缓存和神经任务文件；ReaPack 管理的程序与模型位于 REAPER `Data` 目录 |
+| `ai_semantic/` | AI 请求桥接和临时任务文件；API Key 使用当前 Windows 用户的 DPAPI 单独加密，数据备份不包含该密钥 |
 
 建议备份整个 PsyReaSFX 数据目录。0.8 起可以在
 `设置 → 维护` 每日自动建立一份数据快照、手动建立备份、设置保留数量，
