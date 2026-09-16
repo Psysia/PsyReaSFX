@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.1
+-- @version 0.9.0-beta7.2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -78,6 +78,7 @@
 --   - Beta 6.1：神经相似度组件可作为独立可选包通过 ReaPack 安装和更新
 --   - Beta 7：独立 AI 语义搜索，支持 DeepSeek、OpenAI 与兼容接口
 --   - Beta 7.1：搜索框回车保持普通搜索，AI 按钮直接执行语义搜索，配置与说明集中到设置
+--   - Beta 7.2：更新 DeepSeek Flash / V4 Pro 模型，修复 AI 设置裁切并显示 Key 保存结果
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -183,7 +184,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.1"
+local VERSION = "0.9.0 Beta 7.2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -920,9 +921,11 @@ local state = {
   settings_popup_requested = 0,
   ai_provider = "deepseek",
   ai_api_url = "https://api.deepseek.com/chat/completions",
-  ai_model = "deepseek-chat",
+  ai_model = "deepseek-flash",
   ai_api_key_input = "",
   ai_api_key_saved = false,
+  ai_api_key_status = "",
+  ai_api_key_status_error = false,
   ai_request_sequence = 0,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
@@ -2191,6 +2194,8 @@ I18N_EN["兼容接口"] = "Compatible endpoint"
 I18N_EN["API 地址"] = "API endpoint"
 I18N_EN["模型"] = "Model"
 I18N_EN["常用模型"] = "Common models"
+I18N_EN["DeepSeek 官方 API 模型 ID；Flash 更快，V4 Pro 能力更强。"] =
+  "Official DeepSeek API model IDs. Flash is faster; V4 Pro is more capable."
 I18N_EN["兼容接口请填写服务实际提供的模型 ID"] =
   "For compatible endpoints, enter a model ID provided by the service"
 I18N_EN["新 API Key"] = "New API key"
@@ -2199,6 +2204,11 @@ I18N_EN["删除已保存 Key"] = "Delete saved key"
 I18N_EN["测试连接"] = "Test connection"
 I18N_EN["● API Key 已保存"] = "● API key saved"
 I18N_EN["○ 尚未保存 API Key"] = "○ API key not saved"
+I18N_EN["正在使用 Windows DPAPI 加密保存…"] =
+  "Encrypting and saving with Windows DPAPI..."
+I18N_EN["API Key 已安全保存"] = "API key saved securely"
+I18N_EN["已删除保存的 API Key"] = "Saved API key deleted"
+I18N_PREFIX_EN["保存失败："] = "Save failed: "
 I18N_EN["隐私与范围"] = "Privacy and scope"
 I18N_EN["每次搜索都先在本地压缩候选范围。"] = "Every search narrows the candidate set locally first."
 I18N_EN["发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、Description、Keywords、UCS 分类和时长。不会发送完整目录，不会发送文件路径，不会上传音频。"] =

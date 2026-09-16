@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.1
+-- @version 0.9.0-beta7.2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -78,6 +78,7 @@
 --   - Beta 6.1：神经相似度组件可作为独立可选包通过 ReaPack 安装和更新
 --   - Beta 7：独立 AI 语义搜索，支持 DeepSeek、OpenAI 与兼容接口
 --   - Beta 7.1：搜索框回车保持普通搜索，AI 按钮直接执行语义搜索，配置与说明集中到设置
+--   - Beta 7.2：更新 DeepSeek Flash / V4 Pro 模型，修复 AI 设置裁切并显示 Key 保存结果
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -183,7 +184,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.1"
+local VERSION = "0.9.0 Beta 7.2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -920,9 +921,11 @@ local state = {
   settings_popup_requested = 0,
   ai_provider = "deepseek",
   ai_api_url = "https://api.deepseek.com/chat/completions",
-  ai_model = "deepseek-chat",
+  ai_model = "deepseek-flash",
   ai_api_key_input = "",
   ai_api_key_saved = false,
+  ai_api_key_status = "",
+  ai_api_key_status_error = false,
   ai_request_sequence = 0,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
@@ -2191,6 +2194,8 @@ I18N_EN["兼容接口"] = "Compatible endpoint"
 I18N_EN["API 地址"] = "API endpoint"
 I18N_EN["模型"] = "Model"
 I18N_EN["常用模型"] = "Common models"
+I18N_EN["DeepSeek 官方 API 模型 ID；Flash 更快，V4 Pro 能力更强。"] =
+  "Official DeepSeek API model IDs. Flash is faster; V4 Pro is more capable."
 I18N_EN["兼容接口请填写服务实际提供的模型 ID"] =
   "For compatible endpoints, enter a model ID provided by the service"
 I18N_EN["新 API Key"] = "New API key"
@@ -2199,6 +2204,11 @@ I18N_EN["删除已保存 Key"] = "Delete saved key"
 I18N_EN["测试连接"] = "Test connection"
 I18N_EN["● API Key 已保存"] = "● API key saved"
 I18N_EN["○ 尚未保存 API Key"] = "○ API key not saved"
+I18N_EN["正在使用 Windows DPAPI 加密保存…"] =
+  "Encrypting and saving with Windows DPAPI..."
+I18N_EN["API Key 已安全保存"] = "API key saved securely"
+I18N_EN["已删除保存的 API Key"] = "Saved API key deleted"
+I18N_PREFIX_EN["保存失败："] = "Save failed: "
 I18N_EN["隐私与范围"] = "Privacy and scope"
 I18N_EN["每次搜索都先在本地压缩候选范围。"] = "Every search narrows the candidate set locally first."
 I18N_EN["发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、Description、Keywords、UCS 分类和时长。不会发送完整目录，不会发送文件路径，不会上传音频。"] =
@@ -13567,7 +13577,19 @@ function ai_semantic_provider_defaults(provider)
   elseif provider == "custom" then
     return "", ""
   end
-  return "https://api.deepseek.com/chat/completions", "deepseek-chat"
+  return "https://api.deepseek.com/chat/completions", "deepseek-flash"
+end
+
+function ai_semantic_migrate_legacy_settings()
+  if state.ai_provider ~= "deepseek" then return false end
+  local legacy_models = {
+    ["deepseek-chat"] = "deepseek-flash",
+    ["deepseek-reasoner"] = "deepseek-v4-pro",
+  }
+  local replacement = legacy_models[trim(state.ai_model or "")]
+  if not replacement then return false end
+  AppState.apply({ ai_model = replacement, config_dirty = true })
+  return true
 end
 
 function ai_semantic_validate_endpoint(url)
@@ -13667,13 +13689,28 @@ function ai_semantic_stop_job_process(job)
 end
 
 function ai_semantic_save_api_key(value)
+  local function fail(reason)
+    reason = tostring(reason or "无法加密保存 API Key")
+    AppState.apply({
+      ai_api_key_status = "保存失败：" .. reason,
+      ai_api_key_status_error = true,
+    })
+    return false, reason
+  end
+
   value = trim(value or "")
-  if value == "" then return false, "API Key 不能为空" end
-  if not state.ai_semantic_available then return false, "AI 语义搜索在当前环境不可用" end
+  if value == "" then return fail("API Key 不能为空") end
+  if not state.ai_semantic_available then
+    return fail("AI 语义搜索在当前环境不可用")
+  end
+  AppState.apply({
+    ai_api_key_status = "正在使用 Windows DPAPI 加密保存…",
+    ai_api_key_status_error = false,
+  })
   local plaintext_path = state.ai_semantic_paths.plaintext
   os.remove(plaintext_path)
   local ok, reason = ai_semantic_write_atomic(plaintext_path, value)
-  if not ok then return false, tostring(reason or "key_write_failed") end
+  if not ok then return fail(reason or "key_write_failed") end
   local job, launch_reason = ai_semantic_launch_bridge({
     operation = "protect-key",
     plaintextPath = plaintext_path,
@@ -13681,24 +13718,37 @@ function ai_semantic_save_api_key(value)
   }, true)
   if not job then
     os.remove(plaintext_path)
-    return false, launch_reason
+    return fail(launch_reason)
   end
   job.plaintext_path = plaintext_path
   local status = ai_semantic_read_status(job)
   ai_semantic_cleanup_job(job)
   os.remove(plaintext_path)
   if not status or status.state ~= "complete" then
-    return false, status and status.message or "无法加密保存 API Key"
+    return fail(status and status.message or "无法加密保存 API Key")
   end
-  AppState.set("ai_api_key_saved", true)
-  AppState.set("ai_api_key_input", "")
+  local encrypted = ai_semantic_read_file(state.ai_semantic_paths.secret, 64 * 1024)
+  if not encrypted or trim(encrypted) == "" then
+    return fail("加密文件未生成，请检查 REAPER 对脚本目录的写入权限")
+  end
+  AppState.apply({
+    ai_api_key_saved = true,
+    ai_api_key_input = "",
+    ai_api_key_status = "API Key 已安全保存",
+    ai_api_key_status_error = false,
+  })
   return true
 end
 
 function ai_semantic_delete_api_key()
   if not state.ai_semantic_paths then return false end
   os.remove(state.ai_semantic_paths.secret)
-  AppState.apply({ ai_api_key_saved = false, ai_api_key_input = "" })
+  AppState.apply({
+    ai_api_key_saved = false,
+    ai_api_key_input = "",
+    ai_api_key_status = "已删除保存的 API Key",
+    ai_api_key_status_error = false,
+  })
   return true
 end
 
@@ -25468,7 +25518,9 @@ function factory_reset()
   AppState.apply({
     ai_provider = "deepseek",
     ai_api_url = "https://api.deepseek.com/chat/completions",
-    ai_model = "deepseek-chat",
+    ai_model = "deepseek-flash",
+    ai_api_key_status = "",
+    ai_api_key_status_error = false,
   })
   reset_interface_settings()
   os.remove(CONFIG_FILE)
@@ -35441,23 +35493,25 @@ function draw_settings_ai()
   if dark_button("兼容接口", 112) then select_ai_semantic_provider("custom") end
   ImGui.TextDisabled(ctx, "当前选择：" .. ai_semantic_provider_label(state.ai_provider))
 
+  ImGui.Text(ctx, "API 地址")
   ImGui.SetNextItemWidth(ctx, -1)
   local changed
   local api_url
   changed, api_url = ImGui.InputText(
     ctx,
-    "API 地址",
+    "##ai_api_url",
     state.ai_api_url or ""
   )
   if changed then
     AppState.apply({ ai_api_url = api_url, config_dirty = true })
   end
 
+  ImGui.Text(ctx, "模型")
   ImGui.SetNextItemWidth(ctx, -1)
   local model
   changed, model = ImGui.InputText(
     ctx,
-    "模型",
+    "##ai_model",
     state.ai_model or ""
   )
   if changed then
@@ -35466,13 +35520,14 @@ function draw_settings_ai()
 
   ImGui.TextDisabled(ctx, "常用模型")
   if state.ai_provider == "deepseek" then
-    if dark_button("deepseek-chat", 142) then
-      AppState.apply({ ai_model = "deepseek-chat", config_dirty = true })
+    if dark_button("deepseek-flash", 142) then
+      AppState.apply({ ai_model = "deepseek-flash", config_dirty = true })
     end
     ImGui.SameLine(ctx)
-    if dark_button("deepseek-reasoner", 168) then
-      AppState.apply({ ai_model = "deepseek-reasoner", config_dirty = true })
+    if dark_button("deepseek-v4-pro", 168) then
+      AppState.apply({ ai_model = "deepseek-v4-pro", config_dirty = true })
     end
+    ImGui.TextDisabled(ctx, "DeepSeek 官方 API 模型 ID；Flash 更快，V4 Pro 能力更强。")
   elseif state.ai_provider == "openai" then
     if dark_button("gpt-4.1-mini", 132) then
       AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true })
@@ -35491,13 +35546,14 @@ function draw_settings_ai()
     "密钥使用 Windows DPAPI 按当前用户加密并单独保存，不写入 config.tsv、备份或日志。"
   )
 
+  ImGui.Text(ctx, "新 API Key")
   ImGui.SetNextItemWidth(ctx, -1)
   local password_flags = ImGui.InputTextFlags_Password
     | ImGui.InputTextFlags_AutoSelectAll
   local api_key_input
   changed, api_key_input = ImGui.InputText(
     ctx,
-    "新 API Key",
+    "##ai_api_key",
     state.ai_api_key_input or "",
     password_flags
   )
@@ -35528,6 +35584,13 @@ function draw_settings_ai()
     state.ai_api_key_saved and COLOR.success or COLOR.warning,
     state.ai_api_key_saved and "● API Key 已保存" or "○ 尚未保存 API Key"
   )
+  if trim(state.ai_api_key_status or "") ~= "" then
+    ImGui.TextColored(
+      ctx,
+      state.ai_api_key_status_error and COLOR.error or COLOR.success,
+      state.ai_api_key_status
+    )
+  end
 
   local endpoint_valid, endpoint_reason = ai_semantic_validate_endpoint(state.ai_api_url)
   if not endpoint_valid then ImGui.TextColored(ctx, COLOR.error, endpoint_reason) end
@@ -39184,6 +39247,7 @@ if not state.persistence_read_only then
 end
 load_or_migrate_project_url()
 load_config()
+ai_semantic_migrate_legacy_settings()
 state.next_watch = reaper.time_precise() + state.watch_interval
 load_or_migrate_libraries()
 apply_unified_interface(false, false)

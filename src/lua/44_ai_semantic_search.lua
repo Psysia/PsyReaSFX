@@ -190,7 +190,19 @@ function ai_semantic_provider_defaults(provider)
   elseif provider == "custom" then
     return "", ""
   end
-  return "https://api.deepseek.com/chat/completions", "deepseek-chat"
+  return "https://api.deepseek.com/chat/completions", "deepseek-flash"
+end
+
+function ai_semantic_migrate_legacy_settings()
+  if state.ai_provider ~= "deepseek" then return false end
+  local legacy_models = {
+    ["deepseek-chat"] = "deepseek-flash",
+    ["deepseek-reasoner"] = "deepseek-v4-pro",
+  }
+  local replacement = legacy_models[trim(state.ai_model or "")]
+  if not replacement then return false end
+  AppState.apply({ ai_model = replacement, config_dirty = true })
+  return true
 end
 
 function ai_semantic_validate_endpoint(url)
@@ -290,13 +302,28 @@ function ai_semantic_stop_job_process(job)
 end
 
 function ai_semantic_save_api_key(value)
+  local function fail(reason)
+    reason = tostring(reason or "无法加密保存 API Key")
+    AppState.apply({
+      ai_api_key_status = "保存失败：" .. reason,
+      ai_api_key_status_error = true,
+    })
+    return false, reason
+  end
+
   value = trim(value or "")
-  if value == "" then return false, "API Key 不能为空" end
-  if not state.ai_semantic_available then return false, "AI 语义搜索在当前环境不可用" end
+  if value == "" then return fail("API Key 不能为空") end
+  if not state.ai_semantic_available then
+    return fail("AI 语义搜索在当前环境不可用")
+  end
+  AppState.apply({
+    ai_api_key_status = "正在使用 Windows DPAPI 加密保存…",
+    ai_api_key_status_error = false,
+  })
   local plaintext_path = state.ai_semantic_paths.plaintext
   os.remove(plaintext_path)
   local ok, reason = ai_semantic_write_atomic(plaintext_path, value)
-  if not ok then return false, tostring(reason or "key_write_failed") end
+  if not ok then return fail(reason or "key_write_failed") end
   local job, launch_reason = ai_semantic_launch_bridge({
     operation = "protect-key",
     plaintextPath = plaintext_path,
@@ -304,24 +331,37 @@ function ai_semantic_save_api_key(value)
   }, true)
   if not job then
     os.remove(plaintext_path)
-    return false, launch_reason
+    return fail(launch_reason)
   end
   job.plaintext_path = plaintext_path
   local status = ai_semantic_read_status(job)
   ai_semantic_cleanup_job(job)
   os.remove(plaintext_path)
   if not status or status.state ~= "complete" then
-    return false, status and status.message or "无法加密保存 API Key"
+    return fail(status and status.message or "无法加密保存 API Key")
   end
-  AppState.set("ai_api_key_saved", true)
-  AppState.set("ai_api_key_input", "")
+  local encrypted = ai_semantic_read_file(state.ai_semantic_paths.secret, 64 * 1024)
+  if not encrypted or trim(encrypted) == "" then
+    return fail("加密文件未生成，请检查 REAPER 对脚本目录的写入权限")
+  end
+  AppState.apply({
+    ai_api_key_saved = true,
+    ai_api_key_input = "",
+    ai_api_key_status = "API Key 已安全保存",
+    ai_api_key_status_error = false,
+  })
   return true
 end
 
 function ai_semantic_delete_api_key()
   if not state.ai_semantic_paths then return false end
   os.remove(state.ai_semantic_paths.secret)
-  AppState.apply({ ai_api_key_saved = false, ai_api_key_input = "" })
+  AppState.apply({
+    ai_api_key_saved = false,
+    ai_api_key_input = "",
+    ai_api_key_status = "已删除保存的 API Key",
+    ai_api_key_status_error = false,
+  })
   return true
 end
 

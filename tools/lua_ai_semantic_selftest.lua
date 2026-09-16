@@ -14,7 +14,7 @@ state = {
   persistence_read_only = false,
   ai_provider = "deepseek",
   ai_api_url = "https://api.deepseek.com/chat/completions",
-  ai_model = "deepseek-chat",
+  ai_model = "deepseek-flash",
   ai_api_key_saved = true,
   ai_request_sequence = 0,
   active_collection_id = nil,
@@ -89,7 +89,7 @@ assert(not ai_semantic_validate_endpoint("file:///tmp/secret"))
 
 local url, model = ai_semantic_provider_defaults("deepseek")
 assert(url == "https://api.deepseek.com/chat/completions")
-assert(model == "deepseek-chat")
+assert(model == "deepseek-flash")
 url, model = ai_semantic_provider_defaults("openai")
 assert(url == "https://api.openai.com/v1/chat/completions")
 assert(model == "gpt-4.1-mini")
@@ -170,10 +170,58 @@ assert(decoded.positive_terms[1] == "impact")
 
 local body = ai_semantic_chat_body("system", "user", 50)
 local request = neural_json_decode(body)
-assert(request.model == "deepseek-chat")
+assert(request.model == "deepseek-flash")
 assert(request.messages[1].content == "system")
 assert(request.messages[2].content == "user")
 assert(request.response_format.type == "json_object")
+
+state.ai_provider = "deepseek"
+state.ai_model = "deepseek-chat"
+state.config_dirty = false
+assert(ai_semantic_migrate_legacy_settings())
+assert(state.ai_model == "deepseek-flash")
+assert(state.config_dirty)
+state.ai_model = "deepseek-reasoner"
+assert(ai_semantic_migrate_legacy_settings())
+assert(state.ai_model == "deepseek-v4-pro")
+state.ai_model = "deepseek-custom-model"
+assert(not ai_semantic_migrate_legacy_settings())
+assert(state.ai_model == "deepseek-custom-model")
+
+local original_launch_bridge = ai_semantic_launch_bridge
+local key_plaintext_path = os.tmpname()
+local key_secret_path = os.tmpname()
+os.remove(key_plaintext_path)
+os.remove(key_secret_path)
+state.ai_semantic_available = true
+state.ai_semantic_paths = {
+  plaintext = key_plaintext_path,
+  secret = key_secret_path,
+}
+ai_semantic_launch_bridge = function(request, synchronous)
+  assert(synchronous)
+  assert(request.operation == "protect-key")
+  local encrypted = assert(io.open(request.secretPath, "wb"))
+  encrypted:write("encrypted-test-value")
+  encrypted:close()
+  os.remove(request.plaintextPath)
+  local status_path = os.tmpname()
+  local status = assert(io.open(status_path, "wb"))
+  status:write('{"state":"complete"}')
+  status:close()
+  return { request_path = "", status_path = status_path }
+end
+assert(ai_semantic_save_api_key("sk-test"))
+assert(state.ai_api_key_saved)
+assert(state.ai_api_key_input == "")
+assert(state.ai_api_key_status == "API Key 已安全保存")
+assert(not state.ai_api_key_status_error)
+assert(not ai_semantic_save_api_key(""))
+assert(state.ai_api_key_status == "保存失败：API Key 不能为空")
+assert(state.ai_api_key_status_error)
+ai_semantic_launch_bridge = original_launch_bridge
+os.remove(key_plaintext_path)
+os.remove(key_secret_path)
 
 local source = read_all(ai_source_path)
 local payload_start = assert(source:find("function ai_semantic_candidate_payload", 1, true))

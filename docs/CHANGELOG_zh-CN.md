@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.2
+
+### AI 设置与 DeepSeek 模型更新
+
+- DeepSeek 官方预设更新为当前 API 模型 ID：默认 `deepseek-flash`，并提供 `deepseek-v4-pro` 快捷选择。
+- 已保存的旧 `deepseek-chat` / `deepseek-reasoner` 配置会分别自动迁移到新模型，不影响自定义模型名称。
+- API 地址、模型和 API Key 标签移到输入框上方，修复设置窗口右侧文字被滚动条或边缘裁切的问题。
+- “加密保存 Key”的成功或具体失败原因会直接显示在按钮下方；保存成功后还会验证 DPAPI 密钥文件确实生成。
+
 ## 0.9.0 Beta 7.1
 
 ### 统一搜索框交互
