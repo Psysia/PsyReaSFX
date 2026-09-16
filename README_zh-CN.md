@@ -36,7 +36,7 @@
 https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 ```
 
-同步软件包后，直接搜索需要的工具并安装即可。使用 Beta 7 时，先为软件包启用
+同步软件包后，直接搜索需要的工具并安装即可。使用 Beta 7.1 时，先为软件包启用
 预发布版本并安装 `PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再为同仓库
 中的独立可选包 `PsyReaSFX Neural Similarity` 启用预发布并安装。
 
@@ -88,12 +88,12 @@ PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频�
 ### 当前开发状态
 
 - **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
-- **预发布通道：0.9.0 Beta 7** — 新增独立 AI 语义搜索，支持 DeepSeek、OpenAI 和兼容接口，并继续提供可选本地神经相似度组件。
+- **预发布通道：0.9.0 Beta 7.1** — 统一普通与 AI 搜索输入框；回车执行普通搜索，金色 AI 按钮直接执行语义搜索，并继续提供可选本地神经相似度组件。
 - **不会建立转码素材库** — 源音频只在内存中解码、下混并重采样为模型所需的 32 kHz，不会生成转换后的音频副本；持久缓存只保存紧凑的 320 维 FP16 embedding 和 HNSW 索引。
 
 0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。神经相似度组件保持可选、仅在本地运行，不上传用户音频。
 
-Beta 7 已加入第一版 **AI 语义搜索**。它与“查找相似声音”完全分离，允许用户配置 DeepSeek、OpenAI 或兼容接口的 API 地址、Key 和模型，通过自然语言描述查找声音。音频和完整文件路径不会上传；API 只会收到查询，以及本地召回出的最多 120 条候选文本元数据。Windows 下 API Key 使用当前用户的 DPAPI 加密保存。
+Beta 7.1 已加入第一版 **AI 语义搜索**。它与“查找相似声音”完全分离：顶部搜索框按 `Enter` 执行普通搜索，点击金色 AI 按钮则直接按当前文字执行语义搜索。DeepSeek、OpenAI 或兼容接口的地址、Key、模型和说明集中在设置页。音频和完整文件路径不会上传；API 只会收到查询，以及本地召回出的最多 120 条候选文本元数据。Windows 下 API Key 使用当前用户的 DPAPI 加密保存。
 
 > **ReaPack 安装方式：** 安装 `PsyReaSFX.lua` 即可使用主程序；Windows x64 用户如需神经检索，再从同一仓库安装第二个包 `PsyReaSFX Neural Similarity`。两个包都由 ReaPack 独立更新，手动 ZIP 仅作为备用方案。
 
@@ -112,8 +112,8 @@ Beta 7 已加入第一版 **AI 语义搜索**。它与“查找相似声音”�
 ### PsyReaSFX 下载
 
 - [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 7 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7)
-- [Beta 7 可选神经组件手动 ZIP 备用下载](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 7.1 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.1)
+- [Beta 7.1 可选神经组件手动 ZIP 备用下载](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_1_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)

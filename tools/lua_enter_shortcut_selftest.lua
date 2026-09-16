@@ -41,12 +41,14 @@ local toolbar = runtime:sub(toolbar_start, toolbar_end - 1)
 assert(
   toolbar:find("ImGui.IsItemActive(ctx)", 1, true)
     and toolbar:find("ImGui.IsItemDeactivated(ctx)", 1, true)
+    and toolbar:find("normal_search_submitted", 1, true)
+    and toolbar:find('changes.view = "all"', 1, true)
     and toolbar:find(
       'AppState.set("keyboard_consumed", true)',
       1,
       true
     ),
-  "search input must consume both active and deactivation frames"
+  "search Enter must stay a normal local search and consume its input frame"
 )
 
 local _, persisted_count = catalog:gsub(

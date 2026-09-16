@@ -4390,6 +4390,10 @@ function field_value(asset, field)
 end
 
 function matches_search(asset)
+  -- AI results are already ranked against the shared search-field text. Do
+  -- not run the natural-language request through the literal local filter.
+  if "ai_semantic" == state.view then return true end
+
   local query = trim(state.search)
 
   if query == "" then
@@ -10937,7 +10941,6 @@ function reset_interface_settings()
     path = 360,
   }
   ai_semantic_clear_results()
-  AppState.set("ai_query", "")
   state.results_dirty = true
   state.config_dirty = true
   set_status("已重置界面与试听设置")
@@ -15394,7 +15397,7 @@ function draw_toolbar()
     ImGui.InputTextWithHint(
       ctx,
       "##search",
-      "输入关键词或描述声音…  category:impact  status:candidate  -exclude",
+      "输入关键词…  category:impact  status:candidate  -exclude；点击 AI 可按自然语言搜索",
       state.search
     )
 
@@ -15402,6 +15405,9 @@ function draw_toolbar()
   -- handler runs. Keep that frame consumed so Enter confirms text only.
   local search_active = ImGui.IsItemActive(ctx)
   local search_deactivated = ImGui.IsItemDeactivated(ctx)
+  local normal_search_submitted =
+    (search_active or search_deactivated)
+    and ImGui.IsKeyPressed(ctx, ImGui.Key_Enter, false)
   if search_active or search_deactivated then
     AppState.set("keyboard_consumed", true)
   end
@@ -15414,19 +15420,42 @@ function draw_toolbar()
     AppState.set("ucs_search_popup_visible", true)
   end
 
+  if normal_search_submitted then
+    if state.ai_semantic_session then ai_semantic_cancel() end
+    local changes = {
+      results_dirty = true,
+      config_dirty = true,
+    }
+    if "ai_semantic" == state.view then
+      changes.view = "all"
+      if "ai_relevance" == state.sort_mode then
+        changes.sort_mode = "name"
+        changes.sort_desc = false
+      end
+    end
+    AppState.apply(changes)
+    AppState.set("ucs_search_popup_visible", false)
+  end
+
   ImGui.SameLine(ctx)
 
   if icon_button(
     "ai_semantic",
     "ai",
-    "AI 语义搜索（Ctrl+Shift+F）",
+    state.ai_semantic_session ~= nil
+      and "取消正在运行的 AI 语义搜索"
+      or "使用搜索框内容执行 AI 语义搜索（Ctrl+Shift+F）",
     state.ai_semantic_session ~= nil
       or "ai_semantic" == state.view,
     control_size,
     state.ai_semantic_session ~= nil,
     0xE3A84BFF
   ) then
-    AppState.set("ai_semantic_popup_requested", 1)
+    if state.ai_semantic_session then
+      ai_semantic_cancel()
+    else
+      start_ai_semantic_search(state.search)
+    end
   end
 
   ImGui.SameLine(ctx)
@@ -20617,8 +20646,8 @@ function draw_help_popup()
         },
         {
           "Ctrl+Shift+F",
-          "打开 AI 语义搜索",
-          "Open AI semantic search",
+          "使用搜索框内容执行 AI 语义搜索",
+          "Run AI semantic search with the search field",
         },
         {
           "Ctrl+R",
@@ -20759,7 +20788,7 @@ function draw_help_popup()
 end
 
 ----------------------------------------------------------------
--- AI semantic search popup
+-- AI semantic search settings helpers
 ----------------------------------------------------------------
 
 function ai_semantic_provider_label(provider)
@@ -20776,96 +20805,6 @@ function select_ai_semantic_provider(provider)
     ai_model = model,
     config_dirty = true,
   })
-end
-
-function draw_ai_semantic_popup()
-  if state.ai_semantic_popup_requested > 0 then
-    AppState.set(
-      "ai_semantic_popup_requested",
-      state.ai_semantic_popup_requested - 1
-    )
-    if 0 == state.ai_semantic_popup_requested then
-      ImGui.OpenPopup(ctx, "AI 语义搜索##ai_semantic")
-    end
-  end
-
-  ImGui.SetNextWindowSize(ctx, 720, 390, ImGui.Cond_Appearing)
-  if not ImGui.BeginPopupModal(
-    ctx,
-    "AI 语义搜索##ai_semantic",
-    true,
-    ImGui.WindowFlags_NoScrollbar
-  ) then
-    return
-  end
-
-  ImGui.TextColored(ctx, 0xE3A84BFF, "AI 语义搜索")
-  ImGui.TextWrapped(
-    ctx,
-    "用自然语言描述需要的声音。AI 会扩展中英文检索词，在本地召回候选，"
-      .. "再依据文件名和元数据进行语义重排。不会上传音频文件。"
-  )
-  ImGui.Spacing(ctx)
-
-  ImGui.SetNextItemWidth(ctx, -1)
-  local changed
-  local query_value
-  changed, query_value = ImGui.InputTextMultiline(
-    ctx,
-    "##ai_semantic_query",
-    state.ai_query or "",
-    -1,
-    108
-  )
-  if changed then AppState.set("ai_query", query_value) end
-  if ImGui.IsItemActive(ctx) or ImGui.IsItemDeactivated(ctx) then
-    AppState.set("keyboard_consumed", true)
-  end
-
-  ImGui.TextDisabled(
-    ctx,
-    "示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"
-  )
-  ImGui.Spacing(ctx)
-
-  local provider = ai_semantic_provider_label(state.ai_provider)
-  local credential = ai_semantic_key_required()
-      and (state.ai_api_key_saved and "API Key 已安全保存" or "尚未保存 API Key")
-    or "本机接口可不使用 API Key"
-  ImGui.Text(ctx, "服务：" .. provider .. "  ·  模型：" .. (state.ai_model or ""))
-  ImGui.TextColored(
-    ctx,
-    (state.ai_api_key_saved or not ai_semantic_key_required())
-      and COLOR.success or COLOR.warning,
-    credential
-  )
-  ImGui.TextDisabled(
-    ctx,
-    "范围：当前音效库/目录/集合条件；最多向 API 发送 120 条候选文本元数据"
-  )
-
-  ImGui.Spacing(ctx)
-  local running = state.ai_semantic_session ~= nil
-  if running then
-    if dark_button("取消搜索", 120) then ai_semantic_cancel() end
-  else
-    if dark_button("开始 AI 搜索", 140) then
-      if start_ai_semantic_search(state.ai_query) then
-        ImGui.CloseCurrentPopup(ctx)
-      end
-    end
-  end
-
-  ImGui.SameLine(ctx)
-  if dark_button("API 与模型设置", 150) then
-    AppState.apply({ settings_tab = "ai", settings_popup_requested = 2 })
-    ImGui.CloseCurrentPopup(ctx)
-  end
-
-  ImGui.SameLine(ctx)
-  if dark_button("关闭", 90) then ImGui.CloseCurrentPopup(ctx) end
-
-  ImGui.EndPopup(ctx)
 end
 
 ----------------------------------------------------------------
@@ -21132,6 +21071,27 @@ function draw_settings_ai()
     "AI 语义搜索",
     "独立于相似声音：以自然语言查找素材，首版使用本地文本召回和云端语义重排。"
   )
+
+  settings_section_title(
+    "搜索框与 AI 按钮",
+    "顶部搜索框是普通搜索与 AI 语义搜索的统一入口。"
+  )
+  ImGui.TextWrapped(
+    ctx,
+    "顶部搜索框是统一入口：输入关键词后按 Enter 执行普通本地搜索；"
+      .. "输入自然语言描述后点击金色 AI 按钮，或按 Ctrl+Shift+F，直接执行 AI 语义搜索。"
+  )
+  ImGui.TextDisabled(
+    ctx,
+    "示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"
+  )
+  ImGui.Spacing(ctx)
+  ImGui.TextWrapped(
+    ctx,
+    "AI 会扩展中英文检索词，在当前音效库、目录和集合范围内本地召回候选，"
+      .. "再依据文件名和元数据进行语义重排。搜索完成后直接显示 AI 语义结果。"
+  )
+  ImGui.Separator(ctx)
 
   ImGui.Text(ctx, "API 服务商")
   if dark_button("DeepSeek", 112) then select_ai_semantic_provider("deepseek") end
@@ -23993,7 +23953,11 @@ function keyboard()
       ImGui.Key_F,
       false
     ) then
-    AppState.set("ai_semantic_popup_requested", 1)
+    if state.ai_semantic_session then
+      ai_semantic_cancel()
+    else
+      start_ai_semantic_search(state.search)
+    end
     return
   end
 
@@ -24594,7 +24558,6 @@ function draw_main()
     end
 
     draw_help_popup()
-    draw_ai_semantic_popup()
     draw_transient_detection_popup()
     draw_transfer_popup()
     draw_settings_popup()
