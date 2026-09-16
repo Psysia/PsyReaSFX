@@ -38,7 +38,7 @@ https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
 
 Then synchronize packages and search for the tool you want. For PsyReaSFX,
 enable pre-release versions for the package and install `PsyReaSFX.lua` Beta
-6.1; on Windows x64, also enable/install the separate optional
+7; on Windows x64, also enable/install the separate optional
 `PsyReaSFX Neural Similarity` package if you want neural similar-sound search.
 
 You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.
@@ -89,12 +89,12 @@ It combines library management, waveform browsing, search, audition, metadata, c
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 6.1** — adds direct ReaPack installation and updates for the optional neural component while retaining Beta 6's broad in-memory audio decoding.
+- **Preview channel: 0.9.0 Beta 7** — adds separate AI semantic search with DeepSeek, OpenAI, and compatible APIs while retaining the optional local neural-similarity component.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
-The development branch now includes the first **AI semantic search** implementation. It is separate from Find Similar Sounds and lets users configure a DeepSeek, OpenAI, or compatible API endpoint, key, and model. Audio and full file paths are never uploaded; only the query and up to 120 locally recalled metadata candidates are sent. On Windows, the API key is encrypted for the current user with DPAPI.
+Beta 7 includes the first **AI semantic search** implementation. It is separate from Find Similar Sounds and lets users configure a DeepSeek, OpenAI, or compatible API endpoint, key, and model. Audio and full file paths are never uploaded; only the query and up to 120 locally recalled metadata candidates are sent. On Windows, the API key is encrypted for the current user with DPAPI.
 
 > **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
@@ -113,8 +113,8 @@ The development branch now includes the first **AI semantic search** implementat
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 6.1 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta6.1)
-- [Manual ZIP fallback for the optional Beta 6.1 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta6.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta6_1_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 7 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7)
+- [Manual ZIP fallback for the optional Beta 7 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)

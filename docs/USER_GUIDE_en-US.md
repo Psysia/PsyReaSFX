@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 6.1
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -43,16 +43,16 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
 
 3. Synchronize packages.
 4. Search for `PsyReaSFX.lua`, right-click it, enable pre-release versions for
-   that package, choose `0.9.0-beta6.1` under **Versions**, and install it.
+   that package, choose `0.9.0-beta7` under **Versions**, and install it.
 5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
-### Optional neural similarity component (Beta 6.1)
+### Optional neural similarity component (Beta 7)
 
 On Windows x64, open ReaPack's package browser after synchronizing, search for
 `PsyReaSFX Neural Similarity`, enable pre-release versions for that package,
-choose `0.9.0-beta6.1`, and install it beside `PsyReaSFX.lua`. ReaPack places
+choose `0.9.0-beta7`, and install it beside `PsyReaSFX.lua`. ReaPack places
 the executable and model under REAPER's `Data`
 directory and updates or uninstalls those files independently. Restart
 PsyReaSFX after installing or updating the component.
@@ -239,7 +239,7 @@ whoosh category:movement -long
 
 A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
-### AI semantic search (development branch)
+### AI semantic search (Beta 7)
 
 Use the gold `AI` toolbar button or `Ctrl+Shift+F` to open the separate AI semantic search. This is not part of Find Similar Sounds: similar-sound search starts from a reference recording, while AI semantic search starts from a natural-language request, for example:
 
@@ -272,7 +272,7 @@ Scoring uses audio content only, never filenames, UCS categories or keywords. Fo
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
 
-With the optional Beta 6.1 component installed, PsyReaSFX uses EfficientAT
+With the optional Beta 7 component installed, PsyReaSFX uses EfficientAT
 embedding recall followed by the existing duration, onset, transient and
 envelope features. Common WAV sample rates and PCM16/PCM24/PCM32/float depths,
 AIFF, FLAC, MP3 and M4A use the built-in Windows decoder; an available FFmpeg
@@ -710,7 +710,7 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 ## 21. Stable support
 
 PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.9.0 Beta 6.1 as versions of the same package. Normal synchronization
+PsyReaSFX 0.9.0 Beta 7 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.

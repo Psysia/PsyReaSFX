@@ -9,6 +9,20 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.9.0-beta7" author="Psysia" time="2026-09-16T04:11:36Z">
+        <changelog><![CDATA[
+- Adds a separate AI semantic search entry point with a gold toolbar button and Ctrl+Shift+F shortcut.
+- Supports DeepSeek, OpenAI, and custom OpenAI-compatible Chat Completions endpoints and models.
+- Recalls up to 120 candidates locally, then sends only bounded filename and metadata fields for semantic reranking; audio and full paths are never uploaded.
+- Encrypts the API key for the current Windows user with DPAPI and keeps it out of normal configuration, backups, logs, and command lines.
+- Adds AI relevance results, progress, cancellation, connection testing, timeout cleanup, and safe local fallback.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.0-beta6.1" author="Psysia" time="2026-09-15T10:52:34Z">
         <changelog><![CDATA[
 - Adds the optional PsyReaSFX Neural Similarity package to this ReaPack repository on Windows x64.
@@ -126,6 +140,27 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="0.9.0-beta7" author="Psysia" time="2026-09-16T04:11:36Z">
+        <changelog><![CDATA[
+- Matching optional Windows x64 neural component for PsyReaSFX 0.9.0 Beta 7.
+- Continues to provide local EfficientAT embedding, HNSW recall, broad in-memory decoding, and automatic acoustic fallback.
+- This package remains independent from the new API-based AI semantic search and never uploads audio.
+        ]]></changelog>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/PsyReaSFX.NeuralSidecar.exe">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7/PsyReaSFX.NeuralSidecar_v0_9_0_beta7_win_x64.exe</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/manifest-v1.json" hash="1220c9bf94a7bc7cef61f15b416e7866d376b957574569c0b31878d4223048d4cdd8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/manifest-v1.json</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx" hash="12205efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav" hash="1220a72b5e8574318217ccfb55928bd7317c00909f1ebe48f166a43d6b4863488e84">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/evolving_scene_12s.wav" hash="122097379fb8a8656cb39d6c620ec74237460cd80925f474f2cbb7edd35e36961008">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/evolving_scene_12s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/modulated_texture_3s.wav" hash="122015a5227098377e9374b9eb0be5676028fb3837a5d3c7207a455a7cc53efefe69">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/modulated_texture_3s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/golden-v1.json" hash="122003923df2754bf8a0c67b8dd72ffb1b23236a4a76124316c381117cd8fab9464d">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/golden-v1.json</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt" hash="12207fecf57238d733faf76a0d178f4973e9d3423e49e400d312a43e647700ce41ff">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/assets/neural/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-PsyReaSFX.txt" hash="12204f12881c03a7ce6ae05adf771524067b324485a9bc8245fdc2b4b29526663b35">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/LICENSE</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-NAudio.txt" hash="122004b12da4303b43ee14d72b17d1157f53ad5e0082a48d74b9afdfdb3f5d2ab499">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/neural/package/LICENSE-NAudio.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-ONNXRuntime.txt" hash="12202f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/ThirdPartyNotices-ONNXRuntime.txt" hash="1220143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/ThirdPartyNotices.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="1220a2344d784a141205b9c840fe90f03de72e0a07755906d8b8083191660ef211b8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/neural/package/README.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="122024313b684f8f815944a0c401d7cb2beef38335d7160dc96e8bdfd42f6324afd2">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7/neural/package/README_zh-CN.md</source>
+      </version>
       <version name="0.9.0-beta6.1" author="Psysia" time="2026-09-15T10:52:34Z">
         <changelog><![CDATA[
 - First ReaPack-managed release of the optional neural similarity component.

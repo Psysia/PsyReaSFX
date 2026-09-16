@@ -1,6 +1,6 @@
 param(
     [string]$IndexPath = "index.xml",
-    [string]$Version = "0.9.0-beta6.1",
+    [string]$Version = "0.9.0-beta7",
     [Parameter(Mandatory = $true)]
     [string]$SidecarPath,
     [string]$FixtureDirectory = ""

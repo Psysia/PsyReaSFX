@@ -1,6 +1,6 @@
 ﻿# PsyReaSFX Changelog
 
-## In development
+## 0.9.0 Beta 7
 
 ### Separate AI semantic search
 
@@ -9,6 +9,7 @@
 - The AI creates bilingual retrieval concepts, Lua recalls a fixed local Top 120 from the active scope, and only candidate text metadata is sent for semantic reranking.
 - Audio, full paths and the full catalog are never uploaded. On Windows, the API key is encrypted for the current user with DPAPI and kept out of normal config, backups and logs.
 - Adds a dedicated result view, AI relevance scores, progress, cancellation, connection testing and a local-result fallback when API reranking fails.
+- Preserves valid UTF-8 when limiting candidate metadata and terminates timed-out API bridge processes.
 
 ## 0.9.0 Beta 6.1
 

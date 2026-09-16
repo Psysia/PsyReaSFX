@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.0-beta6.1",
+    [string]$Version = "0.9.0-beta7",
     [string]$OutputDirectory = ""
 )
 
@@ -119,6 +119,15 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $workRoot) {
-        Remove-Item -LiteralPath $workRoot -Recurse -Force
+        for ($attempt = 1; $attempt -le 8; $attempt++) {
+            try {
+                Remove-Item -LiteralPath $workRoot -Recurse -Force -ErrorAction Stop
+                break
+            }
+            catch {
+                if ($attempt -eq 8) { throw }
+                Start-Sleep -Milliseconds 250
+            }
+        }
     }
 }
