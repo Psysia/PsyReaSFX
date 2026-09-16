@@ -11128,7 +11128,9 @@ function factory_reset()
   AppState.apply({
     ai_provider = "deepseek",
     ai_api_url = "https://api.deepseek.com/chat/completions",
-    ai_model = "deepseek-chat",
+    ai_model = "deepseek-flash",
+    ai_api_key_status = "",
+    ai_api_key_status_error = false,
   })
   reset_interface_settings()
   os.remove(CONFIG_FILE)
@@ -21101,23 +21103,25 @@ function draw_settings_ai()
   if dark_button("兼容接口", 112) then select_ai_semantic_provider("custom") end
   ImGui.TextDisabled(ctx, "当前选择：" .. ai_semantic_provider_label(state.ai_provider))
 
+  ImGui.Text(ctx, "API 地址")
   ImGui.SetNextItemWidth(ctx, -1)
   local changed
   local api_url
   changed, api_url = ImGui.InputText(
     ctx,
-    "API 地址",
+    "##ai_api_url",
     state.ai_api_url or ""
   )
   if changed then
     AppState.apply({ ai_api_url = api_url, config_dirty = true })
   end
 
+  ImGui.Text(ctx, "模型")
   ImGui.SetNextItemWidth(ctx, -1)
   local model
   changed, model = ImGui.InputText(
     ctx,
-    "模型",
+    "##ai_model",
     state.ai_model or ""
   )
   if changed then
@@ -21126,13 +21130,14 @@ function draw_settings_ai()
 
   ImGui.TextDisabled(ctx, "常用模型")
   if state.ai_provider == "deepseek" then
-    if dark_button("deepseek-chat", 142) then
-      AppState.apply({ ai_model = "deepseek-chat", config_dirty = true })
+    if dark_button("deepseek-flash", 142) then
+      AppState.apply({ ai_model = "deepseek-flash", config_dirty = true })
     end
     ImGui.SameLine(ctx)
-    if dark_button("deepseek-reasoner", 168) then
-      AppState.apply({ ai_model = "deepseek-reasoner", config_dirty = true })
+    if dark_button("deepseek-v4-pro", 168) then
+      AppState.apply({ ai_model = "deepseek-v4-pro", config_dirty = true })
     end
+    ImGui.TextDisabled(ctx, "DeepSeek 官方 API 模型 ID；Flash 更快，V4 Pro 能力更强。")
   elseif state.ai_provider == "openai" then
     if dark_button("gpt-4.1-mini", 132) then
       AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true })
@@ -21151,13 +21156,14 @@ function draw_settings_ai()
     "密钥使用 Windows DPAPI 按当前用户加密并单独保存，不写入 config.tsv、备份或日志。"
   )
 
+  ImGui.Text(ctx, "新 API Key")
   ImGui.SetNextItemWidth(ctx, -1)
   local password_flags = ImGui.InputTextFlags_Password
     | ImGui.InputTextFlags_AutoSelectAll
   local api_key_input
   changed, api_key_input = ImGui.InputText(
     ctx,
-    "新 API Key",
+    "##ai_api_key",
     state.ai_api_key_input or "",
     password_flags
   )
@@ -21188,6 +21194,13 @@ function draw_settings_ai()
     state.ai_api_key_saved and COLOR.success or COLOR.warning,
     state.ai_api_key_saved and "● API Key 已保存" or "○ 尚未保存 API Key"
   )
+  if trim(state.ai_api_key_status or "") ~= "" then
+    ImGui.TextColored(
+      ctx,
+      state.ai_api_key_status_error and COLOR.error or COLOR.success,
+      state.ai_api_key_status
+    )
+  end
 
   local endpoint_valid, endpoint_reason = ai_semantic_validate_endpoint(state.ai_api_url)
   if not endpoint_valid then ImGui.TextColored(ctx, COLOR.error, endpoint_reason) end
@@ -24844,6 +24857,7 @@ if not state.persistence_read_only then
 end
 load_or_migrate_project_url()
 load_config()
+ai_semantic_migrate_legacy_settings()
 state.next_watch = reaper.time_precise() + state.watch_interval
 load_or_migrate_libraries()
 apply_unified_interface(false, false)

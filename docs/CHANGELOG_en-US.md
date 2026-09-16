@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.2
+
+### AI settings and DeepSeek model update
+
+- Updates the DeepSeek presets to the current API model IDs: `deepseek-flash` by default, with a `deepseek-v4-pro` shortcut.
+- Automatically migrates saved `deepseek-chat` / `deepseek-reasoner` settings to the new models while preserving custom model names.
+- Moves API endpoint, model, and API-key labels above their full-width inputs so the right edge and scrollbar no longer clip them.
+- Shows the encrypted-key save result or exact error directly below the buttons and verifies that the DPAPI secret file was actually created.
+
 ## 0.9.0 Beta 7.1
 
 ### Unified search-field interaction

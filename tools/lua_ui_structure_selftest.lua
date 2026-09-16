@@ -176,6 +176,31 @@ assert(
     and source:find('"搜索框与 AI 按钮"', 1, true),
   "AI usage instructions must live in Settings instead of a search popup"
 )
+local ai_settings = function_region(
+  "function draw_settings_ai()",
+  "function color_edit_flags()"
+)
+assert(
+  ai_settings:find('ImGui.Text(ctx, "API 地址")', 1, true)
+    and ai_settings:find('"##ai_api_url"', 1, true)
+    and ai_settings:find('ImGui.Text(ctx, "模型")', 1, true)
+    and ai_settings:find('"##ai_model"', 1, true)
+    and ai_settings:find('ImGui.Text(ctx, "新 API Key")', 1, true)
+    and ai_settings:find('"##ai_api_key"', 1, true),
+  "AI settings labels must render above full-width fields without right-edge clipping"
+)
+assert(
+  ai_settings:find('"deepseek-flash"', 1, true)
+    and ai_settings:find('"deepseek-v4-pro"', 1, true)
+    and not ai_settings:find('"deepseek-chat"', 1, true)
+    and not ai_settings:find('"deepseek-reasoner"', 1, true),
+  "AI settings must expose the current DeepSeek API model IDs"
+)
+assert(
+  ai_settings:find("state.ai_api_key_status", 1, true)
+    and ai_settings:find("state.ai_api_key_status_error", 1, true),
+  "API key save results must be visible inline in AI settings"
+)
 local search_matcher = function_region(
   "function matches_search(asset)",
   "function asset_in_view(asset)"

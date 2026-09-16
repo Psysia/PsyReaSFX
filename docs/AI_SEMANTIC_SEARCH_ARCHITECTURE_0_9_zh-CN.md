@@ -2,7 +2,7 @@
 
 更新日期：2026-09-16
 
-状态：0.9.0 Beta 7.1 已发布统一搜索框交互
+状态：0.9.0 Beta 7.2 已发布 DeepSeek 模型与设置反馈修复
 
 ## 定位
 
@@ -19,7 +19,7 @@ AI 语义搜索是“以文字描述找声音”的独立工作流，不属于�
 
 ## 支持的接口
 
-- DeepSeek：`https://api.deepseek.com/chat/completions`，默认 `deepseek-chat`。
+- DeepSeek：`https://api.deepseek.com/chat/completions`，默认 `deepseek-flash`，可选 `deepseek-v4-pro`；旧 `deepseek-chat` / `deepseek-reasoner` 配置自动迁移。
 - OpenAI Chat Completions。
 - 自定义 OpenAI-compatible Chat Completions 地址和模型。
 - 远程服务强制 HTTPS；仅环回地址允许 HTTP，便于连接本机模型服务。

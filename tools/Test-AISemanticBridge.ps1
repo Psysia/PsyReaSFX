@@ -80,7 +80,7 @@ try {
         $httpStatusPath = Join-Path $work "http-status.json"
         [IO.File]::WriteAllText(
             $bodyPath,
-            '{"model":"deepseek-chat","messages":[{"role":"user","content":"test"}]}',
+            '{"model":"deepseek-flash","messages":[{"role":"user","content":"test"}]}',
             $utf8
         )
         [IO.File]::WriteAllText(
@@ -137,7 +137,7 @@ try {
             $receivedBody = -join $buffer[0..([Math]::Max(0, $read - 1))]
             if ($requestLine -notmatch '^POST /chat/completions HTTP/') { throw "Unexpected HTTP request line." }
             if ($headers['Authorization'] -ne "Bearer $expected") { throw "AI bridge Authorization header was not restored from DPAPI." }
-            if ($receivedBody -notmatch 'deepseek-chat') { throw "AI bridge request body was not forwarded." }
+            if ($receivedBody -notmatch 'deepseek-flash') { throw "AI bridge request body was not forwarded." }
             $responseBody = '{"choices":[{"message":{"content":"{\"ok\":true}"}}]}'
             $responseBytes = $utf8.GetBytes($responseBody)
             $responseHeader = "HTTP/1.1 200 OK`r`nContent-Type: application/json`r`nContent-Length: $($responseBytes.Length)`r`nConnection: close`r`n`r`n"
