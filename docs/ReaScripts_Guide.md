@@ -379,7 +379,7 @@ This is a relatively destructive Take-cleanup workflow, but the entire operation
 
 ## 10. Cycle Selected Folders Unified Compact State
 
-**Current version: 1.2**
+**Current version: 1.3**
 
 File:
 
@@ -389,38 +389,42 @@ psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折�
 
 ### Adaptive behavior
 
-The script automatically chooses between a two-state and four-state workflow from the actual folder structure under the selected outer folder parents.
+The script automatically chooses between a two-state workflow for flat folders and a four-state workflow for nested folder structures.
 
 #### Flat folders: two states
 
-If none of the selected outer folders contains another folder parent, the script uses only:
+If none of the selected outer folders contains another folder parent:
 
 ```text
 Fully Expanded ↔ Fully Collapsed
 ```
 
-This is intended for ordinary one-level folders whose children are only normal tracks. The intermediate Compact state is skipped.
+#### Nested folders: four visible states
 
-When several flat folders are selected together, they remain synchronized. If they start in mixed states, one press fully collapses the whole group; when all are fully collapsed, the next press fully expands them.
-
-#### Nested folders: four states
-
-If **any** selected outer folder contains a nested folder parent, the whole selected group uses:
+If any selected outer folder contains a nested folder parent:
 
 ```text
-Normal Expanded → Compact → Fully Collapsed → Deep Expanded → Normal Expanded
+Deep Expanded
+→ Child Folders Collapsed
+→ Compact
+→ Fully Collapsed
+→ Deep Expanded
 ```
 
-- **Normal Expanded**: selected folder parents are open; unselected nested folders retain their own layout.
-- **Compact**: selected folder parents use REAPER's compact folder state.
-- **Fully Collapsed**: selected folder parents are fully collapsed.
-- **Deep Expanded**: every nested folder inside the selected outer folders is forced open so all track levels are visible.
+- **Deep Expanded**: outer folders and every nested folder are fully open.
+- **Child Folders Collapsed**: the selected outer folders remain open, but every nested folder is fully collapsed, hiding the tracks inside those child folders.
+- **Compact**: the whole folder hierarchy uses REAPER's compact state.
+- **Fully Collapsed**: the selected outer folders and nested folders are fully collapsed.
 
-Before Deep Expanded, nested-folder states are saved. Returning to Normal Expanded restores unselected nested folders while keeping selected folder parents open.
+This makes all four stages visually distinct. The previous Normal Expanded / Deep Expanded overlap has been removed.
+
+### Multiple selected folders
+
+If any selected outer folder contains nesting, the whole selected group uses the four-state workflow. If all selected outer folders are flat, the whole group uses the two-state workflow.
 
 ### Suggested use
 
-Assign the script to one keyboard shortcut. The same shortcut behaves like a simple open/close toggle for flat folders and automatically exposes the full four-state cycle for nested folder structures.
+Assign the script to one shortcut. Flat folders behave as a simple open/close toggle; nested folders automatically expose the four-stage hierarchy view.
 
 # Suggested Shortcut Workflow
 
