@@ -346,5 +346,12 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
 - 打开当前工程引用的全部子工程，并递归处理嵌套子工程。
 - 避免重复打开已有工程标签，完成后返回原工程。]]></changelog><source main="main" file="psy_Open All Subprojects_打开全部子工程.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Open%20All%20Subprojects_%E6%89%93%E5%BC%80%E5%85%A8%E9%83%A8%E5%AD%90%E5%B7%A5%E7%A8%8B.lua</source></version>
     </reapack>
+    <reapack name="psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua" type="script" desc="Cycle Selected Folders Unified Compact State / 统一轮换选中文件夹折叠状态">
+      <metadata><description><![CDATA[Cycle all selected folder tracks through expanded, compact and fully collapsed states while keeping nested selected folders synchronized. / 让所有选中的文件夹轨统一轮换完全展开、小折叠和完全折叠，并同步处理嵌套文件夹。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-18T03:05:00Z"><changelog><![CDATA[- Initial ReaPack publication.
+- Cycles selected folder tracks as one unified group.
+- Applies nested folders from inner to outer so hidden child states stay synchronized.
+- 首次发布到 ReaPack；选中文件夹统一轮换折叠状态，并同步处理嵌套文件夹。]]></changelog><source main="main" file="psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Cycle%20Selected%20Folders%20Unified%20Compact%20State_%E7%BB%9F%E4%B8%80%E8%BD%AE%E6%8D%A2%E9%80%89%E4%B8%AD%E6%96%87%E4%BB%B6%E5%A4%B9%E6%8A%98%E5%8F%A0%E7%8A%B6%E6%80%81.lua</source></version>
+    </reapack>
   </category>
 </index>
