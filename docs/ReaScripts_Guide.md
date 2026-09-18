@@ -285,7 +285,7 @@ If the script reports that it cannot find an action, verify that the correspondi
 
 ## 7. Create Folder from Selected Tracks with Pro-L 2
 
-Current version: **1.0**
+Current version: **1.1**
 
 File:
 
@@ -295,23 +295,33 @@ psy_Create Folder from Selected Tracks with Pro-L 2_从选中轨道创建文件�
 
 ### What it does
 
-After selecting a group of tracks, the script:
+Creates a new Folder Bus above the selected material and loads Pro-L 2 on it.
 
-1. creates a new parent track above the first selected track;
-2. wraps the selected tracks inside that folder;
-3. names the parent track `Folder Bus`;
-4. loads `Pro-L 2` on the parent track;
-5. selects the newly created parent track.
+v1.1 supports both ordinary tracks and existing folders:
+
+1. selected ordinary sibling tracks can be wrapped as before;
+2. selecting an existing folder parent automatically includes its entire subtree;
+3. selecting several adjacent sibling folder parents creates one new parent above all of them;
+4. the internal folder structure and existing folder-closing depths are preserved;
+5. the new parent is selected when the operation finishes.
+
+### Selection rules
+
+The effective selected roots must belong to the same immediate parent and form one continuous block after existing folder subtrees are expanded.
+
+You do **not** need to select every child track inside an existing folder. Selecting the folder-parent track is enough.
+
+If the selection crosses different parent levels or leaves unrelated tracks in a gap, the script stops instead of silently wrapping those tracks.
 
 ### Requirement
 
-REAPER's FX Browser must be able to resolve the plugin using:
+REAPER's FX Browser must be able to resolve:
 
 ```text
 Pro-L 2
 ```
 
-If your installed plugin uses a different display name, edit the line near the top of the script:
+If the plugin uses a different display name, change:
 
 ```lua
 local fx_name = "Pro-L 2"
@@ -319,7 +329,7 @@ local fx_name = "Pro-L 2"
 
 ### Typical use
 
-Quickly package layered game-audio tracks into a bus and insert a limiter for peak control.
+Select several already-built sound-design folders and press one shortcut to create a higher-level bus around them while keeping every original folder intact.
 
 ---
 
