@@ -376,6 +376,52 @@ This is a relatively destructive Take-cleanup workflow, but the entire operation
 
 ---
 
+
+## 10. Cycle Selected Folders Unified Compact State
+
+**Current version: 1.2**
+
+File:
+
+```text
+psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua
+```
+
+### Adaptive behavior
+
+The script automatically chooses between a two-state and four-state workflow from the actual folder structure under the selected outer folder parents.
+
+#### Flat folders: two states
+
+If none of the selected outer folders contains another folder parent, the script uses only:
+
+```text
+Fully Expanded ↔ Fully Collapsed
+```
+
+This is intended for ordinary one-level folders whose children are only normal tracks. The intermediate Compact state is skipped.
+
+When several flat folders are selected together, they remain synchronized. If they start in mixed states, one press fully collapses the whole group; when all are fully collapsed, the next press fully expands them.
+
+#### Nested folders: four states
+
+If **any** selected outer folder contains a nested folder parent, the whole selected group uses:
+
+```text
+Normal Expanded → Compact → Fully Collapsed → Deep Expanded → Normal Expanded
+```
+
+- **Normal Expanded**: selected folder parents are open; unselected nested folders retain their own layout.
+- **Compact**: selected folder parents use REAPER's compact folder state.
+- **Fully Collapsed**: selected folder parents are fully collapsed.
+- **Deep Expanded**: every nested folder inside the selected outer folders is forced open so all track levels are visible.
+
+Before Deep Expanded, nested-folder states are saved. Returning to Normal Expanded restores unselected nested folders while keeping selected folder parents open.
+
+### Suggested use
+
+Assign the script to one keyboard shortcut. The same shortcut behaves like a simple open/close toggle for flat folders and automatically exposes the full four-state cycle for nested folder structures.
+
 # Suggested Shortcut Workflow
 
 | Script | Suggested access |
@@ -438,42 +484,3 @@ Users who installed the scripts through ReaPack can update them through:
 Script version numbers and the ReaPack index are maintained together when features are updated.
 
 ---
-
-## Cycle Selected Folders Unified Compact State
-
-**Current version: 1.1**
-
-File:
-
-```text
-psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua
-```
-
-### What it does
-
-Cycles all selected folder-parent tracks as one synchronized group through four states:
-
-```text
-Normal Expanded → Compact → Fully Collapsed → Deep Expanded → Normal Expanded
-```
-
-- **Normal Expanded**: selected folder parents are open; unselected nested folders keep their own previous states.
-- **Compact**: all selected folder parents use REAPER's compact folder state.
-- **Fully Collapsed**: all selected folder parents use REAPER's fully collapsed state.
-- **Deep Expanded**: the selected outer folders and every nested folder inside them are forced open, so all contained track levels are visible.
-
-Ordinary selected tracks are ignored.
-
-### Nested folders
-
-The script treats nested selected folder parents as one synchronized group.
-
-When entering **Deep Expanded**, it stores the current state of nested folder parents before forcing the whole selected subtree open. On the next press, **Normal Expanded** restores the state of unselected nested folders while keeping every selected folder parent open.
-
-This gives Deep Expanded a distinct purpose without permanently destroying the internal folder layout.
-
-### Suggested use
-
-Assign the script to a keyboard shortcut or toolbar button and repeatedly press it to rotate through the four folder-display states.
-
-
