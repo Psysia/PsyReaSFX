@@ -68,7 +68,7 @@ You do **not** need to install PsyReaSFX in order to install the smaller utility
 | **Split Selected Items to New Tracks** | Moves selected items to newly created tracks while keeping their timeline positions and naming the new tracks from Take names. |
 | **Reverse Selected Items in Place** | Reverses selected items in place using a reversed Take workflow that can be undone in one step. |
 | **Create Folder from Selected Tracks with Pro-L 2** | Wraps selected tracks in a new parent folder and inserts Pro-L 2 on the new folder bus. |
-| **Cycle Selected Folders Unified Compact State** | Cycles selected folder parents through Normal Expanded, Compact, Fully Collapsed, and Deep Expanded; Deep Expanded opens every nested folder while Normal Expanded restores the internal layout. |
+| **Cycle Selected Folders Unified Compact State** | Adaptive cycle: flat folders toggle Fully Expanded / Fully Collapsed; nested structures automatically use Normal Expanded / Compact / Fully Collapsed / Deep Expanded. |
 
 ### Display workflow
 
