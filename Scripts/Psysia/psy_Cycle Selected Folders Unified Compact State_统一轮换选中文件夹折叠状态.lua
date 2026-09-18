@@ -1,11 +1,10 @@
 -- @description Cycle Selected Folders Unified Compact State / 统一轮换选中文件夹折叠状态
--- @version 1.3
+-- @version 1.4
 -- @author Psysia
 -- @changelog
---   + Make nested-folder mode four visually distinct states.
---   + Add a Child Folders Collapsed state that hides tracks inside nested folders.
---   + Keep flat folders on a simple Fully Expanded <-> Fully Collapsed toggle.
---   + Remove the visually duplicated Normal Expanded / Deep Expanded behavior.
+--   + Keep the outer selected folders fully open during the child-folder compact stage.
+--   + Make only nested child folders use I_FOLDERCOMPACT=1 in the third stage.
+--   + Preserve the four distinct nested states and the flat two-state toggle.
 
 local PROJECT = 0
 
@@ -200,14 +199,14 @@ local function run_nested_mode(
     local outer_all_full =
         all_in_state(outermost, 2)
 
-    local outer_all_compact =
-        all_in_state(outermost, 1)
-
     local outer_all_open =
         all_in_state(outermost, 0)
 
     local descendants_all_collapsed =
         all_in_state(descendants, 2)
+
+    local descendants_all_compact =
+        all_in_state(descendants, 1)
 
     local action
 
@@ -219,8 +218,8 @@ local function run_nested_mode(
     -- 2. Child Folders Collapsed
     --    outermost = 0, descendants = 2
     --
-    -- 3. Compact
-    --    outermost = 1, descendants = 1
+    -- 3. Child Folders Compact
+    --    outermost = 0, descendants = 1
     --
     -- 4. Fully Collapsed
     --    outermost = 2, descendants = 2
@@ -229,7 +228,8 @@ local function run_nested_mode(
     if outer_all_full then
         action = "deep"
 
-    elseif outer_all_compact then
+    elseif outer_all_open
+       and descendants_all_compact then
         action = "full"
 
     elseif outer_all_open
@@ -253,8 +253,11 @@ local function run_nested_mode(
         apply_state(outermost, 0)
 
     elseif action == "compact" then
+        -- Only compact the nested child folders. The selected outer
+        -- folders stay fully open so unrelated outer-level tracks
+        -- keep their normal height.
         apply_state(descendants, 1)
-        apply_state(outermost, 1)
+        apply_state(outermost, 0)
 
     else
         apply_state(descendants, 2)
