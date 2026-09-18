@@ -94,7 +94,7 @@ The script modifies Regions and the Region Render Matrix. Verify the selection b
 
 ## 2. Sort Tracks by Earliest Item Position
 
-Current version: **1.3**
+Current version: **1.4**
 
 File:
 
@@ -102,38 +102,38 @@ File:
 psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua
 ```
 
-### What it does
+### Folder-aware sorting
 
-Sorts relevant tracks from top to bottom according to the earliest item position on the timeline.
+v1.4 treats REAPER's track hierarchy as a tree instead of moving individual folder-parent tracks.
 
-### Two operating modes
+The script finds the nearest common parent level for the current targets and sorts complete sibling units at that level:
 
-#### A. Media items are selected
+- ordinary tracks move as single-track units;
+- folder parents move together with their complete descendant subtrees;
+- nested folders remain intact;
+- unselected sibling tracks/folders keep their original slots.
 
-Selected items always take priority over selected tracks.
+### Selected-item mode
 
-The script will:
+If any media items are selected, item mode takes priority.
 
-1. detect the tracks containing the selected items;
-2. when multiple selected items are on the same track, use the earliest selected item on that track;
-3. sort those tracks by that position.
+The source tracks of the selected items determine the hierarchy level. Each resulting track/folder unit is sorted by the earliest **selected** item inside that unit.
 
-You do not need to manually select the tracks first.
+Examples:
 
-#### B. No items are selected, but tracks are selected
+- selected items on two ordinary sibling tracks → sort those tracks;
+- selected items inside two sibling folders → sort the two complete folders;
+- selected items in different branches → sort the corresponding units at their nearest common parent level.
 
-The script scans all items on each selected track and uses the earliest item on that track as the sorting key.
+### Selected-track mode
 
-### Additional behavior
+If no media items are selected, selected tracks define the targets.
 
-- Equal positions preserve the original relative track order.
-- Non-contiguous selected tracks preserve their original destination slots where possible.
-- Folder-ending relationships are preserved during reordering.
-- Original track selection is restored after execution.
+Folder parents and their descendants are resolved into complete hierarchy units, and each unit is sorted by the earliest media item anywhere in its subtree.
 
-### Typical use
+### Safety behavior
 
-After arranging multiple skill, animation, UI, or layered SFX elements vertically, select the relevant media items and run the script to make the track order follow the sound-entry order.
+A selected folder parent is never moved by itself. Its complete subtree is selected and moved as one block, preventing the folder from being dismantled by the sort operation.
 
 ---
 
