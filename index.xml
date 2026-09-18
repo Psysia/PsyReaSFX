@@ -355,7 +355,7 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
       <version name="1.0" author="Psysia" time="2026-09-18T03:05:00Z"><changelog><![CDATA[- Initial ReaPack publication.
 - Cycles selected folder tracks as one unified group.
 - Applies nested folders from inner to outer so hidden child states stay synchronized.
-- 首次发布到 ReaPack；选中文件夹统一轮换折叠状态，并同步处理嵌套文件夹。]]></changelog><source main="main" file="psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Cycle%20Selected%20Folders%20Unified%20Compact%20State_%E7%BB%9F%E4%B8%80%E8%BD%AE%E6%8D%A2%E9%80%89%E4%B8%AD%E6%96%87%E4%BB%B6%E5%A4%B9%E6%8A%98%E5%8F%A0%E7%8A%B6%E6%80%81.lua</source></version>
+- 首次发布到 ReaPack；选中文件夹统一轮换折叠状态，并同步处理嵌套文件夹。]]></changelog><source main="main" file="psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/c2aaefb1ae11cb50dbad37b5d545c7c0384897f4/Scripts/Psysia/psy_Cycle%20Selected%20Folders%20Unified%20Compact%20State_%E7%BB%9F%E4%B8%80%E8%BD%AE%E6%8D%A2%E9%80%89%E4%B8%AD%E6%96%87%E4%BB%B6%E5%A4%B9%E6%8A%98%E5%8F%A0%E7%8A%B6%E6%80%81.lua</source></version>
     </reapack>
   </category>
 </index>
