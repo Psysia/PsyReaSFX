@@ -419,6 +419,50 @@ File:
 psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua
 ```
 
+## 11. Rename Selected Tracks from Parent Folder Name
+
+Current version: **1.0**
+
+File:
+
+```text
+psy_Rename Selected Tracks from Parent Folder Name_根据父级文件夹名重命名选中轨道.lua
+```
+
+### What it does
+
+Renames selected tracks from the name of their **immediate parent folder**:
+
+```text
+ParentFolder_01
+ParentFolder_02
+ParentFolder_03
+...
+```
+
+Selected tracks are numbered from top to bottom. If the selection spans several different parent folders, each parent group starts again from `_01`.
+
+### Nested folders
+
+Nested structures are handled by always using the nearest parent folder. The script does not walk upward to a higher ancestor.
+
+For example:
+
+```text
+Weapons
+└─ Impacts
+   ├─ selected track → Impacts_01
+   └─ selected track → Impacts_02
+```
+
+Tracks without a parent folder, or whose immediate parent has no name, are skipped.
+
+### Suggested use
+
+Select the child tracks you want to normalize after creating or organizing folders, then run the script once to inherit the parent-folder naming convention.
+
+---
+
 # Suggested Shortcut Workflow
 
 | Script | Suggested access |
