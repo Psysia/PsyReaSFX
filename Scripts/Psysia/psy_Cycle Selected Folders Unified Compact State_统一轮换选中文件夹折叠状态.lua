@@ -1,14 +1,13 @@
 -- @description Cycle Selected Folders Unified Compact State / 统一轮换选中文件夹折叠状态
--- @version 1.2
+-- @version 1.3
 -- @author Psysia
 -- @changelog
---   + Use a two-state cycle for flat folders: Fully Expanded <-> Fully Collapsed.
---   + Automatically use the four-state cycle only when nested folders exist.
---   + If any selected outer folder contains a nested folder, the whole selection uses four-state mode.
---   + Preserve Deep Expanded snapshot/restore behavior for nested structures.
+--   + Make nested-folder mode four visually distinct states.
+--   + Add a Child Folders Collapsed state that hides tracks inside nested folders.
+--   + Keep flat folders on a simple Fully Expanded <-> Fully Collapsed toggle.
+--   + Remove the visually duplicated Normal Expanded / Deep Expanded behavior.
 
 local PROJECT = 0
-local EXT_SECTION = "PsysiaCycleSelectedFoldersUnifiedCompactState"
 
 local function valid_track(track)
     return track ~= nil
@@ -32,20 +31,6 @@ local function compact_state(track)
     end
 
     return state
-end
-
-local function track_guid(track)
-    if reaper.GetTrackGUID then
-        return reaper.GetTrackGUID(track)
-    end
-
-    local _, guid = reaper.GetSetMediaTrackInfo_String(
-        track,
-        "GUID",
-        "",
-        false
-    )
-    return guid or ""
 end
 
 local function folder_nesting_depth(track)
@@ -86,57 +71,6 @@ local function is_descendant_of_any(track, outermost_map)
     return false
 end
 
-local function get_project_state(key)
-    local retval, value = reaper.GetProjExtState(
-        PROJECT,
-        EXT_SECTION,
-        key
-    )
-
-    if retval == 1 then
-        return value or ""
-    end
-
-    return ""
-end
-
-local function set_project_state(key, value)
-    reaper.SetProjExtState(
-        PROJECT,
-        EXT_SECTION,
-        key,
-        value or ""
-    )
-end
-
-local function encode_snapshot(entries)
-    local lines = {}
-
-    for _, entry in ipairs(entries) do
-        if entry.guid ~= "" then
-            lines[#lines + 1] =
-                entry.guid .. "\t" .. tostring(entry.state)
-        end
-    end
-
-    return table.concat(lines, "\n")
-end
-
-local function decode_snapshot(text)
-    local result = {}
-
-    for line in string.gmatch(text or "", "[^\r\n]+") do
-        local guid, state =
-            string.match(line, "^(.-)\t([012])$")
-
-        if guid and state then
-            result[guid] = tonumber(state)
-        end
-    end
-
-    return result
-end
-
 local function collect_selected_folders()
     local selected_count = reaper.CountSelectedTracks(PROJECT)
     local folders = {}
@@ -148,7 +82,6 @@ local function collect_selected_folders()
         if is_folder_parent(track) then
             local entry = {
                 track = track,
-                guid = track_guid(track),
                 depth = folder_nesting_depth(track),
                 track_number = math.floor(
                     reaper.GetMediaTrackInfo_Value(
@@ -187,59 +120,24 @@ local function collect_outermost(folders, selected_map)
     return outermost, outermost_map
 end
 
-local function selection_signature(outermost)
-    local parts = {}
-
-    for _, entry in ipairs(outermost) do
-        parts[#parts + 1] = entry.guid
-    end
-
-    return table.concat(parts, "|")
-end
-
-local function collect_descendant_folder_snapshot(
-    outermost_map
-)
-    local snapshot = {}
+local function collect_descendant_folders(outermost_map)
+    local descendants = {}
     local track_count = reaper.CountTracks(PROJECT)
 
     for i = 0, track_count - 1 do
         local track = reaper.GetTrack(PROJECT, i)
 
         if is_folder_parent(track)
-        and is_descendant_of_any(
-            track,
-            outermost_map
-        ) then
-            snapshot[#snapshot + 1] = {
+        and is_descendant_of_any(track, outermost_map) then
+            descendants[#descendants + 1] = {
                 track = track,
-                guid = track_guid(track),
-                state = compact_state(track),
                 depth = folder_nesting_depth(track),
                 track_number = i + 1,
             }
         end
     end
 
-    return snapshot
-end
-
-local function build_guid_map()
-    local map = {}
-    local track_count = reaper.CountTracks(PROJECT)
-
-    for i = 0, track_count - 1 do
-        local track = reaper.GetTrack(PROJECT, i)
-
-        if is_folder_parent(track) then
-            local guid = track_guid(track)
-            if guid ~= "" then
-                map[guid] = track
-            end
-        end
-    end
-
-    return map
+    return descendants
 end
 
 local function sort_inner_to_outer(entries)
@@ -251,10 +149,10 @@ local function sort_inner_to_outer(entries)
     end)
 end
 
-local function apply_selected_state(folders, state)
+local function apply_state(entries, state)
     local ordered = {}
 
-    for _, entry in ipairs(folders) do
+    for _, entry in ipairs(entries) do
         ordered[#ordered + 1] = entry
     end
 
@@ -271,208 +169,96 @@ local function apply_selected_state(folders, state)
     end
 end
 
-local function enter_deep_expanded(
-    folders,
-    outermost_map,
-    signature
-)
-    local descendants =
-        collect_descendant_folder_snapshot(
-            outermost_map
-        )
+local function all_in_state(entries, state)
+    if #entries == 0 then
+        return false
+    end
 
-    set_project_state(
-        "snapshot",
-        encode_snapshot(descendants)
-    )
-    set_project_state(
-        "selection_signature",
-        signature
-    )
-    set_project_state(
-        "stage",
-        "deep"
-    )
-
-    -- Open descendant folders first, then the selected folder parents.
-    sort_inner_to_outer(descendants)
-
-    for _, entry in ipairs(descendants) do
-        if valid_track(entry.track) then
-            reaper.SetMediaTrackInfo_Value(
-                entry.track,
-                "I_FOLDERCOMPACT",
-                0
-            )
+    for _, entry in ipairs(entries) do
+        if compact_state(entry.track) ~= state then
+            return false
         end
     end
 
-    apply_selected_state(folders, 0)
+    return true
 end
 
-local function enter_normal_expanded(
-    folders,
-    selected_map,
-    outermost_map,
-    signature
-)
-    local saved =
-        decode_snapshot(
-            get_project_state("snapshot")
-        )
+local function run_flat_mode(folders, outermost)
+    local all_fully_collapsed =
+        all_in_state(outermost, 2)
 
-    local guid_map = build_guid_map()
-
-    -- Selected folder parents stay expanded. Unselected nested folders
-    -- return to the state they had before Deep Expanded.
-    for guid, state in pairs(saved) do
-        local track = guid_map[guid]
-
-        if valid_track(track)
-        and not selected_map[track]
-        and is_descendant_of_any(
-            track,
-            outermost_map
-        ) then
-            reaper.SetMediaTrackInfo_Value(
-                track,
-                "I_FOLDERCOMPACT",
-                state
-            )
-        end
-    end
-
-    apply_selected_state(folders, 0)
-
-    set_project_state(
-        "selection_signature",
-        signature
-    )
-    set_project_state(
-        "stage",
-        "normal"
-    )
-    set_project_state("snapshot", "")
-end
-
-local function run_two_state_mode(
-    folders,
-    outermost,
-    signature
-)
-    local all_fully_collapsed = true
-
-    for _, entry in ipairs(outermost) do
-        if compact_state(entry.track) ~= 2 then
-            all_fully_collapsed = false
-            break
-        end
-    end
-
-    local target_state =
+    local target =
         all_fully_collapsed and 0 or 2
 
-    apply_selected_state(
-        folders,
-        target_state
-    )
-
-    set_project_state(
-        "selection_signature",
-        signature
-    )
-    set_project_state(
-        "stage",
-        target_state == 0
-            and "flat_expanded"
-            or "flat_collapsed"
-    )
-    set_project_state("snapshot", "")
+    apply_state(folders, target)
 end
 
-local function run_four_state_mode(
-    folders,
-    selected_map,
+local function run_nested_mode(
     outermost,
-    outermost_map,
-    signature
+    descendants
 )
-    local stored_signature =
-        get_project_state(
-            "selection_signature"
-        )
+    local outer_all_full =
+        all_in_state(outermost, 2)
 
-    local stored_stage =
-        get_project_state("stage")
+    local outer_all_compact =
+        all_in_state(outermost, 1)
 
-    local reference_state = 0
+    local outer_all_open =
+        all_in_state(outermost, 0)
 
-    for _, entry in ipairs(outermost) do
-        reference_state =
-            math.max(
-                reference_state,
-                compact_state(entry.track)
-            )
-    end
-
-    local same_selection =
-        signature ~= ""
-        and signature == stored_signature
+    local descendants_all_collapsed =
+        all_in_state(descendants, 2)
 
     local action
 
-    -- Four-state cycle:
-    -- Normal Expanded -> Compact -> Fully Collapsed
-    -- -> Deep Expanded -> Normal Expanded
-    if reference_state >= 2 then
+    -- Four visible states:
+    --
+    -- 1. Deep Expanded
+    --    outermost = 0, descendants = 0
+    --
+    -- 2. Child Folders Collapsed
+    --    outermost = 0, descendants = 2
+    --
+    -- 3. Compact
+    --    outermost = 1, descendants = 1
+    --
+    -- 4. Fully Collapsed
+    --    outermost = 2, descendants = 2
+    --
+    -- Then back to Deep Expanded.
+    if outer_all_full then
         action = "deep"
-    elseif reference_state == 1 then
+
+    elseif outer_all_compact then
         action = "full"
-    elseif same_selection
-       and stored_stage == "deep" then
-        action = "normal"
-    else
+
+    elseif outer_all_open
+       and descendants_all_collapsed then
         action = "compact"
+
+    else
+        -- Deep Expanded or any mixed/open state is normalized
+        -- to Child Folders Collapsed on the next press.
+        action = "children_collapsed"
     end
 
     if action == "deep" then
-        enter_deep_expanded(
-            folders,
-            outermost_map,
-            signature
-        )
+        apply_state(descendants, 0)
+        apply_state(outermost, 0)
 
-    elseif action == "normal" then
-        enter_normal_expanded(
-            folders,
-            selected_map,
-            outermost_map,
-            signature
-        )
+    elseif action == "children_collapsed" then
+        -- Keep the selected outer folders open, but hide the
+        -- tracks inside every nested folder.
+        apply_state(descendants, 2)
+        apply_state(outermost, 0)
 
     elseif action == "compact" then
-        apply_selected_state(folders, 1)
-        set_project_state(
-            "selection_signature",
-            signature
-        )
-        set_project_state(
-            "stage",
-            "compact"
-        )
-        set_project_state("snapshot", "")
+        apply_state(descendants, 1)
+        apply_state(outermost, 1)
 
     else
-        apply_selected_state(folders, 2)
-        set_project_state(
-            "selection_signature",
-            signature
-        )
-        set_project_state(
-            "stage",
-            "full"
-        )
-        set_project_state("snapshot", "")
+        apply_state(descendants, 2)
+        apply_state(outermost, 2)
     end
 end
 
@@ -490,15 +276,8 @@ local function main()
             selected_map
         )
 
-    local signature =
-        selection_signature(outermost)
-
-    -- A descendant folder parent means the selected outer folder structure
-    -- is nested. If any selected outer folder contains one, the whole group
-    -- uses the four-state cycle. Otherwise the group uses a simple two-state
-    -- Fully Expanded <-> Fully Collapsed toggle.
     local descendants =
-        collect_descendant_folder_snapshot(
+        collect_descendant_folders(
             outermost_map
         )
 
@@ -510,18 +289,14 @@ local function main()
 
     local ok, err = xpcall(function()
         if has_nested_folders then
-            run_four_state_mode(
-                folders,
-                selected_map,
+            run_nested_mode(
                 outermost,
-                outermost_map,
-                signature
+                descendants
             )
         else
-            run_two_state_mode(
+            run_flat_mode(
                 folders,
-                outermost,
-                signature
+                outermost
             )
         end
     end, debug.traceback)
