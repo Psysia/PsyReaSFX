@@ -1,11 +1,11 @@
 -- @description Cycle Selected Folders Unified Compact State / 统一轮换选中文件夹折叠状态
--- @version 1.1
+-- @version 1.2
 -- @author Psysia
 -- @changelog
---   + Add a fourth Deep Expanded state that opens every nested folder.
---   + Restore unselected nested folders when returning to Normal Expanded.
---   + Keep selected nested folder parents synchronized as one group.
---   + Preserve the existing Compact and Fully Collapsed states.
+--   + Use a two-state cycle for flat folders: Fully Expanded <-> Fully Collapsed.
+--   + Automatically use the four-state cycle only when nested folders exist.
+--   + If any selected outer folder contains a nested folder, the whole selection uses four-state mode.
+--   + Preserve Deep Expanded snapshot/restore behavior for nested structures.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaCycleSelectedFoldersUnifiedCompactState"
@@ -355,23 +355,48 @@ local function enter_normal_expanded(
     set_project_state("snapshot", "")
 end
 
-local function main()
-    local folders, selected_map =
-        collect_selected_folders()
+local function run_two_state_mode(
+    folders,
+    outermost,
+    signature
+)
+    local all_fully_collapsed = true
 
-    if #folders == 0 then
-        return
+    for _, entry in ipairs(outermost) do
+        if compact_state(entry.track) ~= 2 then
+            all_fully_collapsed = false
+            break
+        end
     end
 
-    local outermost, outermost_map =
-        collect_outermost(
-            folders,
-            selected_map
-        )
+    local target_state =
+        all_fully_collapsed and 0 or 2
 
-    local signature =
-        selection_signature(outermost)
+    apply_selected_state(
+        folders,
+        target_state
+    )
 
+    set_project_state(
+        "selection_signature",
+        signature
+    )
+    set_project_state(
+        "stage",
+        target_state == 0
+            and "flat_expanded"
+            or "flat_collapsed"
+    )
+    set_project_state("snapshot", "")
+end
+
+local function run_four_state_mode(
+    folders,
+    selected_map,
+    outermost,
+    outermost_map,
+    signature
+)
     local stored_signature =
         get_project_state(
             "selection_signature"
@@ -410,48 +435,94 @@ local function main()
         action = "compact"
     end
 
+    if action == "deep" then
+        enter_deep_expanded(
+            folders,
+            outermost_map,
+            signature
+        )
+
+    elseif action == "normal" then
+        enter_normal_expanded(
+            folders,
+            selected_map,
+            outermost_map,
+            signature
+        )
+
+    elseif action == "compact" then
+        apply_selected_state(folders, 1)
+        set_project_state(
+            "selection_signature",
+            signature
+        )
+        set_project_state(
+            "stage",
+            "compact"
+        )
+        set_project_state("snapshot", "")
+
+    else
+        apply_selected_state(folders, 2)
+        set_project_state(
+            "selection_signature",
+            signature
+        )
+        set_project_state(
+            "stage",
+            "full"
+        )
+        set_project_state("snapshot", "")
+    end
+end
+
+local function main()
+    local folders, selected_map =
+        collect_selected_folders()
+
+    if #folders == 0 then
+        return
+    end
+
+    local outermost, outermost_map =
+        collect_outermost(
+            folders,
+            selected_map
+        )
+
+    local signature =
+        selection_signature(outermost)
+
+    -- A descendant folder parent means the selected outer folder structure
+    -- is nested. If any selected outer folder contains one, the whole group
+    -- uses the four-state cycle. Otherwise the group uses a simple two-state
+    -- Fully Expanded <-> Fully Collapsed toggle.
+    local descendants =
+        collect_descendant_folder_snapshot(
+            outermost_map
+        )
+
+    local has_nested_folders =
+        #descendants > 0
+
     reaper.Undo_BeginBlock2(PROJECT)
     reaper.PreventUIRefresh(1)
 
     local ok, err = xpcall(function()
-        if action == "deep" then
-            enter_deep_expanded(
-                folders,
-                outermost_map,
-                signature
-            )
-
-        elseif action == "normal" then
-            enter_normal_expanded(
+        if has_nested_folders then
+            run_four_state_mode(
                 folders,
                 selected_map,
+                outermost,
                 outermost_map,
                 signature
             )
-
-        elseif action == "compact" then
-            apply_selected_state(folders, 1)
-            set_project_state(
-                "selection_signature",
-                signature
-            )
-            set_project_state(
-                "stage",
-                "compact"
-            )
-            set_project_state("snapshot", "")
-
         else
-            apply_selected_state(folders, 2)
-            set_project_state(
-                "selection_signature",
+            run_two_state_mode(
+                folders,
+                outermost,
                 signature
             )
-            set_project_state(
-                "stage",
-                "full"
-            )
-            set_project_state("snapshot", "")
         end
     end, debug.traceback)
 
