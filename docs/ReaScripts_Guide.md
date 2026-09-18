@@ -441,7 +441,7 @@ Script version numbers and the ReaPack index are maintained together when featur
 
 ## Cycle Selected Folders Unified Compact State
 
-**Current version: 1.0**
+**Current version: 1.1**
 
 File:
 
@@ -451,22 +451,29 @@ psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折�
 
 ### What it does
 
-Cycles all selected folder-parent tracks as one synchronized group:
+Cycles all selected folder-parent tracks as one synchronized group through four states:
 
 ```text
-Expanded → Compact → Fully collapsed → Expanded
+Normal Expanded → Compact → Fully Collapsed → Deep Expanded → Normal Expanded
 ```
 
-Only folder-parent tracks are changed; ordinary selected tracks are ignored.
+- **Normal Expanded**: selected folder parents are open; unselected nested folders keep their own previous states.
+- **Compact**: all selected folder parents use REAPER's compact folder state.
+- **Fully Collapsed**: all selected folder parents use REAPER's fully collapsed state.
+- **Deep Expanded**: the selected outer folders and every nested folder inside them are forced open, so all contained track levels are visible.
+
+Ordinary selected tracks are ignored.
 
 ### Nested folders
 
-When selected folders are nested, the script uses only the outermost selected folders to decide the next state. This avoids hidden child folders with stale compact-state values causing the shortcut to skip a step.
+The script treats nested selected folder parents as one synchronized group.
 
-The target state is then written from the deepest selected folder outward. This means that if a parent folder hides its children, the child folders have already been synchronized and will reopen at the same level later.
+When entering **Deep Expanded**, it stores the current state of nested folder parents before forcing the whole selected subtree open. On the next press, **Normal Expanded** restores the state of unselected nested folders while keeping every selected folder parent open.
 
-If several outermost selected folders start in different states, the script advances from the most-collapsed state and uses that target for all selected folders, resynchronizing them in one press.
+This gives Deep Expanded a distinct purpose without permanently destroying the internal folder layout.
 
 ### Suggested use
 
-Assign the script to a keyboard shortcut or toolbar button and repeatedly press it to rotate a selected set of folder tracks through the three REAPER folder display states.
+Assign the script to a keyboard shortcut or toolbar button and repeatedly press it to rotate through the four folder-display states.
+
+
