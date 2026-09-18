@@ -63,7 +63,7 @@ You do **not** need to install PsyReaSFX in order to install the smaller utility
 
 | Tool | Description |
 |---|---|
-| **Sort Tracks by Earliest Item Position** | Sorts selected tracks, or tracks containing selected media items, by the earliest relevant item position. Selected items take priority when present. |
+| **Sort Tracks by Earliest Item Position** | Folder-aware sorting by earliest item position; complete folder subtrees move as units at the nearest common hierarchy level. |
 | **Remove Gaps Between Selected Items** | Moves selected items together so each item begins at the end of the previous one. |
 | **Split Selected Items to New Tracks** | Moves selected items to newly created tracks while keeping their timeline positions and naming the new tracks from Take names. |
 | **Reverse Selected Items in Place** | Reverses selected items in place using a reversed Take workflow that can be undone in one step. |
