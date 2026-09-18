@@ -436,3 +436,37 @@ Users who installed the scripts through ReaPack can update them through:
 `Extensions → ReaPack → Synchronize packages`
 
 Script version numbers and the ReaPack index are maintained together when features are updated.
+
+---
+
+## Cycle Selected Folders Unified Compact State
+
+**Current version: 1.0**
+
+File:
+
+```text
+psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua
+```
+
+### What it does
+
+Cycles all selected folder-parent tracks as one synchronized group:
+
+```text
+Expanded → Compact → Fully collapsed → Expanded
+```
+
+Only folder-parent tracks are changed; ordinary selected tracks are ignored.
+
+### Nested folders
+
+When selected folders are nested, the script uses only the outermost selected folders to decide the next state. This avoids hidden child folders with stale compact-state values causing the shortcut to skip a step.
+
+The target state is then written from the deepest selected folder outward. This means that if a parent folder hides its children, the child folders have already been synchronized and will reopen at the same level later.
+
+If several outermost selected folders start in different states, the script advances from the most-collapsed state and uses that target for all selected folders, resynchronizing them in one press.
+
+### Suggested use
+
+Assign the script to a keyboard shortcut or toolbar button and repeatedly press it to rotate a selected set of folder tracks through the three REAPER folder display states.
