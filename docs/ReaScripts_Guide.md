@@ -379,52 +379,35 @@ This is a relatively destructive Take-cleanup workflow, but the entire operation
 
 ## 10. Cycle Selected Folders Unified Compact State
 
-**Current version: 1.3**
+**Current version: 1.4**
+
+For nested folders the four visible states are:
+
+```text
+Deep Expanded
+→ Child Folders Collapsed
+→ Child Folders Compact
+→ Fully Collapsed
+→ Deep Expanded
+```
+
+The important v1.4 change is the third stage:
+
+- **Child Folders Compact** keeps the selected outer folders fully open.
+- Only nested child folders use REAPER's compact state.
+- Tracks that belong directly to the outer folder keep their normal height.
+
+Flat folders still use only:
+
+```text
+Fully Expanded ↔ Fully Collapsed
+```
 
 File:
 
 ```text
 psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua
 ```
-
-### Adaptive behavior
-
-The script automatically chooses between a two-state workflow for flat folders and a four-state workflow for nested folder structures.
-
-#### Flat folders: two states
-
-If none of the selected outer folders contains another folder parent:
-
-```text
-Fully Expanded ↔ Fully Collapsed
-```
-
-#### Nested folders: four visible states
-
-If any selected outer folder contains a nested folder parent:
-
-```text
-Deep Expanded
-→ Child Folders Collapsed
-→ Compact
-→ Fully Collapsed
-→ Deep Expanded
-```
-
-- **Deep Expanded**: outer folders and every nested folder are fully open.
-- **Child Folders Collapsed**: the selected outer folders remain open, but every nested folder is fully collapsed, hiding the tracks inside those child folders.
-- **Compact**: the whole folder hierarchy uses REAPER's compact state.
-- **Fully Collapsed**: the selected outer folders and nested folders are fully collapsed.
-
-This makes all four stages visually distinct. The previous Normal Expanded / Deep Expanded overlap has been removed.
-
-### Multiple selected folders
-
-If any selected outer folder contains nesting, the whole selected group uses the four-state workflow. If all selected outer folders are flat, the whole group uses the two-state workflow.
-
-### Suggested use
-
-Assign the script to one shortcut. Flat folders behave as a simple open/close toggle; nested folders automatically expose the four-stage hierarchy view.
 
 # Suggested Shortcut Workflow
 
