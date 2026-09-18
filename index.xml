@@ -377,5 +377,12 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
 - Applies nested folders from inner to outer so hidden child states stay synchronized.
 - 首次发布到 ReaPack；选中文件夹统一轮换折叠状态，并同步处理嵌套文件夹。]]></changelog><source main="main" file="psy_Cycle Selected Folders Unified Compact State_统一轮换选中文件夹折叠状态.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/c2aaefb1ae11cb50dbad37b5d545c7c0384897f4/Scripts/Psysia/psy_Cycle%20Selected%20Folders%20Unified%20Compact%20State_%E7%BB%9F%E4%B8%80%E8%BD%AE%E6%8D%A2%E9%80%89%E4%B8%AD%E6%96%87%E4%BB%B6%E5%A4%B9%E6%8A%98%E5%8F%A0%E7%8A%B6%E6%80%81.lua</source></version>
     </reapack>
+    <reapack name="psy_Rename Selected Tracks from Parent Folder Name_根据父级文件夹名重命名选中轨道.lua" type="script" desc="Rename Selected Tracks from Parent Folder Name / 根据父级文件夹名重命名选中轨道">
+      <metadata><description><![CDATA[Rename selected tracks using their immediate parent folder name plus _01, _02, _03... numbering. Each parent folder is numbered independently. / 根据最近一级父文件夹名为选中轨道添加 _01、_02、_03... 编号，不同父级分别编号。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-18T04:06:00Z"><changelog><![CDATA[- Initial ReaPack publication.
+- Use the immediate parent folder name for selected-track renaming.
+- Number selected sibling tracks from top to bottom, independently for each parent.
+- 首次发布；按最近一级父文件夹名给选中轨道从上到下编号，不同父级分别从 _01 开始。]]></changelog><source main="main" file="psy_Rename Selected Tracks from Parent Folder Name_根据父级文件夹名重命名选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Rename%20Selected%20Tracks%20from%20Parent%20Folder%20Name_%E6%A0%B9%E6%8D%AE%E7%88%B6%E7%BA%A7%E6%96%87%E4%BB%B6%E5%A4%B9%E5%90%8D%E9%87%8D%E5%91%BD%E5%90%8D%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
+    </reapack>
   </category>
 </index>
