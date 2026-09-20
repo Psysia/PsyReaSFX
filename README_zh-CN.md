@@ -54,7 +54,7 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 | 素材编辑 | 拆分选中素材到新轨道 | 保持时间位置，将选中素材移动到独立新轨道。 |
 | 素材编辑 | 原位反转选中素材 | 通过可一次撤销的 Take 流程反转选中素材。 |
 | 工程管理 | 打开全部子工程 | 递归打开当前工程引用的全部子工程。 |
-| 显示 | 切换 LUFS-M 与频谱图 | 在 LUFS-M 频谱峰值显示与频谱图之间切换。 |
+| 显示 | 切换 LUFS-M 与频谱图 | 在 LUFS-M 频谱峰值显示与频谱图之间切换。 |\n| 显示 | 视频素材文件名覆盖显示 | 在 Arrange View 的视频 Item 内显示隐藏扩展名后的文件名，并随 Item 尺寸自适应字号。 |
 
 详细使用方式、边界条件、依赖关系与快捷键建议见 [REAPER 工具手册](docs/REAPER_TOOLS_GUIDE_zh-CN.md)。
 
