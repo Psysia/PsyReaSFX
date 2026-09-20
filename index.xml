@@ -384,13 +384,18 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
 - Number selected sibling tracks from top to bottom, independently for each parent.
 - 首次发布；按最近一级父文件夹名给选中轨道从上到下编号，不同父级分别从 _01 开始。]]></changelog><source main="main" file="psy_Rename Selected Tracks from Parent Folder Name_根据父级文件夹名重命名选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Rename%20Selected%20Tracks%20from%20Parent%20Folder%20Name_%E6%A0%B9%E6%8D%AE%E7%88%B6%E7%BA%A7%E6%96%87%E4%BB%B6%E5%A4%B9%E5%90%8D%E9%87%8D%E5%91%BD%E5%90%8D%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
     </reapack>
-                    <reapack name="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua" type="script" desc="Video Item Filename Overlay / 视频素材文件名覆盖显示">
-      <metadata><description><![CDATA[Draw complete extension-free video filenames inside Arrange View items with balanced multi-line layout and paint-synchronized compositing. Requires js_ReaScriptAPI. / 在 Arrange View 的视频 Item 内完整显示隐藏扩展名后的文件名，使用均衡多行排版与同步绘制合成。需要 js_ReaScriptAPI。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+                        <reapack name="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua" type="script" desc="Video Item Filename Overlay / 视频素材文件名覆盖显示">
+      <metadata><description><![CDATA[Draw complete extension-free video filenames inside Arrange View items with balanced multi-line layout, aggressive narrow-item fitting and paint-synchronized compositing. Requires js_ReaScriptAPI. / 在 Arrange View 的视频 Item 内完整显示隐藏扩展名后的文件名，支持均衡多行排版、窄 Item 自动缩小与同步绘制合成。需要 js_ReaScriptAPI。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.4" author="Psysia" time="2026-09-20T09:15:00Z"><changelog><![CDATA[- Correct the font-width estimate so long filenames wrap earlier instead of incorrectly staying on one line.
+- Allow emergency shrinking below the configured preferred minimum, down to 5 px, to preserve the complete filename.
+- Dynamically reduce title reserve and side margins as the item becomes smaller.
+- Keep the v1.3 paint-synchronized composite renderer to avoid playback-scroll flicker.
+- 修复自动换行触发过晚和 Item 稍微变窄就不显示的问题；必要时自动缩小到 5px，并动态压缩顶部留白与左右边距。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
       <version name="1.3" author="Psysia" time="2026-09-20T09:00:00Z"><changelog><![CDATA[- Fix playback-scroll flicker by drawing to a persistent LICE bitmap instead of directly into the Arrange View DC.
 - Composite after REAPER's own paint cycle using js_ReaScriptAPI.
 - Throttle composite WM_PAINT updates to reduce contention during continuous scrolling.
 - Preserve the complete balanced multi-line filename layout from v1.2.
-- 修复播放滚动时字体闪烁：改为持久 LICE 位图，并在 REAPER 自身绘制完成后统一合成。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
+- 修复播放滚动时字体闪烁：改为持久 LICE 位图，并在 REAPER 自身绘制完成后统一合成。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/3876796a8c08b446457bc1e8268f71b1a3693cb3/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
       <version name="1.2" author="Psysia" time="2026-09-20T08:40:00Z"><changelog><![CDATA[- Replace single-line ellipsis with complete multi-line filename display.
 - Prefer natural line breaks at underscores, hyphens, spaces and other separators.
 - Balance line lengths and center the entire text block horizontally and vertically.
