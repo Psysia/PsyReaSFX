@@ -1,17 +1,17 @@
 -- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.1
+-- @version 1.2
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Replace LICE compositing with direct Arrange View GDI drawing for better reliability.
---   + Add source-detection fallbacks for original filename and take name.
---   + Keep labels visible at the minimum font size and use ellipsis when width is limited.
---   + Report when no video items can be detected.
---   + Preserve extension-free filenames and persistent font settings.
+--   + Show the complete extension-free filename instead of truncating with ellipsis.
+--   + Add balanced multi-line wrapping with natural breaks at separators when possible.
+--   + Center the complete text block horizontally and vertically inside the item body.
+--   + Adapt font size, line count, and spacing to the visible item dimensions.
+--   + Preserve direct GDI rendering and persistent font settings.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.1"
+local RUNNER_VERSION = "1.2"
 
 local DEFAULT_FONT_FACE = "Segoe UI"
 local DEFAULT_MIN_SIZE = 10
@@ -455,74 +455,256 @@ local function filename_without_extension(path)
     return filename
 end
 
-local function text_units(text)
-    local units = 0
+local function char_units(character)
+    local codepoint =
+        utf8.codepoint(character)
 
-    for _, codepoint in utf8.codes(text) do
-        if codepoint < 128 then
-            local character =
-                string.char(codepoint)
-
-            if character:match(
-                "[MW@#%%&]"
-            ) then
-                units = units + 0.9
-            elseif character:match(
-                "[ilI1%.,':;|! ]"
-            ) then
-                units = units + 0.35
-            else
-                units = units + 0.58
-            end
+    if codepoint
+    and codepoint < 128 then
+        if character:match(
+            "[MW@#%%&]"
+        ) then
+            return 0.9
+        elseif character:match(
+            "[ilI1%.,':;|! ]"
+        ) then
+            return 0.35
         else
-            units = units + 1.0
+            return 0.58
         end
     end
 
-    return math.max(
-        units,
-        1
-    )
+    return 1.0
 end
 
-local function calculate_font_size(
+local function is_natural_break(character)
+    return character == "_"
+        or character == "-"
+        or character == " "
+        or character == "."
+        or character == "+"
+end
+
+local function split_utf8(text)
+    local characters = {}
+
+    for _, codepoint in utf8.codes(text) do
+        characters[
+            #characters + 1
+        ] = utf8.char(codepoint)
+    end
+
+    return characters
+end
+
+local function build_balanced_lines(
+    text,
+    max_units,
+    max_lines
+)
+    local characters =
+        split_utf8(text)
+
+    local count =
+        #characters
+
+    if count == 0 then
+        return nil
+    end
+
+    local prefix = {
+        [0] = 0,
+    }
+
+    for i = 1, count do
+        prefix[i] =
+            prefix[i - 1]
+            + char_units(
+                characters[i]
+            )
+    end
+
+    local total_units =
+        prefix[count]
+
+    local line_count =
+        math.max(
+            1,
+            math.ceil(
+                total_units
+                / max_units
+            )
+        )
+
+    if line_count > max_lines then
+        return nil
+    end
+
+    local lines = {}
+    local start_index = 1
+
+    for line_index = 1, line_count do
+        local remaining_lines =
+            line_count
+            - line_index
+
+        local end_index
+
+        if remaining_lines == 0 then
+            end_index = count
+        else
+            local remaining_units =
+                prefix[count]
+                - prefix[
+                    start_index - 1
+                ]
+
+            local target_units =
+                remaining_units
+                / (
+                    remaining_lines
+                    + 1
+                )
+
+            local max_end =
+                count
+                - remaining_lines
+
+            local best_end = nil
+            local best_score = nil
+
+            for candidate =
+                start_index,
+                max_end do
+
+                local line_units =
+                    prefix[candidate]
+                    - prefix[
+                        start_index - 1
+                    ]
+
+                if line_units > max_units then
+                    break
+                end
+
+                local tail_units =
+                    prefix[count]
+                    - prefix[candidate]
+
+                if tail_units
+                    <= remaining_lines
+                    * max_units then
+
+                    local score =
+                        math.abs(
+                            line_units
+                            - target_units
+                        )
+
+                    if is_natural_break(
+                        characters[candidate]
+                    ) then
+                        score =
+                            score
+                            - target_units
+                            * 0.18
+                    end
+
+                    if not best_score
+                    or score < best_score then
+                        best_score = score
+                        best_end = candidate
+                    end
+                end
+            end
+
+            if not best_end then
+                return nil
+            end
+
+            end_index = best_end
+        end
+
+        lines[
+            #lines + 1
+        ] =
+            table.concat(
+                characters,
+                "",
+                start_index,
+                end_index
+            )
+
+        start_index =
+            end_index + 1
+    end
+
+    return lines
+end
+
+local function calculate_text_layout(
     text,
     width,
     height
 )
-    if width < settings.min_size * 2
-    or height < settings.min_size + 2 then
+    if width <= 0
+    or height <= 0 then
         return nil
     end
 
-    local by_height =
-        math.floor(
-            height * 0.62
-        )
-
-    local by_width =
-        math.floor(
-            width
-            / (
-                text_units(text)
-                * 0.62
-            )
-        )
-
-    local candidate =
-        math.min(
-            settings.max_size,
-            by_height,
-            by_width
-        )
-
-    -- At narrow zoom levels, keep the minimum readable size and let
-    -- DrawText ellipsize the filename instead of hiding it completely.
-    return clamp(
-        candidate,
+    for size =
+        settings.max_size,
         settings.min_size,
-        settings.max_size
-    )
+        -1 do
+
+        local line_height =
+            math.max(
+                size + 2,
+                math.ceil(
+                    size * 1.15
+                )
+            )
+
+        local max_lines =
+            math.floor(
+                height
+                / line_height
+            )
+
+        if max_lines >= 1 then
+            local max_units =
+                width
+                / (
+                    size * 0.62
+                )
+
+            if max_units > 0 then
+                local lines =
+                    build_balanced_lines(
+                        text,
+                        max_units,
+                        max_lines
+                    )
+
+                if lines then
+                    local total_height =
+                        #lines
+                        * line_height
+
+                    return {
+                        size = size,
+                        lines = lines,
+                        line_height =
+                            line_height,
+                        total_height =
+                            total_height,
+                    }
+                end
+            end
+        end
+    end
+
+    return nil
 end
 
 local function collect_visible_entries(
@@ -738,23 +920,37 @@ local function collect_visible_entries(
                                 path
                             )
 
-                        local size =
-                            calculate_font_size(
+                        local layout =
+                            calculate_text_layout(
                                 text,
                                 body_w,
                                 body_h
                             )
 
-                        if size then
+                        if layout then
+                            local block_top =
+                                body_y1
+                                + math.floor(
+                                    (
+                                        body_h
+                                        - layout.total_height
+                                    ) * 0.5
+                                )
+
                             entries[
                                 #entries + 1
                             ] = {
                                 text = text,
-                                size = size,
+                                size = layout.size,
+                                lines = layout.lines,
+                                line_height =
+                                    layout.line_height,
                                 left = body_x1,
-                                top = body_y1,
+                                top = block_top,
                                 right = body_x2,
-                                bottom = visible_y2,
+                                bottom =
+                                    block_top
+                                    + layout.total_height,
                             }
 
                             signature_parts[
@@ -763,11 +959,17 @@ local function collect_visible_entries(
                                 table.concat(
                                     {
                                         text,
-                                        size,
+                                        layout.size,
+                                        table.concat(
+                                            layout.lines,
+                                            "\31"
+                                        ),
+                                        layout.line_height,
                                         body_x1,
-                                        body_y1,
+                                        block_top,
                                         body_x2,
-                                        visible_y2,
+                                        block_top
+                                            + layout.total_height,
                                     },
                                     ":"
                                 )
@@ -870,7 +1072,7 @@ local function redraw()
     )
 
     local align =
-        "HCENTER|VCENTER|SINGLELINE|NOPREFIX|ELLIPSIS"
+        "HCENTER|VCENTER|SINGLELINE|NOPREFIX"
 
     for _, entry in ipairs(entries) do
         local font =
@@ -885,39 +1087,56 @@ local function redraw()
                     font
                 )
 
-            -- Subtle black shadow.
-            reaper.JS_GDI_SetTextColor(
-                dc,
-                0x000000
-            )
+            for line_index, line
+                in ipairs(
+                    entry.lines
+                ) do
 
-            reaper.JS_GDI_DrawText(
-                dc,
-                entry.text,
-                #entry.text,
-                entry.left + 1,
-                entry.top + 1,
-                entry.right + 1,
-                entry.bottom + 1,
-                align
-            )
+                local line_top =
+                    entry.top
+                    + (
+                        line_index - 1
+                    )
+                    * entry.line_height
 
-            -- Main white label.
-            reaper.JS_GDI_SetTextColor(
-                dc,
-                0xFFFFFF
-            )
+                local line_bottom =
+                    line_top
+                    + entry.line_height
 
-            reaper.JS_GDI_DrawText(
-                dc,
-                entry.text,
-                #entry.text,
-                entry.left,
-                entry.top,
-                entry.right,
-                entry.bottom,
-                align
-            )
+                -- Subtle black shadow.
+                reaper.JS_GDI_SetTextColor(
+                    dc,
+                    0x000000
+                )
+
+                reaper.JS_GDI_DrawText(
+                    dc,
+                    line,
+                    #line,
+                    entry.left + 1,
+                    line_top + 1,
+                    entry.right + 1,
+                    line_bottom + 1,
+                    align
+                )
+
+                -- Main white label.
+                reaper.JS_GDI_SetTextColor(
+                    dc,
+                    0xFFFFFF
+                )
+
+                reaper.JS_GDI_DrawText(
+                    dc,
+                    line,
+                    #line,
+                    entry.left,
+                    line_top,
+                    entry.right,
+                    line_bottom,
+                    align
+                )
+            end
 
             if old_font then
                 reaper.JS_GDI_SelectObject(
