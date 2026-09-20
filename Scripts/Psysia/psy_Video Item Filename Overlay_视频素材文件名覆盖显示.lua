@@ -1,17 +1,16 @@
 -- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.4
+-- @version 1.5
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Make multiline wrapping trigger earlier by correcting the font-width estimate.
---   + Treat the configured minimum size as a preferred minimum and shrink further when needed.
---   + Reduce title reserve and margins dynamically when items become narrow or short.
---   + Keep complete filenames visible much longer instead of dropping the label.
---   + Preserve paint-synchronized LICE compositing to avoid playback-scroll flicker.
+--   + Hide the filename overlay completely during Play and Record.
+--   + Stop all overlay redraw work while transport playback is active.
+--   + Restore the overlay immediately when playback stops or pauses.
+--   + Preserve multiline fitting and paint-synchronized LICE compositing while stopped.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.4"
+local RUNNER_VERSION = "1.5"
 
 local DEFAULT_FONT_FACE = "Segoe UI"
 local DEFAULT_MIN_SIZE = 10
@@ -210,6 +209,7 @@ local last_settings_revision = nil
 local last_geometry_signature = nil
 local last_refresh = 0
 local warned_no_video = false
+local playback_hidden = false
 
 local previous_delay = nil
 do
@@ -1240,7 +1240,55 @@ local function count_video_items()
     return count
 end
 
+local function transport_is_active()
+    local state =
+        reaper.GetPlayState()
+
+    -- REAPER play-state bitmask:
+    -- 1 = playing, 4 = recording. Paused state is intentionally allowed
+    -- to show the overlay again.
+    return (state & 1) ~= 0
+        or (state & 4) ~= 0
+end
+
+local function clear_overlay_for_playback()
+    if bitmap then
+        reaper.JS_LICE_Clear(
+            bitmap,
+            0
+        )
+
+        if bitmap_w > 0
+        and bitmap_h > 0 then
+            reaper.JS_Composite(
+                arrange_hwnd,
+                0,
+                0,
+                bitmap_w,
+                bitmap_h,
+                bitmap,
+                0,
+                0,
+                bitmap_w,
+                bitmap_h,
+                true
+            )
+        end
+    end
+
+    playback_hidden = true
+    last_geometry_signature = nil
+end
+
 local function redraw()
+    if transport_is_active() then
+        if not playback_hidden then
+            clear_overlay_for_playback()
+        end
+        return
+    end
+
+    playback_hidden = false
     load_settings()
 
     local ok, width, height =
@@ -1457,11 +1505,22 @@ local function loop()
         false
     )
 
-    if current - last_refresh
-        >= REFRESH_INTERVAL then
+    if transport_is_active() then
+        if not playback_hidden then
+            clear_overlay_for_playback()
+        end
+    else
+        if playback_hidden then
+            playback_hidden = false
+            last_geometry_signature = nil
+            last_refresh = 0
+            redraw()
+        elseif current - last_refresh
+            >= REFRESH_INTERVAL then
 
-        last_refresh = current
-        redraw()
+            last_refresh = current
+            redraw()
+        end
     end
 
     reaper.defer(loop)
