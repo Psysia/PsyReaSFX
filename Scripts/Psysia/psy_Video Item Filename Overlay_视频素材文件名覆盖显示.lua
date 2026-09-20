@@ -1,17 +1,17 @@
 -- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.0.1
+-- @version 1.1
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Avoid rebuilding the font cache repeatedly when default settings are in use.
---   + Draw video source filenames directly inside visible Arrange View items.
---   + Hide file extensions and paths.
---   + Adapt font size to the visible item width and height.
---   + Support persistent font settings through the companion settings script.
---   + Provide toolbar toggle state and safe overlay cleanup.
+--   + Replace LICE compositing with direct Arrange View GDI drawing for better reliability.
+--   + Add source-detection fallbacks for original filename and take name.
+--   + Keep labels visible at the minimum font size and use ellipsis when width is limited.
+--   + Report when no video items can be detected.
+--   + Preserve extension-free filenames and persistent font settings.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
+local RUNNER_VERSION = "1.1"
 
 local DEFAULT_FONT_FACE = "Segoe UI"
 local DEFAULT_MIN_SIZE = 10
@@ -20,7 +20,7 @@ local DEFAULT_WEIGHT = 600
 
 local H_MARGIN = 8
 local TOP_LABEL_RESERVE = 18
-local REFRESH_INTERVAL = 0.033
+local REFRESH_INTERVAL = 0.05
 
 local VIDEO_EXTENSIONS = {
     mp4 = true,
@@ -39,40 +39,43 @@ local VIDEO_EXTENSIONS = {
     ogv = true,
 }
 
-local function has_required_api()
-    local names = {
-        "JS_Window_FindChildByID",
-        "JS_Window_GetClientSize",
-        "JS_LICE_CreateBitmap",
-        "JS_LICE_DestroyBitmap",
-        "JS_LICE_Clear",
-        "JS_LICE_CreateFont",
-        "JS_LICE_DestroyFont",
-        "JS_LICE_SetFontFromGDI",
-        "JS_LICE_SetFontColor",
-        "JS_LICE_DrawText",
-        "JS_GDI_CreateFont",
-        "JS_GDI_DeleteObject",
-        "JS_Composite",
-        "JS_Composite_Unlink",
-        "JS_Window_InvalidateRect",
-    }
+local REQUIRED_APIS = {
+    "JS_Window_FindChildByID",
+    "JS_Window_GetClientSize",
+    "JS_Window_InvalidateRect",
+    "JS_Window_Update",
+    "JS_GDI_GetClientDC",
+    "JS_GDI_ReleaseDC",
+    "JS_GDI_CreateFont",
+    "JS_GDI_SelectObject",
+    "JS_GDI_DeleteObject",
+    "JS_GDI_SetTextColor",
+    "JS_GDI_SetTextBkMode",
+    "JS_GDI_DrawText",
+}
 
-    for _, name in ipairs(names) do
+local function has_required_api()
+    for _, name in ipairs(REQUIRED_APIS) do
         if not reaper.APIExists(name) then
-            return false
+            return false, name
         end
     end
 
     return true
 end
 
-if not has_required_api() then
+local api_ok, missing_api =
+    has_required_api()
+
+if not api_ok then
     reaper.ShowMessageBox(
         "This script requires js_ReaScriptAPI.\n\n"
-        .. "Install 'js_ReaScriptAPI: API functions for ReaScripts' through ReaPack, "
+        .. "Missing API: "
+        .. tostring(missing_api)
+        .. "\n\n"
+        .. "Install or update 'js_ReaScriptAPI: API functions for ReaScripts' through ReaPack, "
         .. "restart REAPER, then run this script again.\n\n"
-        .. "此脚本需要 js_ReaScriptAPI。请通过 ReaPack 安装后重启 REAPER。",
+        .. "此脚本需要 js_ReaScriptAPI。请通过 ReaPack 安装或更新后重启 REAPER。",
         "Video Item Filename Overlay / 视频素材文件名覆盖显示",
         0
     )
@@ -97,27 +100,33 @@ local heartbeat =
         )
     ) or 0
 
+local running_version =
+    reaper.GetExtState(
+        EXT_SECTION,
+        "runner_version"
+    )
+
 if running_token ~= ""
 and now - heartbeat < 1.0 then
-    reaper.SetExtState(
-        EXT_SECTION,
-        "stop",
-        running_token,
-        false
-    )
-    return
+    if running_version == RUNNER_VERSION then
+        reaper.SetExtState(
+            EXT_SECTION,
+            "stop",
+            running_token,
+            false
+        )
+        return
+    else
+        -- Stop a still-running instance from v1.0 / v1.0.1, but continue
+        -- starting the new renderer immediately.
+        reaper.SetExtState(
+            EXT_SECTION,
+            "stop",
+            running_token,
+            false
+        )
+    end
 end
-
-reaper.DeleteExtState(
-    EXT_SECTION,
-    "running",
-    false
-)
-reaper.DeleteExtState(
-    EXT_SECTION,
-    "stop",
-    false
-)
 
 local token =
     string.format(
@@ -131,6 +140,14 @@ reaper.SetExtState(
     token,
     false
 )
+
+reaper.SetExtState(
+    EXT_SECTION,
+    "runner_version",
+    RUNNER_VERSION,
+    false
+)
+
 reaper.SetExtState(
     EXT_SECTION,
     "heartbeat",
@@ -144,6 +161,7 @@ if COMMAND_ID and COMMAND_ID ~= 0 then
         COMMAND_ID,
         1
     )
+
     reaper.RefreshToolbar2(
         SECTION_ID,
         COMMAND_ID
@@ -165,36 +183,8 @@ if not arrange_hwnd then
         "Video Item Filename Overlay / 视频素材文件名覆盖显示",
         0
     )
-
-    reaper.DeleteExtState(
-        EXT_SECTION,
-        "running",
-        false
-    )
-
-    if COMMAND_ID and COMMAND_ID ~= 0 then
-        reaper.SetToggleCommandState(
-            SECTION_ID,
-            COMMAND_ID,
-            0
-        )
-        reaper.RefreshToolbar2(
-            SECTION_ID,
-            COMMAND_ID
-        )
-    end
-
     return
 end
-
-local bitmap = nil
-local bitmap_w = 0
-local bitmap_h = 0
-local composite_linked = false
-local font_cache = {}
-local last_signature = nil
-local last_settings_revision = ""
-local last_refresh = 0
 
 local settings = {
     font_face = DEFAULT_FONT_FACE,
@@ -203,27 +193,11 @@ local settings = {
     weight = DEFAULT_WEIGHT,
 }
 
-local previous_delay = nil
-
-if reaper.APIExists(
-    "JS_Composite_Delay"
-) then
-    local ok, old_min, old_max, old_count =
-        reaper.JS_Composite_Delay(
-            arrange_hwnd,
-            0.03,
-            0.03,
-            4
-        )
-
-    if ok then
-        previous_delay = {
-            min = old_min,
-            max = old_max,
-            count = old_count,
-        }
-    end
-end
+local font_cache = {}
+local last_settings_revision = nil
+local last_geometry_signature = nil
+local last_refresh = 0
+local warned_no_video = false
 
 local function clamp(value, minimum, maximum)
     if value < minimum then
@@ -236,17 +210,9 @@ local function clamp(value, minimum, maximum)
 end
 
 local function destroy_fonts()
-    for _, entry in pairs(font_cache) do
-        if entry.lice then
-            reaper.JS_LICE_DestroyFont(
-                entry.lice
-            )
-        end
-
-        if entry.gdi then
-            reaper.JS_GDI_DeleteObject(
-                entry.gdi
-            )
+    for _, font in pairs(font_cache) do
+        if font then
+            reaper.JS_GDI_DeleteObject(font)
         end
     end
 
@@ -265,9 +231,8 @@ local function load_settings()
         and revision
         or "__defaults__"
 
-    if revision_key
-        == last_settings_revision then
-        return false
+    if revision_key == last_settings_revision then
+        return
     end
 
     local font_face =
@@ -337,21 +302,20 @@ local function load_settings()
 
     last_settings_revision =
         revision_key
-    destroy_fonts()
-    last_signature = nil
 
-    return true
+    destroy_fonts()
+    last_geometry_signature = nil
 end
 
 local function get_font(size)
-    local entry =
+    local font =
         font_cache[size]
 
-    if entry then
-        return entry.lice
+    if font then
+        return font
     end
 
-    local gdi =
+    font =
         reaper.JS_GDI_CreateFont(
             size,
             settings.weight,
@@ -362,122 +326,27 @@ local function get_font(size)
             settings.font_face
         )
 
-    if not gdi then
-        return nil
+    if font then
+        font_cache[size] = font
     end
 
-    local lice =
-        reaper.JS_LICE_CreateFont()
-
-    if not lice then
-        reaper.JS_GDI_DeleteObject(gdi)
-        return nil
-    end
-
-    reaper.JS_LICE_SetFontFromGDI(
-        lice,
-        gdi,
-        "SHADOW"
-    )
-
-    reaper.JS_LICE_SetFontColor(
-        lice,
-        0xFFFFFFFF
-    )
-
-    if reaper.APIExists(
-        "JS_LICE_SetFontFXColor"
-    ) then
-        reaper.JS_LICE_SetFontFXColor(
-            lice,
-            0xFF000000
-        )
-    end
-
-    font_cache[size] = {
-        gdi = gdi,
-        lice = lice,
-    }
-
-    return lice
-end
-
-local function destroy_bitmap()
-    if bitmap then
-        if composite_linked then
-            reaper.JS_Composite_Unlink(
-                arrange_hwnd,
-                bitmap,
-                true
-            )
-        end
-
-        reaper.JS_LICE_DestroyBitmap(
-            bitmap
-        )
-    end
-
-    bitmap = nil
-    bitmap_w = 0
-    bitmap_h = 0
-    composite_linked = false
-end
-
-local function ensure_bitmap(width, height)
-    if bitmap
-    and bitmap_w == width
-    and bitmap_h == height then
-        return true
-    end
-
-    destroy_bitmap()
-
-    bitmap =
-        reaper.JS_LICE_CreateBitmap(
-            true,
-            width,
-            height
-        )
-
-    if not bitmap then
-        return false
-    end
-
-    bitmap_w = width
-    bitmap_h = height
-
-    reaper.JS_Composite(
-        arrange_hwnd,
-        0,
-        0,
-        width,
-        height,
-        bitmap,
-        0,
-        0,
-        width,
-        height,
-        true
-    )
-
-    composite_linked = true
-    return true
+    return font
 end
 
 local function is_video_path(path)
-    local extension =
-        path
-        and path:match(
-            "%.([^%.\\/]+)$"
-        )
-
-    if not extension then
+    if not path or path == "" then
         return false
     end
 
-    return VIDEO_EXTENSIONS[
-        extension:lower()
-    ] == true
+    local extension =
+        path:match(
+            "%.([^%.\\/]+)$"
+        )
+
+    return extension ~= nil
+        and VIDEO_EXTENSIONS[
+            extension:lower()
+        ] == true
 end
 
 local function source_video_path(take)
@@ -485,10 +354,28 @@ local function source_video_path(take)
         return nil
     end
 
+    -- If REAPER copied media on import, this can preserve the original name.
+    local ok_original, original =
+        reaper.GetSetMediaItemTakeInfo_String(
+            take,
+            "P_EXT:ORIGINAL_FILENAME",
+            "",
+            false
+        )
+
+    if ok_original
+    and original ~= ""
+    and is_video_path(original) then
+        return original
+    end
+
     local source =
         reaper.GetMediaItemTake_Source(
             take
         )
+
+    local last_nonempty_path = nil
+    local saw_video_source_type = false
 
     for _ = 1, 16 do
         if not source then
@@ -505,15 +392,19 @@ local function source_video_path(take)
                 source
             ) or ""
 
-        if path ~= ""
-        and (
-            is_video_path(path)
-            or source_type:upper():find(
-                "VIDEO",
-                1,
-                true
-            )
+        if path ~= "" then
+            last_nonempty_path = path
+        end
+
+        if source_type:upper():find(
+            "VIDEO",
+            1,
+            true
         ) then
+            saw_video_source_type = true
+        end
+
+        if is_video_path(path) then
             return path
         end
 
@@ -530,6 +421,19 @@ local function source_video_path(take)
         source = parent
     end
 
+    if saw_video_source_type
+    and last_nonempty_path then
+        return last_nonempty_path
+    end
+
+    local take_name =
+        reaper.GetTakeName(take)
+        or ""
+
+    if is_video_path(take_name) then
+        return take_name
+    end
+
     return nil
 end
 
@@ -544,8 +448,7 @@ local function filename_without_extension(path)
             "^(.*)%.[^%.]+$"
         )
 
-    if stem
-    and stem ~= "" then
+    if stem and stem ~= "" then
         return stem
     end
 
@@ -563,11 +466,11 @@ local function text_units(text)
             if character:match(
                 "[MW@#%%&]"
             ) then
-                units = units + 0.88
+                units = units + 0.9
             elseif character:match(
                 "[ilI1%.,':;|! ]"
             ) then
-                units = units + 0.34
+                units = units + 0.35
             else
                 units = units + 0.58
             end
@@ -584,41 +487,42 @@ end
 
 local function calculate_font_size(
     text,
-    available_width,
-    available_height
+    width,
+    height
 )
-    if available_width <= 0
-    or available_height <= 0 then
+    if width < settings.min_size * 2
+    or height < settings.min_size + 2 then
         return nil
     end
-
-    local units =
-        text_units(text)
-
-    local by_width =
-        math.floor(
-            available_width
-            / units
-        )
 
     local by_height =
         math.floor(
-            available_height
-            * 0.68
+            height * 0.62
         )
 
-    local size =
+    local by_width =
+        math.floor(
+            width
+            / (
+                text_units(text)
+                * 0.62
+            )
+        )
+
+    local candidate =
         math.min(
             settings.max_size,
-            by_width,
-            by_height
+            by_height,
+            by_width
         )
 
-    if size < settings.min_size then
-        return nil
-    end
-
-    return size, units
+    -- At narrow zoom levels, keep the minimum readable size and let
+    -- DrawText ellipsize the filename instead of hiding it completely.
+    return clamp(
+        candidate,
+        settings.min_size,
+        settings.max_size
+    )
 end
 
 local function collect_visible_entries(
@@ -638,7 +542,7 @@ local function collect_visible_entries(
     if not view_start
     or not view_end
     or view_end <= view_start then
-        return {}, "empty-view"
+        return {}, "empty"
     end
 
     local pixels_per_second =
@@ -646,11 +550,18 @@ local function collect_visible_entries(
         / (view_end - view_start)
 
     local entries = {}
+
     local signature_parts = {
         tostring(width),
         tostring(height),
-        string.format("%.9f", view_start),
-        string.format("%.9f", view_end),
+        string.format(
+            "%.8f",
+            view_start
+        ),
+        string.format(
+            "%.8f",
+            view_end
+        ),
         settings.font_face,
         tostring(settings.min_size),
         tostring(settings.max_size),
@@ -674,14 +585,14 @@ local function collect_visible_entries(
             )
             or nil
 
-        local video_path =
+        local path =
             take
             and source_video_path(
                 take
             )
             or nil
 
-        if video_path then
+        if path then
             local position =
                 reaper.GetMediaItemInfo_Value(
                     item,
@@ -707,13 +618,19 @@ local function collect_visible_entries(
                 if track then
                     local x1 =
                         math.floor(
-                            (position - view_start)
+                            (
+                                position
+                                - view_start
+                            )
                             * pixels_per_second
                         )
 
                     local x2 =
                         math.ceil(
-                            (item_end - view_start)
+                            (
+                                item_end
+                                - view_start
+                            )
                             * pixels_per_second
                         )
 
@@ -766,14 +683,16 @@ local function collect_visible_entries(
                     end
 
                     local y1 =
-                        track_y + item_y
+                        track_y
+                        + item_y
 
                     local y2 =
-                        y1 + item_h
+                        y1
+                        + item_h
 
-                    if y2 > 0
-                    and y1 < height
-                    and x2 - x1 > 0 then
+                    if x2 > x1
+                    and y2 > 0
+                    and y1 < height then
                         local visible_y1 =
                             clamp(
                                 y1,
@@ -788,37 +707,38 @@ local function collect_visible_entries(
                                 height
                             )
 
-                        local visible_h =
-                            visible_y2
-                            - visible_y1
-
-                        local title_reserve =
-                            math.min(
+                        local body_y1 =
+                            visible_y1
+                            + math.min(
                                 TOP_LABEL_RESERVE,
                                 math.max(
                                     0,
-                                    visible_h - 4
+                                    visible_y2
+                                    - visible_y1
+                                    - 4
                                 )
                             )
 
-                        local body_y1 =
-                            visible_y1
-                            + title_reserve
+                        local body_x1 =
+                            x1 + H_MARGIN
+
+                        local body_x2 =
+                            x2 - H_MARGIN
 
                         local body_h =
                             visible_y2
                             - body_y1
 
                         local body_w =
-                            x2 - x1
-                            - H_MARGIN * 2
+                            body_x2
+                            - body_x1
 
                         local text =
                             filename_without_extension(
-                                video_path
+                                path
                             )
 
-                        local size, units =
+                        local size =
                             calculate_font_size(
                                 text,
                                 body_w,
@@ -826,40 +746,15 @@ local function collect_visible_entries(
                             )
 
                         if size then
-                            local estimated_width =
-                                units * size
-
-                            local text_x =
-                                math.floor(
-                                    (x1 + x2)
-                                    * 0.5
-                                    - estimated_width
-                                    * 0.5
-                                )
-
-                            local text_y =
-                                math.floor(
-                                    body_y1
-                                    + (
-                                        body_h - size
-                                    ) * 0.5
-                                )
-
-                            text_x =
-                                math.max(
-                                    x1 + H_MARGIN,
-                                    text_x
-                                )
-
                             entries[
                                 #entries + 1
                             ] = {
                                 text = text,
                                 size = size,
-                                x1 = text_x,
-                                y1 = text_y,
-                                x2 = x2 - H_MARGIN,
-                                y2 = visible_y2,
+                                left = body_x1,
+                                top = body_y1,
+                                right = body_x2,
+                                bottom = visible_y2,
                             }
 
                             signature_parts[
@@ -869,9 +764,9 @@ local function collect_visible_entries(
                                     {
                                         text,
                                         size,
-                                        x1,
-                                        x2,
-                                        visible_y1,
+                                        body_x1,
+                                        body_y1,
+                                        body_x2,
                                         visible_y2,
                                     },
                                     ":"
@@ -890,7 +785,37 @@ local function collect_visible_entries(
         )
 end
 
+local function count_video_items()
+    local count = 0
+    local item_count =
+        reaper.CountMediaItems(PROJECT)
+
+    for i = 0, item_count - 1 do
+        local item =
+            reaper.GetMediaItem(
+                PROJECT,
+                i
+            )
+
+        local take =
+            item
+            and reaper.GetActiveTake(
+                item
+            )
+            or nil
+
+        if take
+        and source_video_path(take) then
+            count = count + 1
+        end
+    end
+
+    return count
+end
+
 local function redraw()
+    load_settings()
+
     local ok, width, height =
         reaper.JS_Window_GetClientSize(
             arrange_hwnd
@@ -904,31 +829,48 @@ local function redraw()
         return
     end
 
-    if not ensure_bitmap(
-        width,
-        height
-    ) then
-        return
-    end
-
-    load_settings()
-
     local entries, signature =
         collect_visible_entries(
             width,
             height
         )
 
-    if signature == last_signature then
+    if signature
+        ~= last_geometry_signature then
+
+        last_geometry_signature =
+            signature
+
+        reaper.JS_Window_InvalidateRect(
+            arrange_hwnd,
+            0,
+            0,
+            width,
+            height,
+            false
+        )
+
+        reaper.JS_Window_Update(
+            arrange_hwnd
+        )
+    end
+
+    local dc =
+        reaper.JS_GDI_GetClientDC(
+            arrange_hwnd
+        )
+
+    if not dc then
         return
     end
 
-    last_signature = signature
-
-    reaper.JS_LICE_Clear(
-        bitmap,
-        0x00000000
+    reaper.JS_GDI_SetTextBkMode(
+        dc,
+        1
     )
+
+    local align =
+        "HCENTER|VCENTER|SINGLELINE|NOPREFIX|ELLIPSIS"
 
     for _, entry in ipairs(entries) do
         local font =
@@ -937,65 +879,86 @@ local function redraw()
             )
 
         if font then
-            reaper.JS_LICE_DrawText(
-                bitmap,
-                font,
+            local old_font =
+                reaper.JS_GDI_SelectObject(
+                    dc,
+                    font
+                )
+
+            -- Subtle black shadow.
+            reaper.JS_GDI_SetTextColor(
+                dc,
+                0x000000
+            )
+
+            reaper.JS_GDI_DrawText(
+                dc,
                 entry.text,
                 #entry.text,
-                entry.x1,
-                entry.y1,
-                entry.x2,
-                entry.y2
+                entry.left + 1,
+                entry.top + 1,
+                entry.right + 1,
+                entry.bottom + 1,
+                align
             )
+
+            -- Main white label.
+            reaper.JS_GDI_SetTextColor(
+                dc,
+                0xFFFFFF
+            )
+
+            reaper.JS_GDI_DrawText(
+                dc,
+                entry.text,
+                #entry.text,
+                entry.left,
+                entry.top,
+                entry.right,
+                entry.bottom,
+                align
+            )
+
+            if old_font then
+                reaper.JS_GDI_SelectObject(
+                    dc,
+                    old_font
+                )
+            end
         end
     end
 
-    reaper.JS_Window_InvalidateRect(
-        arrange_hwnd,
-        0,
-        0,
-        width,
-        height,
-        false
+    reaper.JS_GDI_ReleaseDC(
+        dc,
+        arrange_hwnd
     )
 end
 
-local function cleanup()
-    destroy_bitmap()
-    destroy_fonts()
+local function clear_overlay()
+    local ok, width, height =
+        reaper.JS_Window_GetClientSize(
+            arrange_hwnd
+        )
 
-    if previous_delay
-    and reaper.APIExists(
-        "JS_Composite_Delay"
-    ) then
-        reaper.JS_Composite_Delay(
+    if ok then
+        reaper.JS_Window_InvalidateRect(
             arrange_hwnd,
-            previous_delay.min,
-            previous_delay.max,
-            previous_delay.count
+            0,
+            0,
+            width,
+            height,
+            false
+        )
+
+        reaper.JS_Window_Update(
+            arrange_hwnd
         )
     end
+end
 
-    if reaper.ValidatePtr(
-        arrange_hwnd,
-        "HWND"
-    ) then
-        local ok, width, height =
-            reaper.JS_Window_GetClientSize(
-                arrange_hwnd
-            )
-
-        if ok then
-            reaper.JS_Window_InvalidateRect(
-                arrange_hwnd,
-                0,
-                0,
-                width,
-                height,
-                false
-            )
-        end
-    end
+local function cleanup()
+    destroy_fonts()
+    clear_overlay()
 
     if reaper.GetExtState(
         EXT_SECTION,
@@ -1006,9 +969,16 @@ local function cleanup()
             "running",
             false
         )
+
         reaper.DeleteExtState(
             EXT_SECTION,
             "heartbeat",
+            false
+        )
+
+        reaper.DeleteExtState(
+            EXT_SECTION,
+            "runner_version",
             false
         )
     end
@@ -1030,6 +1000,7 @@ local function cleanup()
             COMMAND_ID,
             0
         )
+
         reaper.RefreshToolbar2(
             SECTION_ID,
             COMMAND_ID
@@ -1039,6 +1010,19 @@ end
 
 reaper.atexit(cleanup)
 load_settings()
+
+if count_video_items() == 0 then
+    warned_no_video = true
+
+    reaper.ShowMessageBox(
+        "The overlay started, but no video media items were detected in the current project.\n\n"
+        .. "If the project does contain a video item, please tell me the file type shown in REAPER.\n\n"
+        .. "覆盖显示已启动，但当前工程中没有识别到视频素材。"
+        .. "如果工程里确实有视频，请告诉我 REAPER 中显示的文件类型。",
+        "Video Item Filename Overlay / 视频素材文件名覆盖显示",
+        0
+    )
+end
 
 local function loop()
     if reaper.GetExtState(
