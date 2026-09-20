@@ -30,7 +30,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
 | Remove Gaps Between Selected Items | 1.0 | Close gaps between selected items. |
 | Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |
-| Video Item Filename Overlay | 1.3 | Draw adaptive extension-free video filenames inside Arrange View items. |
+| Video Item Filename Overlay | 1.4 | Draw adaptive extension-free video filenames inside Arrange View items. |
 | Create Folder from Selected Tracks with Pro-L 2 | 1.1 | Build a parent bus around tracks or folders. |
 | Split Selected Items to New Tracks | 1.0 | Move selected items onto separate tracks. |
 | Reverse Selected Items in Place | 1.0 | Reverse selected items with one undo step. |
@@ -133,14 +133,14 @@ SWS is optional; when available, it can improve exact subproject path resolution
 
 Switches between REAPER's LUFS-M spectral-peak display and the standard spectrogram view. The script resolves localized action names dynamically and caches validated command IDs.
 
-### Video Item Filename Overlay · 1.3
+### Video Item Filename Overlay · 1.4
 
 Runs as a toggleable Arrange View overlay. v1.3 draws into a persistent transparent LICE bitmap and composites it after REAPER's own Arrange View paint cycle, reducing flicker during playback scrolling.
 
 - File paths and extensions are always hidden.
 - Font size adapts to the currently visible item width and height as the Arrange View is zoomed.
 - The complete multi-line text block is centered horizontally and vertically below REAPER's normal item-title/icon strip.
-- The complete filename is wrapped across multiple balanced lines instead of being truncated. Natural separators such as underscores, hyphens, and spaces are preferred as line-break points.
+- The complete filename is wrapped across multiple balanced lines instead of being truncated. v1.4 uses a more conservative width model so wrapping begins earlier, and can temporarily shrink below the configured preferred minimum down to 5 px when necessary.
 - Supported video sources are detected from common video extensions and VIDEO-type media sources.
 
 Use the companion **Video Item Filename Overlay Settings** action to set:
