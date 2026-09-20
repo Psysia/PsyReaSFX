@@ -1,17 +1,16 @@
 -- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.2
+-- @version 1.3
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Show the complete extension-free filename instead of truncating with ellipsis.
---   + Add balanced multi-line wrapping with natural breaks at separators when possible.
---   + Center the complete text block horizontally and vertically inside the item body.
---   + Adapt font size, line count, and spacing to the visible item dimensions.
---   + Preserve direct GDI rendering and persistent font settings.
+--   + Eliminate playback-scroll flicker by rendering through a persistent LICE bitmap.
+--   + Composite the overlay after REAPER's own Arrange View paint cycle.
+--   + Throttle composite updates to reduce Windows WM_PAINT contention.
+--   + Preserve complete balanced multi-line filenames and persistent font settings.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.2"
+local RUNNER_VERSION = "1.3"
 
 local DEFAULT_FONT_FACE = "Segoe UI"
 local DEFAULT_MIN_SIZE = 10
@@ -20,7 +19,7 @@ local DEFAULT_WEIGHT = 600
 
 local H_MARGIN = 8
 local TOP_LABEL_RESERVE = 18
-local REFRESH_INTERVAL = 0.05
+local REFRESH_INTERVAL = 0.04
 
 local VIDEO_EXTENSIONS = {
     mp4 = true,
@@ -43,16 +42,22 @@ local REQUIRED_APIS = {
     "JS_Window_FindChildByID",
     "JS_Window_GetClientSize",
     "JS_Window_InvalidateRect",
-    "JS_Window_Update",
-    "JS_GDI_GetClientDC",
-    "JS_GDI_ReleaseDC",
+    "JS_LICE_CreateBitmap",
+    "JS_LICE_DestroyBitmap",
+    "JS_LICE_Clear",
+    "JS_LICE_CreateFont",
+    "JS_LICE_DestroyFont",
+    "JS_LICE_SetFontFromGDI",
+    "JS_LICE_SetFontColor",
+    "JS_LICE_SetFontBkColor",
+    "JS_LICE_DrawText",
     "JS_GDI_CreateFont",
-    "JS_GDI_SelectObject",
     "JS_GDI_DeleteObject",
-    "JS_GDI_SetTextColor",
-    "JS_GDI_SetTextBkMode",
-    "JS_GDI_DrawText",
+    "JS_Composite",
+    "JS_Composite_Unlink",
+    "JS_Composite_Delay",
 }
+
 
 local function has_required_api()
     for _, name in ipairs(REQUIRED_APIS) do
@@ -194,10 +199,45 @@ local settings = {
 }
 
 local font_cache = {}
+local bitmap = nil
+local bitmap_w = 0
+local bitmap_h = 0
+local composite_linked = false
 local last_settings_revision = nil
 local last_geometry_signature = nil
 local last_refresh = 0
 local warned_no_video = false
+
+local previous_delay = nil
+do
+    local ok,
+          old_min,
+          old_max,
+          old_bitmaps =
+        reaper.JS_Composite_Delay(
+            arrange_hwnd,
+            -1,
+            -1,
+            -1
+        )
+
+    if ok then
+        previous_delay = {
+            min = old_min,
+            max = old_max,
+            bitmaps = old_bitmaps,
+        }
+    end
+
+    -- js_ReaScriptAPI composites immediately after REAPER's own WM_PAINT.
+    -- A modest delay avoids both sides repainting at full playback-scroll rate.
+    reaper.JS_Composite_Delay(
+        arrange_hwnd,
+        0.04,
+        0.04,
+        2
+    )
+end
 
 local function clamp(value, minimum, maximum)
     if value < minimum then
@@ -210,9 +250,17 @@ local function clamp(value, minimum, maximum)
 end
 
 local function destroy_fonts()
-    for _, font in pairs(font_cache) do
-        if font then
-            reaper.JS_GDI_DeleteObject(font)
+    for _, entry in pairs(font_cache) do
+        if entry.lice then
+            reaper.JS_LICE_DestroyFont(
+                entry.lice
+            )
+        end
+
+        if entry.gdi then
+            reaper.JS_GDI_DeleteObject(
+                entry.gdi
+            )
         end
     end
 
@@ -308,14 +356,14 @@ local function load_settings()
 end
 
 local function get_font(size)
-    local font =
+    local entry =
         font_cache[size]
 
-    if font then
-        return font
+    if entry then
+        return entry.lice
     end
 
-    font =
+    local gdi =
         reaper.JS_GDI_CreateFont(
             size,
             settings.weight,
@@ -326,11 +374,123 @@ local function get_font(size)
             settings.font_face
         )
 
-    if font then
-        font_cache[size] = font
+    if not gdi then
+        return nil
     end
 
-    return font
+    local lice =
+        reaper.JS_LICE_CreateFont()
+
+    if not lice then
+        reaper.JS_GDI_DeleteObject(gdi)
+        return nil
+    end
+
+    reaper.JS_LICE_SetFontFromGDI(
+        lice,
+        gdi,
+        "SHADOW"
+    )
+
+    reaper.JS_LICE_SetFontBkColor(
+        lice,
+        0
+    )
+
+    reaper.JS_LICE_SetFontColor(
+        lice,
+        0xFFFFFFFF
+    )
+
+    if reaper.APIExists(
+        "JS_LICE_SetFontFXColor"
+    ) then
+        reaper.JS_LICE_SetFontFXColor(
+            lice,
+            0xFF000000
+        )
+    end
+
+    font_cache[size] = {
+        gdi = gdi,
+        lice = lice,
+    }
+
+    return lice
+end
+
+local function destroy_bitmap()
+    if bitmap then
+        if composite_linked then
+            reaper.JS_Composite_Unlink(
+                arrange_hwnd,
+                bitmap,
+                true
+            )
+        end
+
+        reaper.JS_LICE_DestroyBitmap(
+            bitmap
+        )
+    end
+
+    bitmap = nil
+    bitmap_w = 0
+    bitmap_h = 0
+    composite_linked = false
+end
+
+local function ensure_bitmap(width, height)
+    if bitmap
+    and bitmap_w == width
+    and bitmap_h == height then
+        return true
+    end
+
+    destroy_bitmap()
+
+    bitmap =
+        reaper.JS_LICE_CreateBitmap(
+            true,
+            width,
+            height
+        )
+
+    if not bitmap then
+        return false
+    end
+
+    bitmap_w = width
+    bitmap_h = height
+
+    local result =
+        reaper.JS_Composite(
+            arrange_hwnd,
+            0,
+            0,
+            width,
+            height,
+            bitmap,
+            0,
+            0,
+            width,
+            height,
+            true
+        )
+
+    if result and result < 0 then
+        reaper.JS_LICE_DestroyBitmap(
+            bitmap
+        )
+
+        bitmap = nil
+        bitmap_w = 0
+        bitmap_h = 0
+        return false
+    end
+
+    composite_linked = true
+    return true
 end
 
 local function is_video_path(path)
@@ -707,6 +867,23 @@ local function calculate_text_layout(
     return nil
 end
 
+local function line_units(text)
+    local units = 0
+
+    for _, codepoint in utf8.codes(text) do
+        units =
+            units
+            + char_units(
+                utf8.char(codepoint)
+            )
+    end
+
+    return math.max(
+        units,
+        1
+    )
+end
+
 local function collect_visible_entries(
     width,
     height
@@ -1031,6 +1208,13 @@ local function redraw()
         return
     end
 
+    if not ensure_bitmap(
+        width,
+        height
+    ) then
+        return
+    end
+
     local entries, signature =
         collect_visible_entries(
             width,
@@ -1038,41 +1222,17 @@ local function redraw()
         )
 
     if signature
-        ~= last_geometry_signature then
-
-        last_geometry_signature =
-            signature
-
-        reaper.JS_Window_InvalidateRect(
-            arrange_hwnd,
-            0,
-            0,
-            width,
-            height,
-            false
-        )
-
-        reaper.JS_Window_Update(
-            arrange_hwnd
-        )
-    end
-
-    local dc =
-        reaper.JS_GDI_GetClientDC(
-            arrange_hwnd
-        )
-
-    if not dc then
+        == last_geometry_signature then
         return
     end
 
-    reaper.JS_GDI_SetTextBkMode(
-        dc,
-        1
-    )
+    last_geometry_signature =
+        signature
 
-    local align =
-        "HCENTER|VCENTER|SINGLELINE|NOPREFIX"
+    reaper.JS_LICE_Clear(
+        bitmap,
+        0
+    )
 
     for _, entry in ipairs(entries) do
         local font =
@@ -1081,12 +1241,6 @@ local function redraw()
             )
 
         if font then
-            local old_font =
-                reaper.JS_GDI_SelectObject(
-                    dc,
-                    font
-                )
-
             for line_index, line
                 in ipairs(
                     entry.lines
@@ -1103,81 +1257,75 @@ local function redraw()
                     line_top
                     + entry.line_height
 
-                -- Subtle black shadow.
-                reaper.JS_GDI_SetTextColor(
-                    dc,
-                    0x000000
-                )
+                local estimated_width =
+                    line_units(line)
+                    * entry.size
+                    * 0.62
 
-                reaper.JS_GDI_DrawText(
-                    dc,
+                local line_left =
+                    math.floor(
+                        entry.left
+                        + math.max(
+                            0,
+                            (
+                                entry.right
+                                - entry.left
+                                - estimated_width
+                            ) * 0.5
+                        )
+                    )
+
+                reaper.JS_LICE_DrawText(
+                    bitmap,
+                    font,
                     line,
                     #line,
-                    entry.left + 1,
-                    line_top + 1,
-                    entry.right + 1,
-                    line_bottom + 1,
-                    align
-                )
-
-                -- Main white label.
-                reaper.JS_GDI_SetTextColor(
-                    dc,
-                    0xFFFFFF
-                )
-
-                reaper.JS_GDI_DrawText(
-                    dc,
-                    line,
-                    #line,
-                    entry.left,
+                    line_left,
                     line_top,
                     entry.right,
-                    line_bottom,
-                    align
-                )
-            end
-
-            if old_font then
-                reaper.JS_GDI_SelectObject(
-                    dc,
-                    old_font
+                    line_bottom
                 )
             end
         end
     end
 
-    reaper.JS_GDI_ReleaseDC(
-        dc,
-        arrange_hwnd
+    -- Re-registering the same bitmap with autoUpdate=true updates the
+    -- invalidated region, while js_ReaScriptAPI performs the actual blit
+    -- after REAPER finishes painting the Arrange View.
+    reaper.JS_Composite(
+        arrange_hwnd,
+        0,
+        0,
+        width,
+        height,
+        bitmap,
+        0,
+        0,
+        width,
+        height,
+        true
     )
 end
 
-local function clear_overlay()
-    local ok, width, height =
-        reaper.JS_Window_GetClientSize(
-            arrange_hwnd
-        )
+local function cleanup()
+    destroy_bitmap()
+    destroy_fonts()
 
-    if ok then
-        reaper.JS_Window_InvalidateRect(
+    if previous_delay then
+        reaper.JS_Composite_Delay(
+            arrange_hwnd,
+            previous_delay.min,
+            previous_delay.max,
+            previous_delay.bitmaps
+        )
+    else
+        reaper.JS_Composite_Delay(
             arrange_hwnd,
             0,
             0,
-            width,
-            height,
-            false
-        )
-
-        reaper.JS_Window_Update(
-            arrange_hwnd
+            0
         )
     end
-end
-
-local function cleanup()
-    destroy_fonts()
-    clear_overlay()
 
     if reaper.GetExtState(
         EXT_SECTION,
