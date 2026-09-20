@@ -1,8 +1,9 @@
 -- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.0
+-- @version 1.0.1
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
+--   + Avoid rebuilding the font cache repeatedly when default settings are in use.
 --   + Draw video source filenames directly inside visible Arrange View items.
 --   + Hide file extensions and paths.
 --   + Adapt font size to the visible item width and height.
@@ -259,8 +260,13 @@ local function load_settings()
             "settings_revision"
         )
 
-    if revision == last_settings_revision
-    and last_settings_revision ~= "" then
+    local revision_key =
+        revision ~= ""
+        and revision
+        or "__defaults__"
+
+    if revision_key
+        == last_settings_revision then
         return false
     end
 
@@ -329,7 +335,8 @@ local function load_settings()
             1000
         )
 
-    last_settings_revision = revision
+    last_settings_revision =
+        revision_key
     destroy_fonts()
     last_signature = nil
 
