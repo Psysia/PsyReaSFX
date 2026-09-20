@@ -1,24 +1,27 @@
 -- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.3
+-- @version 1.4
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Eliminate playback-scroll flicker by rendering through a persistent LICE bitmap.
---   + Composite the overlay after REAPER's own Arrange View paint cycle.
---   + Throttle composite updates to reduce Windows WM_PAINT contention.
---   + Preserve complete balanced multi-line filenames and persistent font settings.
+--   + Make multiline wrapping trigger earlier by correcting the font-width estimate.
+--   + Treat the configured minimum size as a preferred minimum and shrink further when needed.
+--   + Reduce title reserve and margins dynamically when items become narrow or short.
+--   + Keep complete filenames visible much longer instead of dropping the label.
+--   + Preserve paint-synchronized LICE compositing to avoid playback-scroll flicker.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.3"
+local RUNNER_VERSION = "1.4"
 
 local DEFAULT_FONT_FACE = "Segoe UI"
 local DEFAULT_MIN_SIZE = 10
 local DEFAULT_MAX_SIZE = 30
 local DEFAULT_WEIGHT = 600
 
-local H_MARGIN = 8
-local TOP_LABEL_RESERVE = 18
+local H_MARGIN = 6
+local TOP_LABEL_RESERVE = 14
+local HARD_MIN_SIZE = 5
+local FONT_WIDTH_SCALE = 0.98
 local REFRESH_INTERVAL = 0.04
 
 local VIDEO_EXTENSIONS = {
@@ -807,21 +810,24 @@ local function calculate_text_layout(
     width,
     height
 )
-    if width <= 0
-    or height <= 0 then
+    if width <= 2
+    or height <= HARD_MIN_SIZE then
         return nil
     end
 
+    -- Start from the configured maximum, but continue below the user's
+    -- preferred minimum when the item becomes narrow. Complete filename
+    -- visibility takes priority over preserving the preferred minimum size.
     for size =
         settings.max_size,
-        settings.min_size,
+        HARD_MIN_SIZE,
         -1 do
 
         local line_height =
             math.max(
-                size + 2,
+                size,
                 math.ceil(
-                    size * 1.15
+                    size * 1.04
                 )
             )
 
@@ -835,7 +841,15 @@ local function calculate_text_layout(
             local max_units =
                 width
                 / (
-                    size * 0.62
+                    size
+                    * FONT_WIDTH_SCALE
+                )
+
+            -- Always allow at least one glyph per line in emergency mode.
+            max_units =
+                math.max(
+                    max_units,
+                    1.0
                 )
 
             if max_units > 0 then
@@ -858,6 +872,9 @@ local function calculate_text_layout(
                             line_height,
                         total_height =
                             total_height,
+                        emergency =
+                            size
+                            < settings.min_size,
                     }
                 end
             end
@@ -1066,23 +1083,54 @@ local function collect_visible_entries(
                                 height
                             )
 
-                        local body_y1 =
-                            visible_y1
-                            + math.min(
+                        local visible_h =
+                            visible_y2
+                            - visible_y1
+
+                        local visible_w =
+                            x2 - x1
+
+                        local reserve_cap =
+                            math.max(
+                                0,
+                                visible_h
+                                - HARD_MIN_SIZE
+                                - 2
+                            )
+
+                        local title_reserve =
+                            math.min(
                                 TOP_LABEL_RESERVE,
+                                math.floor(
+                                    visible_h
+                                    * 0.14
+                                ),
+                                reserve_cap
+                            )
+
+                        local side_margin =
+                            math.min(
+                                H_MARGIN,
                                 math.max(
-                                    0,
-                                    visible_y2
-                                    - visible_y1
-                                    - 4
+                                    1,
+                                    math.floor(
+                                        visible_w
+                                        * 0.035
+                                    )
                                 )
                             )
 
+                        local body_y1 =
+                            visible_y1
+                            + title_reserve
+
                         local body_x1 =
-                            x1 + H_MARGIN
+                            x1
+                            + side_margin
 
                         local body_x2 =
-                            x2 - H_MARGIN
+                            x2
+                            - side_margin
 
                         local body_h =
                             visible_y2
@@ -1260,7 +1308,7 @@ local function redraw()
                 local estimated_width =
                     line_units(line)
                     * entry.size
-                    * 0.62
+                    * FONT_WIDTH_SCALE
 
                 local line_left =
                     math.floor(
