@@ -29,7 +29,8 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Open Render Dialog with Auto Tail | 1.0 | Apply saved tail settings before rendering. |
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
 | Remove Gaps Between Selected Items | 1.0 | Close gaps between selected items. |
-| Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |\n| Video Item Filename Overlay | 1.0.1 | Draw adaptive extension-free video filenames inside Arrange View items. |
+| Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |
+| Video Item Filename Overlay | 1.1 | Draw adaptive extension-free video filenames inside Arrange View items. |
 | Create Folder from Selected Tracks with Pro-L 2 | 1.1 | Build a parent bus around tracks or folders. |
 | Split Selected Items to New Tracks | 1.0 | Move selected items onto separate tracks. |
 | Reverse Selected Items in Place | 1.0 | Reverse selected items with one undo step. |
@@ -132,14 +133,14 @@ SWS is optional; when available, it can improve exact subproject path resolution
 
 Switches between REAPER's LUFS-M spectral-peak display and the standard spectrogram view. The script resolves localized action names dynamically and caches validated command IDs.
 
-### Video Item Filename Overlay · 1.0.1
+### Video Item Filename Overlay · 1.1
 
-Runs as a toggleable Arrange View overlay and draws each visible video source filename directly inside the item body.
+Runs as a toggleable Arrange View overlay and draws each visible video source filename directly inside the item body using js_ReaScriptAPI GDI drawing.
 
 - File paths and extensions are always hidden.
 - Font size adapts to the currently visible item width and height as the Arrange View is zoomed.
 - Text is centered below REAPER's normal item-title/icon strip.
-- If the visible item becomes too small for the configured minimum size, the overlay hides that label instead of forcing unreadable text.
+- The font adapts to available space; when a long name cannot fully fit at the minimum readable size, it is shown with an ellipsis.
 - Supported video sources are detected from common video extensions and VIDEO-type media sources.
 
 Use the companion **Video Item Filename Overlay Settings** action to set:
@@ -163,7 +164,9 @@ The overlay requires **js_ReaScriptAPI**.
 | Remove Gaps Between Selected Items | Shortcut |
 | Reverse Selected Items in Place | Shortcut |
 | Open All Subprojects | Shortcut |
-| Toggle LUFS-M and Spectrogram | Toolbar or shortcut |\n| Video Item Filename Overlay | Toolbar toggle |\n| Video Item Filename Overlay Settings | Occasional settings action |
+| Toggle LUFS-M and Spectrogram | Toolbar or shortcut |
+| Video Item Filename Overlay | Toolbar toggle |
+| Video Item Filename Overlay Settings | Occasional settings action |
 | Smart Tail Render Panel | Toolbar |
 | Open Render Dialog with Auto Tail | Replace the normal Render shortcut |
 | Create Folder from Selected Tracks with Pro-L 2 | Toolbar or shortcut |
@@ -174,7 +177,8 @@ Most utilities use only native REAPER ReaScript APIs.
 
 - **SWS Extension:** optional for Open All Subprojects path resolution.
 - **Pro-L 2:** required only by Create Folder from Selected Tracks with Pro-L 2.
-- **js_ReaScriptAPI:** required by Video Item Filename Overlay.\n- **ReaPack:** installation/update mechanism only; not a runtime dependency for the scripts themselves.
+- **js_ReaScriptAPI:** required by Video Item Filename Overlay.
+- **ReaPack:** installation/update mechanism only; not a runtime dependency for the scripts themselves.
 
 ## Updating
 
