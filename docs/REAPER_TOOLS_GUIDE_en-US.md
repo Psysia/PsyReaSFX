@@ -29,7 +29,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Open Render Dialog with Auto Tail | 1.0 | Apply saved tail settings before rendering. |
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
 | Remove Gaps Between Selected Items | 1.0 | Close gaps between selected items. |
-| Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |\n| Video Item Filename Overlay | 1.0 | Draw adaptive extension-free video filenames inside Arrange View items. |
+| Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |\n| Video Item Filename Overlay | 1.0.1 | Draw adaptive extension-free video filenames inside Arrange View items. |
 | Create Folder from Selected Tracks with Pro-L 2 | 1.1 | Build a parent bus around tracks or folders. |
 | Split Selected Items to New Tracks | 1.0 | Move selected items onto separate tracks. |
 | Reverse Selected Items in Place | 1.0 | Reverse selected items with one undo step. |
@@ -132,7 +132,7 @@ SWS is optional; when available, it can improve exact subproject path resolution
 
 Switches between REAPER's LUFS-M spectral-peak display and the standard spectrogram view. The script resolves localized action names dynamically and caches validated command IDs.
 
-### Video Item Filename Overlay · 1.0
+### Video Item Filename Overlay · 1.0.1
 
 Runs as a toggleable Arrange View overlay and draws each visible video source filename directly inside the item body.
 
