@@ -30,7 +30,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
 | Remove Gaps Between Selected Items | 1.0 | Close gaps between selected items. |
 | Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |
-| Video Item Track Name Overlay | 1.6 | Draw adaptive extension-free video filenames inside Arrange View items. |
+| Video Item Track Name Overlay | 1.7 | Draw adaptive extension-free video filenames inside Arrange View items. |
 | Create Folder from Selected Tracks with Pro-L 2 | 1.1 | Build a parent bus around tracks or folders. |
 | Split Selected Items to New Tracks | 1.0 | Move selected items onto separate tracks. |
 | Reverse Selected Items in Place | 1.0 | Reverse selected items with one undo step. |
@@ -133,7 +133,7 @@ SWS is optional; when available, it can improve exact subproject path resolution
 
 Switches between REAPER's LUFS-M spectral-peak display and the standard spectrogram view. The script resolves localized action names dynamically and caches validated command IDs.
 
-### Video Item Track Name Overlay · 1.6
+### Video Item Track Name Overlay · 1.7
 
 Runs as a toggleable Arrange View overlay. v1.6 displays the current name of the track that contains each video item, so renaming the track updates the overlay automatically. Play and Record still hide the overlay to avoid scrolling flicker.
 
@@ -143,12 +143,7 @@ Runs as a toggleable Arrange View overlay. v1.6 displays the current name of the
 - The complete filename is wrapped across multiple balanced lines instead of being truncated. v1.4 uses a more conservative width model so wrapping begins earlier, and can temporarily shrink below the configured preferred minimum down to 5 px when necessary.
 - Supported video sources are detected from common video extensions and VIDEO-type media sources.
 
-Use the companion **Video Item Track Name Overlay Settings** action to set:
-
-- font face;
-- minimum font size;
-- maximum font size;
-- font weight.
+Use the companion **Video Item Track Name Overlay Settings** action to choose from the installed Windows font families and set minimum size, maximum size, and font weight. The default is **Microsoft YaHei UI**, with CJK-capable fallbacks if it is unavailable.
 
 The overlay requires **js_ReaScriptAPI**.
 
