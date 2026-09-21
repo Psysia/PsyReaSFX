@@ -1,5 +1,13 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.4
+
+### AI-search background-job conflict fix
+
+- Fixes AI search immediately failing with `resource_busy` while long-running waveform precaching, cache verification, catalog snapshots, or other catalog maintenance is active.
+- Gives AI search and connection tests an independent job resource instead of the catalog-writer mutex.
+- Captures a stable asset-array snapshot when AI search starts, so later catalog-list changes cannot disturb that candidate scan; completion, failure, and cancellation still release the job token.
+
 ## 0.9.0 Beta 7.3
 
 ### API-key saving and legacy journal compatibility

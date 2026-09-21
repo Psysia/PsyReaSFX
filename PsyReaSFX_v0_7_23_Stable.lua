@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.3
+-- @version 0.9.0-beta7.4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -80,6 +80,7 @@
 --   - Beta 7.1：搜索框回车保持普通搜索，AI 按钮直接执行语义搜索，配置与说明集中到设置
 --   - Beta 7.2：更新 DeepSeek Flash / V4 Pro 模型，修复 AI 设置裁切并显示 Key 保存结果
 --   - Beta 7.3：兼容旧素材增量日志字段，并解除 API Key 保存与素材库只读状态的错误耦合
+--   - Beta 7.4：AI 搜索改用独立任务资源，不再被波形预缓存或目录维护长期阻断
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -185,7 +186,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.3"
+local VERSION = "0.9.0 Beta 7.4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -14103,6 +14104,14 @@ function ai_semantic_cancel()
   set_status("已取消 AI 语义搜索")
 end
 
+function ai_semantic_asset_snapshot()
+  local snapshot = {}
+  for index, asset in ipairs(state.assets or {}) do
+    snapshot[index] = asset
+  end
+  return snapshot
+end
+
 function start_ai_semantic_search(query)
   query = trim(query or state.search or "")
   if query == "" then set_status("请输入需要查找的声音描述", true) return false end
@@ -14111,8 +14120,12 @@ function start_ai_semantic_search(query)
     return false
   end
   if state.ai_semantic_session then ai_semantic_cancel() end
-  local token, reason = Jobs.begin("ai_semantic_search", "catalog_exclusive", true, 72)
+  -- AI semantic search only reads a stable array snapshot. It must not share
+  -- the long-lived catalog maintenance lock used by waveform precaching,
+  -- cache verification, background snapshots, and directory scans.
+  local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then set_status("无法启动 AI 搜索：" .. tostring(reason), true) return false end
+  local source = ai_semantic_asset_snapshot()
   local api_job, api_reason = ai_semantic_start_api_job(
     "plan",
     ai_semantic_plan_system_prompt(),
@@ -14130,9 +14143,9 @@ function start_ai_semantic_search(query)
     api_job = api_job,
     -- The shared toolbar field contains the natural-language request, so it
     -- must not also narrow the candidate pool through ordinary text matching.
-    source = state.assets,
+    source = source,
     source_index = 1,
-    total = #state.assets,
+    total = #source,
     scanned = 0,
     candidates = {},
     job_token = token,
@@ -14233,7 +14246,7 @@ end
 
 function start_ai_semantic_connection_test()
   if state.ai_semantic_session then return false, "已有 AI 请求正在运行" end
-  local token, reason = Jobs.begin("ai_semantic_search", "catalog_exclusive", true, 72)
+  local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then return false, reason end
   local api_job, api_reason = ai_semantic_start_api_job(
     "test",

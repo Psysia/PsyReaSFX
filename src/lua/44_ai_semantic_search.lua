@@ -686,6 +686,14 @@ function ai_semantic_cancel()
   set_status("已取消 AI 语义搜索")
 end
 
+function ai_semantic_asset_snapshot()
+  local snapshot = {}
+  for index, asset in ipairs(state.assets or {}) do
+    snapshot[index] = asset
+  end
+  return snapshot
+end
+
 function start_ai_semantic_search(query)
   query = trim(query or state.search or "")
   if query == "" then set_status("请输入需要查找的声音描述", true) return false end
@@ -694,8 +702,12 @@ function start_ai_semantic_search(query)
     return false
   end
   if state.ai_semantic_session then ai_semantic_cancel() end
-  local token, reason = Jobs.begin("ai_semantic_search", "catalog_exclusive", true, 72)
+  -- AI semantic search only reads a stable array snapshot. It must not share
+  -- the long-lived catalog maintenance lock used by waveform precaching,
+  -- cache verification, background snapshots, and directory scans.
+  local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then set_status("无法启动 AI 搜索：" .. tostring(reason), true) return false end
+  local source = ai_semantic_asset_snapshot()
   local api_job, api_reason = ai_semantic_start_api_job(
     "plan",
     ai_semantic_plan_system_prompt(),
@@ -713,9 +725,9 @@ function start_ai_semantic_search(query)
     api_job = api_job,
     -- The shared toolbar field contains the natural-language request, so it
     -- must not also narrow the candidate pool through ordinary text matching.
-    source = state.assets,
+    source = source,
     source_index = 1,
-    total = #state.assets,
+    total = #source,
     scanned = 0,
     candidates = {},
     job_token = token,
@@ -816,7 +828,7 @@ end
 
 function start_ai_semantic_connection_test()
   if state.ai_semantic_session then return false, "已有 AI 请求正在运行" end
-  local token, reason = Jobs.begin("ai_semantic_search", "catalog_exclusive", true, 72)
+  local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then return false, reason end
   local api_job, api_reason = ai_semantic_start_api_job(
     "test",
