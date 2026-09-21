@@ -1,18 +1,17 @@
 -- @description Video Item Track Name Overlay / 视频素材轨道名覆盖显示
--- @version 1.6
+-- @version 1.7
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Display the video item's track name instead of the source filename.
---   + Update overlay text automatically when the track name changes.
---   + Keep the existing multiline fitting, playback hiding, and font settings.
---   + Preserve the original script path and ExtState for shortcut/settings compatibility.
+--   + Change the default font to Microsoft YaHei UI for Chinese text support.
+--   + Keep existing saved font preferences unchanged.
+--   + Continue displaying live track names with multiline fitting and playback hiding.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.6"
+local RUNNER_VERSION = "1.7"
 
-local DEFAULT_FONT_FACE = "Segoe UI"
+local DEFAULT_FONT_FACE = "Microsoft YaHei UI"
 local DEFAULT_MIN_SIZE = 10
 local DEFAULT_MAX_SIZE = 30
 local DEFAULT_WEIGHT = 600
