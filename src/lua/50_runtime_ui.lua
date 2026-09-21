@@ -4585,12 +4585,21 @@ local function result_sort_comparator()
     elseif view == "ai_semantic" then
       av = ai_semantic_lookup[cached_sort_path(a)]
       bv = ai_semantic_lookup[cached_sort_path(b)]
-      av = av and tonumber(av.score) or 0
-      bv = bv and tonumber(bv.score) or 0
-      if av == bv then
+      local ap = av and tonumber(av.page) or 1
+      local bp = bv and tonumber(bv.page) or 1
+      if ap ~= bp then return ap < bp end
+      local as = av and tonumber(av.score) or 0
+      local bs = bv and tonumber(bv.score) or 0
+      local ar = av and av.ai_ranked == true or false
+      local br = bv and bv.ai_ranked == true or false
+      if ar ~= br then return ar end
+      if as == bs then
+        local al = av and tonumber(av.local_score) or 0
+        local bl = bv and tonumber(bv.local_score) or 0
+        if al ~= bl then return al > bl end
         return cached_sort_path(a) < cached_sort_path(b)
       end
-      return av > bv
+      return as > bs
     elseif view == "duplicates" then
       av = duplicate_lookup[cached_sort_path(a)] or ""
       bv = duplicate_lookup[cached_sort_path(b)] or ""
@@ -15711,7 +15720,7 @@ function draw_sub_toolbar()
 
   ImGui.SameLine(ctx)
 
-  if dark_button(
+  local sort_clicked = dark_button(
     sort_prefix
       .. (
         labels[state.sort_mode]
@@ -15720,7 +15729,15 @@ function draw_sub_toolbar()
     state.language == "en"
       and 154
       or 118
-  ) and state.view ~= "similar" and state.view ~= "ai_semantic" then
+  )
+  if "ai_semantic" == state.view then
+    tooltip(
+      "en" == state.language
+        and "Ranking: local filename and metadata recall, then AI relevance. Later batches remain after earlier batches; ties use local recall score and path. Model omissions are filled at the end of that batch from local recall order."
+        or "排序依据：先按文件名、Description、Keywords 与 UCS 字段本地召回，再按 AI 相关度排序。后续批次排在前一批之后；同分时按本地召回分与路径稳定排序。模型遗漏项在本批末尾按本地召回补足。"
+    )
+  end
+  if sort_clicked and state.view ~= "similar" and state.view ~= "ai_semantic" then
     local next_mode = {
       name = "duration",
       duration = "library",
@@ -15825,7 +15842,7 @@ function draw_import_progress()
     ctx,
     "import_progress",
     -1,
-    72,
+    visible_ai and 38 or 72,
     ImGui.ChildFlags_Borders
   ) then
     if visible_root_removal then
@@ -15940,30 +15957,26 @@ function draw_import_progress()
       local total = phase == "recall" and (session.total or 0) or 0
       local fraction = phase == "recall" and total > 0
           and clamp(completed / total, 0, 1)
-        or ((reaper.time_precise() * 0.22) % 1)
+        or 0
       local label = phase == "plan_wait"
-          and "AI 语义搜索：正在理解声音描述"
+          and "AI 语义搜索：正在理解声音描述…"
         or phase == "recall"
-          and string.format("AI 语义搜索：本地召回候选  %d / %d", completed, total)
+          and string.format(
+            "AI 语义搜索：正在本地召回候选  %d / %d（%.0f%%）",
+            completed,
+            total,
+            fraction * 100
+          )
         or phase == "rerank_wait"
-          and string.format("AI 语义搜索：正在重排 %d 条候选", #(session.candidates or {}))
+          and string.format(
+            "AI 语义搜索：正在重排第 %d 批（%d 条）…",
+            session.page_index or 1,
+            #(session.candidates or {})
+          )
         or phase == "test_wait"
           and "正在测试 AI API 连接"
         or "AI 语义搜索"
       ImGui.TextColored(ctx, 0xE3A84BFF, label)
-      ImGui.ProgressBar(
-        ctx,
-        fraction,
-        -100,
-        18,
-        phase == "recall"
-          and string.format("%.1f%%", fraction * 100)
-          or "AI"
-      )
-      ImGui.TextDisabled(
-        ctx,
-        compact(session.query ~= "" and session.query or "等待 API 响应", 80)
-      )
     elseif visible_similarity then
       local session = visible_similarity
       local loading = session.phase == "load_cache"
@@ -17453,6 +17466,30 @@ function draw_result_row(
   row_popup(asset)
 end
 
+function draw_ai_semantic_more_results()
+  if "ai_semantic" ~= state.view
+    or (state.ai_semantic_total_candidates or 0) <= 0 then return end
+  ImGui.Spacing(ctx)
+  if state.ai_semantic_has_more then
+    ImGui.Separator(ctx)
+    ImGui.TextDisabled(ctx, string.format(
+      "已浏览本地候选 %d / %d；下一批会继续追加到当前结果",
+      state.ai_semantic_loaded_candidates or #state.results,
+      state.ai_semantic_total_candidates or #state.results
+    ))
+    ImGui.SameLine(ctx)
+    if dark_button("继续加载下一批 120 条", 168) then
+      local ok, reason = start_ai_semantic_next_page()
+      if not ok then set_status(tostring(reason or "无法加载下一批"), true) end
+    end
+  else
+    ImGui.TextDisabled(ctx, string.format(
+      "已浏览全部 %d 条本地候选",
+      state.ai_semantic_total_candidates
+    ))
+  end
+end
+
 function draw_results()
   local width, height =
     ImGui.GetContentRegionAvail(ctx)
@@ -17546,6 +17583,9 @@ function draw_results()
             results_dirty = true,
           })
         end
+      elseif "ai_semantic" == state.view then
+        ImGui.TextDisabled(ctx, "当前批次没有可显示的 AI 语义结果。")
+        draw_ai_semantic_more_results()
       elseif active_collection then
         ImGui.TextColored(
           ctx,
@@ -17616,6 +17656,8 @@ function draw_results()
         ctx,
         #state.results * ROW_H
       )
+
+      draw_ai_semantic_more_results()
 
       ImGui.Dummy(ctx, 0, 0)
     end
@@ -21110,6 +21152,10 @@ function draw_settings_ai()
     "AI 会扩展中英文检索词，在当前音效库、目录和集合范围内本地召回候选，"
       .. "再依据文件名和元数据进行语义重排。搜索完成后直接显示 AI 语义结果。"
   )
+  ImGui.TextDisabled(
+    ctx,
+    "结果先显示本地召回排名最高的 120 条；浏览完成后可继续加载下一批，后续结果会追加保留。"
+  )
   ImGui.Separator(ctx)
 
   ImGui.Text(ctx, "API 服务商")
@@ -21226,8 +21272,8 @@ function draw_settings_ai()
   settings_section_title("隐私与范围", "每次搜索都先在本地压缩候选范围。")
   ImGui.TextWrapped(
     ctx,
-    "发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、Description、"
-      .. "Keywords、UCS 分类和时长。不会发送完整目录，不会发送文件路径，不会上传音频。"
+    "每批发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、压缩文本元数据和时长。"
+      .. "只有点击继续加载时才发送下一批；不会发送完整目录、文件路径或音频。"
   )
   ImGui.TextDisabled(
     ctx,

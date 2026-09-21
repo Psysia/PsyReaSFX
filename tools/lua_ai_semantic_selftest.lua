@@ -193,21 +193,46 @@ assert(capacity_elapsed < 5,
   string.format("100k AI local recall exceeded capacity budget: %.3fs", capacity_elapsed))
 print(string.format("AI local recall capacity: 100000 assets in %.3fs", capacity_elapsed))
 
+local pool_started = os.clock()
+local pool_session = { candidates = {} }
+for index = 1, 100000 do
+  ai_semantic_insert_candidate(pool_session, {
+    path = string.format("C:/Library/pool-%06d.wav", index),
+  }, (index % 5000) + 1)
+end
+local pool_elapsed = os.clock() - pool_started
+assert(#pool_session.candidates == AISemantic.candidate_pool_limit)
+assert(pool_elapsed < 5,
+  string.format("100k AI candidate-pool maintenance exceeded budget: %.3fs", pool_elapsed))
+print(string.format("AI candidate-pool capacity: 100000 inserts in %.3fs", pool_elapsed))
+
 local session = { candidates = {} }
-for index = 1, AISemantic.candidate_limit + 20 do
+for index = 1, AISemantic.candidate_pool_limit + 20 do
   ai_semantic_insert_candidate(session, {
     ready = true,
     path = string.format("C:/Library/%04d.wav", index),
     name = string.format("%04d.wav", index),
   }, index)
 end
-assert(#session.candidates == AISemantic.candidate_limit)
+assert(#session.candidates == AISemantic.candidate_pool_limit)
 local minimum = math.huge
 for _, entry in ipairs(session.candidates) do minimum = math.min(minimum, entry.score) end
 assert(minimum == 21)
 
+ai_semantic_sort_candidates(session.candidates)
+session.candidate_pool = session.candidates
+assert(ai_semantic_prepare_page(session, 1) and #session.candidates == 120)
+assert(session.candidates[1].score == AISemantic.candidate_pool_limit + 20)
+assert(ai_semantic_prepare_page(session, 2) and #session.candidates == 120)
+assert(session.candidates[1].score == AISemantic.candidate_pool_limit - 100)
+assert(ai_semantic_prepare_page(session, 20) and #session.candidates == 120)
+assert(not ai_semantic_prepare_page(session, 21))
+
 session.query = "金属撞击"
-local chinese_name = string.rep("钟", 181)
+session.candidate_pool = nil
+session.page_index = 1
+session.page_end = 1
+local chinese_name = string.rep("钟", 121)
 session.candidates = {{
   asset = {
     path = "C:/Library/bell.wav",
@@ -218,13 +243,85 @@ session.candidates = {{
   sort_path = "c:/library/bell.wav",
 }}
 local candidate_payload = neural_json_decode(ai_semantic_candidate_payload(session))
-assert(utf8.len(candidate_payload.candidates[1].name) == 180)
+assert(candidate_payload.q == "金属撞击")
+assert(utf8.len(candidate_payload.c[1][2]) == 120)
+assert(candidate_payload.c[1][3] == "金属钟声")
+assert(candidate_payload.c[1].description == nil)
+assert(ai_semantic_rerank_system_prompt():find("each c row", 1, true))
+assert(ai_semantic_rerank_system_prompt():find('[[1,92],[7,88]]', 1, true))
+assert(not ai_semantic_rerank_system_prompt():find("brief match explanation", 1, true))
+local compact_id, compact_score = ai_semantic_match_fields({ 1, 93 })
+assert(compact_id == 1 and compact_score == 93)
+local legacy_id, legacy_score, legacy_reason = ai_semantic_match_fields({
+  id = 2, score = 88, reason = "legacy",
+})
+assert(legacy_id == 2 and legacy_score == 88 and legacy_reason == "legacy")
 session.plan = { summary = "metal impact" }
 session.job_token = {}
 ai_semantic_finish(session, {}, false)
 assert(state.ai_semantic_result_count == 0)
 assert(next(state.ai_semantic_lookup) == nil)
 assert(state.search == "金属撞击")
+
+local first_page_assets = {}
+for index = 1, 130 do
+  first_page_assets[index] = {
+    asset = { path = string.format("C:/Library/page-%03d.wav", index) },
+    score = 200 - index,
+    sort_path = string.format("c:/library/page-%03d.wav", index),
+  }
+end
+local page_session = {
+  query = "metal impact",
+  plan = { summary = "metal impact" },
+  compiled_plan = compiled_plan,
+  candidate_pool = first_page_assets,
+  candidates = {},
+  page_index = 1,
+  job_token = {},
+}
+assert(ai_semantic_prepare_page(page_session, 1))
+ai_semantic_candidate_payload(page_session)
+ai_semantic_finish(page_session, { { 1, 99 }, { 2, 98 } }, false)
+assert(state.ai_semantic_result_count == 2)
+assert(state.ai_semantic_has_more)
+assert(state.ai_semantic_loaded_candidates == 120)
+assert(state.ai_semantic_total_candidates == 130)
+local page_two = {
+  query = "metal impact",
+  plan = page_session.plan,
+  compiled_plan = compiled_plan,
+  candidate_pool = first_page_assets,
+  candidates = {},
+  page_index = 2,
+  append_results = true,
+  job_token = {},
+}
+assert(ai_semantic_prepare_page(page_two, 2) and #page_two.candidates == 10)
+ai_semantic_candidate_payload(page_two)
+ai_semantic_finish(page_two, { { 1, 97 }, { 2, 96 } }, false)
+assert(state.ai_semantic_result_count == 4)
+assert(not state.ai_semantic_has_more)
+assert(state.ai_semantic_lookup["c:/library/page-001.wav"].page == 1)
+assert(state.ai_semantic_lookup["c:/library/page-121.wav"].page == 2)
+
+local fill_session = {
+  query = "metal impact",
+  plan = { summary = "metal impact" },
+  compiled_plan = compiled_plan,
+  candidate_pool = first_page_assets,
+  candidates = {},
+  page_index = 1,
+  job_token = {},
+}
+assert(ai_semantic_prepare_page(fill_session, 1))
+ai_semantic_candidate_payload(fill_session)
+ai_semantic_finish(fill_session, { { 2, 98 }, { 1, 99 } }, true)
+assert(state.ai_semantic_result_count == 120)
+assert(state.ai_semantic_lookup["c:/library/page-001.wav"].ai_ranked == true)
+assert(state.ai_semantic_lookup["c:/library/page-003.wav"].ai_ranked == false)
+assert(state.ai_semantic_lookup["c:/library/page-003.wav"].explanation
+  == "模型未返回，本地召回补位")
 
 local decoded = assert(ai_semantic_extract_content(neural_json_encode({
   choices = {
@@ -376,7 +473,8 @@ local source = read_all(ai_source_path)
 local payload_start = assert(source:find("function ai_semantic_candidate_payload", 1, true))
 local payload_end = assert(source:find("function ai_semantic_finish", payload_start, true))
 local payload_source = source:sub(payload_start, payload_end - 1)
-assert(payload_source:find("name =", 1, true))
+assert(payload_source:find("q = session.query", 1, true))
+assert(payload_source:find("c = candidates", 1, true))
 assert(not payload_source:find("path =", 1, true))
 assert(source:find('"ai_semantic_api"', 1, true))
 assert(source:find("source = source", 1, true))

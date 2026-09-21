@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7.6
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7.7
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -43,16 +43,16 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
 
 3. Synchronize packages.
 4. Search for `PsyReaSFX.lua`, right-click it, enable pre-release versions for
-   that package, choose `0.9.0-beta7.6` under **Versions**, and install it.
+   that package, choose `0.9.0-beta7.7` under **Versions**, and install it.
 5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
-### Optional neural similarity component (Beta 7.6)
+### Optional neural similarity component (Beta 7.7)
 
 On Windows x64, open ReaPack's package browser after synchronizing, search for
 `PsyReaSFX Neural Similarity`, enable pre-release versions for that package,
-choose `0.9.0-beta7.6`, and install it beside `PsyReaSFX.lua`. ReaPack places
+choose `0.9.0-beta7.7`, and install it beside `PsyReaSFX.lua`. ReaPack places
 the executable and model under REAPER's `Data`
 directory and updates or uninstalls those files independently. Restart
 PsyReaSFX after installing or updating the component.
@@ -239,7 +239,7 @@ whoosh category:movement -long
 
 A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
-### AI semantic search (Beta 7.6)
+### AI semantic search (Beta 7.7)
 
 The top search field is shared by normal and AI semantic search. Enter ordinary keywords and press `Enter` for the normal local search. Enter a natural-language description and click the gold `AI` button, or press `Ctrl+Shift+F`, to start AI semantic search immediately and display its results when complete; no extra search window is opened. This is not part of Find Similar Sounds: similar-sound search starts from a reference recording, while AI semantic search starts from a natural-language request, for example:
 
@@ -256,9 +256,11 @@ Usage guidance, service state, privacy scope, and API configuration are collecte
 The API key is encrypted for the current Windows user with DPAPI and kept separately from `config.tsv`, backups, and logs. Factory Reset removes the saved key.
 API requests may incur provider charges; quota and retention policies are controlled by the selected service.
 
-Each search has two stages. The AI first converts the request into bilingual sound concepts. PsyReaSFX then scans the active library, folder, and collection scope locally and keeps at most 120 candidates. Only their filename, Description, Keywords, UCS fields, and duration are sent for reranking. The full catalog, full file paths, and audio are never sent. Results appear in a separate AI Semantic Results view, sorted by AI relevance.
+Each search has two stages. The AI first converts the request into bilingual sound concepts. PsyReaSFX then scans the active library, folder, and collection scope locally and keeps up to 2,400 candidates. The first 120 are reranked and displayed; **Load next 120** at the bottom appends another page. Only the requested page's filename, compact Description/Keywords/UCS text, and duration are sent. The full catalog, full file paths, and audio are never sent. Results remain grouped by page. Within each page, model-ranked candidates are sorted by AI relevance, then local recall score and path; any candidates omitted by the model are appended from local recall order to fill the page.
 
-In Beta 7.6, AI search uses an independent background-job resource and captures its asset-array snapshot at launch. Local recall compiles expanded query terms once and runs a combined-text prefilter before weighted field scoring, so large catalogs no longer pay the full scorer cost for every row. Long-running catalog maintenance does not cause `resource_busy`. DeepSeek requests disable thinking mode; if JSON Output occasionally returns empty or malformed content, PsyReaSFX retries once with a stricter prompt.
+Local recall prioritizes filename, Keywords, Description, UCS Category, SubCategory, CatID, library and path. Positive expanded-term matches add weight, while excluded-term matches subtract it. The model assigns a 0–100 semantic relevance score only within the current 120-candidate page; it is not performing a cloud vector comparison against the entire catalog.
+
+In Beta 7.7, AI search shows one compact phase status rather than repeated progress bars. Local recall compiles expanded terms once and runs a combined-text prefilter before weighted field scoring. Reranking sends condensed metadata and asks for compact ID/score pairs instead of a written explanation for every result, reducing request size, output tokens and latency. DeepSeek requests disable thinking mode and retry one occasional malformed structured response.
 
 The first implementation depends on meaningful filenames and text metadata. Assets with opaque names and no Description, Keywords, or UCS data will have limited semantic quality; a future local audio-text embedding stage is intended to cover them.
 
@@ -274,7 +276,7 @@ Scoring uses audio content only, never filenames, UCS categories or keywords. Fo
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
 
-With the optional Beta 7.6 component installed, PsyReaSFX uses EfficientAT
+With the optional Beta 7.7 component installed, PsyReaSFX uses EfficientAT
 embedding recall followed by the existing duration, onset, transient and
 envelope features. Common WAV sample rates and PCM16/PCM24/PCM32/float depths,
 AIFF, FLAC, MP3 and M4A use the built-in Windows decoder; an available FFmpeg
@@ -712,7 +714,7 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 ## 21. Stable support
 
 PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.9.0 Beta 7.6 as versions of the same package. Normal synchronization
+PsyReaSFX 0.9.0 Beta 7.7 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.
