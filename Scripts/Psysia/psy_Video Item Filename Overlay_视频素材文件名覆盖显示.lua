@@ -1,15 +1,15 @@
 -- @description Video Item Track Name Overlay / 视频素材轨道名覆盖显示
--- @version 1.7
+-- @version 1.8
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Change the default font to Microsoft YaHei UI for Chinese text support.
---   + Keep existing saved font preferences unchanged.
---   + Continue displaying live track names with multiline fitting and playback hiding.
+--   + Fix Chinese/CJK track names not rendering.
+--   + Draw UTF-8 text through Windows GDI into the offscreen LICE bitmap.
+--   + Preserve flicker-free compositing, multiline fitting, playback hiding, and font settings.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.7"
+local RUNNER_VERSION = "1.8"
 
 local DEFAULT_FONT_FACE = "Microsoft YaHei UI"
 local DEFAULT_MIN_SIZE = 10
@@ -46,18 +46,19 @@ local REQUIRED_APIS = {
     "JS_LICE_CreateBitmap",
     "JS_LICE_DestroyBitmap",
     "JS_LICE_Clear",
-    "JS_LICE_CreateFont",
-    "JS_LICE_DestroyFont",
-    "JS_LICE_SetFontFromGDI",
-    "JS_LICE_SetFontColor",
-    "JS_LICE_SetFontBkColor",
-    "JS_LICE_DrawText",
+    "JS_LICE_GetDC",
+    "JS_LICE_SetAlphaFromColorMask",
     "JS_GDI_CreateFont",
+    "JS_GDI_SelectObject",
     "JS_GDI_DeleteObject",
+    "JS_GDI_SetTextColor",
+    "JS_GDI_SetTextBkMode",
+    "JS_GDI_DrawText",
     "JS_Composite",
     "JS_Composite_Unlink",
     "JS_Composite_Delay",
 }
+
 
 
 local function has_required_api()
@@ -252,16 +253,10 @@ local function clamp(value, minimum, maximum)
 end
 
 local function destroy_fonts()
-    for _, entry in pairs(font_cache) do
-        if entry.lice then
-            reaper.JS_LICE_DestroyFont(
-                entry.lice
-            )
-        end
-
-        if entry.gdi then
+    for _, font in pairs(font_cache) do
+        if font then
             reaper.JS_GDI_DeleteObject(
-                entry.gdi
+                font
             )
         end
     end
@@ -358,14 +353,14 @@ local function load_settings()
 end
 
 local function get_font(size)
-    local entry =
+    local font =
         font_cache[size]
 
-    if entry then
-        return entry.lice
+    if font then
+        return font
     end
 
-    local gdi =
+    font =
         reaper.JS_GDI_CreateFont(
             size,
             settings.weight,
@@ -376,49 +371,11 @@ local function get_font(size)
             settings.font_face
         )
 
-    if not gdi then
-        return nil
+    if font then
+        font_cache[size] = font
     end
 
-    local lice =
-        reaper.JS_LICE_CreateFont()
-
-    if not lice then
-        reaper.JS_GDI_DeleteObject(gdi)
-        return nil
-    end
-
-    reaper.JS_LICE_SetFontFromGDI(
-        lice,
-        gdi,
-        "SHADOW"
-    )
-
-    reaper.JS_LICE_SetFontBkColor(
-        lice,
-        0
-    )
-
-    reaper.JS_LICE_SetFontColor(
-        lice,
-        0xFFFFFFFF
-    )
-
-    if reaper.APIExists(
-        "JS_LICE_SetFontFXColor"
-    ) then
-        reaper.JS_LICE_SetFontFXColor(
-            lice,
-            0xFF000000
-        )
-    end
-
-    font_cache[size] = {
-        gdi = gdi,
-        lice = lice,
-    }
-
-    return lice
+    return font
 end
 
 local function destroy_bitmap()
@@ -1345,6 +1302,23 @@ local function redraw()
         0
     )
 
+    local dc =
+        reaper.JS_LICE_GetDC(
+            bitmap
+        )
+
+    if not dc then
+        return
+    end
+
+    reaper.JS_GDI_SetTextBkMode(
+        dc,
+        1
+    )
+
+    local align =
+        "HCENTER|VCENTER|SINGLELINE|NOPREFIX"
+
     for _, entry in ipairs(entries) do
         local font =
             get_font(
@@ -1352,6 +1326,12 @@ local function redraw()
             )
 
         if font then
+            local old_font =
+                reaper.JS_GDI_SelectObject(
+                    dc,
+                    font
+                )
+
             for line_index, line
                 in ipairs(
                     entry.lines
@@ -1368,37 +1348,57 @@ local function redraw()
                     line_top
                     + entry.line_height
 
-                local estimated_width =
-                    line_units(line)
-                    * entry.size
-                    * FONT_WIDTH_SCALE
+                -- Draw a subtle dark shadow first.
+                reaper.JS_GDI_SetTextColor(
+                    dc,
+                    0x303030
+                )
 
-                local line_left =
-                    math.floor(
-                        entry.left
-                        + math.max(
-                            0,
-                            (
-                                entry.right
-                                - entry.left
-                                - estimated_width
-                            ) * 0.5
-                        )
-                    )
-
-                reaper.JS_LICE_DrawText(
-                    bitmap,
-                    font,
+                reaper.JS_GDI_DrawText(
+                    dc,
                     line,
                     #line,
-                    line_left,
+                    entry.left + 1,
+                    line_top + 1,
+                    entry.right + 1,
+                    line_bottom + 1,
+                    align
+                )
+
+                -- Draw the main UTF-8 label through Windows GDI.
+                reaper.JS_GDI_SetTextColor(
+                    dc,
+                    0xFFFFFF
+                )
+
+                reaper.JS_GDI_DrawText(
+                    dc,
+                    line,
+                    #line,
+                    entry.left,
                     line_top,
                     entry.right,
-                    line_bottom
+                    line_bottom,
+                    align
+                )
+            end
+
+            if old_font then
+                reaper.JS_GDI_SelectObject(
+                    dc,
+                    old_font
                 )
             end
         end
     end
+
+    -- GDI writes RGB into the system bitmap but does not preserve an
+    -- alpha channel suitable for JS_Composite. Keep pure-black pixels
+    -- transparent and make all drawn text pixels opaque.
+    reaper.JS_LICE_SetAlphaFromColorMask(
+        bitmap,
+        0x000000
+    )
 
     -- Re-registering the same bitmap with autoUpdate=true updates the
     -- invalidated region, while js_ReaScriptAPI performs the actual blit
