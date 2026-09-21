@@ -5,11 +5,11 @@
 <h1 align="center">Psysia REAPER Tools</h1>
 
 <p align="center">
-  A collection of practical REAPER tools for sound design, editing, track management, rendering, and asset workflows.
+  Practical REAPER tools for sound design, track organization, rendering, project navigation, and sound-asset workflows.
 </p>
 
 <p align="center">
-  <a href="README_zh-CN.md">简体中文</a> · <strong>English</strong>
+  <strong>English</strong> · <a href="README_zh-CN.md">Chinese</a>
 </p>
 
 <p align="center">
@@ -18,73 +18,57 @@
   <img src="https://img.shields.io/badge/Author-Psysia-555555" alt="Psysia">
 </p>
 
-## About this repository
+## Overview
 
-This repository is the home of **Psysia's REAPER tools**.
+This repository contains two parts:
 
-It contains both focused utility scripts and larger workflow tools. **PsyReaSFX** is the largest tool in the collection, but it is only one part of the repository. Each utility can be installed independently through the same ReaPack source.
+- **PsyReaSFX** — a larger sound-asset workflow environment built inside REAPER.
+- **REAPER Utilities** — focused ReaScripts for editing, folder management, rendering, display, and project workflow.
 
-## Install with ReaPack
+Every utility can be installed independently. PsyReaSFX is not required unless you want the asset-browser workflow itself.
 
-In REAPER, open:
+## Install
 
-`Extensions → ReaPack → Import repositories...`
-
-Import this repository:
+In REAPER, open `Extensions → ReaPack → Import repositories...` and add:
 
 ```text
-https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 ```
 
-Then synchronize packages and search for the tool you want. For PsyReaSFX,
-enable pre-release versions for the package and install `PsyReaSFX.lua` Beta
-7; on Windows x64, also enable/install the separate optional
-`PsyReaSFX Neural Similarity` package if you want neural similar-sound search.
+Then run `Extensions → ReaPack → Synchronize packages` and install the tools you need.
 
-You do **not** need to install PsyReaSFX in order to install the smaller utility scripts.
+For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The optional **PsyReaSFX Neural Similarity** package is only needed for local neural similar-sound search on Windows x64.
 
-## Tool collection
+## REAPER Utilities
 
-### Asset workflow
+| Category | Tool | Purpose |
+|---|---|---|
+| Rendering | Create Folder Region and Render Matrix | Build Regions from the current selection and assign matching Region Render Matrix targets. |
+| Rendering | Smart Tail Render Panel | Configure render tail, silence trimming, and safety padding. |
+| Rendering | Open Render Dialog with Auto Tail | Apply saved tail settings before opening REAPER's Render dialog. |
+| Track management | Sort Tracks by Earliest Item Position | Folder-aware sorting that preserves complete folder subtrees. |
+| Track management | Create Folder from Selected Tracks with Pro-L 2 | Wrap sibling tracks or complete folder subtrees in a new Folder Bus and insert Pro-L 2. |
+| Track management | Cycle Selected Folders Unified Compact State | Adaptive two-state or four-state folder display cycling for flat and nested structures. |
+| Track management | Rename Selected Tracks from Parent Folder Name | Rename selected child tracks from the immediate parent folder and add numbered suffixes. |
+| Item editing | Remove Gaps Between Selected Items | Close gaps between selected items while preserving their order. |
+| Item editing | Split Selected Items to New Tracks | Move selected items to new tracks while preserving timeline positions. |
+| Item editing | Reverse Selected Items in Place | Reverse selected items through a single undoable Take workflow. |
+| Project workflow | Open All Subprojects | Recursively open all subprojects referenced by the current project. |
+| Display | Toggle LUFS-M and Spectrogram | Switch between LUFS-M spectral-peak display and spectrogram view. |\n| Display | Video Item Filename Overlay | Draw extension-free video filenames inside Arrange View items with adaptive font sizing. |
 
-| Tool | Description |
-|---|---|
-| **PsyReaSFX** | Sound-asset browser and workflow workspace for library management, waveform audition, metadata, REAPER insertion, and Transfer. |
-
-### Rendering
-
-| Tool | Description |
-|---|---|
-| **Create Folder Region and Render Matrix** | Creates Regions from selected items, derives Region names from track/folder hierarchy, and writes matching Region Render Matrix targets. |
-| **Smart Tail Render Panel** | Configures REAPER's native render tail, silence-trim threshold, and safety padding for Region and time-selection rendering. |
-| **Open Render Dialog with Auto Tail** | Applies saved auto-tail settings before opening REAPER's Render dialog. |
-
-### Track and item workflow
-
-| Tool | Description |
-|---|---|
-| **Sort Tracks by Earliest Item Position** | Sorts selected tracks, or tracks containing selected media items, by the earliest relevant item position. Selected items take priority when present. |
-| **Remove Gaps Between Selected Items** | Moves selected items together so each item begins at the end of the previous one. |
-| **Split Selected Items to New Tracks** | Moves selected items to newly created tracks while keeping their timeline positions and naming the new tracks from Take names. |
-| **Reverse Selected Items in Place** | Reverses selected items in place using a reversed Take workflow that can be undone in one step. |
-| **Create Folder from Selected Tracks with Pro-L 2** | Wraps selected tracks in a new parent folder and inserts Pro-L 2 on the new folder bus. |
-
-### Display workflow
-
-| Tool | Description |
-|---|---|
-| **Toggle LUFS-M and Spectrogram** | Switches REAPER's peak display between LUFS-M spectral peaks and the standard spectrogram view. |
+Detailed behavior, edge cases, dependencies, and shortcut suggestions are documented in the [REAPER Tools Guide](docs/REAPER_TOOLS_GUIDE_en-US.md).
 
 ## PsyReaSFX
 
-<p align="center">
-  <strong>Browse · Organize · Preview · Deliver</strong><br>
-  A high-performance sound-asset workspace built inside REAPER.
-</p>
+**PsyReaSFX** is a dockable sound-asset workspace for REAPER. It combines library management, waveform browsing, audition, metadata, collections, search, REAPER insertion, and processed delivery in one workflow.
 
-PsyReaSFX is designed for game-audio designers, sound designers, and REAPER users who maintain large personal or production sound libraries.
+| Channel | Version | Notes |
+|---|---|---|
+| Stable | **0.8.5** | Recommended for everyday use. |
+| Preview | **0.9.0 Beta 7.4** | Current pre-release line; fixes AI search being blocked by waveform and catalog maintenance. |
+| Optional component | **PsyReaSFX Neural Similarity** | Local neural similar-sound search for Windows x64. |
 
-It combines library management, waveform browsing, search, audition, metadata, collections, REAPER placement, and processed delivery in one dockable workspace.
+PsyReaSFX keeps normal acoustic search available without the optional neural component. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
 
 ### Development status
 
@@ -119,41 +103,36 @@ Beta 7.4 includes the separate **AI semantic search** implementation. It remains
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
 
+[Releases](https://github.com/Psysia/PsyReaSFX/releases) · [User Guide](docs/USER_GUIDE_en-US.md) · [Changelog](docs/CHANGELOG_en-US.md)
+
 ## Documentation
 
-### Utility scripts
+| Document | Scope |
+|---|---|
+| [REAPER Tools Guide](docs/REAPER_TOOLS_GUIDE_en-US.md) | Installation and usage for the utility scripts. |
+| [PsyReaSFX User Guide](docs/USER_GUIDE_en-US.md) | Main application workflow and features. |
+| [PsyReaSFX Changelog](docs/CHANGELOG_en-US.md) | Release history and version notes. |
+| [Neural Similarity](neural/README.md) | Optional local neural component and reproducible model notes. |
+| [Desktop Project](desktop/README.md) | Desktop development notes. |
 
-- [REAPER Utility Guide — English](docs/ReaScripts_Guide.md)
-- [REAPER 工具使用手册 — 简体中文](docs/ReaScripts_Guide_zh-CN.md)
+Development and architecture notes are kept under `docs/` and are intentionally separated from the main project page.
 
-### PsyReaSFX
-
-- [User Guide — English](docs/USER_GUIDE_en-US.md)
-- [用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
-- [Changelog — English](docs/CHANGELOG_en-US.md)
-- [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
-- [0.9 → 1.0 roadmap (Chinese)](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
-- [0.9 similarity architecture (Chinese)](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
-- [0.9 neural audio similarity architecture (Chinese)](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
-- [0.9 AI semantic search architecture (Chinese)](docs/AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md)
-- [Neural similarity sidecar and reproducible model](neural/README.md)
-
-## Repository structure
+## Repository Layout
 
 ```text
-Scripts/Psysia/    REAPER utility scripts
-assets/            PsyReaSFX artwork, fonts, and screenshots
-docs/              User guides and changelogs
-desktop/           PsyReaSFX Desktop development files
-neural/            Optional neural similarity sidecar
-website/           Project website
-index.xml          ReaPack repository index
+Scripts/Psysia/   REAPER utility scripts
+docs/             User guides, changelogs, and technical notes
+assets/           Artwork, fonts, screenshots, and packaged data
+neural/           Optional neural-similarity component
+desktop/          Desktop development files
+website/          Project website
+index.xml         ReaPack repository index
 ```
 
-## Author and license
+## License
 
 Created by **Psysia**.
 
 Copyright © 2026 Psysia. All rights reserved.
 
-See [LICENSE](LICENSE) for repository licensing details. Bundled third-party assets retain their respective licenses.
+See [LICENSE](LICENSE) for repository licensing details. Third-party assets retain their respective licenses.

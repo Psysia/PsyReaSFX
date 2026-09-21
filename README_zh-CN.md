@@ -5,7 +5,7 @@
 <h1 align="center">Psysia REAPER 工具集</h1>
 
 <p align="center">
-  面向声音设计、剪辑、轨道管理、渲染与素材工作流的一组实用 REAPER 工具。
+  面向声音设计、轨道整理、渲染、工程管理与音效资产工作流的实用 REAPER 工具集。
 </p>
 
 <p align="center">
@@ -18,72 +18,59 @@
   <img src="https://img.shields.io/badge/作者-Psysia-555555" alt="Psysia">
 </p>
 
-## 关于这个仓库
+## 项目简介
 
-这个仓库用于集中维护 **Psysia 的 REAPER 工具**。
+这个仓库包含两部分：
 
-其中既包括针对单一工作流的小型脚本，也包括体量更大的完整工具。**PsyReaSFX** 是其中规模最大的工具，但并不是整个仓库本身。所有轻量脚本都可以通过同一个 ReaPack 源单独安装。
+- **PsyReaSFX**：运行在 REAPER 内部的完整音效资产工作区。
+- **REAPER 实用工具**：面向剪辑、文件夹管理、渲染、显示与工程操作的轻量 ReaScript。
 
-## 通过 ReaPack 安装
+所有轻量工具都可以独立安装，不需要先安装 PsyReaSFX。
 
-在 REAPER 中打开：
+## 安装
 
-`扩展 → ReaPack → 导入仓库…`
-
-导入以下仓库地址：
+在 REAPER 中打开 `扩展 → ReaPack → 导入仓库...`，添加：
 
 ```text
-https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
+https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 ```
 
-同步软件包后，直接搜索需要的工具并安装即可。使用 Beta 7.4 时，先为软件包启用
+随后执行 `扩展 → ReaPack → 同步软件包`，直接搜索需要的工具并安装即可。使用 Beta 7.4 时，先为软件包启用
 预发布版本并安装 `PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再为同仓库
 中的独立可选包 `PsyReaSFX Neural Similarity` 启用预发布并安装。
 
-安装这些小型脚本时，**不需要同时安装 PsyReaSFX**。
+如需安装 PsyReaSFX 预发布版本，请在 ReaPack 中启用预发布版本。**PsyReaSFX Neural Similarity** 是 Windows x64 下的可选本地神经相似声音组件，不是主程序必需依赖。
 
-## 工具总览
+## REAPER 实用工具
 
-### 素材工作流
+| 分类 | 工具 | 用途 |
+|---|---|---|
+| 渲染 | 创建文件夹区域与渲染矩阵 | 根据当前选择建立 Region，并自动配置对应的 Region Render Matrix。 |
+| 渲染 | 智能尾音渲染面板 | 配置渲染尾音、静音裁切阈值与安全留白。 |
+| 渲染 | 打开渲染窗口并应用自动尾音 | 在打开原生渲染窗口前应用已保存的尾音设置。 |
+| 轨道管理 | 按最早素材位置排序轨道 | 文件夹感知排序，完整保留 Folder 子树结构。 |
+| 轨道管理 | 从选中轨道创建文件夹并挂载 Pro-L 2 | 将同级轨道或完整 Folder 子树包进新的总线，并挂载 Pro-L 2。 |
+| 轨道管理 | 统一轮换选中文件夹折叠状态 | 根据是否存在嵌套，自动使用两状态或四状态折叠逻辑。 |
+| 轨道管理 | 根据父级文件夹名重命名选中轨道 | 使用最近一级父文件夹名称给子轨编号命名。 |
+| 素材编辑 | 移除选中素材间隙 | 按现有顺序将选中素材首尾相接。 |
+| 素材编辑 | 拆分选中素材到新轨道 | 保持时间位置，将选中素材移动到独立新轨道。 |
+| 素材编辑 | 原位反转选中素材 | 通过可一次撤销的 Take 流程反转选中素材。 |
+| 工程管理 | 打开全部子工程 | 递归打开当前工程引用的全部子工程。 |
+| 显示 | 切换 LUFS-M 与频谱图 | 在 LUFS-M 频谱峰值显示与频谱图之间切换。 |\n| 显示 | 视频素材文件名覆盖显示 | 在 Arrange View 的视频 Item 内显示隐藏扩展名后的文件名，并随 Item 尺寸自适应字号。 |
 
-| 工具 | 功能 |
-|---|---|
-| **PsyReaSFX** | 音效资产浏览与工作流工具，用于素材库管理、波形试听、元数据、REAPER 插入与 Transfer。 |
-
-### 渲染
-
-| 工具 | 功能 |
-|---|---|
-| **创建文件夹区域与渲染矩阵** | 根据选中素材建立 Region，按轨道或文件夹层级命名，并自动写入对应的 Region Render Matrix。 |
-| **智能尾音渲染面板** | 配置 REAPER 原生 Render Tail、尾部静音裁切阈值与安全留白，适用于 Region 和时间选区渲染。 |
-| **打开渲染对话框并应用自动尾音** | 打开渲染窗口前，自动应用已保存的尾音设置。 |
-
-### 轨道与素材
-
-| 工具 | 功能 |
-|---|---|
-| **按最早素材位置排序轨道** | 按最早素材位置排序选中轨道；有选中素材时，优先识别素材所在轨道，并按各轨道最早的选中素材排序。 |
-| **移除选中素材间隙** | 将选中素材依次首尾相接，快速移除它们之间的空隙。 |
-| **拆分选中素材到新轨道** | 将选中素材拆分到新轨道，保持原时间位置，并根据 Take 名称自动命名新轨道。 |
-| **原位反转选中素材** | 对选中素材生成反向 Take 并裁切到当前 Take，实现一键原位反转。 |
-| **从选中轨道创建文件夹并挂载 Pro-L 2** | 将选中轨道包进新的父文件夹轨，并自动在父轨挂载 Pro-L 2。 |
-
-### 显示与分析
-
-| 工具 | 功能 |
-|---|---|
-| **切换 LUFS-M 与频谱图** | 在 LUFS-M 频谱峰值显示与普通 Spectrogram 之间快速切换。 |
+详细使用方式、边界条件、依赖关系与快捷键建议见 [REAPER 工具手册](docs/REAPER_TOOLS_GUIDE_zh-CN.md)。
 
 ## PsyReaSFX
 
-<p align="center">
-  <strong>浏览 · 整理 · 试听 · 交付</strong><br>
-  运行在 REAPER 内部的高性能音效资产工作区。
-</p>
+**PsyReaSFX** 是一个可停靠在 REAPER 内部的音效资产工作区，集中提供素材库管理、波形浏览、试听、元数据、集合、搜索、REAPER 插入与处理后交付。
 
-PsyReaSFX 面向需要长期维护大型个人或制作素材库的游戏音频设计师、声音设计师和 REAPER 用户。
+| 通道 | 版本 | 说明 |
+|---|---|---|
+| 稳定版 | **0.8.5** | 推荐日常使用。 |
+| 预发布版 | **0.9.0 Beta 7.4** | 当前预发布线；修复 AI 搜索被波形与目录维护任务阻断。 |
+| 可选组件 | **PsyReaSFX Neural Similarity** | Windows x64 本地神经相似声音检索组件。 |
 
-它把素材库管理、波形浏览、搜索、试听、元数据、集合、REAPER 放置与处理后导出集中在一个可停靠工作区中。
+未安装神经组件时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
 
 ### 当前开发状态
 
@@ -118,41 +105,38 @@ Beta 7.4 包含独立的 **AI 语义搜索**。它与“查找相似声音”完
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)
 
+[版本发布](https://github.com/Psysia/PsyReaSFX/releases) · [用户手册](docs/USER_GUIDE_zh-CN.md) · [更新日志](docs/CHANGELOG_zh-CN.md)
+
 ## 文档
 
-### 小型 REAPER 工具
+| 文档 | 内容 |
+|---|---|
+| [REAPER 工具手册](docs/REAPER_TOOLS_GUIDE_zh-CN.md) | 轻量脚本的安装、功能与使用方式。 |
+| [PsyReaSFX 用户手册](docs/USER_GUIDE_zh-CN.md) | 主程序工作流与功能说明。 |
+| [PsyReaSFX 更新日志](docs/CHANGELOG_zh-CN.md) | 版本历史与更新内容。 |
+| [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md) | 版本演进与开发计划。 |
+| [相似声音架构](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md) | 0.9 相似声音系统设计。 |
+| [神经音频相似度架构](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md) | 本地神经检索架构。 |
+| [AI 语义搜索架构](docs/AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md) | API 语义搜索架构。 |
 
-- [REAPER 工具使用手册 — 简体中文](docs/ReaScripts_Guide_zh-CN.md)
-- [REAPER Utility Guide — English](docs/ReaScripts_Guide.md)
-
-### PsyReaSFX
-
-- [用户使用说明书 — 简体中文](docs/USER_GUIDE_zh-CN.md)
-- [User Guide — English](docs/USER_GUIDE_en-US.md)
-- [更新日志 — 简体中文](docs/CHANGELOG_zh-CN.md)
-- [Changelog — English](docs/CHANGELOG_en-US.md)
-- [0.9 → 1.0 开发路线](docs/ROADMAP_0_9_TO_1_0_zh-CN.md)
-- [0.9 相似声音架构](docs/SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
-- [0.9 神经音频相似度架构](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md)
-- [0.9 AI 语义搜索架构](docs/AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md)
-- [神经相似度 sidecar 与可复现模型](neural/README.md)
+其余开发、性能与技术归档统一保存在 `docs/`，不再堆叠在项目首页。
 
 ## 仓库结构
 
 ```text
-Scripts/Psysia/    REAPER 小型工具脚本
-assets/            PsyReaSFX 图片、字体与截图
-docs/              使用手册与更新日志
-desktop/           PsyReaSFX Desktop 开发文件
-neural/            可选神经相似度 sidecar
-website/           项目网站
-index.xml          ReaPack 仓库索引
+Scripts/Psysia/   REAPER 实用脚本
+docs/             使用手册、更新日志与技术文档
+assets/           图片、字体、截图与随附数据
+neural/           可选神经相似度组件
+desktop/          Desktop 开发文件
+website/          项目网站
+index.xml         ReaPack 仓库索引
 ```
 
-## 作者与许可
+## 许可
 
-由 **Psysia** 创建。
+作者：**Psysia**
 
 Copyright © 2026 Psysia. All rights reserved.
 
-仓库许可详情见 [LICENSE](LICENSE)。第三方随附资源继续遵循各自许可。
+仓库许可详情见 [LICENSE](LICENSE)，第三方资源继续遵循各自许可。
