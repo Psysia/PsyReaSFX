@@ -1,9 +1,10 @@
--- @description Video Item Filename Overlay Settings / 视频素材文件名覆盖显示设置
--- @version 1.0
+-- @description Video Item Track Name Overlay Settings / 视频素材轨道名覆盖显示设置
+-- @version 1.1
 -- @author Psysia
 -- @changelog
+--   + Rename the settings Action for the track-name overlay.
+--   + Preserve the same ExtState keys so existing font settings remain compatible.
 --   + Configure font face, minimum size, maximum size, and weight.
---   + Persist settings for Video Item Filename Overlay.
 
 local EXT_SECTION =
     "PsysiaVideoItemFilenameOverlay"
@@ -56,7 +57,7 @@ local weight =
 
 local ok, values =
     reaper.GetUserInputs(
-        "Video Filename Overlay Settings / 视频文件名覆盖设置",
+        "Video Track Name Overlay Settings / 视频轨道名覆盖设置",
         4,
         "Font / 字体,Minimum px / 最小字号,Maximum px / 最大字号,Weight 0-1000 / 字重,extrawidth=160",
         table.concat(
@@ -114,7 +115,7 @@ or new_weight > 1000 then
         .. "Maximum: minimum-128 px\n"
         .. "Weight: 0-1000\n\n"
         .. "设置无效，请检查字号和字重范围。",
-        "Video Filename Overlay Settings / 视频文件名覆盖设置",
+        "Video Track Name Overlay Settings / 视频轨道名覆盖设置",
         0
     )
     return
