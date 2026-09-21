@@ -1,5 +1,13 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.5
+
+### DeepSeek JSON-output compatibility fix
+
+- Explicitly disables the default DeepSeek thinking mode for structured search requests so reasoning output cannot interfere with plan and reranking JSON.
+- Accepts valid JSON wrapped in explanatory text, Markdown fences, or text content blocks, while correctly handling braces inside JSON strings.
+- DeepSeek documents that JSON Output can occasionally return empty content; empty or malformed output now triggers one automatic retry with a stricter prompt.
+
 ## 0.9.0 Beta 7.4
 
 ### AI-search background-job conflict fix

@@ -389,6 +389,7 @@ function ai_semantic_clear_results()
 end
 
 function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens)
+  local provider = state.ai_provider
   local body = {
     model = trim(state.ai_model or ""),
     messages = {
@@ -398,7 +399,12 @@ function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens)
     temperature = 0.1,
     max_tokens = maximum_tokens or 1200,
   }
-  if state.ai_provider ~= "custom" then
+  if provider == "deepseek" then
+    -- Current DeepSeek models enable thinking by default. Structured search
+    -- planning is more reliable and uses fewer tokens with thinking disabled.
+    body.thinking = { type = "disabled" }
+  end
+  if provider ~= "custom" then
     body.response_format = { type = "json_object" }
   end
   return neural_json_encode(body)
@@ -436,6 +442,62 @@ function ai_semantic_start_api_job(kind, system_prompt, user_prompt, maximum_tok
   return job
 end
 
+function ai_semantic_decode_content_json(content)
+  content = trim(content or "")
+  if content == "" then return nil end
+  content = content:gsub("^```[%w_-]*%s*", ""):gsub("%s*```$", "")
+  local decoded_ok, decoded = pcall(neural_json_decode, content)
+  if decoded_ok and type(decoded) == "table" then return decoded end
+
+  local depth = 0
+  local start_index = nil
+  local quoted = false
+  local escaped = false
+  for index = 1, #content do
+    local byte = content:byte(index)
+    if quoted then
+      if escaped then
+        escaped = false
+      elseif byte == 92 then
+        escaped = true
+      elseif byte == 34 then
+        quoted = false
+      end
+    elseif byte == 34 then
+      quoted = true
+    elseif byte == 123 then
+      if depth == 0 then start_index = index end
+      depth = depth + 1
+    elseif byte == 125 and depth > 0 then
+      depth = depth - 1
+      if depth == 0 and start_index then
+        local candidate = content:sub(start_index, index)
+        local candidate_ok, candidate_value = pcall(neural_json_decode, candidate)
+        if candidate_ok and type(candidate_value) == "table" then
+          return candidate_value
+        end
+        start_index = nil
+      end
+    end
+  end
+  return nil
+end
+
+function ai_semantic_message_content(message)
+  if type(message) ~= "table" then return nil end
+  if type(message.content) == "string" then return message.content end
+  if type(message.content) ~= "table" then return nil end
+  local parts = {}
+  for _, block in ipairs(message.content) do
+    if type(block) == "string" then
+      parts[#parts + 1] = block
+    elseif type(block) == "table" and type(block.text) == "string" then
+      parts[#parts + 1] = block.text
+    end
+  end
+  return #parts > 0 and table.concat(parts, "\n") or nil
+end
+
 function ai_semantic_extract_content(response_text)
   local ok, response = pcall(neural_json_decode, response_text or "")
   if not ok or type(response) ~= "table" then
@@ -446,14 +508,60 @@ function ai_semantic_extract_content(response_text)
   end
   local choice = type(response.choices) == "table" and response.choices[1] or nil
   local message = choice and choice.message or nil
-  local content = message and message.content or nil
-  if type(content) ~= "string" then return nil, "API 没有返回可用内容" end
-  content = trim(content):gsub("^```[%w_-]*%s*", ""):gsub("%s*```$", "")
-  local decoded_ok, decoded = pcall(neural_json_decode, content)
-  if not decoded_ok or type(decoded) ~= "table" then
+  local content = ai_semantic_message_content(message)
+  if type(content) ~= "string" or trim(content) == "" then
+    return nil, "API 没有返回可用内容"
+  end
+  local decoded = ai_semantic_decode_content_json(content)
+  if not decoded then
     return nil, "模型没有返回要求的 JSON 结构"
   end
   return decoded
+end
+
+function ai_semantic_retryable_response_error(reason)
+  return reason == "API 没有返回可用内容"
+    or reason == "模型没有返回要求的 JSON 结构"
+end
+
+function ai_semantic_retry_api(session, phase, reason)
+  local retry_key = phase .. "_retry_count"
+  if not ai_semantic_retryable_response_error(reason)
+    or (session[retry_key] or 0) >= 1 then return false end
+
+  if session.api_job then
+    ai_semantic_cleanup_job(session.api_job)
+    session.api_job = nil
+  end
+
+  local kind, system_prompt, user_prompt, maximum_tokens
+  if phase == "plan" then
+    kind = "plan-retry"
+    system_prompt = ai_semantic_plan_system_prompt()
+    user_prompt = session.query
+    maximum_tokens = 900
+  elseif phase == "rerank" then
+    kind = "rerank-retry"
+    system_prompt = ai_semantic_rerank_system_prompt()
+    user_prompt = ai_semantic_candidate_payload(session)
+    maximum_tokens = 2200
+  else
+    return false
+  end
+
+  local api_job = ai_semantic_start_api_job(
+    kind,
+    system_prompt .. "\nReturn one complete JSON object only. Do not include analysis, prose, or markdown fences.",
+    user_prompt,
+    maximum_tokens
+  )
+  if not api_job then return false end
+  session[retry_key] = (session[retry_key] or 0) + 1
+  session.api_job = api_job
+  set_status(phase == "plan"
+    and "AI 返回格式异常，正在自动重试搜索计划…"
+    or "AI 返回格式异常，正在自动重试结果排序…")
+  return true
 end
 
 function ai_semantic_plan_system_prompt()
@@ -770,9 +878,17 @@ function process_ai_semantic_search()
   if session.phase == "plan_wait" then
     local ready, value = ai_semantic_poll_api(session)
     if ready == nil then return end
-    if not ready then ai_semantic_fail(session, value) return end
+    if not ready then
+      if ai_semantic_retry_api(session, "plan", value) then return end
+      ai_semantic_fail(session, value)
+      return
+    end
     local plan, reason = ai_semantic_validate_plan(value)
-    if not plan then ai_semantic_fail(session, reason) return end
+    if not plan then
+      if ai_semantic_retry_api(session, "plan", "模型没有返回要求的 JSON 结构") then return end
+      ai_semantic_fail(session, reason)
+      return
+    end
     session.plan = plan
     session.phase = "recall"
     set_status("AI 语义搜索：正在本地召回候选素材…")
@@ -816,7 +932,8 @@ function process_ai_semantic_search()
     local ready, value = ai_semantic_poll_api(session)
     if ready == nil then return end
     if not ready then
-      ai_semantic_cleanup_job(session.api_job)
+      if ai_semantic_retry_api(session, "rerank", value) then return end
+      if session.api_job then ai_semantic_cleanup_job(session.api_job) end
       session.api_job = nil
       ai_semantic_finish(session, {}, true)
       return

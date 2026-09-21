@@ -192,12 +192,64 @@ local decoded = assert(ai_semantic_extract_content(neural_json_encode({
 })))
 assert(decoded.positive_terms[1] == "impact")
 
+decoded = assert(ai_semantic_extract_content(neural_json_encode({
+  choices = {
+    { message = { content = [[Here is the requested result:
+```json
+{"positive_terms":["door"],"negative_terms":[],"concepts":["wood"],"summary":"wood door"}
+```]] } },
+  },
+})))
+assert(decoded.positive_terms[1] == "door")
+
+decoded = assert(ai_semantic_extract_content(neural_json_encode({
+  choices = {
+    { message = { content = {
+      { type = "text", text = [[{"matches":[{"id":1,"score":91,"reason":"metal {impact}"}]}]] },
+    } } },
+  },
+})))
+assert(decoded.matches[1].score == 91)
+
+local empty_content, empty_reason = ai_semantic_extract_content(neural_json_encode({
+  choices = { { message = { content = "" } } },
+}))
+assert(empty_content == nil and ai_semantic_retryable_response_error(empty_reason))
+local invalid_content, invalid_reason = ai_semantic_extract_content(neural_json_encode({
+  choices = { { message = { content = "not json" } } },
+}))
+assert(invalid_content == nil and ai_semantic_retryable_response_error(invalid_reason))
+
+local original_start_api_job_for_retry = ai_semantic_start_api_job
+local retry_calls = 0
+ai_semantic_start_api_job = function(kind, system_prompt, user_prompt, maximum_tokens)
+  retry_calls = retry_calls + 1
+  assert(kind == "plan-retry")
+  assert(system_prompt:find("one complete JSON object", 1, true))
+  assert(user_prompt == "wood door")
+  assert(maximum_tokens == 900)
+  return { kind = kind }
+end
+local retry_session = { query = "wood door" }
+assert(ai_semantic_retry_api(retry_session, "plan", invalid_reason))
+assert(retry_calls == 1 and retry_session.plan_retry_count == 1)
+assert(not ai_semantic_retry_api(retry_session, "plan", invalid_reason))
+assert(retry_calls == 1, "invalid JSON must be retried at most once")
+ai_semantic_start_api_job = original_start_api_job_for_retry
+
 local body = ai_semantic_chat_body("system", "user", 50)
 local request = neural_json_decode(body)
 assert(request.model == "deepseek-flash")
 assert(request.messages[1].content == "system")
 assert(request.messages[2].content == "user")
 assert(request.response_format.type == "json_object")
+assert(request.thinking.type == "disabled")
+
+state.ai_provider = "custom"
+request = neural_json_decode(ai_semantic_chat_body("system", "user", 50))
+assert(request.response_format == nil)
+assert(request.thinking == nil)
+state.ai_provider = "deepseek"
 
 state.ai_provider = "deepseek"
 state.ai_model = "deepseek-chat"
