@@ -242,25 +242,11 @@ session.candidates = {{
   score = 1,
   sort_path = "c:/library/bell.wav",
 }}
-local candidate_payload = neural_json_decode(ai_semantic_candidate_payload(session))
-assert(candidate_payload.q == "金属撞击")
-assert(utf8.len(candidate_payload.c[1][2]) == 120)
-assert(candidate_payload.c[1][3] == "金属钟声")
-assert(candidate_payload.c[1].description == nil)
-assert(ai_semantic_rerank_system_prompt():find("each c row", 1, true))
-assert(ai_semantic_rerank_system_prompt():find('[[1,92],[7,88]]', 1, true))
-assert(not ai_semantic_rerank_system_prompt():find("brief match explanation", 1, true))
-local compact_id, compact_score = ai_semantic_match_fields({ 1, 93 })
-assert(compact_id == 1 and compact_score == 93)
-local legacy_id, legacy_score, legacy_reason = ai_semantic_match_fields({
-  id = 2, score = 88, reason = "legacy",
-})
-assert(legacy_id == 2 and legacy_score == 88 and legacy_reason == "legacy")
 session.plan = { summary = "metal impact" }
 session.job_token = {}
-ai_semantic_finish(session, {}, false)
-assert(state.ai_semantic_result_count == 0)
-assert(next(state.ai_semantic_lookup) == nil)
+ai_semantic_finish_local(session)
+assert(state.ai_semantic_result_count == 1)
+assert(state.ai_semantic_lookup["c:/library/bell.wav"].local_score == 1)
 assert(state.search == "金属撞击")
 
 local first_page_assets = {}
@@ -281,47 +267,17 @@ local page_session = {
   job_token = {},
 }
 assert(ai_semantic_prepare_page(page_session, 1))
-ai_semantic_candidate_payload(page_session)
-ai_semantic_finish(page_session, { { 1, 99 }, { 2, 98 } }, false)
-assert(state.ai_semantic_result_count == 2)
+ai_semantic_finish_local(page_session)
+assert(state.ai_semantic_result_count == 120)
 assert(state.ai_semantic_has_more)
 assert(state.ai_semantic_loaded_candidates == 120)
 assert(state.ai_semantic_total_candidates == 130)
-local page_two = {
-  query = "metal impact",
-  plan = page_session.plan,
-  compiled_plan = compiled_plan,
-  candidate_pool = first_page_assets,
-  candidates = {},
-  page_index = 2,
-  append_results = true,
-  job_token = {},
-}
-assert(ai_semantic_prepare_page(page_two, 2) and #page_two.candidates == 10)
-ai_semantic_candidate_payload(page_two)
-ai_semantic_finish(page_two, { { 1, 97 }, { 2, 96 } }, false)
-assert(state.ai_semantic_result_count == 4)
+assert(start_ai_semantic_next_page())
+assert(state.ai_semantic_result_count == 130)
 assert(not state.ai_semantic_has_more)
 assert(state.ai_semantic_lookup["c:/library/page-001.wav"].page == 1)
 assert(state.ai_semantic_lookup["c:/library/page-121.wav"].page == 2)
-
-local fill_session = {
-  query = "metal impact",
-  plan = { summary = "metal impact" },
-  compiled_plan = compiled_plan,
-  candidate_pool = first_page_assets,
-  candidates = {},
-  page_index = 1,
-  job_token = {},
-}
-assert(ai_semantic_prepare_page(fill_session, 1))
-ai_semantic_candidate_payload(fill_session)
-ai_semantic_finish(fill_session, { { 2, 98 }, { 1, 99 } }, true)
-assert(state.ai_semantic_result_count == 120)
-assert(state.ai_semantic_lookup["c:/library/page-001.wav"].ai_ranked == true)
-assert(state.ai_semantic_lookup["c:/library/page-003.wav"].ai_ranked == false)
-assert(state.ai_semantic_lookup["c:/library/page-003.wav"].explanation
-  == "模型未返回，本地召回补位")
+assert(state.ai_semantic_session == nil)
 
 local decoded = assert(ai_semantic_extract_content(neural_json_encode({
   choices = {
@@ -367,7 +323,7 @@ ai_semantic_start_api_job = function(kind, system_prompt, user_prompt, maximum_t
   assert(kind == "plan-retry")
   assert(system_prompt:find("one complete JSON object", 1, true))
   assert(user_prompt == "wood door")
-  assert(maximum_tokens == 900)
+  assert(maximum_tokens == 600)
   return { kind = kind }
 end
 local retry_session = { query = "wood door" }
@@ -470,16 +426,13 @@ Jobs.finish(catalog_job, true)
 ai_semantic_start_api_job = original_start_api_job
 
 local source = read_all(ai_source_path)
-local payload_start = assert(source:find("function ai_semantic_candidate_payload", 1, true))
-local payload_end = assert(source:find("function ai_semantic_finish", payload_start, true))
-local payload_source = source:sub(payload_start, payload_end - 1)
-assert(payload_source:find("q = session.query", 1, true))
-assert(payload_source:find("c = candidates", 1, true))
-assert(not payload_source:find("path =", 1, true))
+assert(not source:find("ai_semantic_rerank_system_prompt", 1, true))
+assert(not source:find('"rerank_wait"', 1, true))
+assert(source:find("ai_semantic_finish_local", 1, true))
 assert(source:find('"ai_semantic_api"', 1, true))
 assert(source:find("source = source", 1, true))
 assert(source:find("total = #source", 1, true))
-assert(source:find("Audio is", 1, true))
+assert(source:find("metadata and audio", 1, true))
 assert(source:find("ProtectedData", 1, true))
 assert(source:find("response_format", 1, true))
 

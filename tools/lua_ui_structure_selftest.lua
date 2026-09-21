@@ -200,6 +200,16 @@ assert(
     and source:find("start_ai_semantic_next_page()", 1, true),
   "AI result view must expose the next 120-candidate page"
 )
+assert(
+  source:find('definition.contextual and "similar" == state.view', 1, true)
+    and not source:find('"AI 相关度"', 1, true),
+  "AI results must not reuse the similar-sound relevance column"
+)
+assert(
+  source:find("继续加载下一批完全在本地完成", 1, true)
+    and not source:find('or phase == "rerank_wait"', 1, true),
+  "AI paging must stay local without a remote reranking phase"
+)
 local ai_settings = function_region(
   "function draw_settings_ai()",
   "function color_edit_flags()"

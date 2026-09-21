@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.7
+-- @version 0.9.0-beta7.8
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -84,6 +84,7 @@
 --   - Beta 7.5：适配 DeepSeek 默认思考模式与偶发空 JSON，增加宽容解析和一次自动重试
 --   - Beta 7.6：AI 本地候选召回使用查询预编译与两级评分，显著提升大型素材库速度
 --   - Beta 7.7：AI 进度改为单行状态，支持按 120 条继续浏览并压缩重排请求
+--   - Beta 7.8：移除 AI 远程重排与相关度列，翻页改为即时本地追加
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -189,7 +190,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.7"
+local VERSION = "0.9.0 Beta 7.8"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2194,8 +2195,8 @@ I18N_EN["顶部搜索框是普通搜索与 AI 语义搜索的统一入口。"] =
   "The top search field is the single entry point for normal and AI semantic search."
 I18N_EN["顶部搜索框是统一入口：输入关键词后按 Enter 执行普通本地搜索；输入自然语言描述后点击金色 AI 按钮，或按 Ctrl+Shift+F，直接执行 AI 语义搜索。"] =
   "The top search field is the single entry point: press Enter after entering keywords for a normal local search, or enter a natural-language description and click the gold AI button (or press Ctrl+Shift+F) to run AI semantic search directly."
-I18N_EN["AI 会扩展中英文检索词，在当前音效库、目录和集合范围内本地召回候选，再依据文件名和元数据进行语义重排。搜索完成后直接显示 AI 语义结果。"] =
-  "AI expands bilingual retrieval terms, recalls candidates locally within the current library, folder and collection scope, then reranks filenames and metadata. AI semantic results are displayed when the search completes."
+I18N_EN["AI 会扩展中英文检索词，在当前音效库、目录和集合范围内本地召回候选，再依据文件名和元数据直接在本地排序。搜索完成后直接显示 AI 语义结果。"] =
+  "AI expands bilingual retrieval terms, then recalls and ranks candidates locally within the current library, folder and collection scope. AI semantic results are displayed when the search completes."
 I18N_EN["结果先显示本地召回排名最高的 120 条；浏览完成后可继续加载下一批，后续结果会追加保留。"] =
   "The first 120 highest-ranked local candidates are shown first. Load another batch when needed; later results are appended."
 I18N_EN["示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"] =
@@ -2221,24 +2222,20 @@ I18N_EN["API Key 已安全保存"] = "API key saved securely"
 I18N_EN["已删除保存的 API Key"] = "Saved API key deleted"
 I18N_PREFIX_EN["保存失败："] = "Save failed: "
 I18N_EN["隐私与范围"] = "Privacy and scope"
-I18N_EN["每次搜索都先在本地压缩候选范围。"] = "Every search narrows the candidate set locally first."
-I18N_EN["每批发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、压缩文本元数据和时长。只有点击继续加载时才发送下一批；不会发送完整目录、文件路径或音频。"] =
-  "Sent to the API per batch: your query plus filenames, compact text metadata and duration for at most 120 candidates. Another batch is sent only when you request it; the full catalog, file paths and audio are never sent."
+I18N_EN["API 只负责理解搜索描述。"] = "The API is used only to understand the search description."
+I18N_EN["发送给 API 的只有搜索框中的自然语言描述；素材文件名、Description、Keywords、UCS 字段、目录、文件路径和音频均不上传。继续加载下一批完全在本地完成。"] =
+  "Only the natural-language query is sent to the API. Filenames, Description, Keywords, UCS fields, directories, file paths and audio stay local. Loading later batches is entirely local."
 I18N_EN["如果素材缺少有意义的文件名和元数据，本阶段的语义效果会受限；后续可接入本地音频语义 embedding。"] =
   "This stage depends on meaningful filenames and metadata; a future local audio-text embedding can cover poorly described assets."
 I18N_EN["API 请求可能由服务商计费；费用、配额和内容保留策略以所选服务商为准。"] =
   "API requests may incur provider charges; billing, quotas and retention policies depend on the selected service."
 I18N_EN["密钥使用 Windows DPAPI 按当前用户加密并单独保存，不写入 config.tsv、备份或日志。"] =
   "The key is encrypted for the current Windows user with DPAPI and is never written to config.tsv, backups or logs."
-I18N_EN["独立于相似声音：以自然语言查找素材，首版使用本地文本召回和云端语义重排。"] =
-  "Separate from similar-sound search: use natural language with local text recall and cloud semantic reranking."
+I18N_EN["独立于相似声音：AI 理解自然语言，本地完成素材召回与排序。"] =
+  "Separate from similar-sound search: AI understands the natural-language request, while asset recall and ranking stay local."
 I18N_EN["继续加载下一批 120 条"] = "Load next 120"
-I18N_EN["AI 语义匹配"] = "AI semantic match"
-I18N_EN["模型未返回，本地召回补位"] = "Omitted by model; filled from local recall"
 I18N_EN["当前批次没有可显示的 AI 语义结果。"] =
   "The current batch has no AI semantic results to display."
-I18N_EN["排序依据：先按文件名、Description、Keywords 与 UCS 字段本地召回，再按 AI 相关度排序。后续批次排在前一批之后；同分时按本地召回分与路径稳定排序。模型遗漏项在本批末尾按本地召回补足。"] =
-  "Ranking: local filename and metadata recall, then AI relevance. Later batches remain after earlier batches; ties use local recall score and path. Model omissions are filled at the end of that batch from local recall order."
 
 I18N_PATTERNS_EN = {
   {
@@ -2250,10 +2247,6 @@ I18N_PATTERNS_EN = {
     "AI semantic search complete: %1 results",
   },
   {
-    "^AI 重排不可用，已显示 (%d+) 条 AI 扩展词本地结果$",
-    "AI reranking unavailable; showing %1 local expanded-term results",
-  },
-  {
     "^AI 语义搜索完成：已显示 (%d+) 条，可继续加载下一批$",
     "AI semantic search complete: showing %1 results; another batch is available",
   },
@@ -2262,28 +2255,8 @@ I18N_PATTERNS_EN = {
     "AI semantic search complete: showing %1 results",
   },
   {
-    "^AI 语义搜索完成：已显示 (%d+) 条；模型缺失项已按本地召回补足，可继续加载下一批$",
-    "AI semantic search complete: showing %1 results; omitted model entries were filled from local recall and another batch is available",
-  },
-  {
-    "^AI 语义搜索完成：已显示 (%d+) 条；模型缺失项已按本地召回补足$",
-    "AI semantic search complete: showing %1 results; omitted model entries were filled from local recall",
-  },
-  {
-    "^AI 重排不可用，已显示 (%d+) 条本地结果；可继续加载下一批$",
-    "AI reranking unavailable; showing %1 local results; another batch is available",
-  },
-  {
-    "^AI 重排不可用，已显示 (%d+) 条本地结果$",
-    "AI reranking unavailable; showing %1 local results",
-  },
-  {
     "^AI 语义搜索：正在本地召回候选  (%d+) / (%d+)（(%d+)%%）$",
     "AI semantic search: recalling local candidates  %1 / %2 (%3%%)",
-  },
-  {
-    "^AI 语义搜索：正在重排第 (%d+) 批（(%d+) 条）…$",
-    "AI semantic search: reranking batch %1 (%2 candidates)...",
   },
   {
     "^已浏览本地候选 (%d+) / (%d+)；下一批会继续追加到当前结果$",
