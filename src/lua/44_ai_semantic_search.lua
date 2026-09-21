@@ -11,8 +11,8 @@ AISemantic = {
   schema = "PsyReaSFX-AI-Semantic-v1",
   candidate_limit = 120,
   result_limit = 100,
-  frame_records = 4000,
-  frame_budget = 0.004,
+  frame_records = 12000,
+  frame_budget = 0.008,
   poll_interval = 0.10,
   request_timeout = 90,
 }
@@ -629,26 +629,96 @@ function ai_semantic_term_score(text, term, weight)
   return 0
 end
 
-function ai_semantic_asset_score(asset, plan)
+function ai_semantic_compile_term(term)
+  local value = safe_lower(trim(term or ""))
+  local pieces = {}
+  local seen = {}
+  for piece in value:gmatch("[%w\128-\255]+") do
+    if #piece >= 2 and not seen[piece] then
+      seen[piece] = true
+      pieces[#pieces + 1] = piece
+    end
+  end
+  return { value = value, pieces = pieces }
+end
+
+function ai_semantic_compile_plan(plan)
+  local compiled = { positive_terms = {}, negative_terms = {} }
+  for _, term in ipairs(plan.positive_terms or {}) do
+    compiled.positive_terms[#compiled.positive_terms + 1] =
+      ai_semantic_compile_term(term)
+  end
+  for _, term in ipairs(plan.negative_terms or {}) do
+    compiled.negative_terms[#compiled.negative_terms + 1] =
+      ai_semantic_compile_term(term)
+  end
+  return compiled
+end
+
+function ai_semantic_compiled_term_score(text, term, weight)
+  if term.value == "" or text == "" then return 0 end
+  if text:find(term.value, 1, true) then return weight end
+  local score = 0
+  for _, piece in ipairs(term.pieces) do
+    if text:find(piece, 1, true) then score = score + weight * 0.35 end
+  end
+  if #term.pieces > 0 then return math.min(weight * 0.8, score) end
+  return 0
+end
+
+function ai_semantic_asset_recall_blob(asset)
+  -- Reuse a normal-search blob only when it already exists. Building a
+  -- persistent blob for every row during AI recall would retain substantial
+  -- extra memory in catalogs containing hundreds of thousands of assets.
+  if asset._search_blob then return asset._search_blob end
+  return safe_lower(table.concat({
+    asset.name or "", asset.path or "", asset.library or "",
+    asset.description or "", asset.keywords or "", asset.catid or "",
+    asset.category or "", asset.subcategory or "",
+  }, "\n"))
+end
+
+function ai_semantic_asset_score(asset, plan, compiled_plan)
+  local compiled = compiled_plan or ai_semantic_compile_plan(plan)
+  local blob = ai_semantic_asset_recall_blob(asset)
+  local matched_terms = {}
+  for index, term in ipairs(compiled.positive_terms) do
+    if ai_semantic_compiled_term_score(blob, term, 1) > 0 then
+      matched_terms[#matched_terms + 1] = index
+    end
+  end
+  if #matched_terms == 0 then return 0 end
+
   local fields = {
-    { asset.name, 8 }, { asset.keywords, 7 }, { asset.description, 6 },
-    { asset.category, 6 }, { asset.subcategory, 5 }, { asset.catid, 4 },
-    { asset.library, 2 }, { asset.path, 1 },
+    { safe_lower(asset.name or ""), 8 },
+    { safe_lower(asset.keywords or ""), 7 },
+    { safe_lower(asset.description or ""), 6 },
+    { safe_lower(asset.category or ""), 6 },
+    { safe_lower(asset.subcategory or ""), 5 },
+    { safe_lower(asset.catid or ""), 4 },
+    { safe_lower(asset.library or ""), 2 },
+    { safe_lower(asset.path or ""), 1 },
   }
   local score = 0
   local matched = 0
-  for _, term in ipairs(plan.positive_terms) do
+  for _, index in ipairs(matched_terms) do
+    local term = compiled.positive_terms[index]
     local term_score = 0
     for _, field in ipairs(fields) do
-      term_score = math.max(term_score, ai_semantic_term_score(field[1], term, field[2]))
+      term_score = math.max(
+        term_score,
+        ai_semantic_compiled_term_score(field[1], term, field[2])
+      )
     end
     if term_score > 0 then matched = matched + 1 score = score + term_score end
   end
-  for _, term in ipairs(plan.negative_terms) do
-    for _, field in ipairs(fields) do
-      if ai_semantic_term_score(field[1], term, 1) > 0 then
-        score = score - 12
-        break
+  for _, term in ipairs(compiled.negative_terms) do
+    if ai_semantic_compiled_term_score(blob, term, 1) > 0 then
+      for _, field in ipairs(fields) do
+        if ai_semantic_compiled_term_score(field[1], term, 1) > 0 then
+          score = score - 12
+          break
+        end
       end
     end
   end
@@ -890,6 +960,7 @@ function process_ai_semantic_search()
       return
     end
     session.plan = plan
+    session.compiled_plan = ai_semantic_compile_plan(plan)
     session.phase = "recall"
     set_status("AI 语义搜索：正在本地召回候选素材…")
     return
@@ -903,7 +974,11 @@ function process_ai_semantic_search()
       and (processed == 0 or Host.time_precise() < deadline) do
       local asset = session.source[session.source_index]
       if ai_semantic_asset_scope_match(asset) then
-        ai_semantic_insert_candidate(session, asset, ai_semantic_asset_score(asset, session.plan))
+        ai_semantic_insert_candidate(
+          session,
+          asset,
+          ai_semantic_asset_score(asset, session.plan, session.compiled_plan)
+        )
       end
       session.source_index = session.source_index + 1
       session.scanned = session.scanned + 1

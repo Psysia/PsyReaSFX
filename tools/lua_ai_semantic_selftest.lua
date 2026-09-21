@@ -150,6 +150,49 @@ local irrelevant = {
 }
 assert(ai_semantic_asset_score(relevant, plan) > ai_semantic_asset_score(irrelevant, plan))
 
+local compiled_plan = ai_semantic_compile_plan(plan)
+assert(#compiled_plan.positive_terms == #plan.positive_terms)
+assert(ai_semantic_asset_score(relevant, plan, compiled_plan)
+  == ai_semantic_asset_score(relevant, plan))
+assert(ai_semantic_asset_score(irrelevant, plan, compiled_plan) == 0)
+
+local cached_blob_asset = { _search_blob = "cached metal impact" }
+assert(ai_semantic_asset_recall_blob(cached_blob_asset) == cached_blob_asset._search_blob)
+
+local capacity_plan = assert(ai_semantic_validate_plan({
+  positive_terms = {
+    "metal impact", "metal", "impact", "hit", "clang", "clank",
+    "collision", "industrial", "heavy", "hard", "strike", "slam",
+    "金属撞击", "金属", "撞击", "碰撞", "重击", "敲击",
+  },
+  negative_terms = { "music", "voice", "鸟", "音乐" },
+  concepts = {},
+  summary = "metal impact",
+}))
+local capacity_compiled = ai_semantic_compile_plan(capacity_plan)
+local capacity_started = os.clock()
+local capacity_matches = 0
+for index = 1, 100000 do
+  local hit = index % 100 == 0
+  local asset = {
+    ready = true,
+    path = string.format("C:/Library/%s_%06d.wav", hit and "metal_impact" or "ambient", index),
+    name = hit and "Heavy Metal Impact.wav" or "Quiet Forest Ambience.wav",
+    description = hit and "Industrial steel collision" or "Soft wind in distant trees",
+    keywords = hit and "metal hit clang" or "nature forest air",
+    category = hit and "METAL" or "AMBIENCE",
+    subcategory = hit and "IMPACT" or "WIND",
+  }
+  if ai_semantic_asset_score(asset, capacity_plan, capacity_compiled) > 0 then
+    capacity_matches = capacity_matches + 1
+  end
+end
+local capacity_elapsed = os.clock() - capacity_started
+assert(capacity_matches == 1000)
+assert(capacity_elapsed < 5,
+  string.format("100k AI local recall exceeded capacity budget: %.3fs", capacity_elapsed))
+print(string.format("AI local recall capacity: 100000 assets in %.3fs", capacity_elapsed))
+
 local session = { candidates = {} }
 for index = 1, AISemantic.candidate_limit + 20 do
   ai_semantic_insert_candidate(session, {
