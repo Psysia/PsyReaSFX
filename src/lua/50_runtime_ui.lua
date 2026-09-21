@@ -4588,18 +4588,13 @@ local function result_sort_comparator()
       local ap = av and tonumber(av.page) or 1
       local bp = bv and tonumber(bv.page) or 1
       if ap ~= bp then return ap < bp end
-      local as = av and tonumber(av.score) or 0
-      local bs = bv and tonumber(bv.score) or 0
-      local ar = av and av.ai_ranked == true or false
-      local br = bv and bv.ai_ranked == true or false
-      if ar ~= br then return ar end
-      if as == bs then
-        local al = av and tonumber(av.local_score) or 0
-        local bl = bv and tonumber(bv.local_score) or 0
-        if al ~= bl then return al > bl end
-        return cached_sort_path(a) < cached_sort_path(b)
-      end
-      return as > bs
+      local ar = av and tonumber(av.page_rank) or math.huge
+      local br = bv and tonumber(bv.page_rank) or math.huge
+      if ar ~= br then return ar < br end
+      local al = av and tonumber(av.local_score) or 0
+      local bl = bv and tonumber(bv.local_score) or 0
+      if al ~= bl then return al > bl end
+      return cached_sort_path(a) < cached_sort_path(b)
     elseif view == "duplicates" then
       av = duplicate_lookup[cached_sort_path(a)] or ""
       bv = duplicate_lookup[cached_sort_path(b)] or ""
@@ -14634,7 +14629,7 @@ function draw_sidebar()
         AppState.apply({
           view = "ai_semantic",
           search = "",
-          sort_mode = "ai_relevance",
+          sort_mode = "ai_order",
           sort_desc = true,
           results_dirty = true,
           config_dirty = true,
@@ -15456,7 +15451,7 @@ function draw_toolbar()
     }
     if "ai_semantic" == state.view then
       changes.view = "all"
-      if "ai_relevance" == state.sort_mode then
+      if "ai_order" == state.sort_mode then
         changes.sort_mode = "name"
         changes.sort_desc = false
       end
@@ -15606,7 +15601,6 @@ function draw_sub_toolbar()
     used = "最近插入",
     previewed = "最近试听",
     similarity = "相似度",
-    ai_relevance = "AI 相关度",
   }
 
   local labels_en = {
@@ -15616,7 +15610,6 @@ function draw_sub_toolbar()
     used = "Recently inserted",
     previewed = "Recently previewed",
     similarity = "Similarity",
-    ai_relevance = "AI relevance",
   }
 
   local labels =
@@ -15718,26 +15711,15 @@ function draw_sub_toolbar()
     )
   )
 
-  ImGui.SameLine(ctx)
-
-  local sort_clicked = dark_button(
-    sort_prefix
-      .. (
-        labels[state.sort_mode]
-        or labels.name
-      ),
-    state.language == "en"
-      and 154
-      or 118
-  )
-  if "ai_semantic" == state.view then
-    tooltip(
-      "en" == state.language
-        and "Ranking: local filename and metadata recall, then AI relevance. Later batches remain after earlier batches; ties use local recall score and path. Model omissions are filled at the end of that batch from local recall order."
-        or "排序依据：先按文件名、Description、Keywords 与 UCS 字段本地召回，再按 AI 相关度排序。后续批次排在前一批之后；同分时按本地召回分与路径稳定排序。模型遗漏项在本批末尾按本地召回补足。"
+  local sort_clicked = false
+  if "ai_semantic" ~= state.view then
+    ImGui.SameLine(ctx)
+    sort_clicked = dark_button(
+      sort_prefix .. (labels[state.sort_mode] or labels.name),
+      state.language == "en" and 154 or 118
     )
   end
-  if sort_clicked and state.view ~= "similar" and state.view ~= "ai_semantic" then
+  if sort_clicked and state.view ~= "similar" then
     local next_mode = {
       name = "duration",
       duration = "library",
@@ -15751,13 +15733,15 @@ function draw_sub_toolbar()
     state.results_dirty = true
   end
 
-  ImGui.SameLine(ctx)
+  if "ai_semantic" ~= state.view then
+    ImGui.SameLine(ctx)
+  end
 
-  if dark_button(
+  if "ai_semantic" ~= state.view and dark_button(
     state.sort_desc and "↓" or "↑",
     30
   ) then
-    if state.view ~= "similar" and state.view ~= "ai_semantic" then
+    if state.view ~= "similar" then
       state.sort_desc = not state.sort_desc
       state.results_dirty = true
     end
@@ -15966,12 +15950,6 @@ function draw_import_progress()
             completed,
             total,
             fraction * 100
-          )
-        or phase == "rerank_wait"
-          and string.format(
-            "AI 语义搜索：正在重排第 %d 批（%d 条）…",
-            session.page_index or 1,
-            #(session.candidates or {})
           )
         or phase == "test_wait"
           and "正在测试 AI API 连接"
@@ -16386,8 +16364,7 @@ function visible_column_definitions()
   local visible = {}
 
   for _, definition in ipairs(COLUMN_DEFS) do
-    if (definition.contextual
-        and ("similar" == state.view or "ai_semantic" == state.view))
+    if (definition.contextual and "similar" == state.view)
       or (not definition.contextual
         and state.column_visible[definition.key]) then
       visible[#visible + 1] = definition
@@ -16709,9 +16686,7 @@ function draw_list_header(
       column_x + 7,
       y + 6,
       COLOR.header_text,
-      item.definition.key == "similarity" and "ai_semantic" == state.view
-        and ("en" == state.language and "AI relevance" or "AI 相关度")
-        or item.definition.label,
+      item.definition.label,
       column_x + 2,
       y,
       column_end - 2,
@@ -17096,8 +17071,6 @@ function draw_result_row(
   local asset_key = path_key(asset.path)
   local similarity_entry = "similar" == state.view
       and similarity_result_for_asset(asset)
-    or "ai_semantic" == state.view
-      and state.ai_semantic_lookup[asset_key]
     or nil
   local waveform_state, waveform_color =
     waveform_visual_state(asset, selected)
@@ -21130,7 +21103,7 @@ end
 function draw_settings_ai()
   settings_section_title(
     "AI 语义搜索",
-    "独立于相似声音：以自然语言查找素材，首版使用本地文本召回和云端语义重排。"
+    "独立于相似声音：AI 理解自然语言，本地完成素材召回与排序。"
   )
 
   settings_section_title(
@@ -21150,7 +21123,7 @@ function draw_settings_ai()
   ImGui.TextWrapped(
     ctx,
     "AI 会扩展中英文检索词，在当前音效库、目录和集合范围内本地召回候选，"
-      .. "再依据文件名和元数据进行语义重排。搜索完成后直接显示 AI 语义结果。"
+      .. "再依据文件名和元数据直接在本地排序。搜索完成后直接显示 AI 语义结果。"
   )
   ImGui.TextDisabled(
     ctx,
@@ -21269,11 +21242,11 @@ function draw_settings_ai()
   if not endpoint_valid then ImGui.TextColored(ctx, COLOR.error, endpoint_reason) end
 
   ImGui.Separator(ctx)
-  settings_section_title("隐私与范围", "每次搜索都先在本地压缩候选范围。")
+  settings_section_title("隐私与范围", "API 只负责理解搜索描述。")
   ImGui.TextWrapped(
     ctx,
-    "每批发送给 API：你的搜索描述，以及最多 120 条候选素材的文件名、压缩文本元数据和时长。"
-      .. "只有点击继续加载时才发送下一批；不会发送完整目录、文件路径或音频。"
+    "发送给 API 的只有搜索框中的自然语言描述；素材文件名、Description、Keywords、"
+      .. "UCS 字段、目录、文件路径和音频均不上传。继续加载下一批完全在本地完成。"
   )
   ImGui.TextDisabled(
     ctx,

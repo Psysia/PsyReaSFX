@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.8
+
+### One AI request, fully local ranking and paging
+
+- Uses the AI API only to convert the natural-language description into bilingual retrieval terms; candidate metadata is no longer uploaded for a second remote reranking request.
+- Removes the AI relevance column and background reranking stage from AI results. Similar-sound results keep their existing similarity score and ordering.
+- Shows the first 120 results as soon as local recall finishes. **Load next 120** appends directly from the in-memory candidate pool without another API request or an already-running error.
+- Clears the previous AI result set as soon as a new search starts so stale results are not shown under the new task status.
+- Reduces the search-plan output budget from 900 to 600 tokens for lower first-request latency and cost.
+
 ## 0.9.0 Beta 7.7
 
 ### AI paging, compact status and faster reranking

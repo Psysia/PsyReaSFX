@@ -66,7 +66,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.8.5** | Recommended for everyday use. |
-| Preview | **0.9.0 Beta 7.7** | Current pre-release line; adds paged AI results and faster compact reranking. |
+| Preview | **0.9.0 Beta 7.8** | Current pre-release line; AI expands the query once, then ranking and paging stay local. |
 | Optional component | **PsyReaSFX Neural Similarity** | Local neural similar-sound search for Windows x64. |
 
 PsyReaSFX keeps normal acoustic search available without the optional neural component. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
@@ -74,12 +74,12 @@ PsyReaSFX keeps normal acoustic search available without the optional neural com
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 7.7** — adds 120-result paging, compact status text and lower-token AI reranking.
+- **Preview channel: 0.9.0 Beta 7.8** — removes remote AI reranking and keeps result ranking and paging local.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
-Beta 7.7 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` for normal search or click the gold AI button for semantic search. Local recall uses compiled terms and two-stage scoring, keeps up to 2,400 candidates, and initially reranks 120. A **Load next 120** action appends later pages. Compact metadata and ID/score-only model output reduce latency and malformed responses. Audio and full file paths are never uploaded; only the query and the requested 120-candidate page are sent. On Windows, the API key is encrypted for the current user with DPAPI.
+Beta 7.8 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` for normal search or click the gold AI button for semantic search. The AI only converts the natural-language request into bilingual retrieval terms. Candidate recall, ranking, and 120-result paging then run locally, so **Load next 120** appends immediately without another API request. Audio, filenames, metadata, directories, and file paths are never uploaded; only the query is sent. On Windows, the API key is encrypted for the current user with DPAPI.
 
 > **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
@@ -88,7 +88,7 @@ Beta 7.7 includes the separate **AI semantic search** implementation. It remains
 - Logical libraries with multiple physical source folders.
 - Inline waveforms and detailed mono, stereo, and multichannel preview.
 - Filename, path, metadata, UCS-field, library, and workflow-state search.
-- A separate AI semantic-search entry point with DeepSeek, OpenAI and OpenAI-compatible APIs, local candidate recall, and description-based reranking.
+- A separate AI semantic-search entry point with DeepSeek, OpenAI and OpenAI-compatible APIs for query expansion, followed by local candidate recall and ranking.
 - Explainable audio-content similarity using envelope, onset, dynamics and spectral features.
 - Favorites, playlists, project bins, workflow states, and non-destructive metadata.
 - Regions, transient suggestions, LUFS / True Peak display, Pitch / Rate / Gain, and channel audition.
@@ -98,8 +98,8 @@ Beta 7.7 includes the separate **AI semantic search** implementation. It remains
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 7.7 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.7)
-- [Manual ZIP fallback for the optional Beta 7.7 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_7_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 7.8 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.8)
+- [Manual ZIP fallback for the optional Beta 7.8 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.8/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_8_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
