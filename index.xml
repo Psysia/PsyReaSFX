@@ -450,13 +450,17 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
 - Number selected sibling tracks from top to bottom, independently for each parent.
 - 首次发布；按最近一级父文件夹名给选中轨道从上到下编号，不同父级分别从 _01 开始。]]></changelog><source main="main" file="psy_Rename Selected Tracks from Parent Folder Name_根据父级文件夹名重命名选中轨道.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Rename%20Selected%20Tracks%20from%20Parent%20Folder%20Name_%E6%A0%B9%E6%8D%AE%E7%88%B6%E7%BA%A7%E6%96%87%E4%BB%B6%E5%A4%B9%E5%90%8D%E9%87%8D%E5%91%BD%E5%90%8D%E9%80%89%E4%B8%AD%E8%BD%A8%E9%81%93.lua</source></version>
     </reapack>
-                            <reapack name="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua" type="script" desc="Video Item Filename Overlay / 视频素材文件名覆盖显示">
-      <metadata><description><![CDATA[Draw complete extension-free video filenames inside Arrange View items while stopped, with balanced multi-line fitting. The overlay automatically hides during Play and Record to avoid playback-scroll flicker. Requires js_ReaScriptAPI. / 停止状态下在 Arrange View 视频 Item 内完整显示隐藏扩展名后的文件名，并进行均衡多行排版；播放和录音期间自动隐藏，避免滚动播放闪烁。需要 js_ReaScriptAPI。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+                                <reapack name="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua" type="script" desc="Video Item Track Name Overlay / 视频素材轨道名覆盖显示">
+      <metadata><description><![CDATA[Display each video item's current track name inside the Arrange View item with adaptive balanced multi-line layout. Track renames update automatically; Play and Record hide the overlay to avoid scrolling flicker. Requires js_ReaScriptAPI. / 在 Arrange View 视频 Item 内显示当前轨道名称，支持自适应均衡多行排版；修改轨道名后自动更新，播放和录音期间自动隐藏以避免滚动闪烁。需要 js_ReaScriptAPI。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.6" author="Psysia" time="2026-09-21T06:40:00Z"><changelog><![CDATA[- Display the current track name instead of the source video filename.
+- Track-name edits are reflected automatically while the transport is stopped or paused.
+- Keep multiline fitting, playback/record hiding, and existing font settings.
+- 改为显示视频 Item 所在轨道的轨道名称；修改轨道名后自动更新，并保留多行排版与播放隐藏逻辑。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
       <version name="1.5" author="Psysia" time="2026-09-20T11:40:00Z"><changelog><![CDATA[- Hide the overlay completely during Play and Record.
 - Suspend overlay redraw work while transport playback is active.
 - Restore the filename overlay immediately after Stop or Pause.
 - Keep multiline fitting and extension-free filenames while stopped.
-- 播放和录音期间完全隐藏文件名覆盖层，停止或暂停后立即恢复，从根源避免滚动播放闪烁。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
+- 播放和录音期间完全隐藏文件名覆盖层，停止或暂停后立即恢复，从根源避免滚动播放闪烁。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/0077622a3fbe6d758129e37ec3da7eccabe28f2b/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
       <version name="1.4" author="Psysia" time="2026-09-20T09:15:00Z"><changelog><![CDATA[- Correct the font-width estimate so long filenames wrap earlier instead of incorrectly staying on one line.
 - Allow emergency shrinking below the configured preferred minimum, down to 5 px, to preserve the complete filename.
 - Dynamically reduce title reserve and side margins as the item becomes smaller.
@@ -487,11 +491,14 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
 - Add toolbar toggle state and companion persistent settings.
 - 首次发布；在视频 Item 内直接显示不带扩展名的源文件名，并根据缩放后的可见区域自适应字号。]]></changelog><source main="main" file="psy_Video Item Filename Overlay_视频素材文件名覆盖显示.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/831088778658d03f478d7a68d8615132cebc0b78/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA.lua</source></version>
     </reapack>
-    <reapack name="psy_Video Item Filename Overlay Settings_视频素材文件名覆盖显示设置.lua" type="script" desc="Video Item Filename Overlay Settings / 视频素材文件名覆盖显示设置">
-      <metadata><description><![CDATA[Configure the Video Item Filename Overlay font face, minimum size, maximum size, and weight. / 配置视频素材文件名覆盖显示的字体、最小字号、最大字号与字重。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+        <reapack name="psy_Video Item Filename Overlay Settings_视频素材文件名覆盖显示设置.lua" type="script" desc="Video Item Track Name Overlay Settings / 视频素材轨道名覆盖显示设置">
+      <metadata><description><![CDATA[Configure the Video Item Track Name Overlay font face, minimum size, maximum size, and weight. Existing overlay settings remain compatible. / 配置视频素材轨道名覆盖显示的字体、最小字号、最大字号与字重；原有覆盖显示设置继续兼容。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.1" author="Psysia" time="2026-09-21T06:40:00Z"><changelog><![CDATA[- Rename the settings Action for the track-name overlay.
+- Preserve all existing ExtState keys and saved font settings.
+- 设置 Action 改为轨道名覆盖显示命名，并保留原有字体设置。]]></changelog><source main="main" file="psy_Video Item Filename Overlay Settings_视频素材文件名覆盖显示设置.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay%20Settings_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA%E8%AE%BE%E7%BD%AE.lua</source></version>
       <version name="1.0" author="Psysia" time="2026-09-20T06:30:00Z"><changelog><![CDATA[- Initial ReaPack publication.
 - Persist font face, minimum size, maximum size, and weight for the overlay.
-- 首次发布；保存覆盖显示的字体、最小字号、最大字号与字重设置。]]></changelog><source main="main" file="psy_Video Item Filename Overlay Settings_视频素材文件名覆盖显示设置.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay%20Settings_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA%E8%AE%BE%E7%BD%AE.lua</source></version>
+- 首次发布；保存覆盖显示的字体、最小字号、最大字号与字重设置。]]></changelog><source main="main" file="psy_Video Item Filename Overlay Settings_视频素材文件名覆盖显示设置.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/40e2462f62c09f0e81f19a277f6181b9d53b0668/Scripts/Psysia/psy_Video%20Item%20Filename%20Overlay%20Settings_%E8%A7%86%E9%A2%91%E7%B4%A0%E6%9D%90%E6%96%87%E4%BB%B6%E5%90%8D%E8%A6%86%E7%9B%96%E6%98%BE%E7%A4%BA%E8%AE%BE%E7%BD%AE.lua</source></version>
     </reapack>
   </category>
 </index>
