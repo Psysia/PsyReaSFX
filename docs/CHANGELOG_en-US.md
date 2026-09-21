@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.6
+
+### Faster local candidate recall for AI search
+
+- Changes AI local recall to a two-stage pipeline: one low-cost combined-text prefilter per asset, followed by weighted field scoring only for matching assets.
+- Compiles query terms once per search instead of repeatedly lowercasing and splitting them for every catalog row.
+- Raises per-frame recall throughput while preserving a time budget so the REAPER UI remains responsive.
+- Adds a 100,000-asset capacity regression test; local recall completes in about 0.6 seconds in the test environment.
+
 ## 0.9.0 Beta 7.5
 
 ### DeepSeek JSON-output compatibility fix
