@@ -1,6 +1,6 @@
 # PsyReaSFX 0.9 → 1.0 开发路线
 
-更新日期：2026-09-16
+更新日期：2026-09-21
 
 ## 当前阶段：0.9.x Beta 功能开发
 
@@ -18,7 +18,7 @@ Beta 4 已按 `SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 建立基于时长、包络
 定位试听与反向完整试听边界修复。Beta 5 已发布可选本地 EfficientAT embedding、
 增量缓存、HNSW 召回、Lua 混合重排与透明回退；Beta 6 已补齐不落盘的通用媒体
 解码/重采样、动态格式能力探测与单文件失败隔离；Beta 6.1 已将可选神经组件
-接入 ReaPack，支持在 REAPER 内安装和更新；Beta 7.3 已更新独立 AI 语义搜索的 DeepSeek 模型、设置反馈与旧日志兼容，首版
+接入 ReaPack，支持在 REAPER 内安装和更新；Beta 7.4 已更新独立 AI 语义搜索的 DeepSeek 模型、设置反馈与旧日志兼容，并修复后台目录维护导致的 `resource_busy`，首版
 支持 DeepSeek、OpenAI 和兼容接口。真实 50,000 文件库验收仍待完成；完整 FFT 时频图需单独
 冻结需求，DSP 尚未进入实现。
 

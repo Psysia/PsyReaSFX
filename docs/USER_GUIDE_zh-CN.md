@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7.3
+**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7.4
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -43,16 +43,16 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
 
 3. 同步软件包。
 4. 搜索 `PsyReaSFX.lua`，右键为该包启用预发布版本，在 **Versions** 中选择
-   `0.9.0-beta7.3` 并安装。
+   `0.9.0-beta7.4` 并安装。
 5. 打开 REAPER 动作列表，运行 PsyReaSFX；需要时给它绑定快捷键。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
 
-### 可选神经相似度组件（Beta 7.3）
+### 可选神经相似度组件（Beta 7.4）
 
 Windows x64 用户在同步仓库后，打开 ReaPack 软件包浏览器，搜索并安装第二个包
 `PsyReaSFX Neural Similarity`。先为该包启用预发布版本并选择
-`0.9.0-beta7.3`；它与 `PsyReaSFX.lua` 分开安装。ReaPack 会把程序和模型放到
+`0.9.0-beta7.4`；它与 `PsyReaSFX.lua` 分开安装。ReaPack 会把程序和模型放到
 REAPER 的 `Data` 目录，并独立负责后续更新与卸载。安装或更新后请重新启动
 PsyReaSFX。
 
@@ -230,7 +230,7 @@ whoosh category:movement -long
 
 保存搜索可以记录查询文字、库、集合、工作流筛选和排序方向。适合建立重复使用的审核视图，不需要为了不同查看方式复制素材文件。
 
-### AI 语义搜索（Beta 7.3）
+### AI 语义搜索（Beta 7.4）
 
 顶部搜索框是普通搜索和 AI 语义搜索的统一入口。输入普通关键词后按 `Enter`，继续执行本地普通搜索；输入自然语言描述后点击金色 `AI` 按钮，或按 `Ctrl+Shift+F`，会直接开始 AI 语义搜索并在完成后显示对应结果，不再打开额外搜索窗口。它不属于“查找相似声音”：相似声音以某个音频为参考，AI 语义搜索则直接接受自然语言描述，例如：
 
@@ -249,6 +249,8 @@ API 请求可能产生服务商费用，配额和数据保留规则以用户选�
 
 每次搜索分为两步：AI 先把描述转换为中英文声音概念；PsyReaSFX 在本地扫描当前音效库、目录和集合范围，并保留最多 120 条候选；随后只把这些候选的文件名、Description、Keywords、UCS 分类和时长交给 API 重排。不会发送完整目录、完整文件路径或音频内容。结果显示在独立的“AI 语义结果”视图中，按 AI 相关度排序。
 
+Beta 7.4 起，AI 搜索使用独立后台任务资源，并在启动时固定本次素材数组快照。即使高精度波形预缓存、缓存检查、索引保存或其他目录维护正在运行，也不会再因为共用目录互斥资源而报 `resource_busy`。
+
 第一版依赖素材已有的文件名和文本元数据。对于名称无意义、没有 Description/Keywords/UCS 信息的素材，语义效果会受限；后续本地音频—文本 embedding 将解决这类素材的内容理解问题。
 
 ### 查找相似声音
@@ -261,7 +263,7 @@ API 请求可能产生服务商费用，配额和数据保留规则以用户选�
 不使用文件名、UCS 分类或关键词。没有频谱数据的格式仍可使用时间域特征比较。
 设置 → 波形中可以清空相似特征缓存，源音频不会被修改。
 
-安装 Beta 7.3 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
+安装 Beta 7.4 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
 现有时长、起音、瞬态和包络特征混合重排。内建 Windows 解码路径支持常见采样率
 与 PCM16/PCM24/PCM32/float WAV，以及 AIFF、FLAC、MP3、M4A；检测到 FFmpeg 后还
 支持 OGG、Opus、WavPack 与 CAF。音频只在内存中下混并重采样到 32 kHz，不会生成
@@ -671,7 +673,7 @@ PsyReaSFX 内部统一使用 UTF-8。个别源文件元数据可能采用旧编�
 
 ## 21. 稳定版支持与问题反馈
 
-PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 7.3
+PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 7.4
 作为同一个包的不同版本发布。普通同步默认留在 Stable；需要测试新版时，
 右键 PsyReaSFX，启用单包预发布版本，然后从“Versions”选择目标版本。
 GitHub Release 仍永久保留 0.7.23 Stable ZIP。

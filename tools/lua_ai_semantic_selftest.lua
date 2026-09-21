@@ -1,5 +1,6 @@
 local json_source_path = assert(arg[1], "expected neural JSON module")
 local ai_source_path = assert(arg[2], "expected AI semantic module")
+local jobs_source_path = assert(arg[3], "expected jobs/storage module")
 
 local function read_all(path)
   local file = assert(io.open(path, "rb"))
@@ -41,8 +42,10 @@ AppState = {
 DATA_DIR = os.tmpname() .. "-psyreasfx-ai"
 SEP = separator
 Jobs = {
-  is_current = function() return true end,
-  finish = function() end,
+  accepting = true,
+  active = {},
+  generation = 0,
+  history = {},
 }
 function trim(value) return tostring(value or ""):match("^%s*(.-)%s*$") end
 function safe_lower(value) return string.lower(tostring(value or "")) end
@@ -94,6 +97,12 @@ function set_status() end
 function can_run_heavy_job() return true end
 
 assert(load(read_all(json_source_path), "@" .. json_source_path, "t", _ENV))()
+local jobs_source = read_all(jobs_source_path)
+local jobs_boundary = assert(
+  jobs_source:find("function extract_project_url_from_text", 1, true),
+  "job coordinator boundary not found"
+)
+assert(load(jobs_source:sub(1, jobs_boundary - 1), "@" .. jobs_source_path, "t", _ENV))()
 assert(load(read_all(ai_source_path), "@" .. ai_source_path, "t", _ENV))()
 
 assert(ai_semantic_validate_endpoint("https://api.deepseek.com/chat/completions"))
@@ -241,14 +250,42 @@ ai_semantic_launch_bridge = original_launch_bridge
 os.remove(key_plaintext_path)
 os.remove(key_secret_path)
 
+local original_start_api_job = ai_semantic_start_api_job
+ai_semantic_start_api_job = function(kind)
+  return {
+    kind = kind,
+    started = Host.time_precise(),
+    request_path = "",
+    status_path = "",
+    body_path = "",
+    response_path = "",
+  }
+end
+state.assets = {
+  { path = "C:/Library/one.wav", name = "one.wav", ready = true },
+  { path = "C:/Library/two.wav", name = "two.wav", ready = true },
+}
+local catalog_job = assert(Jobs.begin("wave_precache", "catalog_exclusive", false, 20))
+assert(start_ai_semantic_search("metal impact"), "catalog maintenance must not block AI search")
+assert(state.ai_semantic_session.job_token.resource == "ai_semantic_api")
+assert(#state.ai_semantic_session.source == 2)
+state.assets[3] = { path = "C:/Library/three.wav", name = "three.wav", ready = true }
+assert(#state.ai_semantic_session.source == 2, "AI search must keep a stable asset-array snapshot")
+ai_semantic_cancel()
+assert(not Jobs.active.ai_semantic_search, "AI cancellation must release its job token")
+assert(Jobs.is_current(catalog_job), "AI cancellation must not disturb catalog maintenance")
+Jobs.finish(catalog_job, true)
+ai_semantic_start_api_job = original_start_api_job
+
 local source = read_all(ai_source_path)
 local payload_start = assert(source:find("function ai_semantic_candidate_payload", 1, true))
 local payload_end = assert(source:find("function ai_semantic_finish", payload_start, true))
 local payload_source = source:sub(payload_start, payload_end - 1)
 assert(payload_source:find("name =", 1, true))
 assert(not payload_source:find("path =", 1, true))
-assert(source:find("source = state.assets", 1, true))
-assert(source:find("total = #state.assets", 1, true))
+assert(source:find('"ai_semantic_api"', 1, true))
+assert(source:find("source = source", 1, true))
+assert(source:find("total = #source", 1, true))
 assert(source:find("Audio is", 1, true))
 assert(source:find("ProtectedData", 1, true))
 assert(source:find("response_format", 1, true))

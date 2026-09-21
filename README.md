@@ -89,12 +89,12 @@ It combines library management, waveform browsing, search, audition, metadata, c
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 7.3** — fixes legacy-journal `field_mismatch` and blocked API-key saving, and includes the DeepSeek Flash / V4 Pro and AI-settings updates.
+- **Preview channel: 0.9.0 Beta 7.4** — fixes AI search being blocked by long-running waveform-cache and catalog-maintenance jobs.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
-Beta 7.3 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` in the top search field for normal search, or click the gold AI button to run semantic search directly with the same text. DeepSeek now defaults to the current official API model `deepseek-flash`, with `deepseek-v4-pro` also available; legacy model settings migrate automatically. Endpoint, key, model, and usage guidance are collected in Settings, with inline key-save feedback. Beta 7.3 also fixes old catalog journals triggering `field_mismatch` and incorrectly blocking key storage. Audio and full file paths are never uploaded; only the query and up to 120 locally recalled metadata candidates are sent. On Windows, the API key is encrypted for the current user with DPAPI.
+Beta 7.4 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` in the top search field for normal search, or click the gold AI button to run semantic search directly with the same text. AI search now uses its own background-job resource and a stable asset-list snapshot, so waveform precaching and catalog maintenance no longer cause `resource_busy`. DeepSeek defaults to `deepseek-flash`, with `deepseek-v4-pro` also available. Endpoint, key, model, and usage guidance are collected in Settings. Audio and full file paths are never uploaded; only the query and up to 120 locally recalled metadata candidates are sent. On Windows, the API key is encrypted for the current user with DPAPI.
 
 > **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
@@ -113,8 +113,8 @@ Beta 7.3 includes the separate **AI semantic search** implementation. It remains
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 7.3 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.3)
-- [Manual ZIP fallback for the optional Beta 7.3 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.3/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_3_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 7.4 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.4)
+- [Manual ZIP fallback for the optional Beta 7.4 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.4/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_4_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
