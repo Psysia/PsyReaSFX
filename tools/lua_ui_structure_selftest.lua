@@ -187,6 +187,19 @@ assert(
     and source:find('"搜索框与 AI 按钮"', 1, true),
   "AI usage instructions must live in Settings instead of a search popup"
 )
+local ai_progress = function_region(
+  "elseif visible_ai then",
+  "elseif visible_similarity then"
+)
+assert(
+  not ai_progress:find("ImGui.ProgressBar", 1, true),
+  "AI phases should use one compact text status instead of animated progress bars"
+)
+assert(
+  source:find("继续加载下一批 120 条", 1, true)
+    and source:find("start_ai_semantic_next_page()", 1, true),
+  "AI result view must expose the next 120-candidate page"
+)
 local ai_settings = function_region(
   "function draw_settings_ai()",
   "function color_edit_flags()"

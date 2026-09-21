@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.7
+
+### AI paging, compact status and faster reranking
+
+- Replaces repeated large progress bars for planning, recall, reranking and retry with one compact phase status line.
+- Keeps up to 2,400 local candidates, reranks the first 120, and lets users append the next 120 from the bottom of the result list.
+- Uses compact candidate ID/score arrays instead of asking the model for a written explanation per result, and sends condensed array rows without repeated field names to reduce request and output tokens.
+- Fills candidates omitted by the model from deterministic local recall order, so a partial API response no longer leaves the page below 120 results.
+- Sorts AI results stably by batch, model relevance, local recall score and path; the sort control tooltip explains the complete ranking basis.
+
 ## 0.9.0 Beta 7.6
 
 ### Faster local candidate recall for AI search
