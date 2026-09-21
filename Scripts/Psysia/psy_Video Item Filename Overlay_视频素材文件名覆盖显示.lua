@@ -1,16 +1,16 @@
--- @description Video Item Filename Overlay / 视频素材文件名覆盖显示
--- @version 1.5
+-- @description Video Item Track Name Overlay / 视频素材轨道名覆盖显示
+-- @version 1.6
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Hide the filename overlay completely during Play and Record.
---   + Stop all overlay redraw work while transport playback is active.
---   + Restore the overlay immediately when playback stops or pauses.
---   + Preserve multiline fitting and paint-synchronized LICE compositing while stopped.
+--   + Display the video item's track name instead of the source filename.
+--   + Update overlay text automatically when the track name changes.
+--   + Keep the existing multiline fitting, playback hiding, and font settings.
+--   + Preserve the original script path and ExtState for shortcut/settings compatibility.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.5"
+local RUNNER_VERSION = "1.6"
 
 local DEFAULT_FONT_FACE = "Segoe UI"
 local DEFAULT_MIN_SIZE = 10
@@ -83,7 +83,7 @@ if not api_ok then
         .. "Install or update 'js_ReaScriptAPI: API functions for ReaScripts' through ReaPack, "
         .. "restart REAPER, then run this script again.\n\n"
         .. "此脚本需要 js_ReaScriptAPI。请通过 ReaPack 安装或更新后重启 REAPER。",
-        "Video Item Filename Overlay / 视频素材文件名覆盖显示",
+        "Video Item Track Name Overlay / 视频素材轨道名覆盖显示",
         0
     )
     return
@@ -187,7 +187,7 @@ local arrange_hwnd =
 if not arrange_hwnd then
     reaper.ShowMessageBox(
         "Unable to locate the Arrange View.\n\n无法定位 Arrange View。",
-        "Video Item Filename Overlay / 视频素材文件名覆盖显示",
+        "Video Item Track Name Overlay / 视频素材轨道名覆盖显示",
         0
     )
     return
@@ -616,6 +616,22 @@ local function filename_without_extension(path)
     end
 
     return filename
+end
+
+local function get_track_name(track)
+    if not track then
+        return ""
+    end
+
+    local _, name =
+        reaper.GetSetMediaTrackInfo_String(
+            track,
+            "P_NAME",
+            "",
+            false
+        )
+
+    return name or ""
 end
 
 local function char_units(character)
@@ -1141,16 +1157,16 @@ local function collect_visible_entries(
                             - body_x1
 
                         local text =
-                            filename_without_extension(
-                                path
-                            )
+                            get_track_name(track)
 
                         local layout =
-                            calculate_text_layout(
+                            text ~= ""
+                            and calculate_text_layout(
                                 text,
                                 body_w,
                                 body_h
                             )
+                            or nil
 
                         if layout then
                             local block_top =
@@ -1482,7 +1498,7 @@ if count_video_items() == 0 then
         .. "If the project does contain a video item, please tell me the file type shown in REAPER.\n\n"
         .. "覆盖显示已启动，但当前工程中没有识别到视频素材。"
         .. "如果工程里确实有视频，请告诉我 REAPER 中显示的文件类型。",
-        "Video Item Filename Overlay / 视频素材文件名覆盖显示",
+        "Video Item Track Name Overlay / 视频素材轨道名覆盖显示",
         0
     )
 end
