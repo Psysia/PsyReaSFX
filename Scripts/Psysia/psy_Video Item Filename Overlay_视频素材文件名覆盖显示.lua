@@ -1,15 +1,16 @@
 -- @description Video Item Track Name Overlay / 视频素材轨道名覆盖显示
--- @version 1.8
+-- @version 1.9
 -- @author Psysia
 -- @requires js_ReaScriptAPI
 -- @changelog
---   + Fix Chinese/CJK track names not rendering.
---   + Draw UTF-8 text through Windows GDI into the offscreen LICE bitmap.
---   + Preserve flicker-free compositing, multiline fitting, playback hiding, and font settings.
+--   + Add mutually exclusive switching with the source-filename overlay.
+--   + Starting the other overlay automatically stops this one and takes over.
+--   + Preserve CJK rendering, multiline fitting, playback hiding, and shared font settings.
 
 local PROJECT = 0
 local EXT_SECTION = "PsysiaVideoItemFilenameOverlay"
-local RUNNER_VERSION = "1.8"
+local RUNNER_VERSION = "1.9"
+local RUNNER_MODE = "track_name"
 
 local DEFAULT_FONT_FACE = "Microsoft YaHei UI"
 local DEFAULT_MIN_SIZE = 10
@@ -113,9 +114,17 @@ local running_version =
         "runner_version"
     )
 
+local running_mode =
+    reaper.GetExtState(
+        EXT_SECTION,
+        "runner_mode"
+    )
+
 if running_token ~= ""
 and now - heartbeat < 1.0 then
-    if running_version == RUNNER_VERSION then
+    if running_mode == RUNNER_MODE
+    and running_version == RUNNER_VERSION then
+        -- Same Action: toggle this overlay off.
         reaper.SetExtState(
             EXT_SECTION,
             "stop",
@@ -124,8 +133,8 @@ and now - heartbeat < 1.0 then
         )
         return
     else
-        -- Stop a still-running instance from v1.0 / v1.0.1, but continue
-        -- starting the new renderer immediately.
+        -- Different overlay mode, or an older instance of this mode:
+        -- request it to stop, then take ownership immediately.
         reaper.SetExtState(
             EXT_SECTION,
             "stop",
@@ -152,6 +161,13 @@ reaper.SetExtState(
     EXT_SECTION,
     "runner_version",
     RUNNER_VERSION,
+    false
+)
+
+reaper.SetExtState(
+    EXT_SECTION,
+    "runner_mode",
+    RUNNER_MODE,
     false
 )
 
@@ -1419,29 +1435,34 @@ local function redraw()
 end
 
 local function cleanup()
+    local owns_session =
+        reaper.GetExtState(
+            EXT_SECTION,
+            "running"
+        ) == token
+
     destroy_bitmap()
     destroy_fonts()
 
-    if previous_delay then
-        reaper.JS_Composite_Delay(
-            arrange_hwnd,
-            previous_delay.min,
-            previous_delay.max,
-            previous_delay.bitmaps
-        )
-    else
-        reaper.JS_Composite_Delay(
-            arrange_hwnd,
-            0,
-            0,
-            0
-        )
-    end
+    -- Do not restore shared compositing settings when another overlay
+    -- has already taken ownership during a mode switch.
+    if owns_session then
+        if previous_delay then
+            reaper.JS_Composite_Delay(
+                arrange_hwnd,
+                previous_delay.min,
+                previous_delay.max,
+                previous_delay.bitmaps
+            )
+        else
+            reaper.JS_Composite_Delay(
+                arrange_hwnd,
+                0,
+                0,
+                0
+            )
+        end
 
-    if reaper.GetExtState(
-        EXT_SECTION,
-        "running"
-    ) == token then
         reaper.DeleteExtState(
             EXT_SECTION,
             "running",
@@ -1457,6 +1478,12 @@ local function cleanup()
         reaper.DeleteExtState(
             EXT_SECTION,
             "runner_version",
+            false
+        )
+
+        reaper.DeleteExtState(
+            EXT_SECTION,
+            "runner_mode",
             false
         )
     end
@@ -1485,7 +1512,6 @@ local function cleanup()
         )
     end
 end
-
 reaper.atexit(cleanup)
 load_settings()
 
