@@ -55,7 +55,8 @@ For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The opti
 | Item editing | Reverse Selected Items in Place | Reverse selected items through a single undoable Take workflow. |
 | Project workflow | Open All Subprojects | Recursively open all subprojects referenced by the current project. |
 | Display | Toggle LUFS-M and Spectrogram | Switch between LUFS-M spectral-peak display and spectrogram view. |
-| Display | Video Item Track Name Overlay | Show the current track name inside each video Item; directly switch to the filename mode when needed. |\n| Display | Video Item Source Filename Overlay | Show the source video filename without its extension; directly switch back to track-name mode at any time. |
+| Display | Video Item Track Name Overlay | Show the current track name inside each video Item; directly switch to the filename mode when needed. |
+| Display | Video Item Source Filename Overlay | Show the source video filename without its extension; directly switch back to track-name mode at any time. |
 
 Detailed behavior, edge cases, dependencies, and shortcut suggestions are documented in the [REAPER Tools Guide](docs/REAPER_TOOLS_GUIDE_en-US.md).
 
