@@ -30,7 +30,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
 | Remove Gaps Between Selected Items | 1.0 | Close gaps between selected items. |
 | Toggle LUFS-M and Spectrogram | 1.1 | Switch peak-display modes. |
-| Video Item Track Name Overlay | 1.8 | Draw adaptive extension-free video filenames inside Arrange View items. |
+| Video Item Track Name Overlay | 1.9 | Display each video item's current track name. |\n| Video Item Source Filename Overlay | 1.0 | Display each video's source filename without its extension. |
 | Create Folder from Selected Tracks with Pro-L 2 | 1.1 | Build a parent bus around tracks or folders. |
 | Split Selected Items to New Tracks | 1.0 | Move selected items onto separate tracks. |
 | Reverse Selected Items in Place | 1.0 | Reverse selected items with one undo step. |
@@ -133,7 +133,7 @@ SWS is optional; when available, it can improve exact subproject path resolution
 
 Switches between REAPER's LUFS-M spectral-peak display and the standard spectrogram view. The script resolves localized action names dynamically and caches validated command IDs.
 
-### Video Item Track Name Overlay · 1.8
+### Video Item Track Name Overlay · 1.9
 
 Runs as a toggleable Arrange View overlay. v1.6 displays the current name of the track that contains each video item, so renaming the track updates the overlay automatically. Play and Record still hide the overlay to avoid scrolling flicker.
 
@@ -143,7 +143,15 @@ Runs as a toggleable Arrange View overlay. v1.6 displays the current name of the
 - The complete track name is wrapped across multiple balanced lines instead of being truncated. v1.4 uses a more conservative width model so wrapping begins earlier, and can temporarily shrink below the configured preferred minimum down to 5 px when necessary.
 - Supported video sources are detected from common video extensions and VIDEO-type media sources.
 
-Use the companion **Video Item Track Name Overlay Settings** action to choose from the installed Windows font families and set minimum size, maximum size, and font weight. The default is **Microsoft YaHei UI**. v1.8 renders UTF-8 text through Windows GDI into the offscreen bitmap before compositing, fixing Chinese/CJK names that could disappear in the previous LICE font-cache path.
+Use the companion **Video Item Overlay Settings** action to choose from the installed Windows font families and set minimum size, maximum size, and font weight. The default is **Microsoft YaHei UI**. v1.8 renders UTF-8 text through Windows GDI into the offscreen bitmap before compositing, fixing Chinese/CJK names that could disappear in the previous LICE font-cache path.
+
+Both video overlay modes share the same settings and are mutually exclusive: run the other Action to switch immediately without manually turning the current one off.
+
+### Video Item Source Filename Overlay · 1.0
+
+Uses the same renderer and layout as the track-name mode, but the displayed text comes from the video's **source filename**. The final file extension is hidden. Starting this Action automatically stops the track-name overlay and takes over; running the track-name Action switches back.
+
+The two modes share **Video Item Overlay Settings**, including the installed-font dropdown, sizes, and weight.
 
 The overlay requires **js_ReaScriptAPI**.
 
@@ -161,7 +169,7 @@ The overlay requires **js_ReaScriptAPI**.
 | Open All Subprojects | Shortcut |
 | Toggle LUFS-M and Spectrogram | Toolbar or shortcut |
 | Video Item Track Name Overlay | Toolbar toggle |
-| Video Item Track Name Overlay Settings | Occasional settings action |
+| Video Item Track Name Overlay | Toolbar toggle |\n| Video Item Source Filename Overlay | Toolbar toggle |\n| Video Item Overlay Settings | Occasional settings action |
 | Smart Tail Render Panel | Toolbar |
 | Open Render Dialog with Auto Tail | Replace the normal Render shortcut |
 | Create Folder from Selected Tracks with Pro-L 2 | Toolbar or shortcut |
