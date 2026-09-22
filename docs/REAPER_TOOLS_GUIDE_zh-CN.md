@@ -24,7 +24,7 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 | 工具 | 版本 | 主要用途 |
 |---|---:|---|
-| 创建文件夹区域与渲染矩阵 | 2.4 | 创建 Region 并配置 Region Render Matrix。 |
+| 创建文件夹区域与渲染矩阵 | 2.5 | 创建 Region 并配置 Region Render Matrix。 |
 | 按最早素材位置排序轨道 | 1.4 | 文件夹感知轨道排序。 |
 | 打开渲染窗口并应用自动尾音 | 1.0 | 打开渲染窗口前应用尾音设置。 |
 | 智能尾音渲染面板 | 1.1 | 配置渲染尾音与结尾静音裁切。 |
@@ -41,11 +41,14 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 ## 渲染
 
-### 创建文件夹区域与渲染矩阵 · 2.4
+### 创建文件夹区域与渲染矩阵 · 2.5
 
-根据当前素材或轨道选择创建、更新 Region，识别相关 Folder 层级，生成合适的 Region 名称，并写入对应的 Region Render Matrix 目标。
+根据当前素材或轨道选择创建、更新 Region。v2.5 将“Region 用哪一级命名”和“Render Matrix 勾哪一级”拆成两个独立判断。
 
-支持嵌套文件夹，也支持多个逻辑 Region 共用完全相同的时间范围。只有时间范围与渲染目标都一致时，才视为同一个逻辑输出。
+- **Region 命名**仍使用最近的逻辑父 Folder，因此类似 `sfx_gp_maze38_qidian_start` 的命名不会因为外面再套一层而变成 `qidian`。
+- **Region Render Matrix**会继续沿父级向上追溯到最外层 Folder，因此新增的上级总线也会进入最终渲染链。
+- 对 v2.4 已创建的 Region，如果旧矩阵目标和新矩阵目标处于同一祖先链，会优先原地迁移，而不是继续生成 `_04`、`_05`。
+- 仍支持多个逻辑 Region 使用相同时间范围，并在需要时通过矩阵目标区分。
 
 ### 智能尾音渲染面板 · 1.1
 
