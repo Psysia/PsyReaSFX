@@ -24,7 +24,7 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 | 工具 | 版本 | 主要用途 |
 |---|---:|---|
-| 创建文件夹区域与渲染矩阵 | 2.5 | 创建 Region 并配置 Region Render Matrix。 |
+| 创建文件夹区域与渲染矩阵 | 2.6 | 创建 Region 并配置 Region Render Matrix。 |
 | 按最早素材位置排序轨道 | 1.4 | 文件夹感知轨道排序。 |
 | 打开渲染窗口并应用自动尾音 | 1.0 | 打开渲染窗口前应用尾音设置。 |
 | 智能尾音渲染面板 | 1.1 | 配置渲染尾音与结尾静音裁切。 |
@@ -41,14 +41,14 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 ## 渲染
 
-### 创建文件夹区域与渲染矩阵 · 2.5
+### 创建文件夹区域与渲染矩阵 · 2.6
 
-根据当前素材或轨道选择创建、更新 Region。v2.5 将“Region 用哪一级命名”和“Render Matrix 勾哪一级”拆成两个独立判断。
+根据当前素材或轨道选择创建、更新 Region。v2.6 明确按“实际涉及多少条源轨道”决定行为：
 
-- **Region 命名**仍使用最近的逻辑父 Folder，因此类似 `sfx_gp_maze38_qidian_start` 的命名不会因为外面再套一层而变成 `qidian`。
-- **Region Render Matrix**会继续沿父级向上追溯到最外层 Folder，因此新增的上级总线也会进入最终渲染链。
-- 对 v2.4 已创建的 Region，如果旧矩阵目标和新矩阵目标处于同一祖先链，会优先原地迁移，而不是继续生成 `_04`、`_05`。
-- 仍支持多个逻辑 Region 使用相同时间范围，并在需要时通过矩阵目标区分。
+- **只有 1 条源轨道：** Region 名直接使用这条轨道自己的名称，Region Render Matrix 也直接勾这条轨道；无论外面嵌套多少层 Folder，都不继承父级。
+- **涉及 2 条及以上源轨道：** 才寻找最近公共父级，并用该公共父级同时负责命名和 Matrix；如果没有共同父级，则组合源轨道名称并分别勾选源轨道。
+- Matrix 写入后会立即读回检查。若 REAPER 实际没有按预期勾选，会直接提示“预期/实际”轨道，而不是静默留下空矩阵。
+- 仍支持多个逻辑 Region 使用相同时间范围。
 
 ### 智能尾音渲染面板 · 1.1
 
