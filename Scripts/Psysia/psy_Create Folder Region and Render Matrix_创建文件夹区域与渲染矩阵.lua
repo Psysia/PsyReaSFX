@@ -1,21 +1,27 @@
 -- @description Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵
--- @version 2.4
+-- @version 2.5
 -- @author Psysia
 --
--- v2.4 修复：
--- 单个源轨道如果位于文件夹内，使用“直接父文件夹”命名 Region，
--- 并把该父文件夹写入 Region Render Matrix。
+-- v2.5 修复：
+-- 将“Region 命名层级”和“Render Matrix 渲染层级”拆开。
+-- Region 名仍使用最近的逻辑父文件夹；
+-- Render Matrix 则沿 Folder 父级继续向上，选择最外层渲染 Folder，
+-- 避免多层嵌套时只勾到内层 Folder、漏掉上层总线处理。
 --
 -- 核心规则：
 -- 1. 有已选媒体对象：区间取所有已选对象最左端 -> 最右端。
--- 2. 单个源轨道：
---    - 源轨道本身是文件夹轨道：使用它自己。
---    - 源轨道位于文件夹内：使用直接父文件夹。
---    - 没有父文件夹：使用源轨道自己。
--- 3. 多个源轨道：寻找最近公共父级（Lowest Common Ancestor）。
+-- 2. Region 命名：
+--    - 单个源轨道本身是文件夹轨道：使用它自己。
+--    - 单个源轨道位于文件夹内：使用直接父文件夹。
+--    - 多个源轨道：寻找最近公共父级（Lowest Common Ancestor）。
+-- 3. Render Matrix：
+--    - 从命名目标继续沿父级向上，选择最外层 Folder；
+--    - 没有父级时使用命名目标本身。
 -- 4. 多个 Region 可以拥有完全相同的时间范围；
 --    只有“范围相同 + Render Matrix 目标相同”才认为是同一逻辑 Region。
 -- 5. 更新已有 Region 时刷新其 Render Matrix。
+-- 6. v2.4 -> v2.5 层级迁移：同范围、同系列名称且旧/新矩阵目标存在祖先关系时，
+--    允许原地更新 Region，避免因为外套 Folder 而不断生成 _04、_05。
 --
 -- 不依赖 SWS / ReaPack。
 
@@ -27,8 +33,12 @@ local CONFIG = {
   REPLACE_SPACES_WITH_UNDERSCORES = true,
   SANITIZE_FOR_FILENAME = true,
 
-  -- v2.4：单轨位于文件夹内时，使用直接父文件夹。
+  -- 单轨位于文件夹内时，Region 名使用直接父文件夹。
   SINGLE_TRACK_USE_PARENT_FOLDER = true,
+
+  -- v2.5：Render Matrix 沿父级向上选择最外层 Folder。
+  -- 只影响矩阵目标，不改变 Region 命名层级。
+  MATRIX_USE_OUTERMOST_FOLDER = true,
 
   -- 同范围 + 同矩阵目标时更新原 Region。
   UPDATE_MATCHING_REGION = true,
@@ -420,15 +430,67 @@ local function resolve_single_track_target(source_track)
   return source_track
 end
 
+local function resolve_matrix_render_target(track)
+  if not valid_track(track) then
+    return nil
+  end
+
+  if not CONFIG.MATRIX_USE_OUTERMOST_FOLDER then
+    return track
+  end
+
+  local current = track
+  local outermost = track
+  local visited = {}
+
+  while valid_track(current) do
+    if visited[current] then
+      break
+    end
+
+    visited[current] = true
+
+    local parent =
+      reaper.GetParentTrack(current)
+
+    if not valid_track(parent) then
+      break
+    end
+
+    outermost = parent
+    current = parent
+  end
+
+  return outermost
+end
+
+local function resolve_matrix_render_targets(tracks)
+  local targets = {}
+
+  for _, track in ipairs(tracks or {}) do
+    local target =
+      resolve_matrix_render_target(track)
+
+    if valid_track(target) then
+      targets[#targets + 1] = target
+    end
+  end
+
+  return unique_tracks(targets)
+end
+
 local function resolve_name_and_matrix_tracks(source_tracks)
   if #source_tracks == 1 then
-    local target =
+    local naming_target =
       resolve_single_track_target(source_tracks[1])
 
+    local matrix_target =
+      resolve_matrix_render_target(naming_target)
+
     return
-      normalize_name(get_track_name(target)),
-      { target },
-      target
+      normalize_name(get_track_name(naming_target)),
+      { matrix_target },
+      naming_target
   end
 
   local common, err =
@@ -439,9 +501,12 @@ local function resolve_name_and_matrix_tracks(source_tracks)
   end
 
   if valid_track(common) then
+    local matrix_target =
+      resolve_matrix_render_target(common)
+
     return
       normalize_name(get_track_name(common)),
-      { common },
+      { matrix_target },
       common
   end
 
@@ -452,7 +517,7 @@ local function resolve_name_and_matrix_tracks(source_tracks)
 
   return
     combined_source_name(source_tracks),
-    source_tracks,
+    resolve_matrix_render_targets(source_tracks),
     nil
 end
 
@@ -571,6 +636,73 @@ local function track_sets_equal(a, b)
   return true
 end
 
+local function is_ancestor_or_self(
+  ancestor,
+  track
+)
+  if not valid_track(ancestor)
+    or not valid_track(track) then
+    return false
+  end
+
+  local current = track
+  local visited = {}
+
+  while valid_track(current) do
+    if current == ancestor then
+      return true
+    end
+
+    if visited[current] then
+      break
+    end
+
+    visited[current] = true
+    current = reaper.GetParentTrack(current)
+  end
+
+  return false
+end
+
+local function matrix_targets_hierarchy_related(a, b)
+  a = unique_tracks(a or {})
+  b = unique_tracks(b or {})
+
+  if #a ~= 1 or #b ~= 1 then
+    return false
+  end
+
+  return
+    is_ancestor_or_self(a[1], b[1])
+    or is_ancestor_or_self(b[1], a[1])
+end
+
+local function generated_name_matches_base(
+  region_name,
+  base_name
+)
+  local key =
+    trim(region_name):lower()
+
+  local base =
+    trim(base_name):lower()
+
+  if key == base then
+    return true
+  end
+
+  local prefix = base .. "_"
+
+  if key:sub(1, #prefix) ~= prefix then
+    return false
+  end
+
+  local suffix =
+    key:sub(#prefix + 1)
+
+  return suffix:match("^%d+$") ~= nil
+end
+
 local function find_matching_region(
   regions,
   start_pos,
@@ -592,6 +724,7 @@ local function find_matching_region(
   local matrix_matches = {}
   local empty_matrix_name_matches = {}
   local plain_name_matches = {}
+  local hierarchy_migration_matches = {}
 
   local matrix_api_available =
     type(reaper.EnumRegionRenderMatrix) == "function"
@@ -613,6 +746,19 @@ local function find_matching_region(
 
       if not existing_tracks then
         return nil, matrix_error
+      end
+
+      if generated_name_matches_base(
+        region.name,
+        base_name
+      )
+        and matrix_targets_hierarchy_related(
+          existing_tracks,
+          desired_matrix_tracks
+        ) then
+        hierarchy_migration_matches[
+          #hierarchy_migration_matches + 1
+        ] = region
       end
 
       if track_sets_equal(
@@ -655,6 +801,16 @@ local function find_matching_region(
   end
 
   if matrix_api_available then
+    if #hierarchy_migration_matches == 1 then
+      return hierarchy_migration_matches[1]
+    end
+
+    if #hierarchy_migration_matches > 1 then
+      return nil,
+        "同一范围内存在多个可进行 Folder 层级迁移的 Region，"
+        .. "无法安全判断应更新哪一个。"
+    end
+
     if #empty_matrix_name_matches == 1 then
       return empty_matrix_name_matches[1]
     end
