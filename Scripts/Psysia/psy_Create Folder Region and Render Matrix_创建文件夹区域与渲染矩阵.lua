@@ -1,27 +1,27 @@
 -- @description Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵
--- @version 2.5
+-- @version 2.6
 -- @author Psysia
 --
--- v2.5 修复：
--- 将“Region 命名层级”和“Render Matrix 渲染层级”拆开。
--- Region 名仍使用最近的逻辑父文件夹；
--- Render Matrix 则沿 Folder 父级继续向上，选择最外层渲染 Folder，
--- 避免多层嵌套时只勾到内层 Folder、漏掉上层总线处理。
+-- v2.6 修复：
+-- 单一源轨道绝不继承父 Folder：
+-- Region 名直接使用该源轨道名称，Render Matrix 也直接勾该源轨道。
+-- 只有来源涉及 2 条及以上轨道时，才寻找最近公共父级。
+-- 同时新增 Render Matrix 写入后的读回校验，避免静默生成空矩阵 Region。
 --
 -- 核心规则：
 -- 1. 有已选媒体对象：区间取所有已选对象最左端 -> 最右端。
--- 2. Region 命名：
---    - 单个源轨道本身是文件夹轨道：使用它自己。
---    - 单个源轨道位于文件夹内：使用直接父文件夹。
---    - 多个源轨道：寻找最近公共父级（Lowest Common Ancestor）。
--- 3. Render Matrix：
---    - 从命名目标继续沿父级向上，选择最外层 Folder；
---    - 没有父级时使用命名目标本身。
+-- 2. 单个源轨道：
+--    - Region 名 = 源轨道自己的名称；
+--    - Render Matrix = 源轨道自己；
+--    - 无论外面嵌套多少层 Folder，都不向父级继承。
+-- 3. 多个源轨道：
+--    - 优先寻找最近公共父级（Lowest Common Ancestor）；
+--    - 找到公共父级时，用它命名并勾它；
+--    - 没有共同父级时，组合源轨道名称并分别勾选源轨道。
 -- 4. 多个 Region 可以拥有完全相同的时间范围；
 --    只有“范围相同 + Render Matrix 目标相同”才认为是同一逻辑 Region。
 -- 5. 更新已有 Region 时刷新其 Render Matrix。
--- 6. v2.4 -> v2.5 层级迁移：同范围、同系列名称且旧/新矩阵目标存在祖先关系时，
---    允许原地更新 Region，避免因为外套 Folder 而不断生成 _04、_05。
+-- 6. Matrix 写入后立即读回校验；实际勾选结果不一致时直接报错。
 --
 -- 不依赖 SWS / ReaPack。
 
@@ -32,13 +32,6 @@ local CONFIG = {
   FORCE_LOWERCASE = true,
   REPLACE_SPACES_WITH_UNDERSCORES = true,
   SANITIZE_FOR_FILENAME = true,
-
-  -- 单轨位于文件夹内时，Region 名使用直接父文件夹。
-  SINGLE_TRACK_USE_PARENT_FOLDER = true,
-
-  -- v2.5：Render Matrix 沿父级向上选择最外层 Folder。
-  -- 只影响矩阵目标，不改变 Region 命名层级。
-  MATRIX_USE_OUTERMOST_FOLDER = true,
 
   -- 同范围 + 同矩阵目标时更新原 Region。
   UPDATE_MATCHING_REGION = true,
@@ -410,89 +403,28 @@ local function combined_source_name(tracks)
   return table.concat(names, "__")
 end
 
-local function resolve_single_track_target(source_track)
-  -- 如果 Item 本身就在一个“文件夹轨道”上，
-  -- 不继续爬到更高父级，否则会误用祖父文件夹。
-  if is_folder_track(source_track) then
-    return source_track
-  end
-
-  if CONFIG.SINGLE_TRACK_USE_PARENT_FOLDER then
-    local parent = reaper.GetParentTrack(source_track)
-
-    if valid_track(parent) then
-      -- v2.4 核心修复：
-      -- 单轨只要属于某个文件夹，就使用它的直接父文件夹。
-      return parent
-    end
-  end
-
-  return source_track
-end
-
-local function resolve_matrix_render_target(track)
-  if not valid_track(track) then
-    return nil
-  end
-
-  if not CONFIG.MATRIX_USE_OUTERMOST_FOLDER then
-    return track
-  end
-
-  local current = track
-  local outermost = track
-  local visited = {}
-
-  while valid_track(current) do
-    if visited[current] then
-      break
-    end
-
-    visited[current] = true
-
-    local parent =
-      reaper.GetParentTrack(current)
-
-    if not valid_track(parent) then
-      break
-    end
-
-    outermost = parent
-    current = parent
-  end
-
-  return outermost
-end
-
-local function resolve_matrix_render_targets(tracks)
-  local targets = {}
-
-  for _, track in ipairs(tracks or {}) do
-    local target =
-      resolve_matrix_render_target(track)
-
-    if valid_track(target) then
-      targets[#targets + 1] = target
-    end
-  end
-
-  return unique_tracks(targets)
-end
-
 local function resolve_name_and_matrix_tracks(source_tracks)
-  if #source_tracks == 1 then
-    local naming_target =
-      resolve_single_track_target(source_tracks[1])
+  source_tracks =
+    unique_tracks(source_tracks or {})
 
-    local matrix_target =
-      resolve_matrix_render_target(naming_target)
+  if #source_tracks == 0 then
+    return nil, nil, nil,
+      "没有可用的源轨道。"
+  end
+
+  -- v2.6：单条轨道永远使用自己。
+  -- 不管它位于几层 Folder 内，都不继承父级名称或矩阵目标。
+  if #source_tracks == 1 then
+    local source_track =
+      source_tracks[1]
 
     return
-      normalize_name(get_track_name(naming_target)),
-      { matrix_target },
-      naming_target
+      normalize_name(get_track_name(source_track)),
+      { source_track },
+      source_track
   end
 
+  -- 只有多轨来源才启用公共父级逻辑。
   local common, err =
     lowest_common_ancestor(source_tracks)
 
@@ -501,12 +433,9 @@ local function resolve_name_and_matrix_tracks(source_tracks)
   end
 
   if valid_track(common) then
-    local matrix_target =
-      resolve_matrix_render_target(common)
-
     return
       normalize_name(get_track_name(common)),
-      { matrix_target },
+      { common },
       common
   end
 
@@ -517,7 +446,7 @@ local function resolve_name_and_matrix_tracks(source_tracks)
 
   return
     combined_source_name(source_tracks),
-    resolve_matrix_render_targets(source_tracks),
+    source_tracks,
     nil
 end
 
@@ -636,73 +565,6 @@ local function track_sets_equal(a, b)
   return true
 end
 
-local function is_ancestor_or_self(
-  ancestor,
-  track
-)
-  if not valid_track(ancestor)
-    or not valid_track(track) then
-    return false
-  end
-
-  local current = track
-  local visited = {}
-
-  while valid_track(current) do
-    if current == ancestor then
-      return true
-    end
-
-    if visited[current] then
-      break
-    end
-
-    visited[current] = true
-    current = reaper.GetParentTrack(current)
-  end
-
-  return false
-end
-
-local function matrix_targets_hierarchy_related(a, b)
-  a = unique_tracks(a or {})
-  b = unique_tracks(b or {})
-
-  if #a ~= 1 or #b ~= 1 then
-    return false
-  end
-
-  return
-    is_ancestor_or_self(a[1], b[1])
-    or is_ancestor_or_self(b[1], a[1])
-end
-
-local function generated_name_matches_base(
-  region_name,
-  base_name
-)
-  local key =
-    trim(region_name):lower()
-
-  local base =
-    trim(base_name):lower()
-
-  if key == base then
-    return true
-  end
-
-  local prefix = base .. "_"
-
-  if key:sub(1, #prefix) ~= prefix then
-    return false
-  end
-
-  local suffix =
-    key:sub(#prefix + 1)
-
-  return suffix:match("^%d+$") ~= nil
-end
-
 local function find_matching_region(
   regions,
   start_pos,
@@ -724,7 +586,6 @@ local function find_matching_region(
   local matrix_matches = {}
   local empty_matrix_name_matches = {}
   local plain_name_matches = {}
-  local hierarchy_migration_matches = {}
 
   local matrix_api_available =
     type(reaper.EnumRegionRenderMatrix) == "function"
@@ -746,19 +607,6 @@ local function find_matching_region(
 
       if not existing_tracks then
         return nil, matrix_error
-      end
-
-      if generated_name_matches_base(
-        region.name,
-        base_name
-      )
-        and matrix_targets_hierarchy_related(
-          existing_tracks,
-          desired_matrix_tracks
-        ) then
-        hierarchy_migration_matches[
-          #hierarchy_migration_matches + 1
-        ] = region
       end
 
       if track_sets_equal(
@@ -801,16 +649,6 @@ local function find_matching_region(
   end
 
   if matrix_api_available then
-    if #hierarchy_migration_matches == 1 then
-      return hierarchy_migration_matches[1]
-    end
-
-    if #hierarchy_migration_matches > 1 then
-      return nil,
-        "同一范围内存在多个可进行 Folder 层级迁移的 Region，"
-        .. "无法安全判断应更新哪一个。"
-    end
-
     if #empty_matrix_name_matches == 1 then
       return empty_matrix_name_matches[1]
     end
@@ -940,13 +778,57 @@ local function write_matrix(region_id, tracks)
       "当前 REAPER 不支持 Region Render Matrix API。"
   end
 
-  for _, track in ipairs(unique_tracks(tracks)) do
+  local desired =
+    unique_tracks(tracks or {})
+
+  if #desired == 0 then
+    return false,
+      "没有可写入 Region Render Matrix 的有效轨道。"
+  end
+
+  for _, track in ipairs(desired) do
     reaper.SetRegionRenderMatrix(
       PROJECT,
       region_id,
       track,
       CONFIG.MATRIX_FLAG
     )
+  end
+
+  -- v2.6：写入后立即读回验证，避免 REAPER 没有实际勾选却静默继续。
+  if type(reaper.EnumRegionRenderMatrix) == "function" then
+    local actual, read_error =
+      get_region_matrix_tracks(region_id)
+
+    if not actual then
+      return false, read_error
+    end
+
+    if not track_sets_equal(actual, desired) then
+      local desired_names = {}
+      local actual_names = {}
+
+      for _, track in ipairs(desired) do
+        desired_names[#desired_names + 1] =
+          get_track_name(track)
+      end
+
+      for _, track in ipairs(actual) do
+        actual_names[#actual_names + 1] =
+          get_track_name(track)
+      end
+
+      return false,
+        "Region Render Matrix 写入后校验失败。\n\n"
+        .. "预期："
+        .. table.concat(desired_names, ", ")
+        .. "\n实际："
+        .. (
+          #actual_names > 0
+          and table.concat(actual_names, ", ")
+          or "未勾选任何轨道"
+        )
+    end
   end
 
   return true
