@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.9
+
+### AI completion and long-file waveform hotfix
+
+- Fixes the active AI session not actually being cleared after local recall reaches 100%, so the top status now closes normally.
+- Restores immediate **Load next 120** paging from the in-memory candidate pool instead of reporting that an AI request is still running.
+- Always runs REAPER peak building through Init, Run and Finish even when Init returns zero, preventing long WAV files from remaining permanently not ready.
+- Adds regression coverage for explicit AI-session cleanup and the waveform peak-builder sequence.
+
 ## 0.9.0 Beta 7.8
 
 ### One AI request, fully local ranking and paging

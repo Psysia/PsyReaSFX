@@ -11,6 +11,7 @@ local peak_calls = 0
 local creates = 0
 local reopens = 0
 local destroys = 0
+local build_modes = {}
 local always_empty = false
 local spectral_mode = false
 
@@ -38,7 +39,10 @@ reaper = {
   end,
   GetMediaSourceLength = function() return 1, false end,
   GetMediaSourceNumChannels = function() return 1 end,
-  PCM_Source_BuildPeaks = function() return 0 end,
+  PCM_Source_BuildPeaks = function(_, mode)
+    build_modes[#build_modes + 1] = mode
+    return 0
+  end,
   new_array = function(size)
     local array = { values = {} }
     array.table = function(first, count)
@@ -86,8 +90,11 @@ local status, waveform = run({
 assert(status == "done" and waveform and waveform.count == 32, "transient empty peaks must recover")
 assert(creates == 1 and reopens == 1, "third empty read must reopen the media source once")
 assert(peak_calls == 4 and destroys == 2, "wave source lifecycle is unbalanced after recovery")
+assert(build_modes[1] == 0 and build_modes[2] == 1 and build_modes[3] == 2,
+  "peak building must always execute Init, Run and Finish even when Init returns zero")
 
 peak_calls, creates, reopens, destroys = 0, 0, 0, 0
+build_modes = {}
 always_empty = true
 local failed, _, reason = run({
   asset = { path = "empty.wav" },

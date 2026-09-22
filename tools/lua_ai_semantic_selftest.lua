@@ -244,10 +244,13 @@ session.candidates = {{
 }}
 session.plan = { summary = "metal impact" }
 session.job_token = {}
+state.ai_semantic_session = session
 ai_semantic_finish_local(session)
 assert(state.ai_semantic_result_count == 1)
 assert(state.ai_semantic_lookup["c:/library/bell.wav"].local_score == 1)
 assert(state.search == "金属撞击")
+assert(state.ai_semantic_session == nil,
+  "finishing local recall must explicitly clear the active AI session")
 
 local first_page_assets = {}
 for index = 1, 130 do
@@ -267,6 +270,7 @@ local page_session = {
   job_token = {},
 }
 assert(ai_semantic_prepare_page(page_session, 1))
+state.ai_semantic_session = page_session
 ai_semantic_finish_local(page_session)
 assert(state.ai_semantic_result_count == 120)
 assert(state.ai_semantic_has_more)
@@ -278,6 +282,10 @@ assert(not state.ai_semantic_has_more)
 assert(state.ai_semantic_lookup["c:/library/page-001.wav"].page == 1)
 assert(state.ai_semantic_lookup["c:/library/page-121.wav"].page == 2)
 assert(state.ai_semantic_session == nil)
+state.ai_semantic_paging = { stale = true }
+ai_semantic_clear_results()
+assert(state.ai_semantic_paging == nil,
+  "clearing AI results must explicitly remove stale paging state")
 
 local decoded = assert(ai_semantic_extract_content(neural_json_encode({
   choices = {
@@ -413,8 +421,11 @@ state.assets = {
   { path = "C:/Library/one.wav", name = "one.wav", ready = true },
   { path = "C:/Library/two.wav", name = "two.wav", ready = true },
 }
+state.ai_semantic_paging = { stale = true }
 local catalog_job = assert(Jobs.begin("wave_precache", "catalog_exclusive", false, 20))
 assert(start_ai_semantic_search("metal impact"), "catalog maintenance must not block AI search")
+assert(state.ai_semantic_paging == nil,
+  "starting a new AI search must explicitly remove stale paging state")
 assert(state.ai_semantic_session.job_token.resource == "ai_semantic_api")
 assert(#state.ai_semantic_session.source == 2)
 state.assets[3] = { path = "C:/Library/three.wav", name = "three.wav", ready = true }

@@ -382,11 +382,11 @@ function ai_semantic_clear_results()
     ai_semantic_result_count = 0,
     ai_semantic_last_query = "",
     ai_semantic_last_summary = "",
-    ai_semantic_paging = nil,
     ai_semantic_has_more = false,
     ai_semantic_loaded_candidates = 0,
     ai_semantic_total_candidates = 0,
   })
+  AppState.set("ai_semantic_paging", nil)
   if "ai_semantic" == state.view then
     AppState.apply({ view = "all", sort_mode = "name", sort_desc = false })
   end
@@ -795,7 +795,6 @@ function ai_semantic_finish_local(session)
     ai_semantic_result_count = count,
     ai_semantic_last_query = session.query,
     ai_semantic_last_summary = session.plan and session.plan.summary or "",
-    ai_semantic_session = nil,
     ai_semantic_paging = {
       query = session.query,
       plan = session.plan,
@@ -813,6 +812,10 @@ function ai_semantic_finish_local(session)
     sort_desc = true,
     results_dirty = true,
   })
+  -- Lua table constructors omit keys whose value is nil, so placing
+  -- ai_semantic_session = nil inside AppState.apply() does not clear the
+  -- active session. Clear it explicitly before exposing paging controls.
+  AppState.set("ai_semantic_session", nil)
   if session.job_token then Jobs.finish(session.job_token, true, "complete") end
   set_status(string.format(
     "AI 语义搜索完成：已显示 %d 条%s",
@@ -900,7 +903,6 @@ function start_ai_semantic_search(query)
     return false
   end
   AppState.apply({
-    ai_semantic_paging = nil,
     ai_semantic_has_more = false,
     ai_semantic_loaded_candidates = 0,
     ai_semantic_total_candidates = 0,
@@ -921,6 +923,7 @@ function start_ai_semantic_search(query)
     job_token = token,
     },
   })
+  AppState.set("ai_semantic_paging", nil)
   set_status("AI 语义搜索：正在理解声音描述…")
   return true
 end

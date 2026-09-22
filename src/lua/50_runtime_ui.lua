@@ -5168,16 +5168,13 @@ function start_wave_job(job)
       "峰值构建无法启动：" .. tostring(remaining or "未知错误")
   end
 
-  if remaining == 0 then
-    -- Some codecs and freshly built REAPER peak caches report zero samples if
-    -- GetPeaks is called in the same defer cycle. Always cross a frame first.
-    job.phase = "read_wait"
-    job.read_wait_frames = 1
-    job.progress = 1
-  else
-    job.progress =
-      clamp(1 - remaining / 100, 0, 0.99)
-  end
+  -- Mode 0 only initializes REAPER's peak builder. A zero return value here
+  -- does not mean that mode 1 (Run) and mode 2 (Finish) may be skipped. That
+  -- shortcut left long files without a usable peak cache and GetPeaks kept
+  -- returning zero forever. Always advance through the full state machine.
+  job.progress = remaining > 0
+      and clamp(1 - remaining / 100, 0, 0.99)
+    or 0
 
   return true
 end
