@@ -1,11 +1,10 @@
--- @description Video Item Track Name Overlay Settings / 视频素材轨道名覆盖显示设置
--- @version 1.2
+-- @description Video Item Overlay Settings / 视频素材覆盖显示设置
+-- @version 1.3
 -- @author Psysia
 -- @changelog
---   + Add a dropdown containing installed Windows font families.
---   + Default to Microsoft YaHei UI with CJK-capable fallbacks.
---   + Keep minimum size, maximum size, and weight settings.
---   + Preserve the existing ExtState keys for compatibility.
+--   + Rename the Action as shared settings for both video overlay modes.
+--   + Keep the installed-font dropdown, CJK-capable default, size, and weight controls.
+--   + Preserve all existing ExtState keys and saved preferences.
 
 local EXT_SECTION =
     "PsysiaVideoItemFilenameOverlay"
@@ -312,7 +311,7 @@ if #ordered == 0 then
     reaper.ShowMessageBox(
         "No usable fonts were found.\n\n"
         .. "未找到可用字体。",
-        "Video Track Name Overlay Settings / 视频轨道名覆盖设置",
+        "Video Item Overlay Settings / 视频素材覆盖显示设置",
         0
     )
     return
@@ -333,7 +332,7 @@ local mouse_x, mouse_y =
     reaper.GetMousePosition()
 
 gfx.init(
-    "Video Track Name Overlay Font",
+    "Video Item Overlay Font",
     1,
     1,
     0,
@@ -382,7 +381,7 @@ local weight =
 
 local ok, values =
     reaper.GetUserInputs(
-        "Video Track Name Overlay Settings / 视频轨道名覆盖设置",
+        "Video Item Overlay Settings / 视频素材覆盖显示设置",
         3,
         "Minimum px / 最小字号,Maximum px / 最大字号,Weight 0-1000 / 字重,extrawidth=160",
         table.concat(
@@ -430,7 +429,7 @@ or new_weight > 1000 then
         .. "Maximum: minimum-128 px\n"
         .. "Weight: 0-1000\n\n"
         .. "设置无效，请检查字号和字重范围。",
-        "Video Track Name Overlay Settings / 视频轨道名覆盖设置",
+        "Video Item Overlay Settings / 视频素材覆盖显示设置",
         0
     )
     return
@@ -484,7 +483,7 @@ if not full_list then
         "The full installed-font list could not be enumerated on this system, "
         .. "so a CJK-capable fallback list was used.\n\n"
         .. "当前系统无法枚举完整字体列表，已使用支持中文的备用字体列表。",
-        "Video Track Name Overlay Settings / 视频轨道名覆盖设置",
+        "Video Item Overlay Settings / 视频素材覆盖显示设置",
         0
     )
 end
