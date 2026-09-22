@@ -449,9 +449,14 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
       </version>
     </reapack>
     <reapack name="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua" type="script" desc="Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵">
-      <metadata><description><![CDATA[Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
-      <version name="2.4" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Initial ReaPack publication.
-- 首次发布到 ReaPack。]]></changelog><source main="main" file="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Create%20Folder%20Region%20and%20Render%20Matrix_%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
+      <metadata><description><![CDATA[Create or update Regions from the current selection, keep Region naming at the nearest logical folder, and target the outermost parent folder in Region Render Matrix for nested routing chains. / 根据当前选择创建或更新 Region；Region 命名保留最近逻辑父级，嵌套 Folder 的 Render Matrix 自动追溯到最外层父文件夹。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="2.5" author="Psysia" time="2026-09-22T10:18:00Z"><changelog><![CDATA[- Separate Region naming hierarchy from Region Render Matrix routing hierarchy.
+- Keep Region names based on the nearest logical folder while walking the matrix target to the outermost parent folder.
+- Fix nested-folder projects where the matrix remained checked on an inner folder and skipped an outer bus.
+- Migrate matching v2.4 Regions in place when old and new matrix targets are in the same ancestor chain, avoiding unnecessary new _04/_05 Regions.
+- 修复多层 Folder：Region 名仍按最近逻辑父级生成，但 Render Matrix 自动追到最外层父文件夹；并支持将旧矩阵目标原地迁移到新层级。]]></changelog><source main="main" file="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Create%20Folder%20Region%20and%20Render%20Matrix_%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
+      <version name="2.4" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Single-source tracks inside a folder use their direct parent for Region naming and Render Matrix targeting.
+- 首次发布到 ReaPack；单轨位于 Folder 内时使用直接父文件夹。]]></changelog><source main="main" file="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/ec5502a7fd015de699ab7c6a7f0d4b9aa2bdabfb/Scripts/Psysia/psy_Create%20Folder%20Region%20and%20Render%20Matrix_%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
     </reapack>
         <reapack name="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua" type="script" desc="Sort Tracks by Earliest Item Position / 按最早素材位置排序轨道">
       <metadata><description><![CDATA[Folder-aware sorting by earliest item position. Existing folders are moved as complete subtrees at the nearest common hierarchy level. / 按最早素材位置进行文件夹感知排序；已有文件夹按完整子树移动，并自动选择最近共同层级。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
