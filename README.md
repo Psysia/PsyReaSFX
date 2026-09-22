@@ -43,7 +43,7 @@ For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The opti
 
 | Category | Tool | Purpose |
 |---|---|---|
-| Rendering | Create Folder Region and Render Matrix | Build Regions from the current selection and assign matching Region Render Matrix targets. |
+| Rendering | Create Folder Region and Render Matrix | Build Regions from the current selection; keep logical-folder naming while nested Render Matrix targets follow the outermost parent bus. |
 | Rendering | Smart Tail Render Panel | Configure render tail, silence trimming, and safety padding. |
 | Rendering | Open Render Dialog with Auto Tail | Apply saved tail settings before opening REAPER's Render dialog. |
 | Track management | Sort Tracks by Earliest Item Position | Folder-aware sorting that preserves complete folder subtrees. |
