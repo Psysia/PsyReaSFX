@@ -24,7 +24,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 
 | Tool | Version | Primary use |
 |---|---:|---|
-| Create Folder Region and Render Matrix | 2.4 | Region creation and Region Render Matrix setup. |
+| Create Folder Region and Render Matrix | 2.5 | Region creation and Region Render Matrix setup. |
 | Sort Tracks by Earliest Item Position | 1.4 | Folder-aware track ordering. |
 | Open Render Dialog with Auto Tail | 1.0 | Apply saved tail settings before rendering. |
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
@@ -41,11 +41,14 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 
 ## Rendering
 
-### Create Folder Region and Render Matrix · 2.4
+### Create Folder Region and Render Matrix · 2.5
 
-Creates or updates Regions from the current item or track selection, resolves the relevant folder hierarchy, derives a Region name, and writes the matching Region Render Matrix target.
+Creates or updates Regions from the current item or track selection and treats Region naming and render routing as two separate hierarchy decisions.
 
-It supports nested folders and multiple logical Regions that share the same time range. A Region is treated as the same logical output only when both its time range and render target match.
+- **Region naming** stays at the nearest logical folder, preserving names such as `sfx_gp_maze38_qidian_start`.
+- **Region Render Matrix** continues upward through nested parents to the outermost Folder, so an added wrapper/bus is included in the rendered signal path.
+- Existing v2.4 Regions can be migrated in place when the old inner-folder target and the new outer-folder target are on the same ancestor chain.
+- Multiple logical Regions may still share the same time range; matrix identity is used to distinguish them where appropriate.
 
 ### Smart Tail Render Panel · 1.1
 
