@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.9
+-- @version 0.9.0-beta7.10
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -86,6 +86,7 @@
 --   - Beta 7.7：AI 进度改为单行状态，支持按 120 条继续浏览并压缩重排请求
 --   - Beta 7.8：移除 AI 远程重排与相关度列，翻页改为即时本地追加
 --   - Beta 7.9：修复 AI 完成状态清理、下一批加载和长文件波形峰值构建
+--   - Beta 7.10：Windows 超长路径 PCM/float WAV 改用分帧直接波形读取
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -191,7 +192,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.9"
+local VERSION = "0.9.0 Beta 7.10"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -3579,8 +3580,34 @@ function safe_lower(value)
   return tostring(value or ""):lower()
 end
 
+function windows_extended_path(path)
+  path = tostring(path or "")
+  local get_os = Host and Host.GetOS or reaper and reaper.GetOS
+  local os_name = type(get_os) == "function" and tostring(get_os()) or ""
+  if not os_name:match("Win") or path == "" then return path end
+  path = path:gsub("/", "\\")
+  if path:sub(1, 4) == "\\\\?\\" then return path end
+  if path:sub(1, 2) == "\\\\" then
+    return "\\\\?\\UNC\\" .. path:sub(3)
+  end
+  if path:match("^%a:\\") then return "\\\\?\\" .. path end
+  return path
+end
+
+function open_source_binary_file(path)
+  local file, reason = io.open(path, "rb")
+  if file then return file end
+  local extended = windows_extended_path(path)
+  if extended ~= path then
+    local extended_file, extended_reason = io.open(extended, "rb")
+    if extended_file then return extended_file end
+    reason = extended_reason or reason
+  end
+  return nil, reason
+end
+
 function file_size(path)
-  local file = io.open(path, "rb")
+  local file = open_source_binary_file(path)
 
   if not file then
     return 0
@@ -19634,6 +19661,231 @@ function save_wave_to_disk(
   file:close()
 end
 
+local DIRECT_WAVE_MAX_FRAMES_PER_POINT = 256
+local DIRECT_WAVE_POINTS_PER_STEP = 64
+
+function direct_waveform_path_required(path)
+  local get_os = Host and Host.GetOS or reaper and reaper.GetOS
+  local os_name = type(get_os) == "function" and tostring(get_os()) or ""
+  if not os_name:match("Win") or extension(path) ~= "wav" then return false end
+  local character_count = utf8.len(tostring(path or ""))
+  return (character_count or #tostring(path or "")) >= 260
+end
+
+function direct_wave_read_format(file)
+  local header = file:read(12)
+  if not header or #header ~= 12 then return nil, "WAV 文件头不完整" end
+  local container = header:sub(1, 4)
+  if (container ~= "RIFF" and container ~= "RF64")
+    or header:sub(9, 12) ~= "WAVE" then
+    return nil, "不是受支持的 RIFF/RF64 WAV"
+  end
+
+  local format_info = nil
+  local data_offset = nil
+  local data_size = nil
+  local rf64_data_size = nil
+  while true do
+    local chunk_header = file:read(8)
+    if not chunk_header or #chunk_header ~= 8 then break end
+    local chunk_id = chunk_header:sub(1, 4)
+    local chunk_size = string.unpack("<I4", chunk_header, 5)
+    local chunk_start = file:seek()
+    if chunk_id == "ds64" then
+      local payload = file:read(math.min(chunk_size, 28))
+      if payload and #payload >= 16 then
+        rf64_data_size = string.unpack("<I8", payload, 9)
+      end
+    elseif chunk_id == "fmt " then
+      local payload = file:read(math.min(chunk_size, 64))
+      if payload and #payload >= 16 then
+        local format_tag, channels, sample_rate, _, block_align, bits =
+          string.unpack("<I2I2I4I4I2I2", payload)
+        if format_tag == 0xFFFE and #payload >= 26 then
+          format_tag = string.unpack("<I2", payload, 25)
+        end
+        format_info = {
+          format_tag = format_tag,
+          channels = channels,
+          sample_rate = sample_rate,
+          block_align = block_align,
+          bits = bits,
+        }
+      end
+    elseif chunk_id == "data" then
+      data_offset = chunk_start
+      data_size = chunk_size == 0xFFFFFFFF and rf64_data_size or chunk_size
+    end
+    if format_info and data_offset and data_size then break end
+    local next_chunk = chunk_start + chunk_size + (chunk_size % 2)
+    if not file:seek("set", next_chunk) then break end
+  end
+
+  if not format_info then return nil, "WAV 缺少 fmt 数据块" end
+  if not data_offset or not data_size then return nil, "WAV 缺少 data 数据块" end
+  local channels = tonumber(format_info.channels) or 0
+  local block_align = tonumber(format_info.block_align) or 0
+  local bytes_per_sample = channels > 0 and block_align / channels or 0
+  if channels <= 0 or channels > 64 or block_align <= 0
+    or bytes_per_sample ~= math.floor(bytes_per_sample) then
+    return nil, "WAV 声道或块对齐无效"
+  end
+  if format_info.format_tag == 1 then
+    if bytes_per_sample < 1 or bytes_per_sample > 4 then
+      return nil, "不支持的 PCM WAV 位深"
+    end
+  elseif format_info.format_tag == 3 then
+    if bytes_per_sample ~= 4 and bytes_per_sample ~= 8 then
+      return nil, "不支持的浮点 WAV 位深"
+    end
+  else
+    return nil, "不支持的 WAV 编码：" .. tostring(format_info.format_tag)
+  end
+  format_info.data_offset = data_offset
+  format_info.data_size = data_size
+  format_info.bytes_per_sample = bytes_per_sample
+  format_info.total_frames = math.floor(data_size / block_align)
+  if format_info.total_frames <= 0 then return nil, "WAV 音频数据为空" end
+  return format_info
+end
+
+function direct_wave_decode_sample(bytes, offset, format_tag, bytes_per_sample)
+  if format_tag == 3 then
+    if bytes_per_sample == 4 then return string.unpack("<f", bytes, offset) end
+    return string.unpack("<d", bytes, offset)
+  end
+  local b1 = bytes:byte(offset) or 0
+  if bytes_per_sample == 1 then return (b1 - 128) / 128 end
+  local b2 = bytes:byte(offset + 1) or 0
+  local value = b1 | (b2 << 8)
+  if bytes_per_sample == 2 then
+    if value >= 0x8000 then value = value - 0x10000 end
+    return value / 0x8000
+  end
+  local b3 = bytes:byte(offset + 2) or 0
+  value = value | (b3 << 16)
+  if bytes_per_sample == 3 then
+    if value >= 0x800000 then value = value - 0x1000000 end
+    return value / 0x800000
+  end
+  local b4 = bytes:byte(offset + 3) or 0
+  value = value | (b4 << 24)
+  if value >= 0x80000000 then value = value - 0x100000000 end
+  return value / 0x80000000
+end
+
+function start_direct_wave_job(job)
+  local file, open_error = open_source_binary_file(job.asset.path)
+  if not file then return false, "无法直接读取长路径 WAV：" .. tostring(open_error) end
+  local format_info, format_error = direct_wave_read_format(file)
+  if not format_info then file:close() return false, format_error end
+  local points = clamp(math.floor(job.points), 32, LARGE_WAVE_MAX_POINTS)
+  local output_count = math.min(points, format_info.total_frames)
+  local output_channels = math.min(format_info.channels, 8)
+  job.direct_file = file
+  job.direct_format = format_info
+  job.direct_point = 1
+  job.direct_waveform = {
+    count = output_count,
+    channels = output_channels,
+    peaks = {},
+    channel_peaks = job.preserve_channels and {} or nil,
+    spectral_available = false,
+  }
+  if job.direct_waveform.channel_peaks then
+    for channel = 1, output_channels do
+      job.direct_waveform.channel_peaks[channel] = {}
+    end
+  end
+  job.phase = "direct_read"
+  job.progress = 0
+  return true
+end
+
+function step_direct_wave_job(job, maximum_points)
+  local file = job.direct_file
+  local format_info = job.direct_format
+  local waveform = job.direct_waveform
+  if not file or not format_info or not waveform then
+    return "failed", nil, "长路径 WAV 直接读取状态无效"
+  end
+  local last = math.min(
+    waveform.count,
+    job.direct_point + (maximum_points or DIRECT_WAVE_POINTS_PER_STEP) - 1
+  )
+  for point = job.direct_point, last do
+    local bucket_start = math.floor((point - 1) * format_info.total_frames / waveform.count)
+    local bucket_end = math.max(
+      bucket_start,
+      math.floor(point * format_info.total_frames / waveform.count) - 1
+    )
+    local bucket_frames = bucket_end - bucket_start + 1
+    local read_frames = math.min(bucket_frames, DIRECT_WAVE_MAX_FRAMES_PER_POINT)
+    local read_start = bucket_start + math.floor((bucket_frames - read_frames) * 0.5)
+    local byte_offset = format_info.data_offset + read_start * format_info.block_align
+    if not file:seek("set", byte_offset) then
+      return "failed", nil, "无法定位长路径 WAV 音频数据"
+    end
+    local bytes = file:read(read_frames * format_info.block_align)
+    if not bytes or #bytes < format_info.block_align then
+      return "failed", nil, "长路径 WAV 音频数据读取不完整"
+    end
+    local channel_maximum = {}
+    for channel = 1, waveform.channels do channel_maximum[channel] = 0 end
+    local available_frames = math.floor(#bytes / format_info.block_align)
+    for frame = 0, available_frames - 1 do
+      local frame_offset = frame * format_info.block_align
+      for channel = 0, waveform.channels - 1 do
+        local sample_offset = frame_offset
+          + channel * format_info.bytes_per_sample + 1
+        local sample = direct_wave_decode_sample(
+          bytes,
+          sample_offset,
+          format_info.format_tag,
+          format_info.bytes_per_sample
+        )
+        channel_maximum[channel + 1] = math.max(
+          channel_maximum[channel + 1],
+          math.abs(tonumber(sample) or 0)
+        )
+      end
+    end
+    local aggregate = 0
+    for channel = 1, waveform.channels do
+      local value = clamp(channel_maximum[channel], 0, 1)
+      aggregate = math.max(aggregate, value)
+      if waveform.channel_peaks then
+        waveform.channel_peaks[channel][point] = value
+      end
+    end
+    waveform.peaks[point] = aggregate
+  end
+  job.direct_point = last + 1
+  job.progress = clamp((job.direct_point - 1) / waveform.count, 0, 1)
+  if job.direct_point <= waveform.count then return "working" end
+  file:close()
+  job.direct_file = nil
+  return "done", waveform
+end
+
+function read_waveform_from_pcm_wave(path, points, preserve_channels)
+  local job = {
+    asset = { path = path },
+    points = points,
+    preserve_channels = preserve_channels,
+  }
+  local started, reason = start_direct_wave_job(job)
+  if not started then return nil, reason end
+  while true do
+    local status, waveform, step_error = step_direct_wave_job(job, LARGE_WAVE_MAX_POINTS)
+    if status == "done" then return waveform end
+    if status == "failed" or not status then
+      if job.direct_file then job.direct_file:close() end
+      return nil, step_error
+    end
+  end
+end
+
 function read_waveform_from_source(
   source,
   duration,
@@ -19770,6 +20022,10 @@ function read_waveform_from_source(
 end
 
 function destroy_wave_job(job)
+  if job and job.direct_file then
+    job.direct_file:close()
+    job.direct_file = nil
+  end
   if job and job.source then
     reaper.PCM_Source_Destroy(job.source)
     job.source = nil
@@ -19841,6 +20097,23 @@ end
 function step_wave_job(job)
   if not job then
     return "failed", nil, "空任务"
+  end
+
+  if job.phase == "direct_read" then
+    local status, waveform, direct_error = step_direct_wave_job(job)
+    if status == "failed" or not status then
+      destroy_wave_job(job)
+      job.direct_wave_error = direct_error
+      job.phase = nil
+    else
+      return status, waveform
+    end
+  elseif not job.source and not job.direct_wave_attempted
+    and direct_waveform_path_required(job.asset and job.asset.path) then
+    job.direct_wave_attempted = true
+    local started, direct_error = start_direct_wave_job(job)
+    if started then return step_direct_wave_job(job) end
+    job.direct_wave_error = direct_error
   end
 
   if not job.source then

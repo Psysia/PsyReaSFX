@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.10
+
+### Windows 超长路径 WAV 波形修复
+
+- 修复 Windows 路径达到 260 字符后，REAPER 峰值接口持续返回 0、导致“重试全部失败任务”仍逐条失败的问题。
+- 对超长路径的 RIFF / RF64 PCM 与 IEEE float WAV 使用内置直接波形读取，支持常见 8/16/24/32-bit PCM、32/64-bit float 和 WAVE_FORMAT_EXTENSIBLE。
+- 通过 Windows `\\?\` 扩展路径访问源文件，不复制、不转码，也不修改源音频。
+- 直接读取按帧增量执行，最多保留 8 个声道，避免大型素材处理时阻塞 REAPER 界面。
+- 增加合成长路径 WAV 与真实 96 kHz / 24-bit 长路径文件回归测试。
+
 ## 0.9.0 Beta 7.9
 
 ### AI 完成状态与长文件波形热修复
