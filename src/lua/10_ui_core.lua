@@ -959,8 +959,34 @@ function safe_lower(value)
   return tostring(value or ""):lower()
 end
 
+function windows_extended_path(path)
+  path = tostring(path or "")
+  local get_os = Host and Host.GetOS or reaper and reaper.GetOS
+  local os_name = type(get_os) == "function" and tostring(get_os()) or ""
+  if not os_name:match("Win") or path == "" then return path end
+  path = path:gsub("/", "\\")
+  if path:sub(1, 4) == "\\\\?\\" then return path end
+  if path:sub(1, 2) == "\\\\" then
+    return "\\\\?\\UNC\\" .. path:sub(3)
+  end
+  if path:match("^%a:\\") then return "\\\\?\\" .. path end
+  return path
+end
+
+function open_source_binary_file(path)
+  local file, reason = io.open(path, "rb")
+  if file then return file end
+  local extended = windows_extended_path(path)
+  if extended ~= path then
+    local extended_file, extended_reason = io.open(extended, "rb")
+    if extended_file then return extended_file end
+    reason = extended_reason or reason
+  end
+  return nil, reason
+end
+
 function file_size(path)
-  local file = io.open(path, "rb")
+  local file = open_source_binary_file(path)
 
   if not file then
     return 0

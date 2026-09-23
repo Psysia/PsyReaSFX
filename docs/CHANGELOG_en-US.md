@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.10
+
+### Windows long-path WAV waveform fix
+
+- Fixes every retry still failing when a Windows path reaches 260 characters and REAPER's peak API keeps returning zero.
+- Uses a built-in waveform reader for long-path RIFF / RF64 PCM and IEEE-float WAV files, including common 8/16/24/32-bit PCM, 32/64-bit float and WAVE_FORMAT_EXTENSIBLE formats.
+- Opens the original source through the Windows `\\?\` extended-path form without copying, transcoding or modifying the audio.
+- Processes direct reads incrementally across UI frames and keeps up to eight channels so large batches do not freeze REAPER.
+- Adds regression coverage with a generated long-path WAV and a real 96 kHz / 24-bit long-path fixture.
+
 ## 0.9.0 Beta 7.9
 
 ### AI completion and long-file waveform hotfix

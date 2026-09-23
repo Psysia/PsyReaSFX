@@ -67,7 +67,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.8.5** | Recommended for everyday use. |
-| Preview | **0.9.0 Beta 7.9** | Fixes AI completion, next-page loading, and waveform peak building for long files. |
+| Preview | **0.9.0 Beta 7.10** | Adds waveform support for Windows long-path PCM/float WAV files. |
 | Optional component | **PsyReaSFX Neural Similarity** | Local neural similar-sound search for Windows x64. |
 
 PsyReaSFX keeps normal acoustic search available without the optional neural component. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
@@ -75,12 +75,12 @@ PsyReaSFX keeps normal acoustic search available without the optional neural com
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 7.9** — correctly finishes local AI recall, appends later pages immediately, and repairs long-file waveform peak building.
+- **Preview channel: 0.9.0 Beta 7.10** — incrementally reads Windows long-path PCM/float WAV files when REAPER peak caches cannot handle the path.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
-Beta 7.9 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` for normal search or click the gold AI button for semantic search. The AI only converts the natural-language request into bilingual retrieval terms. Candidate recall, ranking, and 120-result paging then run locally, so **Load next 120** appends immediately without another API request. Audio, filenames, metadata, directories, and file paths are never uploaded; only the query is sent. On Windows, the API key is encrypted for the current user with DPAPI.
+Beta 7.10 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` for normal search or click the gold AI button for semantic search. The AI only converts the natural-language request into bilingual retrieval terms. Candidate recall, ranking, and 120-result paging then run locally, so **Load next 120** appends immediately without another API request. Audio, filenames, metadata, directories, and file paths are never uploaded; only the query is sent. On Windows, the API key is encrypted for the current user with DPAPI.
 
 > **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
@@ -99,8 +99,8 @@ Beta 7.9 includes the separate **AI semantic search** implementation. It remains
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 7.9 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.9)
-- [Manual ZIP fallback for the optional Beta 7.9 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.9/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_9_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 7.10 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.10)
+- [Manual ZIP fallback for the optional Beta 7.10 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.10/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_10_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)
