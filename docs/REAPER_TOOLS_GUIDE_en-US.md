@@ -25,6 +25,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Tool | Version | Primary use |
 |---|---:|---|
 | Create Folder Region and Render Matrix | 2.6 | Region creation and Region Render Matrix setup. |
+| Create Nearest Parent Folder Region and Render Matrix | 1.0 | Force a single child track to use its immediate parent Folder for Region naming and Matrix targeting. |
 | Sort Tracks by Earliest Item Position | 1.4 | Folder-aware track ordering. |
 | Open Render Dialog with Auto Tail | 1.0 | Apply saved tail settings before rendering. |
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
@@ -49,6 +50,18 @@ Creates or updates Regions from the current item or track selection with an expl
 - **Two or more source tracks:** the script finds the nearest common parent and uses it for both naming and Matrix targeting. If no common parent exists, it combines the source-track names and targets the source tracks individually.
 - Matrix writes are read back immediately. If REAPER did not actually apply the expected Matrix entries, the script reports the expected and actual tracks instead of silently continuing.
 - Multiple logical Regions may still share the same time range.
+
+### Create Nearest Parent Folder Region and Render Matrix · 1.0
+
+A dedicated parent-Folder variant for cases where selecting one child track is intended to represent its nearest Folder bus.
+
+- **One ordinary child track:** use the immediate parent Folder for both the Region name and Region Render Matrix.
+- **One Folder track:** use that Folder itself; do not jump to a higher parent.
+- **No parent Folder:** fall back to the source track itself.
+- **Two or more source tracks:** use the nearest common parent when available; otherwise keep the source-track fallback.
+- Render Matrix entries are read back after writing and a mismatch is reported instead of silently continuing.
+
+Use this Action when the child track is only a convenient selection handle for its parent Folder. Use **Create Folder Region and Render Matrix** when a single selected track must render as itself.
 
 ### Smart Tail Render Panel · 1.1
 
