@@ -528,6 +528,15 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
       <version name="2.4" author="Psysia" time="2026-09-03T07:18:16Z"><changelog><![CDATA[- Single-source tracks inside a folder use their direct parent for Region naming and Render Matrix targeting.
 - 首次发布到 ReaPack；单轨位于 Folder 内时使用直接父文件夹。]]></changelog><source main="main" file="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/ec5502a7fd015de699ab7c6a7f0d4b9aa2bdabfb/Scripts/Psysia/psy_Create%20Folder%20Region%20and%20Render%20Matrix_%E5%88%9B%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
     </reapack>
+    <reapack name="psy_Create Nearest Parent Folder Region and Render Matrix_按最近父文件夹创建区域与渲染矩阵.lua" type="script" desc="Create Nearest Parent Folder Region and Render Matrix / 按最近父文件夹创建区域与渲染矩阵">
+      <metadata><description><![CDATA[Create or update Regions using the nearest parent Folder for a single ordinary child track, while Folder tracks use themselves. Multi-track selections use the nearest common parent. Matrix writes are verified after creation. / 单条普通子轨强制使用最近一级父 Folder 生成 Region 并勾选矩阵；Folder 轨自身使用自己；多轨使用最近公共父级；矩阵写入后立即校验。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
+      <version name="1.0" author="Psysia" time="2026-09-28T12:30:00Z"><changelog><![CDATA[- Initial release.
+- Single ordinary child tracks use their immediate parent Folder for both Region naming and Render Matrix targeting.
+- Selected Folder tracks use themselves rather than jumping to a higher parent.
+- Multi-track selections use the nearest common parent when available.
+- Verify Render Matrix entries after writing.
+- 首次发布：单条普通子轨使用最近一级父 Folder；Folder 轨本身使用自己；多轨使用最近公共父级，并在写入后校验矩阵。]]></changelog><source main="main" file="psy_Create Nearest Parent Folder Region and Render Matrix_按最近父文件夹创建区域与渲染矩阵.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Create%20Nearest%20Parent%20Folder%20Region%20and%20Render%20Matrix_%E6%8C%89%E6%9C%80%E8%BF%91%E7%88%B6%E6%96%87%E4%BB%B6%E5%A4%B9%E5%88%9B%E5%BB%BA%E5%8C%BA%E5%9F%9F%E4%B8%8E%E6%B8%B2%E6%9F%93%E7%9F%A9%E9%98%B5.lua</source></version>
+    </reapack>
         <reapack name="psy_Sort Selected Tracks by Earliest Item Position_按最早素材位置排序选中轨道.lua" type="script" desc="Sort Tracks by Earliest Item Position / 按最早素材位置排序轨道">
       <metadata><description><![CDATA[Folder-aware sorting by earliest item position. Existing folders are moved as complete subtrees at the nearest common hierarchy level. / 按最早素材位置进行文件夹感知排序；已有文件夹按完整子树移动，并自动选择最近共同层级。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
       <version name="1.4" author="Psysia" time="2026-09-18T04:20:00Z"><changelog><![CDATA[- Add folder-aware sorting and move complete folder subtrees as indivisible units.
