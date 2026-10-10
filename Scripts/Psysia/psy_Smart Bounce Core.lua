@@ -156,8 +156,7 @@ local function snapshot()
     local it=reaper.GetMediaItem(PROJECT,i)
     snap.items[#snap.items+1]={
       item=it,
-      mute=item_value(it,"B_MUTE_ACTUAL"),
-      solo=item_value(it,"C_MUTE_SOLO")
+      mute=item_value(it,"B_MUTE")
     }
   end
   for _,key in ipairs(NUM_RENDER) do
@@ -181,19 +180,15 @@ end
 local function apply_isolation(snap,sel,with_parent)
   -- Mute other media items even on an unmuted ancestor bus.
   for _,state in ipairs(snap.items) do
-    -- B_MUTE_ACTUAL preserves C_MUTE_SOLO while we isolate the item.
-    -- Clear solo overrides for the bounce, then restore them afterward.
-    reaper.SetMediaItemInfo_Value(state.item,"C_MUTE_SOLO",0)
+    -- Never touch momentary SWS/BR solo / item-solo overrides.
+    -- Those belong to the key-down/key-up action, not to this renderer.
     reaper.SetMediaItemInfo_Value(
-      state.item,"B_MUTE_ACTUAL",sel.keep_items[state.item] and 0 or 1)
+      state.item,"B_MUTE",sel.keep_items[state.item] and 0 or 1)
   end
   for _,state in ipairs(snap.tracks) do
     local tr=state.track
-    -- Use the UI-aware Solo API so transport/mouse-preview controls are
-    -- notified, rather than leaving stale audition states in REAPER.
-    if state.solo~=0 then
-      reaper.SetTrackUISolo(tr,0,3)
-    end
+    -- Do not set I_SOLO or SetTrackUISolo here: doing so interferes
+    -- with SWS/BR "perform until shortcut released" preview actions.
     reaper.SetMediaTrackInfo_Value(
       tr,"B_MUTE",sel.allowed[tr] and 0 or 1)
     if not with_parent and sel.allowed[tr] and not sel.source_set[tr] then
@@ -213,27 +208,14 @@ local function restore(snap)
   end
   for _,v in ipairs(snap.items) do
     if reaper.ValidatePtr2(PROJECT,v.item,"MediaItem*") then
-      pcall(reaper.SetMediaItemInfo_Value,v.item,"B_MUTE_ACTUAL",v.mute)
-      pcall(reaper.SetMediaItemInfo_Value,v.item,"C_MUTE_SOLO",v.solo)
+      pcall(reaper.SetMediaItemInfo_Value,v.item,"B_MUTE",v.mute)
     end
   end
   for _,v in ipairs(snap.tracks) do
     if reaper.ValidatePtr2(PROJECT,v.track,"MediaTrack*") then
       pcall(reaper.SetMediaTrackInfo_Value,v.track,"B_MUTE",v.mute)
-      local existing=reaper.GetMediaTrackInfo_Value(v.track,"I_SOLO")
-      if existing~=0 and v.solo==0 then
-        pcall(reaper.SetTrackUISolo,v.track,0,3)
-      elseif existing~=v.solo then
-        -- Solo has distinct SIP and non-SIP values. Use UI-aware methods
-        -- whenever possible; preserve special solo-safe values exactly.
-        if v.solo==1 then
-          pcall(reaper.SetTrackUISolo,v.track,2,3)
-        elseif v.solo==2 then
-          pcall(reaper.SetTrackUISolo,v.track,4,3)
-        elseif v.solo~=0 then
-          pcall(reaper.SetMediaTrackInfo_Value,v.track,"I_SOLO",v.solo)
-        end
-      end
+      -- Solo is never changed, so never "restore" a potentially stale
+      -- momentary solo snapshot after SWS has handled key release.
     end
   end
   for key,v in pairs(snap.numbers) do
@@ -350,6 +332,7 @@ local function read_tail_end(take,sel,opts,full_length)
   if not ok then err(last) end
   return last,at_limit
 end
+local build_new_item_peaks
 local function insert_result(sel,path,opts,with_parent)
   local src=reaper.PCM_Source_CreateFromFile(path)
   if not src then err("无法打开渲染后的 WAV："..path) end
@@ -382,6 +365,9 @@ local function insert_result(sel,path,opts,with_parent)
     reaper.UpdateItemInProject(item)
     reaper.TrackList_AdjustWindows(false)
     reaper.UpdateArrange()
+    -- Start waveform generation only after the Source has been attached.
+    -- The deferred steps will refresh the Item once the peak file is ready.
+    build_new_item_peaks(item)
     return incomplete,wanted
   end,debug.traceback)
   if not ok then
@@ -395,6 +381,53 @@ local function insert_result(sel,path,opts,with_parent)
   return failed_or_incomplete,result_length
 end
 
+local function find_preexisting_solo()
+  -- Refuse to render through a momentary or manually soloed signal
+  -- because we intentionally do not override Solo states.
+  for i=0,reaper.CountTracks(PROJECT)-1 do
+    local tr=reaper.GetTrack(PROJECT,i)
+    local solo=value(tr,"I_SOLO")
+    if solo~=0 then return tr end
+  end
+  return nil
+end
+
+-- Generate the waveform without requiring a focus change. The file
+-- source is already owned by the newly inserted Item's active Take.
+build_new_item_peaks = function(item)
+  if not item or not reaper.ValidatePtr2(PROJECT,item,"MediaItem*") then return end
+  local take=reaper.GetActiveTake(item)
+  if not take then return end
+  local src=reaper.GetMediaItemTake_Source(take)
+  if not src then return end
+  local started=false
+  local ok,begin=pcall(reaper.PCM_Source_BuildPeaks,src,0)
+  if ok and begin and begin>0 then started=true end
+  local attempts=0
+  local function step()
+    if not reaper.ValidatePtr2(PROJECT,item,"MediaItem*") then
+      if started then pcall(reaper.PCM_Source_BuildPeaks,src,2) end
+      return
+    end
+    if started then
+      attempts=attempts+1
+      local good,remaining=pcall(reaper.PCM_Source_BuildPeaks,src,1)
+      if not good then return end
+      if remaining~=0 and attempts<20000 then
+        reaper.defer(step)
+        return
+      end
+      if remaining==0 then
+        pcall(reaper.PCM_Source_BuildPeaks,src,2)
+      end
+    end
+    reaper.UpdateItemInProject(item)
+    reaper.MarkTrackItemsDirty(reaper.GetMediaItem_Track(item),item)
+    reaper.UpdateArrange()
+  end
+  reaper.defer(step)
+end
+
 function M.run(with_parent)
   if reaper.GetPlayStateEx(PROJECT)&5~=0 then
     reaper.MB("请先停止播放和录音，再执行智能合并渲染。","Psysia Smart Bounce",0)
@@ -402,6 +435,15 @@ function M.run(with_parent)
   end
   if reaper.EnumProjects(0x40000000) then
     reaper.MB("REAPER 正在渲染另一项任务，请稍后重试。","Psysia Smart Bounce",0)
+    return
+  end
+  local solo_track=find_preexisting_solo()
+  if solo_track then
+    reaper.MB(
+      "检测到当前存在 Solo 轨道："..get_name(solo_track)
+      .."\n\n请先松开鼠标试听快捷键，或解除现有 Solo 后再执行。"
+      .."\n为保护 SWS/BR 按键松开恢复机制，Smart Bounce 不会修改轨道 Solo。",
+      "Psysia Smart Bounce / Solo 冲突保护",0)
     return
   end
   local saved=nil
