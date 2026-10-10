@@ -155,7 +155,9 @@ local function snapshot()
   for i=0,reaper.CountMediaItems(PROJECT)-1 do
     local it=reaper.GetMediaItem(PROJECT,i)
     snap.items[#snap.items+1]={
-      item=it, mute=item_value(it,"B_MUTE")
+      item=it,
+      mute=item_value(it,"B_MUTE_ACTUAL"),
+      solo=item_value(it,"C_MUTE_SOLO")
     }
   end
   for _,key in ipairs(NUM_RENDER) do
@@ -179,8 +181,11 @@ end
 local function apply_isolation(snap,sel,with_parent)
   -- Mute other media items even on an unmuted ancestor bus.
   for _,state in ipairs(snap.items) do
+    -- B_MUTE_ACTUAL preserves C_MUTE_SOLO while we isolate the item.
+    -- Clear solo overrides for the bounce, then restore them afterward.
+    reaper.SetMediaItemInfo_Value(state.item,"C_MUTE_SOLO",0)
     reaper.SetMediaItemInfo_Value(
-      state.item,"B_MUTE",sel.keep_items[state.item] and 0 or 1)
+      state.item,"B_MUTE_ACTUAL",sel.keep_items[state.item] and 0 or 1)
   end
   for _,state in ipairs(snap.tracks) do
     local tr=state.track
@@ -204,7 +209,8 @@ local function restore(snap)
   end
   for _,v in ipairs(snap.items) do
     if reaper.ValidatePtr2(PROJECT,v.item,"MediaItem*") then
-      pcall(reaper.SetMediaItemInfo_Value,v.item,"B_MUTE",v.mute)
+      pcall(reaper.SetMediaItemInfo_Value,v.item,"B_MUTE_ACTUAL",v.mute)
+      pcall(reaper.SetMediaItemInfo_Value,v.item,"C_MUTE_SOLO",v.solo)
     end
   end
   for _,v in ipairs(snap.tracks) do
