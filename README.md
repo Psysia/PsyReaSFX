@@ -44,7 +44,7 @@ For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The opti
 | Category | Tool | Purpose |
 |---|---|---|
 | Rendering | Create Folder Region and Render Matrix | Single-source Regions use the exact source track for both naming and Matrix; multi-track selections use the nearest common parent. |
-| Rendering | Smart Bounce (Track FX / Parent FX) | Render selected Items or Folder/track content as one merged WAV, with automatic tails capped at 5 seconds. |
+| Rendering | Smart Bounce (Track FX / Parent FX) | Merge selected Items or Folder/track content into one WAV (5 s max tail), without altering Solo; new-item peaks rebuild automatically. |
 | Rendering | Create Nearest Parent Folder Region and Render Matrix | Single child tracks use the immediate parent Folder for both Region naming and Matrix targeting. |
 | Rendering | Smart Tail Render Panel | Configure render tail, silence trimming, and safety padding. |
 | Rendering | Open Render Dialog with Auto Tail | Apply saved tail settings before opening REAPER's Render dialog. |
