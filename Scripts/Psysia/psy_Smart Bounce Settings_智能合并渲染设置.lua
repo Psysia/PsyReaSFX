@@ -1,5 +1,5 @@
 -- @description Smart Bounce Settings / 智能合并渲染设置
--- @version 1.0
+-- @version 1.0.1
 -- @author Psysia
 -- @about Shared tail-detection settings. Maximum tail is fixed at 5 seconds.
 local SECTION="PsysiaSmartBounce"
