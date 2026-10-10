@@ -1,5 +1,5 @@
 -- @description Smart Bounce - Track FX Only / 智能合并渲染 - 仅轨道FX
--- @version 1.0.1
+-- @version 1.0.2
 -- @author Psysia
 -- @about One merged WAV at original position; current-track FX only.
 local _,script=reaper.get_action_context()
