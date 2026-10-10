@@ -519,7 +519,7 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
         <description><![CDATA[Render selected media items (preferred) or tracks, merging all sources into one stereo WAV. A selected Folder includes its descendants. Two actions provide Track FX Only and Include Parent Folder FX modes. Auto tail detection is capped at 5 seconds, adjustable threshold/silence/padding; place result on a new top-level track below the source group. Both modes exclude Master FX to avoid double processing on playback. / 选中 Item 优先，否则渲染选中轨道；跨轨混合为单一 WAV；Folder 包含子轨。提供仅轨道 FX / 包含父级 Folder FX 两模式。尾音最多检测 5 秒，支持阈值、静音判定及安全余量设置；结果插入源轨道组下方的新顶层轨道。默认排除 Master FX，避免重放时重复处理。]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
-      <version name="1.0" author="Psysia" time="2026-10-10T09:25:00Z">
+      <version name="1.0" author="Psysia" time="2026-10-10T09:00:00Z">
         <changelog><![CDATA[- Initial release with two independent Bounce actions and shared settings.
 - Merge selected media items (or all media on selected tracks/Folder subtrees) into one WAV, preserving gaps and original Item bounds.
 - Select between rendering current track FX only and including ancestor Folder FX; Master FX excluded to prevent doubled processing when the bounce plays.
