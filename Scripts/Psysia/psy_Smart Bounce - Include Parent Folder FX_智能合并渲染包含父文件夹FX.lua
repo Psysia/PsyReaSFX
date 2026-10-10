@@ -1,5 +1,5 @@
 -- @description Smart Bounce - Include Parent Folder FX / 智能合并渲染 - 包含父文件夹FX
--- @version 1.0.1
+-- @version 1.0.2
 -- @author Psysia
 -- @about One merged WAV at original position, including the Folder FX chain.
 local _,script=reaper.get_action_context()
