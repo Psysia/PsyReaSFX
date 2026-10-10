@@ -189,7 +189,11 @@ local function apply_isolation(snap,sel,with_parent)
   end
   for _,state in ipairs(snap.tracks) do
     local tr=state.track
-    reaper.SetMediaTrackInfo_Value(tr,"I_SOLO",0)
+    -- Use the UI-aware Solo API so transport/mouse-preview controls are
+    -- notified, rather than leaving stale audition states in REAPER.
+    if state.solo~=0 then
+      reaper.SetTrackUISolo(tr,0,3)
+    end
     reaper.SetMediaTrackInfo_Value(
       tr,"B_MUTE",sel.allowed[tr] and 0 or 1)
     if not with_parent and sel.allowed[tr] and not sel.source_set[tr] then
@@ -216,7 +220,20 @@ local function restore(snap)
   for _,v in ipairs(snap.tracks) do
     if reaper.ValidatePtr2(PROJECT,v.track,"MediaTrack*") then
       pcall(reaper.SetMediaTrackInfo_Value,v.track,"B_MUTE",v.mute)
-      pcall(reaper.SetMediaTrackInfo_Value,v.track,"I_SOLO",v.solo)
+      local existing=reaper.GetMediaTrackInfo_Value(v.track,"I_SOLO")
+      if existing~=0 and v.solo==0 then
+        pcall(reaper.SetTrackUISolo,v.track,0,3)
+      elseif existing~=v.solo then
+        -- Solo has distinct SIP and non-SIP values. Use UI-aware methods
+        -- whenever possible; preserve special solo-safe values exactly.
+        if v.solo==1 then
+          pcall(reaper.SetTrackUISolo,v.track,2,3)
+        elseif v.solo==2 then
+          pcall(reaper.SetTrackUISolo,v.track,4,3)
+        elseif v.solo~=0 then
+          pcall(reaper.SetMediaTrackInfo_Value,v.track,"I_SOLO",v.solo)
+        end
+      end
     end
   end
   for key,v in pairs(snap.numbers) do
@@ -228,12 +245,40 @@ local function restore(snap)
   reaper.TrackList_AdjustWindows(false)
   reaper.UpdateArrange()
 end
+-- Prefer the project's dedicated output subfolder, but never fail
+-- simply because a nested folder cannot be created. Windows projects with
+-- Chinese characters in the project path may hit filesystem API limitations.
+local function choose_output_folder()
+  local base=reaper.GetProjectPathEx(PROJECT)
+  if not base or base=="" then base=reaper.GetResourcePath() end
+  local sub=base.."/PsysiaSmartBounce"
+  local ok=reaper.RecursiveCreateDirectory(sub,0)
+  if ok and ok>0 then
+    return sub,false
+  end
+  -- The project recording/media directory is already maintained by REAPER.
+  -- No additional mkdir is required for this fallback.
+  return base,true
+end
+
 local function file_size(path)
   local f=io.open(path,"rb")
-  if not f then return nil end
-  local size=f:seek("end")
-  f:close()
-  return size
+  if f then
+    local size=f:seek("end")
+    f:close()
+    return size
+  end
+  -- Windows Lua io.open can fail with non-ASCII paths even if REAPER's
+  -- native Unicode-aware media handling successfully wrote the WAV.
+  if reaper.file_exists(path) then
+    local src=reaper.PCM_Source_CreateFromFile(path)
+    if src then
+      local duration=reaper.GetMediaSourceLength(src)
+      reaper.PCM_Source_Destroy(src)
+      if duration and duration>0 then return duration*48000+100 end
+    end
+  end
+  return nil
 end
 local function render_setup(sel,opts,folder,stem)
   local setnum=reaper.GetSetProjectInfo
@@ -371,12 +416,8 @@ function M.run(with_parent)
     state.project=reaper.EnumProjects(-1)
     state.sel=collect_selection()
     state.opts=read_options()
-    local dir=reaper.GetProjectPathEx(PROJECT)
-    if not dir or dir=="" then dir=reaper.GetResourcePath() end
-    local folder=dir.."/PsysiaSmartBounce"
-    if reaper.RecursiveCreateDirectory(folder,0)<=0 then
-      err("不能创建渲染目录："..folder)
-    end
+    local folder,used_fallback=choose_output_folder()
+    state.used_fallback=used_fallback
     local unique=string.format("%s_%d_%d",with_parent and
       "parentfx" or "trackfx",os.time(),
       math.floor(reaper.time_precise()*100000)%100000)
@@ -414,6 +455,11 @@ function M.run(with_parent)
           cleanup()
           local incomplete,trimmed=insert_result(
             state.sel,state.path,state.opts,with_parent)
+          if state.used_fallback then
+            reaper.ShowConsoleMsg(
+              "[Smart Bounce] 专用子目录不可用；已改在工程媒体目录输出：\n"
+              ..state.path.."\n")
+          end
           if incomplete then
             reaper.MB("尾音在 5 秒上限内仍有信号。\n"
               .."已保留到最大检测边界，可能需要手动检查尾音。",
