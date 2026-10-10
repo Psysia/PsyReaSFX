@@ -25,7 +25,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Tool | Version | Primary use |
 |---|---:|---|
 | Create Folder Region and Render Matrix | 2.6 | Region creation and Region Render Matrix setup. |
-| Smart Bounce (Track FX / Parent FX) | 1.0.1 | Merge selected Items or Folder/track content to one WAV with a 5-second maximum tail. |
+| Smart Bounce (Track FX / Parent FX) | 1.0.2 | Merge selected Items or Folder/track content to one WAV with a 5-second maximum tail. |
 | Create Nearest Parent Folder Region and Render Matrix | 1.0 | Force a single child track to use its immediate parent Folder for Region naming and Matrix targeting. |
 | Sort Tracks by Earliest Item Position | 1.4 | Folder-aware track ordering. |
 | Open Render Dialog with Auto Tail | 1.0 | Apply saved tail settings before rendering. |
@@ -43,7 +43,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 
 ## Rendering
 
-### Smart Bounce (Track FX Only / Include Parent Folder FX) · 1.0.1
+### Smart Bounce (Track FX Only / Include Parent Folder FX) · 1.0.2
 
 This package installs **three Actions** and a shared engine:
 
@@ -57,7 +57,7 @@ This package installs **three Actions** and a shared engine:
 
 **Rendering:** uses REAPER's native master-mix renderer with temporary media/track isolation, then restores mute, solo, enabled-FX states, and render settings. Output prefers `PsysiaSmartBounce/` under the project's media directory. **If the dedicated subfolder cannot be created** (for example, due to Unicode-path filesystem limitations), v1.0.1 uses the existing project media directory directly, without aborting. Both modes **exclude Master FX** to avoid printing Master FX into an Item that passes through the Master again on playback.
 
-**Solo restoration:** temporary track Solo changes now use REAPER's UI-aware control APIs. Pre-existing Solo states are restored rather than forcibly cleared; independently triggered SWS/mouse-position audition actions may need to be switched off through their own shortcut.
+**Momentary SWS/BR Solo protection (v1.0.2):** Smart Bounce never modifies track Solo or temporary Item solo flags. If any track is currently soloed, the Action refuses to start and asks for the momentary shortcut to be released (or manual Solo to be cleared). This avoids corrupting the key-release restoration of SWS/BR audition actions. After inserting the WAV, the script builds waveform peaks and refreshes the new Item automatically. If a previous version already latched a SWS momentary action, release/clear its Solo once before testing.
 
 **Important constraints:** specialized cross-branch send/sidechain routing and sound generated solely by standalone FX without source Items are not fully covered by the selection model. Long reverb/Delay tails beyond five seconds will be truncated. Test on a copy of a complex routing project before relying on the result for delivery.
 
