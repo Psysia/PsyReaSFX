@@ -308,32 +308,42 @@ local function insert_result(sel,path,opts,with_parent)
     err("渲染文件长度为 0，无法插入。")
   end
   local index=output_insert_index(sel)
+  local new_track=nil
   reaper.Undo_BeginBlock2(PROJECT)
-  reaper.InsertTrackAtIndex(index,true)
-  local new_track=reaper.GetTrack(PROJECT,index)
-  if not new_track then
-    reaper.PCM_Source_Destroy(src)
-    reaper.Undo_EndBlock2(PROJECT,"Smart Bounce failed",-1)
-    err("无法创建输出轨道。")
+  local ok,failed_or_incomplete,result_length=xpcall(function()
+    reaper.InsertTrackAtIndex(index,true)
+    new_track=reaper.GetTrack(PROJECT,index)
+    if not new_track then err("无法创建输出轨道。") end
+    local prefix=with_parent and "bounce_parent_fx_" or "bounce_track_fx_"
+    local name=prefix..os.date("%H%M%S")
+    reaper.GetSetMediaTrackInfo_String(new_track,"P_NAME",name,true)
+    local item=reaper.AddMediaItemToTrack(new_track)
+    if not item then err("无法创建输出 Item。") end
+    local take=reaper.AddTakeToMediaItem(item)
+    if not take then err("无法创建输出 Take。") end
+    reaper.SetMediaItemTake_Source(take,src)
+    reaper.SetMediaItemInfo_Value(item,"D_POSITION",sel.start_pos)
+    reaper.SetMediaItemInfo_Value(item,"D_LENGTH",length)
+    local end_at,incomplete=read_tail_end(take,sel,opts,length)
+    local wanted=math.max(0.01,math.min(length,end_at-sel.start_pos))
+    reaper.SetMediaItemInfo_Value(item,"D_LENGTH",wanted)
+    reaper.SetMediaItemSelected(item,true)
+    reaper.UpdateItemInProject(item)
+    reaper.TrackList_AdjustWindows(false)
+    reaper.UpdateArrange()
+    return incomplete,wanted
+  end,debug.traceback)
+  if not ok then
+    if new_track and reaper.ValidatePtr2(PROJECT,new_track,"MediaTrack*") then
+      reaper.DeleteTrack(new_track)
+    end
+    reaper.Undo_EndBlock2(PROJECT,"Smart Bounce failed: rolled back",-1)
+    err(failed_or_incomplete)
   end
-  local prefix=with_parent and "bounce_parent_fx_" or "bounce_track_fx_"
-  local name=prefix..os.date("%H%M%S")
-  reaper.GetSetMediaTrackInfo_String(new_track,"P_NAME",name,true)
-  local item=reaper.AddMediaItemToTrack(new_track)
-  local take=reaper.AddTakeToMediaItem(item)
-  reaper.SetMediaItemTake_Source(take,src)
-  reaper.SetMediaItemInfo_Value(item,"D_POSITION",sel.start_pos)
-  reaper.SetMediaItemInfo_Value(item,"D_LENGTH",length)
-  local end_at,incomplete=read_tail_end(take,sel,opts,length)
-  local wanted=math.max(0.01,math.min(length,end_at-sel.start_pos))
-  reaper.SetMediaItemInfo_Value(item,"D_LENGTH",wanted)
-  reaper.SetMediaItemSelected(item,true)
-  reaper.UpdateItemInProject(item)
-  reaper.TrackList_AdjustWindows(false)
-  reaper.UpdateArrange()
   reaper.Undo_EndBlock2(PROJECT,"Smart Bounce: create merged WAV below selection",-1)
-  return incomplete,wanted
+  return failed_or_incomplete,result_length
 end
+
 function M.run(with_parent)
   if reaper.GetPlayStateEx(PROJECT)&5~=0 then
     reaper.MB("请先停止播放和录音，再执行智能合并渲染。","Psysia Smart Bounce",0)
