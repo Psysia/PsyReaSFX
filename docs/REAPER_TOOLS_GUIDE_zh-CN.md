@@ -25,7 +25,7 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 | 工具 | 版本 | 主要用途 |
 |---|---:|---|
 | 创建文件夹区域与渲染矩阵 | 2.6 | 创建 Region 并配置 Region Render Matrix。 |
-| 智能合并渲染（轨道 FX / 父文件夹 FX） | 1.0.1 | 跨轨合并为一个 WAV，Item 优先，尾音最多 5 秒。 |
+| 智能合并渲染（轨道 FX / 父文件夹 FX） | 1.0.2 | 跨轨合并为一个 WAV，Item 优先，尾音最多 5 秒。 |
 | 按最近父文件夹创建区域与渲染矩阵 | 1.0 | 单条普通子轨强制使用最近一级父 Folder 命名并勾选 Matrix。 |
 | 按最早素材位置排序轨道 | 1.4 | 文件夹感知轨道排序。 |
 | 打开渲染窗口并应用自动尾音 | 1.0 | 打开渲染窗口前应用尾音设置。 |
@@ -43,7 +43,7 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 ## 渲染
 
-### 智能合并渲染（仅轨道 FX / 包含父文件夹 FX）· 1.0.1
+### 智能合并渲染（仅轨道 FX / 包含父文件夹 FX）· 1.0.2
 
 此 ReaPack 软件包会安装**三个 Action** 和一个共用引擎：
 
@@ -57,7 +57,7 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 **渲染与恢复：** 使用 REAPER 原生 Master Mix 渲染，在渲染期间临时隔离其他素材，并在渲染后恢复 Mute、Solo、FX 启用状态和渲染配置。输出优先存放于工程媒体路径下的 `PsysiaSmartBounce/`；**专用子目录创建失败时**（例如中文路径下的文件系统调用兼容问题），v1.0.1 会直接退回已存在的工程媒体目录，不再中止整个渲染。两种模式都**不打印 Master FX**，避免新 Item 再通过 Master 时受到重复处理。
 
-**Solo 状态：** 临时轨道 Solo 改用 REAPER 能通知界面的操作并保留执行前状态。已激活的鼠标位置试听或 SWS 独立 Action 可能还有自己的开关状态，需要通过它自己的快捷键退出；脚本不会擅自取消用户原本开启的 Solo。
+**SWS/BR 按住快捷键临时独奏保护（v1.0.2）：** Smart Bounce **完全不改写轨道 Solo，也不改 Item 临时 Solo**。如果执行时仍有独奏轨道，会提示先松开鼠标试听快捷键（或者手动取消 Solo），避免破坏 SWS 在按键释放时的还原流程。渲染成功并插入 WAV 后，会自动构建 Peaks 波形缓存，完成后主动刷新新 Item，无需切换窗口。已经被旧版本卡住的 SWS 临时 Solo，需要先手动恢复一次。
 
 **已知边界：** 复杂的跨分支 Send/侧链路由，以及完全没有 Item、只由 FX 自行发声的内容，不保证完整隔离与包含。超过 5 秒的尾音可能被截断。复杂路由工程建议先复制工程进行测试。
 
