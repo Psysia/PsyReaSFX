@@ -516,9 +516,20 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
     </reapack>
     <reapack name="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua" type="script" desc="Psysia Smart Bounce / 智能合并渲染（两种 FX 模式）">
       <metadata>
-        <description><![CDATA[Render selected media items (preferred) or tracks, merging all sources into one stereo WAV. A selected Folder includes its descendants. Two actions provide Track FX Only and Include Parent Folder FX modes. Auto tail detection is capped at 5 seconds, adjustable threshold/silence/padding; place result on a new top-level track below the source group. Both modes exclude Master FX to avoid double processing on playback. / 选中 Item 优先，否则渲染选中轨道；跨轨混合为单一 WAV；Folder 包含子轨。提供仅轨道 FX / 包含父级 Folder FX 两模式。尾音最多检测 5 秒，支持阈值、静音判定及安全余量设置；结果插入源轨道组下方的新顶层轨道。默认排除 Master FX，避免重放时重复处理。]]></description>
+        <description><![CDATA[Render selected media items (preferred) or tracks, merging all sources into one stereo WAV. A selected Folder includes its descendants. Two actions provide Track FX Only and Include Parent Folder FX modes. Auto tail detection is capped at 5 seconds, adjustable threshold/silence/padding; place result on a new top-level track below the source group. Output falls back to the existing project media directory if a dedicated folder cannot be created. Both modes exclude Master FX to avoid double processing on playback. / 选中 Item 优先，否则渲染选中轨道；跨轨混合为单一 WAV；Folder 包含子轨。提供仅轨道 FX / 包含父级 Folder FX 两模式。尾音最多检测 5 秒，支持阈值、静音判定及安全余量设置；结果插入源轨道组下方的新顶层轨道；新建专用目录失败时自动退回工程媒体目录。默认排除 Master FX，避免重放时重复处理。]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
       </metadata>
+      <version name="1.0.1" author="Psysia" time="2026-10-10T09:18:00Z">
+        <changelog><![CDATA[- Fix failure to create a dedicated output folder on projects with Unicode/non-ASCII paths: render into the existing project media folder if the subfolder cannot be created.
+- Support Unicode output paths when Lua's io.open cannot inspect files, by using REAPER's native file/media functions.
+- Clear and restore temporary track Solo states through UI-aware APIs, preserving pre-existing solo modes and limiting stale audition controls.
+- 修复中文路径的专用子目录创建失败后直接报错；允许输出退回到工程已有 Media 目录；改善中文路径 WAV 识别，以及临时 Solo 状态恢复。
+- 原始工程与已有 Solo 状态仍应在执行后恢复；若鼠标处试听来自独立 SWS/自定义 Action，其自身切换状态仍由原 Action 负责。]]></changelog>
+        <source main="main" file="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20-%20Track%20FX%20Only_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E4%BB%85%E8%BD%A8%E9%81%93FX.lua</source>
+        <source main="main" file="psy_Smart Bounce - Include Parent Folder FX_智能合并渲染包含父文件夹FX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20-%20Include%20Parent%20Folder%20FX_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E5%8C%85%E5%90%AB%E7%88%B6%E6%96%87%E4%BB%B6%E5%A4%B9FX.lua</source>
+        <source main="main" file="psy_Smart Bounce Settings_智能合并渲染设置.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20Settings_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E8%AE%BE%E7%BD%AE.lua</source>
+        <source file="psy_Smart Bounce Core.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20Core.lua</source>
+      </version>
       <version name="1.0" author="Psysia" time="2026-10-10T09:00:00Z">
         <changelog><![CDATA[- Initial release with two independent Bounce actions and shared settings.
 - Merge selected media items (or all media on selected tracks/Folder subtrees) into one WAV, preserving gaps and original Item bounds.
@@ -526,10 +537,10 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
 - Native offline render with automatic RMS tail detection up to 5 seconds (-60 dBFS default), adjustable silence check and safety padding.
 - Restore temporary mute/solo/FX states and render settings after rendering; insert trimmed Item on a new top-level track below the source group.
 - 首次发布：双模式合并渲染，选择 Item 优先，Folder 包含子树；5 秒尾音检测上限、可调阈值；临时状态恢复，新轨插入并保持原时间位置。]]></changelog>
-        <source main="main" file="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20-%20Track%20FX%20Only_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E4%BB%85%E8%BD%A8%E9%81%93FX.lua</source>
-        <source main="main" file="psy_Smart Bounce - Include Parent Folder FX_智能合并渲染包含父文件夹FX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20-%20Include%20Parent%20Folder%20FX_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E5%8C%85%E5%90%AB%E7%88%B6%E6%96%87%E4%BB%B6%E5%A4%B9FX.lua</source>
-        <source main="main" file="psy_Smart Bounce Settings_智能合并渲染设置.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20Settings_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E8%AE%BE%E7%BD%AE.lua</source>
-        <source file="psy_Smart Bounce Core.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_Smart%20Bounce%20Core.lua</source>
+        <source main="main" file="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/264f1db4b8ad278d2de265ff6fe6a848e7c3ff62/Scripts/Psysia/psy_Smart%20Bounce%20-%20Track%20FX%20Only_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E4%BB%85%E8%BD%A8%E9%81%93FX.lua</source>
+        <source main="main" file="psy_Smart Bounce - Include Parent Folder FX_智能合并渲染包含父文件夹FX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/264f1db4b8ad278d2de265ff6fe6a848e7c3ff62/Scripts/Psysia/psy_Smart%20Bounce%20-%20Include%20Parent%20Folder%20FX_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E5%8C%85%E5%90%AB%E7%88%B6%E6%96%87%E4%BB%B6%E5%A4%B9FX.lua</source>
+        <source main="main" file="psy_Smart Bounce Settings_智能合并渲染设置.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/264f1db4b8ad278d2de265ff6fe6a848e7c3ff62/Scripts/Psysia/psy_Smart%20Bounce%20Settings_%E6%99%BA%E8%83%BD%E5%90%88%E5%B9%B6%E6%B8%B2%E6%9F%93%E8%AE%BE%E7%BD%AE.lua</source>
+        <source file="psy_Smart Bounce Core.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/264f1db4b8ad278d2de265ff6fe6a848e7c3ff62/Scripts/Psysia/psy_Smart%20Bounce%20Core.lua</source>
       </version>
     </reapack>
     <reapack name="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua" type="script" desc="Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵">
