@@ -1,8 +1,10 @@
 -- @description Psysia: Hold W to audition track under mouse / 按住 W 临时独奏鼠标下轨道，松开恢复
--- @version 0.2.0
+-- @version 0.3.0
 -- @author Psysia
 -- @about
 --   Single-file ReaScript; replaces the SWS/BR momentary track solo action.
+--   v0.3 performance fix: only changed track states are restored;
+--   no whole-project layout recalculation on key release.
 --   Requires SWS and js_ReaScriptAPI (already installed on your REAPER).
 --   Assign W to THIS script in the Main action section; remove W from the old SWS action.
 --   Original track Solo/Mute values and playback/cursor state are restored on release.
@@ -51,14 +53,19 @@ if type(mouse_pos) ~= "number" or mouse_pos < 0 then
   return -- Only trigger when mouse is on arrange timeline, like the original SWS action
 end
 
-local tracks = {}
-for i = 0, reaper.CountTracks(PROJ) - 1 do
-  local tr = reaper.GetTrack(PROJ, i)
-  tracks[#tracks + 1] = {
-    ptr = tr,
-    solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"),
-    mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE")
-  }
+-- Store only the properties actually changed during this audition.
+local modified, modified_by_ptr = {}, {}
+local function set_track_if_needed(tr, prop, value)
+  local original = reaper.GetMediaTrackInfo_Value(tr, prop)
+  if original == value then return end
+  local entry = modified_by_ptr[tr]
+  if not entry then
+    entry = { ptr = tr }
+    modified_by_ptr[tr] = entry
+    modified[#modified + 1] = entry
+  end
+  if entry[prop] == nil then entry[prop] = original end
+  reaper.SetMediaTrackInfo_Value(tr, prop, value)
 end
 
 local prev_playstate = reaper.GetPlayStateEx(PROJ)
@@ -88,14 +95,24 @@ local function cleanup()
   finished = true
   if changed then
     pcall(restore_transport)
-    for _, s in ipairs(tracks) do
-      if reaper.ValidatePtr2(PROJ, s.ptr, "MediaTrack*") then
-        pcall(reaper.SetMediaTrackInfo_Value, s.ptr, "I_SOLO", s.solo)
-        pcall(reaper.SetMediaTrackInfo_Value, s.ptr, "B_MUTE", s.mute)
+    local restored_any = false
+    -- Restore ONLY tracks/properties that were touched by this action.
+    for _, state in ipairs(modified) do
+      local tr = state.ptr
+      if reaper.ValidatePtr2(PROJ, tr, "MediaTrack*") then
+        for _, prop in ipairs({"I_SOLO", "B_MUTE"}) do
+          local original = state[prop]
+          if original ~= nil then
+            local current = reaper.GetMediaTrackInfo_Value(tr, prop)
+            if current ~= original then
+              pcall(reaper.SetMediaTrackInfo_Value, tr, prop, original)
+              restored_any = true
+            end
+          end
+        end
       end
     end
-    reaper.TrackList_AdjustWindows(false)
-    reaper.UpdateArrange()
+    if restored_any then reaper.UpdateArrange() end
     changed = false
   end
   if intercepted then
@@ -112,17 +129,19 @@ local function begin()
   intercepted = true
   changed = true
 
-  -- Save/restore ALL existing Solo states; temporary Solo is exclusive.
-  for _, s in ipairs(tracks) do
-    if s.solo ~= 0 then reaper.SetMediaTrackInfo_Value(s.ptr, "I_SOLO", 0) end
+  -- Match SWS' sparse solo changes: touch only previously soloed
+  -- tracks and the audition target, regardless of project track count.
+  for i = 0, reaper.CountTracks(PROJ) - 1 do
+    local tr = reaper.GetTrack(PROJ, i)
+    if tr ~= target and reaper.GetMediaTrackInfo_Value(tr, "I_SOLO") ~= 0 then
+      set_track_if_needed(tr, "I_SOLO", 0)
+    end
   end
 
-  -- Only unmute the auditioned track and its ancestors; don't change others.
+  -- Unmute only the target and its ancestor buses.
   local cur = target
   while cur do
-    if reaper.GetMediaTrackInfo_Value(cur, "B_MUTE") ~= 0 then
-      reaper.SetMediaTrackInfo_Value(cur, "B_MUTE", 0)
-    end
+    set_track_if_needed(cur, "B_MUTE", 0)
     cur = reaper.GetParentTrack(cur)
   end
 
@@ -131,8 +150,7 @@ local function begin()
     local v = reaper.SNM_GetIntConfigVar("soloip", 1)
     if type(v) == "number" then sip = (v & 1) ~= 0 end
   end
-  reaper.SetMediaTrackInfo_Value(target, "I_SOLO", sip and 2 or 1)
-  reaper.TrackList_AdjustWindows(false)
+  set_track_if_needed(target, "I_SOLO", sip and 2 or 1)
   reaper.UpdateArrange()
 
   -- Play from the position below the mouse without permanently moving cursor.
