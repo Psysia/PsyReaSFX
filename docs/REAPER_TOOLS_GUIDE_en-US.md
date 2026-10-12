@@ -25,7 +25,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Tool | Version | Primary use |
 |---|---:|---|
 | Create Folder Region and Render Matrix | 2.6 | Region creation and Region Render Matrix setup. |
-| Mouse Position Hold-to-Solo Audition (experimental) | 0.2.0 | Single Lua Action: hold W to play and temporarily solo the track under mouse; release to restore. |
+| Mouse Position Hold-to-Solo Audition (experimental) | 0.3.0 | Single Lua Action: hold W to play and temporarily solo the track under mouse; release to restore. |
 | Smart Bounce (Track FX / Parent FX) | 1.0.2 | Merge selected Items or Folder/track content to one WAV with a 5-second maximum tail. |
 | Create Nearest Parent Folder Region and Render Matrix | 1.0 | Force a single child track to use its immediate parent Folder for Region naming and Matrix targeting. |
 | Sort Tracks by Earliest Item Position | 1.4 | Folder-aware track ordering. |
@@ -44,7 +44,7 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 
 ## Momentary Audition
 
-### Mouse Position Hold-to-Solo Audition · 0.2.0 (experimental)
+### Mouse Position Hold-to-Solo Audition · 0.3.0 (experimental)
 
 **Purpose:** A standalone Lua Action intended to replace the SWS/BR mouse-position momentary solo playback Action when its key-release restoration fails. Independent of the PsyReaSFX browser.
 
@@ -54,9 +54,9 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 
 **Dependencies:** Both SWS Extension (mouse timeline position) and js_ReaScriptAPI (keyboard press/release detection) are required. No AutoHotkey is needed.
 
-**Limitations:** Experimental and **not yet verified in a live REAPER session**. Rebinding the action to a different key does not change the hard-coded W detector. Project switches, missing keyboard state, manual stop or the 120-second safety timeout trigger best-effort cleanup. First test on an empty project; stop any pre-existing SWS momentary audition before switching actions.
+**Performance and limitations:** v0.2.0 rewrote all tracks on release; v0.3.0 restores only changed track properties, though it still scans all tracks once when starting. Experimental and **not yet verified in a live REAPER session**. Rebinding the action to a different key does not change the hard-coded W detector. Project switches, missing keyboard state, manual stop or the 120-second safety timeout trigger best-effort cleanup. First test on an empty project; stop any pre-existing SWS momentary audition before switching actions.
 
-**Utility changelog:** v0.2.0 is the initial experimental GitHub/ReaPack release: one-file Lua key monitoring, solo audition and transport/Solo/Mute restoration.
+**Utility changelog:** v0.3.0 improves large-project performance: only actually changed Solo/Mute values are written back, and no whole-project track layout recalculation occurs on every W release. v0.2.0 is the initial one-file Lua GitHub/ReaPack experimental release.
 
 ## Rendering
 
