@@ -1699,3 +1699,26 @@ html[lang^="zh"] [data-lang="en"] { display: none !important; }
   .script-card { transition: none; }
   .script-card:hover { transform: none; }
 }
+
+/* Full-resolution screenshot launcher stays over the actual PRS interface. */
+.window-chrome { position: relative; }
+.preview-expand {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  z-index: 3;
+  display: inline-flex;
+  padding: 11px 14px;
+  border: 1px solid rgba(135, 216, 246, .42);
+  border-radius: 8px;
+  background: rgba(5, 16, 23, .88);
+  color: #d6f6ff;
+  backdrop-filter: blur(10px);
+  font: 700 10px/1.2 "Cascadia Code", Consolas, monospace;
+  letter-spacing: .09em;
+  transition: border-color .2s, background .2s;
+}
+.preview-expand:hover { background: rgba(3,39,54,.95); border-color: #5cdbf7; }
+@media (max-width: 760px) {
+  .preview-expand { right: 9px; bottom: 9px; padding: 8px 9px; font-size: 8px; }
+}
