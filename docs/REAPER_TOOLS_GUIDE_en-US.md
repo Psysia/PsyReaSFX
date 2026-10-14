@@ -25,7 +25,6 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Tool | Version | Primary use |
 |---|---:|---|
 | Create Folder Region and Render Matrix | 2.6 | Region creation and Region Render Matrix setup. |
-| Mouse Position Hold-to-Solo Audition (experimental) | 0.3.0 | Single Lua Action: hold W to play and temporarily solo the track under mouse; release to restore. |
 | Smart Bounce (Track FX / Parent FX) | 1.0.2 | Merge selected Items or Folder/track content to one WAV with a 5-second maximum tail. |
 | Create Nearest Parent Folder Region and Render Matrix | 1.0 | Force a single child track to use its immediate parent Folder for Region naming and Matrix targeting. |
 | Sort Tracks by Earliest Item Position | 1.4 | Folder-aware track ordering. |
@@ -41,22 +40,6 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Open All Subprojects | 1.0 | Recursively open referenced subprojects. |
 | Cycle Selected Folders Unified Compact State | 1.4 | Adaptive folder display cycling. |
 | Rename Selected Tracks from Parent Folder Name | 1.0 | Rename children from the immediate parent folder. |
-
-## Momentary Audition
-
-### Mouse Position Hold-to-Solo Audition · 0.3.0 (experimental)
-
-**Purpose:** A standalone Lua Action intended to replace the SWS/BR mouse-position momentary solo playback Action when its key-release restoration fails. Independent of the PsyReaSFX browser.
-
-**Install:** Install `psy_MouseHoldSolo.lua` from ReaPack, or import `Scripts/Psysia/psy_MouseHoldSolo.lua` into the **Main** action section. **Unbind W from the original SWS/BR Action**, then bind W to the new Lua Action. The script listens specifically for physical W (Windows virtual-key 0x57).
-
-**Use:** Move the mouse over an arrange-area track, hold W to play from the mouse timestamp while temporarily soloing that track, and release W to restore the previous transport/cursor and per-track Solo/Mute state. Supports tracks nested in Folders subject to existing project routing.
-
-**Dependencies:** Both SWS Extension (mouse timeline position) and js_ReaScriptAPI (keyboard press/release detection) are required. No AutoHotkey is needed.
-
-**Performance and limitations:** v0.2.0 rewrote all tracks on release; v0.3.0 restores only changed track properties, though it still scans all tracks once when starting. Experimental and **not yet verified in a live REAPER session**. Rebinding the action to a different key does not change the hard-coded W detector. Project switches, missing keyboard state, manual stop or the 120-second safety timeout trigger best-effort cleanup. First test on an empty project; stop any pre-existing SWS momentary audition before switching actions.
-
-**Utility changelog:** v0.3.0 improves large-project performance: only actually changed Solo/Mute values are written back, and no whole-project track layout recalculation occurs on every W release. v0.2.0 is the initial one-file Lua GitHub/ReaPack experimental release.
 
 ## Rendering
 
@@ -212,7 +195,6 @@ The overlay requires **js_ReaScriptAPI**.
 
 | Tool | Suggested access |
 |---|---|
-| Mouse Position Hold-to-Solo Audition (experimental) | W (first remove W from old SWS Action) |
 | Create Folder Region and Render Matrix | Frequent shortcut |
 | Sort Tracks by Earliest Item Position | Frequent shortcut |
 | Cycle Selected Folders Unified Compact State | Frequent shortcut |
@@ -234,9 +216,9 @@ The overlay requires **js_ReaScriptAPI**.
 
 Most utilities use only native REAPER ReaScript APIs.
 
-- **SWS Extension:** optional for Open All Subprojects path resolution; required by Mouse Position Hold-to-Solo Audition.
+- **SWS Extension:** optional for Open All Subprojects path resolution.
 - **Pro-L 2:** required only by Create Folder from Selected Tracks with Pro-L 2.
-- **js_ReaScriptAPI:** required by video overlays and Mouse Position Hold-to-Solo Audition.
+- **js_ReaScriptAPI:** required by video overlays.
 - **ReaPack:** installation/update mechanism only; not a runtime dependency for the scripts themselves.
 
 ## Updating
