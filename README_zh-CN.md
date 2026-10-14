@@ -18,6 +18,14 @@
   <img src="https://img.shields.io/badge/作者-Psysia-555555" alt="Psysia">
 </p>
 
+<p align="center">
+  <a href="https://psysia.github.io/PsyReaSFX/">
+    <img src="website/assets/showcase/prs-workspace-0-9.png" alt="PsyReaSFX 0.9 Beta 7.10 real application interface" width="1000">
+  </a>
+</p>
+<p align="center"><em>PsyReaSFX 0.9 Beta 7.10 实际运行界面 · UCS 分类导航、音效列表、内联波形及详细试听面板。</em></p>
+<p align="center"><a href="https://psysia.github.io/PsyReaSFX/">Website / 官网</a> · <a href="https://psysia.github.io/PsyReaSFX/#scripts">Live GIF demos / 动态演示</a> · <a href="https://github.com/Psysia/PsyReaSFX/releases">Releases</a></p>
+
 ## 项目简介
 
 这个仓库包含两部分：
@@ -63,6 +71,47 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 | 显示 | 视频素材源文件名覆盖显示 | 在视频 Item 内显示源视频文件名并隐藏扩展名，可随时直接切回轨道名模式。 |
 
 详细使用方式、边界条件、依赖关系与快捷键建议见 [REAPER 工具手册](docs/REAPER_TOOLS_GUIDE_zh-CN.md)。
+
+## REAPER Lua 工具动态演示
+
+**全部来自 REAPER 实际操作录屏，而非概念效果图。** 下方展示脚本的直接操作效果；各工具可通过同一 ReaPack 仓库独立安装。
+
+[**前往官网观看全部 GIF 动态演示 ↗**](https://psysia.github.io/PsyReaSFX/#scripts) · [所有 Lua 工具](Scripts/Psysia/) · [完整使用手册](docs/REAPER_TOOLS_GUIDE_zh-CN.md)
+
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>智能合并渲染</strong><br><img src="website/assets/showcase/smart-bounce.gif" width="440" alt="智能合并渲染 REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>视频素材轨道名覆盖显示</strong><br><img src="website/assets/showcase/video-track-overlay.gif" width="440" alt="视频素材轨道名覆盖显示 REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>创建文件夹区域与渲染矩阵</strong><br><img src="website/assets/showcase/folder-region-matrix.gif" width="440" alt="创建文件夹区域与渲染矩阵 REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>统一轮换文件夹折叠状态</strong><br><img src="website/assets/showcase/cycle-folder-compact.gif" width="440" alt="统一轮换文件夹折叠状态 REAPER workflow GIF"></td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>展开另外 8 个 Lua 工具的 GIF 演示</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>按最早素材位置排序轨道</strong><br><img src="website/assets/showcase/sort-tracks.gif" width="440" alt="按最早素材位置排序轨道 REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>按最近父文件夹创建区域与渲染矩阵</strong><br><img src="website/assets/showcase/parent-folder-region-matrix.gif" width="440" alt="按最近父文件夹创建区域与渲染矩阵 REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>根据父级文件夹名重命名选中轨道</strong><br><img src="website/assets/showcase/rename-from-parent.gif" width="440" alt="根据父级文件夹名重命名选中轨道 REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>拆分选中素材到新轨道</strong><br><img src="website/assets/showcase/split-items.gif" width="440" alt="拆分选中素材到新轨道 REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>移除选中素材间隙</strong><br><img src="website/assets/showcase/remove-item-gaps.gif" width="440" alt="移除选中素材间隙 REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>原位反转选中素材</strong><br><img src="website/assets/showcase/reverse-items.gif" width="440" alt="原位反转选中素材 REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>切换 LUFS-M 与频谱图</strong><br><img src="website/assets/showcase/toggle-lufs-spectrogram.gif" width="440" alt="切换 LUFS-M 与频谱图 REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>从选中轨道创建文件夹并挂载 Pro-L 2</strong><br><img src="website/assets/showcase/create-folder-prol2.gif" width="440" alt="从选中轨道创建文件夹并挂载 Pro-L 2 REAPER workflow GIF"></td>
+  </tr>
+</table>
+
+</details>
 
 ## PsyReaSFX
 
