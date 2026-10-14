@@ -556,29 +556,7 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
         <source file="psy_Smart Bounce Core.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/264f1db4b8ad278d2de265ff6fe6a848e7c3ff62/Scripts/Psysia/psy_Smart%20Bounce%20Core.lua</source>
       </version>
     </reapack>
-    <reapack name="psy_MouseHoldSolo.lua" type="script" desc="Psysia Mouse Hold Solo / 按住 W 临时独奏试听">
-      <metadata>
-        <description><![CDATA[Experimental standalone ReaScript replacement for the SWS/BR mouse-position momentary solo audition action. Press W to play from mouse position and temporarily solo the track; release W to restore the prior playback, Solo and Mute states. Requires SWS and js_ReaScriptAPI; unbind W from the original SWS action first. / 实验版单文件 ReaScript，替代 SWS/BR 鼠标位置按住临时独奏：按住 W 从鼠标位置试听并临时独奏，松开恢复原有播放、Solo 与 Mute。依赖 SWS 与 js_ReaScriptAPI；务必先取消原 SWS Action 的 W 绑定。尚未完成 REAPER 实机验证。]]></description>
-        <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
-      </metadata>
-      <version name="0.3.0" author="Psysia" time="2026-10-12T03:21:00Z">
-        <changelog><![CDATA[- Performance fix for large projects: restore ONLY Solo/Mute properties changed during this audition, rather than rewriting Solo and Mute on every project track.
-- Skip the expensive whole-project TrackList_AdjustWindows pass on every W press and release.
-- Keep the original W key monitoring and playback state restoration mechanism from v0.2.0.
-- 大工程性能优化：只还原本次试听实际改动的轨道和 Solo/Mute 状态，避免在数百轨项目中每次松开 W 都重新写入所有轨道。
-- 不再每次按键与释放都执行全局轨道列表布局重排；保留原有按键检测与播放状态还原机制。
-- 尚未实机验证，请先在空白工程试用。]]></changelog>
-        <source main="main" file="psy_MouseHoldSolo.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/Scripts/Psysia/psy_MouseHoldSolo.lua</source>
-      </version>
-      <version name="0.2.0" author="Psysia" time="2026-10-12T02:17:00Z">
-        <changelog><![CDATA[- Initial public experimental release as one self-contained Lua ReaScript.
-- Use JS_VKeys keydown/key-up polling with W interception to avoid the SWS/BR momentary-Solo release path.
-- Temporarily solo the track under the mouse and preserve previous per-track Solo/Mute and playback/cursor state.
-- Restore on W release, script termination or timeout (120-second fail-safe).
-- 首次公开实验版；单一 Lua 文件实现按住 W 临时独奏试听与松开还原，不需要 AutoHotkey。]]></changelog>
-        <source main="main" file="psy_MouseHoldSolo.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/a851d33be05be8a9919f1cee8a912246d1f39a5e/Scripts/Psysia/psy_MouseHoldSolo.lua</source>
-      </version>
-    </reapack>  <reapack name="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua" type="script" desc="Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵">
+  <reapack name="psy_Create Folder Region and Render Matrix_创建文件夹区域与渲染矩阵.lua" type="script" desc="Create Folder Region and Render Matrix / 创建文件夹区域与渲染矩阵">
       <metadata><description><![CDATA[Create or update Regions from the current selection. A single source track always names and targets itself; multi-track selections use the nearest common parent when available. Matrix writes are verified after creation. / 根据当前选择创建或更新 Region；单一源轨道始终使用自身名称并直接勾选自身，多轨才使用最近公共父级；写入矩阵后会立即校验。]]></description><link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link></metadata>
       <version name="2.6" author="Psysia" time="2026-09-22T10:30:00Z"><changelog><![CDATA[- Single-source Regions now always use the exact source track name.
 - Single-source Region Render Matrix now targets the exact source track, regardless of Folder nesting depth.
