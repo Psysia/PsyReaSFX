@@ -53,6 +53,17 @@ for (const key of translationKeys) {
 }
 
 const ids = new Set();
+const projectHomeLinks = [...html.matchAll(/<a\b([^>]*\bdata-project-home\b[^>]*)>([\s\S]*?)<\/a>/g)];
+if (projectHomeLinks.length !== 4) fail("Project homepage must have text links in navigation, hero, installation and footer");
+for (const [, attributes, label] of projectHomeLinks) {
+  if (!attributes.includes('href="https://github.com/Psysia/PsyReaSFX"')
+    || !attributes.includes('data-i18n="projectHome"') || !label.trim()) {
+    fail("Project homepage entry must be a labeled link to the repository root");
+  }
+}
+if (!/<nav[^>]*>\s*<a class="project-home-link" data-project-home/.test(html)) {
+  fail("Project homepage entry must be first in navigation for mobile discoverability");
+}
 for (const match of html.matchAll(/\bid="([^"]+)"/g)) {
   if (ids.has(match[1])) fail(`Duplicate HTML id: ${match[1]}`);
   ids.add(match[1]);
