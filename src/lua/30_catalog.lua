@@ -735,6 +735,8 @@ function load_config()
         AppState.set("ai_api_url", trim(value or ""))
       elseif name == "ai_model" then
         AppState.set("ai_model", trim(value or ""))
+      elseif name == "ai_presets_json" then
+        AppState.set("ai_presets_json", value or "")
       elseif name == "folder_browser_open" then
         -- 0.7.22 used a persistent inline tree. The 0.7.23 hover cascade is
         -- transient, so an old saved open state must not start background
@@ -1249,6 +1251,12 @@ function save_config()
     escape_tsv(state.ai_model or ""),
     "\n"
   )
+
+  local ai_presets_json = type(ai_semantic_presets_config_json) == "function"
+    and ai_semantic_presets_config_json() or state.ai_presets_json
+  if ai_presets_json then
+    file:write("setting\tai_presets_json\t", escape_tsv(ai_presets_json), "\n")
+  end
 
   file:write(
     "setting\tfolder_browser_open\t",

@@ -215,6 +215,21 @@ local ai_settings = function_region(
   "function color_edit_flags()"
 )
 assert(
+  ai_settings:find('"##ai_preset_picker"', 1, true)
+    and ai_settings:find('"##ai_preset_name"', 1, true)
+    and ai_settings:find("ai_semantic_save_preset()", 1, true)
+    and ai_settings:find("ai_semantic_preset_dirty()", 1, true)
+    and ai_settings:find("running.api_config.preset_id", 1, true)
+    and ai_settings:find("ai_semantic_config_signature", 1, true),
+  "AI settings must expose independent named presets, draft status and preset-specific test results"
+)
+local provider_selector = function_region(
+  "function select_ai_semantic_provider(provider)", "function settings_tab_button(key, label)"
+)
+assert(provider_selector:find("ai_semantic_select_provider_preset(provider)", 1, true)
+  and not provider_selector:find("ai_semantic_provider_defaults", 1, true),
+  "provider switching must restore a preset instead of overwriting current settings")
+assert(
   ai_settings:find('ImGui.Text(ctx, "API 地址")', 1, true)
     and ai_settings:find('"##ai_api_url"', 1, true)
     and ai_settings:find('ImGui.Text(ctx, "模型")', 1, true)

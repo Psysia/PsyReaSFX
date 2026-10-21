@@ -1,5 +1,17 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.14
+
+### 独立 API 预设与安全切换
+
+- AI 设置支持最多 32 组命名预设，每组独立保存服务商、完整接口地址、模型和 DPAPI 加密 Key。
+- 升级自动迁移当前单组配置与原 Key；切换服务商恢复已有组，不再覆盖 DeepSeek 等其他配置。
+- 提供新建、切换、保存、未保存草稿提示；切换保留会话草稿，重启恢复已保存值。
+- 连接测试结果归属于发起预设，修改配置后提醒重测；请求及格式重试冻结原配置，避免切换串用密钥。
+- 修改接口地址后不会向新接口发送原 Key；新 Key 保存后再测试。配置及备份不包含密钥或未保存 Key 输入。
+- 明确填写完整 Chat Completions 地址。此次不扩展 Responses API 或模型参数兼容范围。
+- 新增回归覆盖迁移、独立密钥、草稿、实际 TSV 保存重载、写入失败、地址安全与请求归属。
+
 ## 0.9.0 Beta 7.13
 
 ### 轻量品牌启动动画
@@ -1331,5 +1343,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.14/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_14_win_x64.zip
 

@@ -1,5 +1,17 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.14
+
+### Independent API presets and safe switching
+
+- Up to 32 named AI presets, each with its own provider, complete endpoint, model and DPAPI-encrypted key.
+- Migrates the current configuration and existing key; provider switches restore a preset rather than overwrite DeepSeek or another service.
+- Adds create, switch, save and unsaved-draft status. Switching retains session drafts; restart restores saved settings.
+- Connection tests are attributed to the initiating preset, with retest reminders after edits. Requests and format retries retain their original configuration.
+- Changed endpoints cannot receive the previous key. Newly entered keys must be saved before testing; config and backups contain no key input.
+- Documents full Chat Completions URLs. Does not expand Responses API or model-parameter compatibility.
+- Regression coverage includes migration, independent credentials, drafts, real TSV round trips, save failure, endpoint safety and request ownership.
+
 ## 0.9.0 Beta 7.13
 
 ### Lightweight branded startup animation
@@ -1456,5 +1468,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.14/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_14_win_x64.zip
 

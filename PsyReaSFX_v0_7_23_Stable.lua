@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.13
+-- @version 0.9.0-beta7.14
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -90,6 +90,7 @@
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 7.13：居中品牌启动画面与轻量青色波形动画，显示真实阶段、数量和已用时间
+--   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -195,7 +196,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.13"
+local VERSION = "0.9.0 Beta 7.14"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -942,6 +943,17 @@ local state = {
   ai_api_key_status = "",
   ai_api_key_status_error = false,
   ai_request_sequence = 0,
+  ai_presets = {},
+  ai_preset_drafts = {},
+  ai_preset_tests = {},
+  ai_active_preset_id = "",
+  ai_preset_name = "",
+  ai_preset_sequence = 0,
+  ai_presets_loaded = false,
+  ai_presets_json = nil,
+  ai_presets_error = "",
+  ai_preset_status = "",
+  ai_preset_status_error = false,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -2226,6 +2238,37 @@ I18N_EN["结果先显示本地召回排名最高的 120 条；浏览完成后可
 I18N_EN["示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"] =
   "Example: a heavy chain dragged slowly in a damp basement, close and oppressive, without sharp highs"
 I18N_EN["API 服务商"] = "API provider"
+I18N_EN["API 预设"] = "API presets"
+I18N_EN["每组预设分别保存地址、模型与加密密钥；切换不会覆盖其他预设。"] = "Each preset keeps its own endpoint, model and encrypted key. Switching preserves other presets."
+I18N_EN["切换已保存预设"] = "Switch presets"
+I18N_EN["新建预设"] = "New preset"
+I18N_EN["预设名称"] = "Preset name"
+I18N_EN["保存当前预设"] = "Save current preset"
+I18N_EN["预设已保存"] = "Preset saved"
+I18N_EN["待保存"] = "Not saved"
+I18N_EN["有未保存修改（切换时保留草稿，重启前请保存）"] = "Unsaved changes (draft kept when switching; save before restarting)"
+I18N_EN["当前需填写完整 Chat Completions 地址，例如 https://服务域名/v1/chat/completions。"] = "Enter the complete Chat Completions endpoint, e.g. https://api.example.com/v1/chat/completions."
+I18N_EN["预设不存在"] = "Preset not found"
+I18N_EN["预设数据不可用"] = "Preset data unavailable"
+I18N_EN["预设数据无效；已保留原文件，请恢复配置备份"] = "Invalid preset data; original data preserved. Restore a configuration backup."
+I18N_EN["最多保存 32 组预设"] = "Up to 32 presets can be stored"
+I18N_EN["请填写预设名称（最多 160 字节）"] = "Enter a preset name (up to 160 bytes)"
+I18N_EN["地址或模型名称过长"] = "Endpoint or model name too long"
+I18N_EN["预设保存失败，请检查配置写入权限"] = "Preset save failed; check configuration write permissions"
+I18N_EN["请等待当前 AI 请求结束后再保存预设"] = "Wait for the active AI request before saving a preset"
+I18N_EN["请等待当前 AI 请求结束后再修改密钥"] = "Wait for the active AI request before changing keys"
+I18N_EN["请先保存输入的新密钥，再测试或搜索"] = "Save the newly entered key before testing or searching"
+I18N_EN["地址已更改，请新建预设保存其他接口的密钥"] = "Endpoint changed; create a new preset for another endpoint and its key"
+I18N_EN["本预设尚未测试连接"] = "This preset has not been tested"
+I18N_EN["配置已修改，请重新测试连接"] = "Configuration changed; test the connection again"
+I18N_EN["连接测试通过"] = "Connection test passed"
+I18N_EN["连接测试失败"] = "Connection test failed"
+I18N_EN["测试已取消"] = "Test canceled"
+I18N_EN["连接成功"] = "Connected"
+I18N_EN["API 已响应"] = "API responded"
+I18N_PREFIX_EN["当前预设："] = "Current preset: "
+I18N_PREFIX_EN["正在测试预设："] = "Testing preset: "
+I18N_PREFIX_EN["本预设测试结果："] = "Preset test result: "
 I18N_EN["兼容接口"] = "Compatible endpoint"
 I18N_EN["API 地址"] = "API endpoint"
 I18N_EN["模型"] = "Model"
@@ -7888,6 +7931,8 @@ function load_config()
         AppState.set("ai_api_url", trim(value or ""))
       elseif name == "ai_model" then
         AppState.set("ai_model", trim(value or ""))
+      elseif name == "ai_presets_json" then
+        AppState.set("ai_presets_json", value or "")
       elseif name == "folder_browser_open" then
         -- 0.7.22 used a persistent inline tree. The 0.7.23 hover cascade is
         -- transient, so an old saved open state must not start background
@@ -8402,6 +8447,12 @@ function save_config()
     escape_tsv(state.ai_model or ""),
     "\n"
   )
+
+  local ai_presets_json = type(ai_semantic_presets_config_json) == "function"
+    and ai_semantic_presets_config_json() or state.ai_presets_json
+  if ai_presets_json then
+    file:write("setting\tai_presets_json\t", escape_tsv(ai_presets_json), "\n")
+  end
 
   file:write(
     "setting\tfolder_browser_open\t",
@@ -13738,6 +13789,249 @@ function ai_semantic_migrate_legacy_settings()
   return true
 end
 
+-- Presets persist only a whitelist of public settings. Credentials stay in
+-- separate DPAPI files; unsaved edits (including key input) stay in memory.
+function ai_semantic_preset_by_id(id)
+  for _, preset in ipairs(state.ai_presets or {}) do
+    if preset.id == id then return preset end
+  end
+end
+
+function ai_semantic_preset_secret_path(id)
+  local paths = state.ai_semantic_paths
+  if not paths then return nil end
+  if id == "legacy" then return paths.root .. SEP .. "api-key.dpapi" end
+  if not tostring(id or ""):match("^p%d+$") then return nil end
+  return paths.root .. SEP .. "api-key-" .. id .. ".dpapi"
+end
+
+function ai_semantic_preset_stash()
+  if not state.ai_presets_loaded then return end
+  local id = state.ai_active_preset_id
+  if not ai_semantic_preset_by_id(id) then return end
+  local drafts = state.ai_preset_drafts or {}
+  drafts[id] = {
+    name = state.ai_preset_name or "", provider = state.ai_provider,
+    url = state.ai_api_url or "", model = state.ai_model or "",
+    key_input = state.ai_api_key_input or "",
+    key_status = state.ai_api_key_status or "",
+    key_status_error = true == state.ai_api_key_status_error,
+  }
+  AppState.set("ai_preset_drafts", drafts)
+end
+
+function ai_semantic_select_preset(id)
+  local preset = ai_semantic_preset_by_id(id)
+  if not preset then return false, "预设不存在" end
+  ai_semantic_preset_stash()
+  local draft = (state.ai_preset_drafts or {})[id] or preset
+  local paths = {}
+  for key, value in pairs(state.ai_semantic_paths or {}) do paths[key] = value end
+  paths.secret = ai_semantic_preset_secret_path(id)
+  AppState.apply({
+    ai_active_preset_id = id, ai_preset_name = draft.name,
+    ai_provider = preset.provider, ai_api_url = draft.url, ai_model = draft.model,
+    ai_api_key_input = draft.key_input or "",
+    ai_api_key_status = draft.key_status or "",
+    ai_api_key_status_error = draft.key_status_error == true,
+    ai_api_key_saved = paths.secret ~= nil and Host.file_exists(paths.secret),
+    ai_semantic_paths = paths, config_dirty = true,
+    ai_preset_status = "", ai_preset_status_error = false,
+  })
+  return true
+end
+
+function ai_semantic_presets_config_json()
+  if state.ai_presets_error and state.ai_presets_error ~= "" then
+    return state.ai_presets_json -- Preserve unknown/corrupt data, never overwrite.
+  end
+  if not state.ai_presets_loaded then return state.ai_presets_json end
+  local presets = {}
+  for _, preset in ipairs(state.ai_presets or {}) do
+    presets[#presets + 1] = {
+      id = preset.id, name = preset.name, provider = preset.provider,
+      url = preset.url, model = preset.model, saved = preset.saved == true,
+      key_url = preset.key_url or "",
+    }
+  end
+  return neural_json_encode({
+    version = 1, active_id = state.ai_active_preset_id,
+    next_id = state.ai_preset_sequence or 0, presets = presets,
+  })
+end
+
+function ai_semantic_initialize_presets()
+  local raw = state.ai_presets_json
+  local presets, active_id, sequence = {}, "", 0
+  if raw and raw ~= "" then
+    local ok, data = pcall(neural_json_decode, raw)
+    local valid = ok and type(data) == "table" and data.version == 1
+      and type(data.presets) == "table" and #data.presets > 0 and #data.presets <= 32
+    local seen = {}
+    if valid then
+      for _, value in ipairs(data.presets) do
+        if type(value) ~= "table" or type(value.id) ~= "string"
+          or not (value.id == "legacy" or value.id:match("^p%d+$"))
+          or #value.id > 16 or seen[value.id] or type(value.name) ~= "string" or #value.name > 160
+          or type(value.url) ~= "string" or #value.url > 4096
+          or type(value.model) ~= "string" or #value.model > 512
+          or (value.provider ~= "deepseek" and value.provider ~= "openai"
+            and value.provider ~= "custom") then
+          valid = false
+          break
+        end
+        seen[value.id] = true
+        sequence = math.max(sequence, tonumber(value.id:match("^p(%d+)$")) or 0)
+        presets[#presets + 1] = {
+          id = value.id, name = value.name, provider = value.provider,
+          url = value.url, model = value.model, saved = value.saved == true,
+          key_url = type(value.key_url) == "string" and value.key_url or "",
+        }
+      end
+    end
+    if not valid then
+      AppState.apply({ ai_presets_error = "预设数据无效；已保留原文件，请恢复配置备份", ai_presets_loaded = false })
+      -- Do not accidentally use the legacy credential with unrelated settings.
+      AppState.set("ai_api_key_saved", false)
+      return false
+    end
+    active_id = seen[data.active_id] and data.active_id or presets[1].id
+  else
+    local provider = state.ai_provider or "deepseek"
+    presets[1] = {
+      id = "legacy", name = provider == "custom" and "OpenAI-compatible" or
+        (provider == "openai" and "OpenAI" or "DeepSeek"),
+      provider = provider, url = state.ai_api_url or "", model = state.ai_model or "",
+      saved = true, key_url = state.ai_api_url or "",
+    }
+    active_id = "legacy"
+  end
+  AppState.apply({
+    ai_presets = presets, ai_preset_sequence = sequence,
+    ai_preset_drafts = {}, ai_preset_tests = {}, ai_active_preset_id = "",
+    ai_presets_loaded = true, ai_presets_error = "",
+  })
+  ai_semantic_select_preset(active_id)
+  return true
+end
+
+function ai_semantic_new_preset(provider)
+  if not state.ai_presets_loaded then return false, "预设数据不可用" end
+  if #(state.ai_presets or {}) >= 32 then return false, "最多保存 32 组预设" end
+  if provider ~= "deepseek" and provider ~= "openai" then provider = "custom" end
+  local sequence = (state.ai_preset_sequence or 0) + 1
+  local id = "p" .. tostring(sequence)
+  -- A previous interrupted save can leave a key file. Never reuse its identity.
+  while ai_semantic_preset_secret_path(id) and Host.file_exists(ai_semantic_preset_secret_path(id)) do
+    sequence = sequence + 1
+    id = "p" .. tostring(sequence)
+  end
+  local url, model = ai_semantic_provider_defaults(provider)
+  local name = provider == "custom" and "OpenAI-compatible" or
+    (provider == "openai" and "OpenAI" or "DeepSeek")
+  local presets = state.ai_presets
+  presets[#presets + 1] = {
+    id = id, name = name .. " " .. tostring(sequence), provider = provider,
+    url = url, model = model, saved = false, key_url = "",
+  }
+  AppState.apply({ ai_presets = presets, ai_preset_sequence = sequence })
+  return ai_semantic_select_preset(id)
+end
+
+function ai_semantic_select_provider_preset(provider)
+  local current = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  if current and current.provider == provider then return true end
+  for _, preset in ipairs(state.ai_presets or {}) do
+    if preset.provider == provider then return ai_semantic_select_preset(preset.id) end
+  end
+  return ai_semantic_new_preset(provider)
+end
+
+function ai_semantic_preset_dirty()
+  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  return preset and (not preset.saved or preset.name ~= trim(state.ai_preset_name)
+    or preset.url ~= trim(state.ai_api_url) or preset.model ~= trim(state.ai_model)
+    or trim(state.ai_api_key_input) ~= "") or false
+end
+
+function ai_semantic_preset_key_usable()
+  if not state.ai_api_key_saved then return false end
+  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  return not preset or preset.key_url == trim(state.ai_api_url)
+end
+
+function ai_semantic_invalidate_preset_test()
+  local tests = state.ai_preset_tests or {}
+  tests[state.ai_active_preset_id or ""] = nil
+  AppState.set("ai_preset_tests", tests)
+end
+
+function ai_semantic_save_preset()
+  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  local function fail(reason)
+    AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
+    return false, reason
+  end
+  if not preset then return fail("预设不存在") end
+  if state.ai_semantic_session then return fail("请等待当前 AI 请求结束后再保存预设") end
+  local name = trim(state.ai_preset_name)
+  if name == "" or #name > 160 then return fail("请填写预设名称（最多 160 字节）") end
+  local valid, reason = ai_semantic_validate_endpoint(state.ai_api_url)
+  if not valid then return fail(reason) end
+  if #trim(state.ai_api_url) > 4096 or #trim(state.ai_model) > 512 then return fail("地址或模型名称过长") end
+  if trim(state.ai_model) == "" then return fail("请先填写模型名称") end
+  if trim(state.ai_api_key_input) ~= "" then
+    local key_ok, key_reason = ai_semantic_save_api_key(state.ai_api_key_input)
+    if not key_ok then return fail(key_reason) end
+  end
+  local old = { name = preset.name, url = preset.url, model = preset.model, saved = preset.saved }
+  preset.name, preset.url, preset.model, preset.saved = name, trim(state.ai_api_url), trim(state.ai_model), true
+  AppState.set("config_dirty", true)
+  -- Explicit Save is durable, rather than waiting for a later UI autosave.
+  local saved = save_config()
+  if saved ~= true or state.config_dirty then
+    preset.name, preset.url, preset.model, preset.saved = old.name, old.url, old.model, old.saved
+    return fail("预设保存失败，请检查配置写入权限")
+  end
+  ai_semantic_preset_stash()
+  AppState.apply({ ai_preset_status = "预设已保存", ai_preset_status_error = false })
+  return true
+end
+
+function ai_semantic_reset_presets()
+  for _, preset in ipairs(state.ai_presets or {}) do
+    local path = ai_semantic_preset_secret_path(preset.id)
+    if path then os.remove(path) os.remove(path .. ".bak") os.remove(path .. ".tmp") end
+  end
+  AppState.set("ai_presets_json", nil)
+  AppState.apply({ ai_presets = {}, ai_presets_loaded = false,
+    ai_active_preset_id = "", ai_preset_drafts = {}, ai_preset_tests = {},
+    ai_presets_error = "", ai_preset_sequence = 0, ai_preset_status = "",
+    ai_api_key_saved = false, ai_api_key_input = "" })
+end
+
+function ai_semantic_current_api_config()
+  return {
+    provider = state.ai_provider, url = trim(state.ai_api_url), model = trim(state.ai_model),
+    key_saved = ai_semantic_preset_key_usable(),
+    secret = state.ai_semantic_paths and state.ai_semantic_paths.secret,
+    preset_id = state.ai_active_preset_id,
+  }
+end
+
+function ai_semantic_config_signature(config)
+  return neural_json_encode({ provider = config.provider, url = config.url, model = config.model })
+end
+
+function ai_semantic_record_test(session, ok, message)
+  local config = session.api_config
+  if not config or not config.preset_id then return end
+  local tests = state.ai_preset_tests or {}
+  tests[config.preset_id] = { signature = ai_semantic_config_signature(config),
+    ok = ok, message = message }
+  AppState.set("ai_preset_tests", tests)
+end
+
 function ai_semantic_validate_endpoint(url)
   url = trim(url or "")
   if url:match("^https://") then return true end
@@ -13749,8 +14043,8 @@ function ai_semantic_validate_endpoint(url)
   return false, "API 地址必须使用 HTTPS；本机 127.0.0.1/localhost 可使用 HTTP"
 end
 
-function ai_semantic_key_required()
-  local url = safe_lower(trim(state.ai_api_url or ""))
+function ai_semantic_key_required(endpoint)
+  local url = safe_lower(trim(endpoint or state.ai_api_url or ""))
   return not (url:match("^http://127%.0%.0%.1[:/]")
     or url:match("^http://localhost[:/]")
     or url:match("^http://%[::1%][:/]"))
@@ -13845,6 +14139,13 @@ function ai_semantic_save_api_key(value)
   end
 
   value = trim(value or "")
+  if state.ai_semantic_session then return fail("请等待当前 AI 请求结束后再修改密钥") end
+  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  local valid, endpoint_reason = ai_semantic_validate_endpoint(state.ai_api_url)
+  if preset and not valid then return fail(endpoint_reason) end
+  if preset and state.ai_api_key_saved and preset.key_url ~= trim(state.ai_api_url) then
+    return fail("地址已更改，请新建预设保存其他接口的密钥")
+  end
   if value == "" then return fail("API Key 不能为空") end
   if not state.ai_semantic_available then
     return fail("AI 语义搜索在当前环境不可用")
@@ -13883,18 +14184,36 @@ function ai_semantic_save_api_key(value)
     ai_api_key_status = "API Key 已安全保存",
     ai_api_key_status_error = false,
   })
+  if preset then
+    preset.key_url = trim(state.ai_api_url)
+    AppState.set("config_dirty", true)
+    ai_semantic_invalidate_preset_test()
+  end
   return true
 end
 
 function ai_semantic_delete_api_key()
+  if state.ai_semantic_session then return false, "请等待当前 AI 请求结束后再修改密钥" end
   if not state.ai_semantic_paths then return false end
-  os.remove(state.ai_semantic_paths.secret)
+  local path = state.ai_semantic_paths.secret
+  if Host.file_exists(path) then
+    local removed, reason = os.remove(path)
+    if not removed then return false, tostring(reason or "密钥删除失败") end
+  end
+  os.remove(state.ai_semantic_paths.secret .. ".bak")
+  os.remove(state.ai_semantic_paths.secret .. ".tmp")
   AppState.apply({
     ai_api_key_saved = false,
     ai_api_key_input = "",
     ai_api_key_status = "已删除保存的 API Key",
     ai_api_key_status_error = false,
   })
+  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  if preset then
+    preset.key_url = ""
+    AppState.set("config_dirty", true)
+    ai_semantic_invalidate_preset_test()
+  end
   return true
 end
 
@@ -13915,10 +14234,11 @@ function ai_semantic_clear_results()
   AppState.mark_dirty("results_dirty")
 end
 
-function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens)
-  local provider = state.ai_provider
+function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens, config)
+  config = config or ai_semantic_current_api_config()
+  local provider = config.provider
   local body = {
-    model = trim(state.ai_model or ""),
+    model = config.model,
     messages = {
       { role = "system", content = system_prompt },
       { role = "user", content = user_prompt },
@@ -13937,24 +14257,32 @@ function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens)
   return neural_json_encode(body)
 end
 
-function ai_semantic_start_api_job(kind, system_prompt, user_prompt, maximum_tokens)
-  local valid, reason = ai_semantic_validate_endpoint(state.ai_api_url)
+function ai_semantic_start_api_job(kind, system_prompt, user_prompt, maximum_tokens, config)
+  if state.ai_presets_error and state.ai_presets_error ~= "" then return nil, state.ai_presets_error end
+  if not config and trim(state.ai_api_key_input) ~= "" then
+    return nil, "请先保存输入的新密钥，再测试或搜索"
+  end
+  config = config or ai_semantic_current_api_config()
+  local valid, reason = ai_semantic_validate_endpoint(config.url)
   if not valid then return nil, reason end
-  if trim(state.ai_model or "") == "" then return nil, "请先填写模型名称" end
-  if ai_semantic_key_required() and not state.ai_api_key_saved then
+  if trim(config.model) == "" then return nil, "请先填写模型名称" end
+  if ai_semantic_key_required(config.url) and not config.key_saved then
+    if state.ai_api_key_saved and not ai_semantic_preset_key_usable() then
+      return nil, "地址已更改，请新建预设保存其他接口的密钥"
+    end
     return nil, "请先在设置中保存 API Key"
   end
   local body_path = ai_semantic_unique_job_path(kind .. "-body", ".json")
   local response_path = ai_semantic_unique_job_path(kind .. "-response", ".json")
   local body_ok, body_reason = ai_semantic_write_atomic(
     body_path,
-    ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens)
+    ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens, config)
   )
   if not body_ok then return nil, tostring(body_reason or "body_write_failed") end
   local job, launch_reason = ai_semantic_launch_bridge({
     operation = "chat-completions",
-    url = trim(state.ai_api_url or ""),
-    secretPath = state.ai_api_key_saved and state.ai_semantic_paths.secret or "",
+    url = config.url,
+    secretPath = config.key_saved and config.secret or "",
     bodyPath = body_path,
     responsePath = response_path,
     timeoutSeconds = AISemantic.request_timeout,
@@ -14067,7 +14395,8 @@ function ai_semantic_retry_api(session, phase, reason)
     ai_semantic_plan_system_prompt()
       .. "\nReturn one complete JSON object only. Do not include analysis, prose, or markdown fences.",
     session.query,
-    600
+    600,
+    session.api_config
   )
   if not api_job then return false end
   session[retry_key] = (session[retry_key] or 0) + 1
@@ -14372,6 +14701,7 @@ function start_ai_semantic_next_page()
 end
 
 function ai_semantic_fail(session, message)
+  if session.phase == "test_wait" then ai_semantic_record_test(session, false, tostring(message)) end
   if session.api_job then ai_semantic_cleanup_job(session.api_job) end
   Jobs.finish(session.job_token, false, message)
   AppState.set("ai_semantic_session", nil)
@@ -14387,6 +14717,7 @@ function ai_semantic_cancel()
     ai_semantic_cleanup_job(session.api_job)
   end
   Jobs.finish(session.job_token, true, "canceled")
+  if session.phase == "test_wait" then ai_semantic_record_test(session, false, "测试已取消") end
   AppState.set("ai_semantic_session", nil)
   set_status("已取消 AI 语义搜索")
 end
@@ -14413,6 +14744,7 @@ function start_ai_semantic_search(query)
   local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then set_status("无法启动 AI 搜索：" .. tostring(reason), true) return false end
   local source = ai_semantic_asset_snapshot()
+  local api_config = ai_semantic_current_api_config()
   local api_job, api_reason = ai_semantic_start_api_job(
     "plan",
     ai_semantic_plan_system_prompt(),
@@ -14435,6 +14767,7 @@ function start_ai_semantic_search(query)
     query = query,
     phase = "plan_wait",
     api_job = api_job,
+    api_config = api_config,
     -- The shared toolbar field contains the natural-language request, so it
     -- must not also narrow the candidate pool through ordinary text matching.
     source = source,
@@ -14538,17 +14871,23 @@ function start_ai_semantic_connection_test()
   if state.ai_semantic_session then return false, "已有 AI 请求正在运行" end
   local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then return false, reason end
+  local api_config = ai_semantic_current_api_config()
   local api_job, api_reason = ai_semantic_start_api_job(
     "test",
     [[Return JSON only: {"ok":true}.]],
     "Connection test",
     20
   )
-  if not api_job then Jobs.finish(token, false, api_reason) return false, api_reason end
+  if not api_job then
+    ai_semantic_record_test({ api_config = api_config }, false, api_reason)
+    Jobs.finish(token, false, api_reason)
+    return false, api_reason
+  end
   AppState.set("ai_semantic_session", {
     query = "",
     phase = "test_wait",
     api_job = api_job,
+    api_config = api_config,
     job_token = token,
   })
   set_status("正在测试 AI API 连接…")
@@ -14559,6 +14898,7 @@ function process_ai_semantic_connection_test(session)
   local ready, value = ai_semantic_poll_api(session)
   if ready == nil then return true end
   if not ready then ai_semantic_fail(session, value) return true end
+  ai_semantic_record_test(session, true, value.ok == true and "连接成功" or "API 已响应")
   Jobs.finish(session.job_token, true, "connection test")
   AppState.set("ai_semantic_session", nil)
   set_status(value.ok == true and "AI API 连接成功" or "AI API 已响应")
@@ -26182,6 +26522,7 @@ function factory_reset()
   clear_wave_cache()
   clear_similarity_cache()
   ai_semantic_delete_api_key()
+  ai_semantic_reset_presets()
   if state.ai_semantic_paths then
     os.remove(state.ai_semantic_paths.plaintext)
   end
@@ -26193,6 +26534,7 @@ function factory_reset()
     ai_api_key_status_error = false,
   })
   reset_interface_settings()
+  ai_semantic_initialize_presets()
   os.remove(CONFIG_FILE)
   os.remove(LIBRARIES_FILE)
   os.remove(DATABASE_FILE)
@@ -35881,13 +36223,8 @@ function ai_semantic_provider_label(provider)
 end
 
 function select_ai_semantic_provider(provider)
-  local url, model = ai_semantic_provider_defaults(provider)
-  AppState.apply({
-    ai_provider = provider,
-    ai_api_url = url,
-    ai_model = model,
-    config_dirty = true,
-  })
+  local ok, reason = ai_semantic_select_provider_preset(provider)
+  if not ok then set_status(reason, true) end
 end
 
 ----------------------------------------------------------------
@@ -36180,6 +36517,36 @@ function draw_settings_ai()
   )
   ImGui.Separator(ctx)
 
+  settings_section_title("API 预设", "每组预设分别保存地址、模型与加密密钥；切换不会覆盖其他预设。")
+  if state.ai_presets_error ~= "" then
+    ImGui.TextColored(ctx, COLOR.error, state.ai_presets_error)
+    return
+  end
+  local current_preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  ImGui.TextWrapped(ctx, "当前预设：" .. (current_preset and current_preset.name or "—"))
+  if dark_button("切换已保存预设", 160) then ImGui.OpenPopup(ctx, "##ai_preset_picker") end
+  if ImGui.BeginPopup(ctx, "##ai_preset_picker") then
+    for _, preset in ipairs(state.ai_presets or {}) do
+      local label = compact(preset.name, 40) .. " · " .. ai_semantic_provider_label(preset.provider)
+        .. (preset.saved and " · " .. translate_ui_text("已保存") or " · " .. translate_ui_text("待保存"))
+        .. "##ai_preset_" .. preset.id
+      if ImGui.Selectable(ctx, label, preset.id == state.ai_active_preset_id) then
+        ai_semantic_select_preset(preset.id)
+      end
+    end
+    ImGui.EndPopup(ctx)
+  end
+  if dark_button("新建预设", 112) then
+    local ok, reason = ai_semantic_new_preset(state.ai_provider)
+    if not ok then set_status(reason, true) end
+  end
+  ImGui.Text(ctx, "预设名称")
+  ImGui.SetNextItemWidth(ctx, -1)
+  local name_changed, preset_name = ImGui.InputText(ctx, "##ai_preset_name", state.ai_preset_name or "")
+  if name_changed then AppState.apply({ ai_preset_name = preset_name, ai_preset_status = "" }) end
+  ImGui.TextColored(ctx, ai_semantic_preset_dirty() and COLOR.warning or COLOR.success,
+    ai_semantic_preset_dirty() and "有未保存修改（切换时保留草稿，重启前请保存）" or "预设已保存")
+
   ImGui.Text(ctx, "API 服务商")
   if dark_button("DeepSeek", 112) then select_ai_semantic_provider("deepseek") end
   ImGui.SameLine(ctx)
@@ -36198,8 +36565,9 @@ function draw_settings_ai()
     state.ai_api_url or ""
   )
   if changed then
-    AppState.apply({ ai_api_url = api_url, config_dirty = true })
+    AppState.apply({ ai_api_url = api_url, config_dirty = true, ai_preset_status = "" })
   end
+  ImGui.TextWrapped(ctx, "当前需填写完整 Chat Completions 地址，例如 https://服务域名/v1/chat/completions。")
 
   ImGui.Text(ctx, "模型")
   ImGui.SetNextItemWidth(ctx, -1)
@@ -36210,29 +36578,33 @@ function draw_settings_ai()
     state.ai_model or ""
   )
   if changed then
-    AppState.apply({ ai_model = model, config_dirty = true })
+    AppState.apply({ ai_model = model, config_dirty = true, ai_preset_status = "" })
   end
 
   ImGui.TextDisabled(ctx, "常用模型")
   if state.ai_provider == "deepseek" then
     if dark_button("deepseek-flash", 142) then
-      AppState.apply({ ai_model = "deepseek-flash", config_dirty = true })
+      AppState.apply({ ai_model = "deepseek-flash", config_dirty = true, ai_preset_status = "" })
     end
     ImGui.SameLine(ctx)
     if dark_button("deepseek-v4-pro", 168) then
-      AppState.apply({ ai_model = "deepseek-v4-pro", config_dirty = true })
+      AppState.apply({ ai_model = "deepseek-v4-pro", config_dirty = true, ai_preset_status = "" })
     end
     ImGui.TextDisabled(ctx, "DeepSeek 官方 API 模型 ID；Flash 更快，V4 Pro 能力更强。")
   elseif state.ai_provider == "openai" then
     if dark_button("gpt-4.1-mini", 132) then
-      AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true })
+      AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true, ai_preset_status = "" })
     end
     ImGui.SameLine(ctx)
     if dark_button("gpt-4.1", 106) then
-      AppState.apply({ ai_model = "gpt-4.1", config_dirty = true })
+      AppState.apply({ ai_model = "gpt-4.1", config_dirty = true, ai_preset_status = "" })
     end
   else
     ImGui.TextDisabled(ctx, "兼容接口请填写服务实际提供的模型 ID")
+  end
+  if dark_button("保存当前预设", 152) then ai_semantic_save_preset() end
+  if state.ai_preset_status ~= "" then
+    ImGui.TextColored(ctx, state.ai_preset_status_error and COLOR.error or COLOR.success, state.ai_preset_status)
   end
 
   ImGui.Separator(ctx)
@@ -36252,26 +36624,47 @@ function draw_settings_ai()
     state.ai_api_key_input or "",
     password_flags
   )
-  if changed then AppState.set("ai_api_key_input", api_key_input) end
+  if changed then AppState.apply({ ai_api_key_input = api_key_input, ai_preset_status = "" }) end
   if ImGui.IsItemActive(ctx) or ImGui.IsItemDeactivated(ctx) then
     AppState.set("keyboard_consumed", true)
   end
 
   if dark_button("加密保存 Key", 132) then
-    local ok, reason = ai_semantic_save_api_key(state.ai_api_key_input)
+    local ok, reason = false, "API Key 不能为空"
+    if trim(state.ai_api_key_input) ~= "" then ok, reason = ai_semantic_save_preset() end
     set_status(ok and "API Key 已安全保存" or ("保存 API Key 失败：" .. tostring(reason)), not ok)
   end
 
   ImGui.SameLine(ctx)
   if dark_button("删除已保存 Key", 142) then
-    ai_semantic_delete_api_key()
-    set_status("已删除保存的 API Key")
+    local ok, reason = ai_semantic_delete_api_key()
+    set_status(ok and "已删除保存的 API Key" or reason, not ok)
   end
 
   ImGui.SameLine(ctx)
   if dark_button("测试连接", 108) then
     local ok, reason = start_ai_semantic_connection_test()
     if not ok then set_status("连接测试失败：" .. tostring(reason), true) end
+  end
+
+  local test = (state.ai_preset_tests or {})[state.ai_active_preset_id]
+  local running = state.ai_semantic_session
+  if running and running.phase == "test_wait" and running.api_config then
+    local testing_preset = ai_semantic_preset_by_id(running.api_config.preset_id)
+    ImGui.TextWrapped(ctx, "正在测试预设：" .. (testing_preset and testing_preset.name or "—"))
+  elseif test then
+    if test.signature == ai_semantic_config_signature(ai_semantic_current_api_config()) then
+      ImGui.TextWrapped(ctx, "本预设测试结果：" .. translate_ui_text(test.message))
+      ImGui.TextColored(ctx, test.ok and COLOR.success or COLOR.error,
+        test.ok and "连接测试通过" or "连接测试失败")
+    else
+      ImGui.TextColored(ctx, COLOR.warning, "配置已修改，请重新测试连接")
+    end
+  else
+    ImGui.TextDisabled(ctx, "本预设尚未测试连接")
+  end
+  if state.ai_api_key_saved and not ai_semantic_preset_key_usable() then
+    ImGui.TextWrapped(ctx, "地址已更改，请新建预设保存其他接口的密钥")
   end
 
   ImGui.TextColored(
@@ -40019,6 +40412,7 @@ load_or_migrate_project_url()
 load_config()
 startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
+ai_semantic_initialize_presets()
 state.next_watch = reaper.time_precise() + state.watch_interval
 load_or_migrate_libraries()
 startup_checkpoint("读取音效库")

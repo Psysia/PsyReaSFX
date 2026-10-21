@@ -20,6 +20,8 @@ AI 语义搜索是“以文字描述找声音”的独立工作流，不属于�
 
 ## 支持的接口
 
+Beta 7.14 支持最多 32 组命名预设，服务商切换只选择已有组或创建新组，不覆盖其他服务商。地址、模型、名称与 ID 通过白名单 JSON 嵌入现有 `config.tsv`；每组密钥使用独立 DPAPI 文件。旧单组密钥原位保留，自动绑定迁移预设。未保存草稿与测试状态仅保留在内存，不含在配置或备份中。请求启动时冻结预设配置，格式重试也使用同一预设，避免运行中切换导致密钥与地址错配。修改地址后禁用原密钥，必须新建接口预设；测试不改变已保存设置。未知/损坏预设格式原样保留并阻止 API 请求，不默默清空或回退密钥。
+
 - DeepSeek：`https://api.deepseek.com/chat/completions`，默认 `deepseek-flash`，可选 `deepseek-v4-pro`；旧 `deepseek-chat` / `deepseek-reasoner` 配置自动迁移。
 - OpenAI Chat Completions。
 - 自定义 OpenAI-compatible Chat Completions 地址和模型。

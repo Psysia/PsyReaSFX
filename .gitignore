@@ -21,3 +21,6 @@ __pycache__/
 **/bin/
 **/obj/
 /dist/
+
+# Temporary release drafts; retained historical notes live in docs/releases/.
+/.release-notes-*.md
