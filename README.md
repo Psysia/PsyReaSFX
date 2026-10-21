@@ -230,7 +230,7 @@ Beta 7.14 includes the separate **AI semantic search** implementation. It remain
 | [Neural Similarity](neural/README.md) | Optional local [neural component][neural-download] and reproducible model notes. |
 | [Desktop Project](desktop/README.md) | Desktop development notes. |
 
-Development and architecture notes are kept under `docs/` and are intentionally separated from the main project page.
+Development and architecture notes are kept under `docs/` and are intentionally separated from the main project page. Historical release-note drafts are preserved in [docs/releases](docs/releases/README.md); use the Changelog or GitHub Releases for version history.
 
 ## Repository Layout
 

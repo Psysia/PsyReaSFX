@@ -232,7 +232,7 @@ Beta 7.14 包含独立的 **AI 语义搜索**。它与“查找相似声音”�
 | [神经音频相似度架构](docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md) | 本地神经检索架构。 |
 | [AI 语义搜索架构](docs/AI_SEMANTIC_SEARCH_ARCHITECTURE_0_9_zh-CN.md) | API 语义搜索架构。 |
 
-其余开发、性能与技术归档统一保存在 `docs/`，不再堆叠在项目首页。
+其余开发、性能与技术归档统一保存在 `docs/`，不再堆叠在项目首页。历史发布说明集中在 [docs/releases](docs/releases/README.md)，查看版本变化请使用更新日志或 GitHub Releases。
 
 ## 仓库结构
 
