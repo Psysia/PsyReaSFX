@@ -41,10 +41,26 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
    https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
    ```
 
-3. Synchronize packages.
-4. Search for `PsyReaSFX.lua`, right-click it, enable pre-release versions for
-   that package, choose `0.9.0-beta7.13` under **Versions**, and install it.
-5. Open REAPER's Action List, run PsyReaSFX, and assign a shortcut if desired.
+3. Synchronize packages, open `Browse packages`, and search for `PsyReaSFX`.
+4. Normal installation uses Stable. For the latest Beta, right-click the main
+   `PsyReaSFX` package (script `PsyReaSFX.lua`), check
+   **Enable pre-releases (bleeding-edge)**, and select the newest Beta under
+   **Versions** (currently `0.9.0-beta7.13`). Leave **Pin current version**
+   unchecked; unpin first if needed.
+5. Click **Apply**, or **OK** to confirm installation. Once downloads finish,
+   close the old PsyReaSFX window and rerun it from REAPER's Action List.
+   Assign a shortcut if desired.
+
+Normal synchronization does not opt you into Beta. This screenshot illustrates
+the menu locations before older Betas were pruned. After synchronization, Versions
+lists only the newest Beta, 0.8.5 Stable and 0.7.23 Stable.
+
+<p><a href="../website/assets/screenshots/reapack-enable-beta.jpg"><img src="../website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack: enable pre-releases, select the newest Beta under Versions, then click Apply or OK" width="800"></a></p>
+
+See the [README feature comparison](../README.md#feature-comparison) for additions.
+Updating the main script does not require rebuilding your libraries. AI semantic
+search needs your own API key/model in Settings, not the neural component.
+Local neural similarity requires the separate optional package below.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 

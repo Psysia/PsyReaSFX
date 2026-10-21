@@ -47,7 +47,20 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 预发布版本并安装 `PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再为同仓库
 中的独立可选包 `PsyReaSFX Neural Similarity` 启用预发布并安装。
 
-如需安装 PsyReaSFX 预发布版本，请在 ReaPack 中启用预发布版本。**PsyReaSFX Neural Similarity** 是 Windows x64 下的可选本地神经相似声音组件，不是主程序必需依赖。
+### 想使用最新版功能？安装 0.9 Beta
+
+普通同步默认跟随稳定版，**不会自动加入 Beta**。最新 UCS 分类、相似声音、AI 语义搜索和启动动画位于 0.9 Beta：
+
+1. 执行 `扩展 → ReaPack → 同步软件包`，再打开 `浏览软件包 / Browse packages`，搜索 `PsyReaSFX`。
+2. 右键主程序 `PsyReaSFX`（脚本包 `PsyReaSFX.lua`），勾选 **Enable pre-releases (bleeding-edge)**。
+3. 再次右键 → **Versions**，选择最新 `0.9.0-beta…`（当前 `0.9.0-beta7.13`）。不要勾选 **Pin current version**；已固定时先取消固定。
+4. 点击 **Apply**，或 **OK** 确认应用安装；下载完成后关闭旧 PsyReaSFX 窗口，从 REAPER 动作列表重新运行。
+
+<p><a href="website/assets/screenshots/reapack-enable-beta.jpg"><img src="website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack 右键菜单中的 Enable pre-releases 和 Versions：选择最新 Beta 后点击 Apply 或 OK" width="800"></a></p>
+
+截图用于演示右键菜单位置，拍摄时仍显示历史 Beta；同步后 Versions 仅保留最新 Beta、0.8.5 Stable 和 0.7.23 Stable。旧版仍可从 GitHub Releases 下载。
+
+**神经检索需另装包，AI 搜索需自行配置 API：** Windows x64 如需本地神经检索，对独立包 **PsyReaSFX Neural Similarity** 重复启用预发布与安装步骤，再重启主程序。AI 语义搜索无需神经包，但需在设置中填写自己的 DeepSeek / OpenAI / 兼容 API Key 和模型；普通回车仍是普通搜索，点击金色 AI 按钮才执行 AI 搜索。更新主程序不需要重建音效库。
 
 ## REAPER 实用工具
 
@@ -124,6 +137,26 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 | 可选组件 | **PsyReaSFX Neural Similarity** | Windows x64 本地神经相似声音检索组件。 |
 
 未安装神经组件时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
+
+### 版本功能对比
+
+以下仅比较 REAPER / Lua 版，Beta 包含稳定版功能；“—”表示该版本没有此功能。
+
+| 功能 | 0.7.23 Stable | 0.8.5 Stable | 最新 0.9 Beta（7.13） |
+|---|---|---|---|
+| 浏览、波形试听、元数据、集合与 Transfer | 有 | 保留 | 保留 |
+| 中断恢复、失败重试、自动备份与缓存检查 | — | 新增 | 保留并改进 |
+| 缺失/重复素材检查、来源重定位、工程使用记录 | — | 新增 | 保留 |
+| 大型库增量保存与分帧任务 | 早期实现 | 强化 | 进一步优化启动 |
+| 官方 UCS 自动分类、待确认队列与虚拟目录 | 仅基础 UCS 字段 | 仅基础 UCS 字段 | 新增 |
+| 频谱峰值着色 | — | — | 新增；按需启用 |
+| 基于音频内容的相似声音检索 | — | — | 主程序内置 15 维声学检索 |
+| EfficientAT 本地神经相似声音 | — | — | Windows x64 可选神经包 |
+| AI 语义搜索：描述转检索词、本地召回和分页 | — | — | 自备 API Key / 模型；无需神经包 |
+| 品牌启动动画与实时加载状态 | — | — | 新增；不延长加载 |
+
+逐版本新增与修复见[更新日志](docs/CHANGELOG_zh-CN.md)，
+安装步骤见[官网 Beta 图解](https://psysia.github.io/PsyReaSFX/#beta-install)。
 
 ### 当前开发状态
 

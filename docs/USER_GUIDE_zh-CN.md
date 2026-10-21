@@ -41,10 +41,22 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
    https://github.com/Psysia/PsyReaSFX/raw/main/index.xml
    ```
 
-3. 同步软件包。
-4. 搜索 `PsyReaSFX.lua`，右键为该包启用预发布版本，在 **Versions** 中选择
-   `0.9.0-beta7.13` 并安装。
-5. 打开 REAPER 动作列表，运行 PsyReaSFX；需要时给它绑定快捷键。
+3. 同步软件包，打开 `浏览软件包 / Browse packages`，搜索 `PsyReaSFX`。
+4. 普通安装默认使用稳定版。要体验最新版 Beta，右键主程序包
+   `PsyReaSFX`（脚本 `PsyReaSFX.lua`），勾选
+   **Enable pre-releases (bleeding-edge)**，再在 **Versions** 中选择最新 Beta
+   （当前 `0.9.0-beta7.13`）。**Pin current version** 应保持未勾选；已固定时先取消。
+5. 点击 **Apply**，或 **OK** 确认应用安装。下载结束后关闭旧 PsyReaSFX 窗口，
+   从 REAPER 动作列表重新运行；需要时给它绑定快捷键。
+
+普通同步不会自动加入 Beta。下图演示菜单位置；截图拍摄时仍有旧 Beta，
+同步后 Versions 仅保留最新 Beta、0.8.5 Stable 和 0.7.23 Stable。
+
+<p><a href="../website/assets/screenshots/reapack-enable-beta.jpg"><img src="../website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack：启用预发布，在 Versions 选择最新 Beta，再点击 Apply 或 OK" width="800"></a></p>
+
+新增功能见 [README 版本功能对比](../README_zh-CN.md#版本功能对比)。
+更新主脚本无需重建音效库。AI 语义搜索无需神经组件，但需要在设置中填写自己的
+API Key 和模型；神经相似检索则需要下面的独立可选包。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
 
