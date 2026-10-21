@@ -120,4 +120,4 @@ embedding，使缺少有效文件名和描述的素材也能参与语义检索�
 4. 冻结并验收完整 0.9 功能范围，再发布公开版本。
 5. 同步 Desktop，并完成 1.0 Stable 发布门槛。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.14/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_14_win_x64.zip

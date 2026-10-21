@@ -70,6 +70,31 @@ try {
     }
     if ($roundTrip -cne $expected) { throw "DPAPI API-key round trip failed." }
 
+    # A second preset must not replace the first preset's encrypted credential.
+    $secondSecret = Join-Path $work "api-key-p1.dpapi"
+    [IO.File]::WriteAllText($plaintext, 'sk-second-preset-test', $utf8)
+    [IO.File]::WriteAllText($request, (@{
+        operation = "protect-key"
+        plaintextPath = $plaintext
+        secretPath = $secondSecret
+        statusPath = $status
+    } | ConvertTo-Json -Compress), $utf8)
+    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bridge $request
+    if ($LASTEXITCODE -ne 0) { throw "Second preset key save failed." }
+    if ([IO.File]::ReadAllText($secret) -cne $encrypted) { throw "Saving another preset overwrote the original key." }
+    if (Test-Path -LiteralPath $plaintext) { throw "Second preset plaintext key was retained." }
+    $secondEncryptedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($secondSecret).Trim())
+    $secondPlainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+        $secondEncryptedBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    try {
+        if ([Text.Encoding]::UTF8.GetString($secondPlainBytes) -cne 'sk-second-preset-test') {
+            throw "Second preset DPAPI key round trip failed."
+        }
+    } finally {
+        [Array]::Clear($secondPlainBytes, 0, $secondPlainBytes.Length)
+        [Array]::Clear($secondEncryptedBytes, 0, $secondEncryptedBytes.Length)
+    }
+
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
     $listener.Start()
     try {

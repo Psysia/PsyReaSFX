@@ -132,7 +132,8 @@ try {
       { name: "PsyReaSFX.NeuralSidecar_v0_9_0_beta99_1_win_x64.exe", browser_download_url: "https://example.com/bare.exe" },
       {
         name: "PsyReaSFX_Neural_Similarity_v0_9_0_beta99_1_win_x64.zip",
-        browser_download_url: fallbackNeuralUrl.replaceAll("7.13", "99.1").replaceAll("7_13", "99_1"),
+        browser_download_url: fallbackNeuralUrl.replace(/-beta[\d.]+\//, "-beta99.1/")
+          .replace(/_beta[\d_]+_win_x64/, "_beta99_1_win_x64"),
       },
     ],
   };

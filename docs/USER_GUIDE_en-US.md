@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7.13
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 7.14
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -45,7 +45,7 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
 4. Normal installation uses Stable. For the latest Beta, right-click the main
    `PsyReaSFX` package (script `PsyReaSFX.lua`), check
    **Enable pre-releases (bleeding-edge)**, and select the newest Beta under
-   **Versions** (currently `0.9.0-beta7.13`). Leave **Pin current version**
+   **Versions** (currently `0.9.0-beta7.14`). Leave **Pin current version**
    unchecked; unpin first if needed.
 5. Click **Apply**, or **OK** to confirm installation. Once downloads finish,
    close the old PsyReaSFX window and rerun it from REAPER's Action List.
@@ -64,19 +64,19 @@ Local neural similarity requires the separate optional package below.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
-### Optional neural similarity component (Beta 7.13)
+### Optional neural similarity component (Beta 7.14)
 
 **Neural retrieval requires this separate component; updating PsyReaSFX.lua
 does not install it. Built-in 15-feature acoustic search and AI semantic search
 do not require it.**
 
-**[Download the complete neural ZIP · Beta 7.13 · Windows x64 · about 42.4 MB][neural-download]**
+**[Download the complete neural ZIP · Beta 7.14 · Windows x64 · about 42.4 MB][neural-download]**
 Includes executable, model and installers; do not download only the standalone EXE.
 
 Recommended: synchronize, open `Extensions → ReaPack → Browse packages`, and search for
 the separate [PsyReaSFX Neural Similarity][neural-download] data package.
 Right-click → **Enable pre-releases (bleeding-edge)** → **Versions** →
-`0.9.0-beta7.13`; uncheck **Pin current version**, click **Apply / OK**,
+`0.9.0-beta7.14`; uncheck **Pin current version**, click **Apply / OK**,
 wait for downloads, then close the old window and rerun PsyReaSFX.
 ReaPack places the executable and model under
 `<REAPER Resource Path>\Data\PsyReaSFX\neural_similarity\` and handles updates/uninstallation.
@@ -268,7 +268,7 @@ whoosh category:movement -long
 
 A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
-### AI semantic search (Beta 7.13)
+### AI semantic search (Beta 7.14)
 
 The top search field is shared by normal and AI semantic search. Enter ordinary keywords and press `Enter` for the normal local search. Enter a natural-language description and click the gold `AI` button, or press `Ctrl+Shift+F`, to start AI semantic search immediately and display its results when complete; no extra search window is opened. This is not part of Find Similar Sounds: similar-sound search starts from a reference recording, while AI semantic search starts from a natural-language request, for example:
 
@@ -283,13 +283,24 @@ Usage guidance, service state, privacy scope, and API configuration are collecte
 - `OpenAI-compatible`: accepts another compatible platform or a local model server. Remote endpoints must use HTTPS; local `127.0.0.1`, `localhost`, and `[::1]` endpoints may use HTTP.
 
 The API key is encrypted for the current Windows user with DPAPI and kept separately from `config.tsv`, backups, and logs. Factory Reset removes the saved key.
+
+Starting with Beta 7.14, `Settings → AI Search` supports up to 32 named API presets:
+
+1. Your current endpoint, model and encrypted key are migrated into one preset. Historical settings already overwritten by older versions cannot be reconstructed.
+2. Click **New preset**, or select a provider not yet configured, to create an independent setup. Enter a name, complete Chat Completions endpoint (e.g. `https://api.example.com/v1/chat/completions`), model and key, then click **Save current preset**. This also encrypts and saves a newly entered key.
+3. Use **Switch presets** to select DeepSeek or any saved compatible service. Endpoint, model and key are independent for each preset. Provider buttons restore an existing preset for that provider; use the list for multiple presets of the same provider.
+4. **Test connection** shows the result for the initiating preset, even if you switch while the request is running. Retest after changing the endpoint, model or key.
+
+Unsaved edits are session-only drafts: switching retains them, but click **Save current preset** before restarting. A newly entered key must be saved before testing. Saved keys are bound to their original endpoint; create a new preset to try another endpoint so the original key is not forwarded elsewhere. Deleting a key affects only the current preset; Factory Reset removes all presets and keys. Public preset settings are included in ordinary configuration backups, while keys and unsaved key input are excluded.
+
+The current protocol remains non-streaming Chat Completions. Preset management does not add Responses API support or universal model-parameter compatibility.
 API requests may incur provider charges; quota and retention policies are controlled by the selected service.
 
 Each search has two stages. The AI converts the request into bilingual sound concepts once. PsyReaSFX then scans, ranks, and keeps up to 2,400 candidates locally. The first 120 are displayed; **Load next 120** appends another page immediately from memory. Only the search description is sent to the API. Filenames, Description, Keywords, UCS fields, directories, file paths, and audio stay local. Results are ordered by local recall score, then path for stable ties.
 
 Local recall prioritizes filename, Keywords, Description, UCS Category, SubCategory, CatID, library and path. Positive expanded-term matches add weight, while excluded-term matches subtract it. The model no longer scores individual candidates, so AI results have no AI-relevance column or background reranking stage.
 
-In Beta 7.13, AI search only shows query-understanding and local-recall stages. Local recall compiles expanded terms once and runs a combined-text prefilter before weighted field scoring. Each search makes one API request, while loading later pages is entirely local. The task status closes as soon as recall completes and later pages append directly from memory. DeepSeek requests disable thinking mode and retry one occasional malformed structured response.
+In Beta 7.14, AI search only shows query-understanding and local-recall stages. Local recall compiles expanded terms once and runs a combined-text prefilter before weighted field scoring. Each search makes one API request, while loading later pages is entirely local. The task status closes as soon as recall completes and later pages append directly from memory. DeepSeek requests disable thinking mode and retry one occasional malformed structured response.
 
 The first implementation depends on meaningful filenames and text metadata. Assets with opaque names and no Description, Keywords, or UCS data will have limited semantic quality; a future local audio-text embedding stage is intended to cover them.
 
@@ -305,7 +316,7 @@ Scoring uses audio content only, never filenames, UCS categories or keywords. Fo
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
 
-With the optional Beta 7.13 component installed, PsyReaSFX uses EfficientAT
+With the optional Beta 7.14 component installed, PsyReaSFX uses EfficientAT
 embedding recall followed by the existing duration, onset, transient and
 envelope features. Common WAV sample rates and PCM16/PCM24/PCM32/float depths,
 AIFF, FLAC, MP3 and M4A use the built-in Windows decoder; an available FFmpeg
@@ -712,7 +723,7 @@ current project` view expose that history. Unsaved projects are not bound.
   also disables automatic unfinished-asset recovery.
 - If individual files failed, use `Retry all failed tasks` in Maintenance
   instead of rebuilding the whole library.
-- Beta 7.13 reads PCM/float WAV waveforms directly when a Windows path is 260
+- Beta 7.14 reads PCM/float WAV waveforms directly when a Windows path is 260
   characters or longer. After updating, use `Settings → Reliability & recovery
   → Retry all failed tasks` to process old failures again. This does not copy,
   transcode or modify source files.
@@ -726,7 +737,7 @@ current project` view expose that history. Unsaved projects are not bound.
 
 ### First display is slow
 
-Beta 7.13 shows a centered branded startup splash with cyan waveform motion, real loading stages, asset counts and elapsed time. Motion indicates activity, not percentage completion. There is no fixed intro duration: the library opens as soon as validation finishes. Tiny windows and loading errors use readable text instead. The vector animation needs no image/video package and never reads audio or iterates the catalog. Beta 7.12 fast snapshot decoding and 24 ms idle / 12 ms playback startup budgets remain in place. Search, audition and edits unlock after full validation; closing during loading never saves partial data. Existing audio, indexes and waveform caches are retained, with no mandatory rescan or transcoding.
+Beta 7.14 shows a centered branded startup splash with cyan waveform motion, real loading stages, asset counts and elapsed time. Motion indicates activity, not percentage completion. There is no fixed intro duration: the library opens as soon as validation finishes. Tiny windows and loading errors use readable text instead. The vector animation needs no image/video package and never reads audio or iterates the catalog. Beta 7.12 fast snapshot decoding and 24 ms idle / 12 ms playback startup budgets remain in place. Search, audition and edits unlock after full validation; closing during loading never saves partial data. Existing audio, indexes and waveform caches are retained, with no mandatory rescan or transcoding.
 
 ### Neural similarity does not activate
 
@@ -750,7 +761,7 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 ## 21. Stable support
 
 PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.9.0 Beta 7.13 as versions of the same package. Normal synchronization
+PsyReaSFX 0.9.0 Beta 7.14 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.
@@ -765,4 +776,4 @@ When reporting an issue, include:
 4. complete ReaScript error text;
 5. a screenshot or short recording when the issue is visual.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.14/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_14_win_x64.zip

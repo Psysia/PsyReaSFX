@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.13
+-- @version 0.9.0-beta7.14
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -90,6 +90,7 @@
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 7.13：居中品牌启动画面与轻量青色波形动画，显示真实阶段、数量和已用时间
+--   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -195,7 +196,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.13"
+local VERSION = "0.9.0 Beta 7.14"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -942,6 +943,17 @@ local state = {
   ai_api_key_status = "",
   ai_api_key_status_error = false,
   ai_request_sequence = 0,
+  ai_presets = {},
+  ai_preset_drafts = {},
+  ai_preset_tests = {},
+  ai_active_preset_id = "",
+  ai_preset_name = "",
+  ai_preset_sequence = 0,
+  ai_presets_loaded = false,
+  ai_presets_json = nil,
+  ai_presets_error = "",
+  ai_preset_status = "",
+  ai_preset_status_error = false,
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
@@ -2226,6 +2238,37 @@ I18N_EN["结果先显示本地召回排名最高的 120 条；浏览完成后可
 I18N_EN["示例：潮湿地下室里缓慢拖动沉重铁链，近距离、压抑、不要尖锐高频"] =
   "Example: a heavy chain dragged slowly in a damp basement, close and oppressive, without sharp highs"
 I18N_EN["API 服务商"] = "API provider"
+I18N_EN["API 预设"] = "API presets"
+I18N_EN["每组预设分别保存地址、模型与加密密钥；切换不会覆盖其他预设。"] = "Each preset keeps its own endpoint, model and encrypted key. Switching preserves other presets."
+I18N_EN["切换已保存预设"] = "Switch presets"
+I18N_EN["新建预设"] = "New preset"
+I18N_EN["预设名称"] = "Preset name"
+I18N_EN["保存当前预设"] = "Save current preset"
+I18N_EN["预设已保存"] = "Preset saved"
+I18N_EN["待保存"] = "Not saved"
+I18N_EN["有未保存修改（切换时保留草稿，重启前请保存）"] = "Unsaved changes (draft kept when switching; save before restarting)"
+I18N_EN["当前需填写完整 Chat Completions 地址，例如 https://服务域名/v1/chat/completions。"] = "Enter the complete Chat Completions endpoint, e.g. https://api.example.com/v1/chat/completions."
+I18N_EN["预设不存在"] = "Preset not found"
+I18N_EN["预设数据不可用"] = "Preset data unavailable"
+I18N_EN["预设数据无效；已保留原文件，请恢复配置备份"] = "Invalid preset data; original data preserved. Restore a configuration backup."
+I18N_EN["最多保存 32 组预设"] = "Up to 32 presets can be stored"
+I18N_EN["请填写预设名称（最多 160 字节）"] = "Enter a preset name (up to 160 bytes)"
+I18N_EN["地址或模型名称过长"] = "Endpoint or model name too long"
+I18N_EN["预设保存失败，请检查配置写入权限"] = "Preset save failed; check configuration write permissions"
+I18N_EN["请等待当前 AI 请求结束后再保存预设"] = "Wait for the active AI request before saving a preset"
+I18N_EN["请等待当前 AI 请求结束后再修改密钥"] = "Wait for the active AI request before changing keys"
+I18N_EN["请先保存输入的新密钥，再测试或搜索"] = "Save the newly entered key before testing or searching"
+I18N_EN["地址已更改，请新建预设保存其他接口的密钥"] = "Endpoint changed; create a new preset for another endpoint and its key"
+I18N_EN["本预设尚未测试连接"] = "This preset has not been tested"
+I18N_EN["配置已修改，请重新测试连接"] = "Configuration changed; test the connection again"
+I18N_EN["连接测试通过"] = "Connection test passed"
+I18N_EN["连接测试失败"] = "Connection test failed"
+I18N_EN["测试已取消"] = "Test canceled"
+I18N_EN["连接成功"] = "Connected"
+I18N_EN["API 已响应"] = "API responded"
+I18N_PREFIX_EN["当前预设："] = "Current preset: "
+I18N_PREFIX_EN["正在测试预设："] = "Testing preset: "
+I18N_PREFIX_EN["本预设测试结果："] = "Preset test result: "
 I18N_EN["兼容接口"] = "Compatible endpoint"
 I18N_EN["API 地址"] = "API endpoint"
 I18N_EN["模型"] = "Model"

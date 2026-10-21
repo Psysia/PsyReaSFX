@@ -11449,6 +11449,7 @@ function factory_reset()
   clear_wave_cache()
   clear_similarity_cache()
   ai_semantic_delete_api_key()
+  ai_semantic_reset_presets()
   if state.ai_semantic_paths then
     os.remove(state.ai_semantic_paths.plaintext)
   end
@@ -11460,6 +11461,7 @@ function factory_reset()
     ai_api_key_status_error = false,
   })
   reset_interface_settings()
+  ai_semantic_initialize_presets()
   os.remove(CONFIG_FILE)
   os.remove(LIBRARIES_FILE)
   os.remove(DATABASE_FILE)
@@ -21148,13 +21150,8 @@ function ai_semantic_provider_label(provider)
 end
 
 function select_ai_semantic_provider(provider)
-  local url, model = ai_semantic_provider_defaults(provider)
-  AppState.apply({
-    ai_provider = provider,
-    ai_api_url = url,
-    ai_model = model,
-    config_dirty = true,
-  })
+  local ok, reason = ai_semantic_select_provider_preset(provider)
+  if not ok then set_status(reason, true) end
 end
 
 ----------------------------------------------------------------
@@ -21447,6 +21444,36 @@ function draw_settings_ai()
   )
   ImGui.Separator(ctx)
 
+  settings_section_title("API 预设", "每组预设分别保存地址、模型与加密密钥；切换不会覆盖其他预设。")
+  if state.ai_presets_error ~= "" then
+    ImGui.TextColored(ctx, COLOR.error, state.ai_presets_error)
+    return
+  end
+  local current_preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
+  ImGui.TextWrapped(ctx, "当前预设：" .. (current_preset and current_preset.name or "—"))
+  if dark_button("切换已保存预设", 160) then ImGui.OpenPopup(ctx, "##ai_preset_picker") end
+  if ImGui.BeginPopup(ctx, "##ai_preset_picker") then
+    for _, preset in ipairs(state.ai_presets or {}) do
+      local label = compact(preset.name, 40) .. " · " .. ai_semantic_provider_label(preset.provider)
+        .. (preset.saved and " · " .. translate_ui_text("已保存") or " · " .. translate_ui_text("待保存"))
+        .. "##ai_preset_" .. preset.id
+      if ImGui.Selectable(ctx, label, preset.id == state.ai_active_preset_id) then
+        ai_semantic_select_preset(preset.id)
+      end
+    end
+    ImGui.EndPopup(ctx)
+  end
+  if dark_button("新建预设", 112) then
+    local ok, reason = ai_semantic_new_preset(state.ai_provider)
+    if not ok then set_status(reason, true) end
+  end
+  ImGui.Text(ctx, "预设名称")
+  ImGui.SetNextItemWidth(ctx, -1)
+  local name_changed, preset_name = ImGui.InputText(ctx, "##ai_preset_name", state.ai_preset_name or "")
+  if name_changed then AppState.apply({ ai_preset_name = preset_name, ai_preset_status = "" }) end
+  ImGui.TextColored(ctx, ai_semantic_preset_dirty() and COLOR.warning or COLOR.success,
+    ai_semantic_preset_dirty() and "有未保存修改（切换时保留草稿，重启前请保存）" or "预设已保存")
+
   ImGui.Text(ctx, "API 服务商")
   if dark_button("DeepSeek", 112) then select_ai_semantic_provider("deepseek") end
   ImGui.SameLine(ctx)
@@ -21465,8 +21492,9 @@ function draw_settings_ai()
     state.ai_api_url or ""
   )
   if changed then
-    AppState.apply({ ai_api_url = api_url, config_dirty = true })
+    AppState.apply({ ai_api_url = api_url, config_dirty = true, ai_preset_status = "" })
   end
+  ImGui.TextWrapped(ctx, "当前需填写完整 Chat Completions 地址，例如 https://服务域名/v1/chat/completions。")
 
   ImGui.Text(ctx, "模型")
   ImGui.SetNextItemWidth(ctx, -1)
@@ -21477,29 +21505,33 @@ function draw_settings_ai()
     state.ai_model or ""
   )
   if changed then
-    AppState.apply({ ai_model = model, config_dirty = true })
+    AppState.apply({ ai_model = model, config_dirty = true, ai_preset_status = "" })
   end
 
   ImGui.TextDisabled(ctx, "常用模型")
   if state.ai_provider == "deepseek" then
     if dark_button("deepseek-flash", 142) then
-      AppState.apply({ ai_model = "deepseek-flash", config_dirty = true })
+      AppState.apply({ ai_model = "deepseek-flash", config_dirty = true, ai_preset_status = "" })
     end
     ImGui.SameLine(ctx)
     if dark_button("deepseek-v4-pro", 168) then
-      AppState.apply({ ai_model = "deepseek-v4-pro", config_dirty = true })
+      AppState.apply({ ai_model = "deepseek-v4-pro", config_dirty = true, ai_preset_status = "" })
     end
     ImGui.TextDisabled(ctx, "DeepSeek 官方 API 模型 ID；Flash 更快，V4 Pro 能力更强。")
   elseif state.ai_provider == "openai" then
     if dark_button("gpt-4.1-mini", 132) then
-      AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true })
+      AppState.apply({ ai_model = "gpt-4.1-mini", config_dirty = true, ai_preset_status = "" })
     end
     ImGui.SameLine(ctx)
     if dark_button("gpt-4.1", 106) then
-      AppState.apply({ ai_model = "gpt-4.1", config_dirty = true })
+      AppState.apply({ ai_model = "gpt-4.1", config_dirty = true, ai_preset_status = "" })
     end
   else
     ImGui.TextDisabled(ctx, "兼容接口请填写服务实际提供的模型 ID")
+  end
+  if dark_button("保存当前预设", 152) then ai_semantic_save_preset() end
+  if state.ai_preset_status ~= "" then
+    ImGui.TextColored(ctx, state.ai_preset_status_error and COLOR.error or COLOR.success, state.ai_preset_status)
   end
 
   ImGui.Separator(ctx)
@@ -21519,26 +21551,47 @@ function draw_settings_ai()
     state.ai_api_key_input or "",
     password_flags
   )
-  if changed then AppState.set("ai_api_key_input", api_key_input) end
+  if changed then AppState.apply({ ai_api_key_input = api_key_input, ai_preset_status = "" }) end
   if ImGui.IsItemActive(ctx) or ImGui.IsItemDeactivated(ctx) then
     AppState.set("keyboard_consumed", true)
   end
 
   if dark_button("加密保存 Key", 132) then
-    local ok, reason = ai_semantic_save_api_key(state.ai_api_key_input)
+    local ok, reason = false, "API Key 不能为空"
+    if trim(state.ai_api_key_input) ~= "" then ok, reason = ai_semantic_save_preset() end
     set_status(ok and "API Key 已安全保存" or ("保存 API Key 失败：" .. tostring(reason)), not ok)
   end
 
   ImGui.SameLine(ctx)
   if dark_button("删除已保存 Key", 142) then
-    ai_semantic_delete_api_key()
-    set_status("已删除保存的 API Key")
+    local ok, reason = ai_semantic_delete_api_key()
+    set_status(ok and "已删除保存的 API Key" or reason, not ok)
   end
 
   ImGui.SameLine(ctx)
   if dark_button("测试连接", 108) then
     local ok, reason = start_ai_semantic_connection_test()
     if not ok then set_status("连接测试失败：" .. tostring(reason), true) end
+  end
+
+  local test = (state.ai_preset_tests or {})[state.ai_active_preset_id]
+  local running = state.ai_semantic_session
+  if running and running.phase == "test_wait" and running.api_config then
+    local testing_preset = ai_semantic_preset_by_id(running.api_config.preset_id)
+    ImGui.TextWrapped(ctx, "正在测试预设：" .. (testing_preset and testing_preset.name or "—"))
+  elseif test then
+    if test.signature == ai_semantic_config_signature(ai_semantic_current_api_config()) then
+      ImGui.TextWrapped(ctx, "本预设测试结果：" .. translate_ui_text(test.message))
+      ImGui.TextColored(ctx, test.ok and COLOR.success or COLOR.error,
+        test.ok and "连接测试通过" or "连接测试失败")
+    else
+      ImGui.TextColored(ctx, COLOR.warning, "配置已修改，请重新测试连接")
+    end
+  else
+    ImGui.TextDisabled(ctx, "本预设尚未测试连接")
+  end
+  if state.ai_api_key_saved and not ai_semantic_preset_key_usable() then
+    ImGui.TextWrapped(ctx, "地址已更改，请新建预设保存其他接口的密钥")
   end
 
   ImGui.TextColored(
@@ -25286,6 +25339,7 @@ load_or_migrate_project_url()
 load_config()
 startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
+ai_semantic_initialize_presets()
 state.next_watch = reaper.time_precise() + state.watch_interval
 load_or_migrate_libraries()
 startup_checkpoint("读取音效库")
