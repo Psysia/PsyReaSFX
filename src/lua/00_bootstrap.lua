@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.10
+-- @version 0.9.0-beta7.11
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -87,6 +87,7 @@
 --   - Beta 7.8：移除 AI 远程重排与相关度列，翻页改为即时本地追加
 --   - Beta 7.9：修复 AI 完成状态清理、下一批加载和长文件波形峰值构建
 --   - Beta 7.10：Windows 超长路径 PCM/float WAV 改用分帧直接波形读取
+--   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -192,7 +193,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.10"
+local VERSION = "0.9.0 Beta 7.11"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1848,6 +1849,18 @@ I18N_EN = {
   ["扫描完成"] = "Scan complete",
   ["首次扫描"] = "Initial scan",
   ["恢复未完成导入"] = "Resume incomplete import",
+  ["接续未完成素材"] = "Resume unfinished assets",
+  ["正在打开素材库…"] = "Opening sound library…",
+  ["索引加载失败"] = "Catalog loading failed",
+  ["读取设置"] = "Loading settings",
+  ["读取音效库"] = "Loading libraries",
+  ["读取素材索引"] = "Loading asset catalog",
+  ["校验素材增量日志"] = "Validating saved asset changes",
+  ["恢复已保存的素材修改"] = "Restoring saved asset changes",
+  ["恢复素材库视图"] = "Restoring library view",
+  ["读取集合"] = "Loading collections",
+  ["读取试听历史"] = "Loading preview history",
+  ["完成素材库加载"] = "Finishing library load",
   ["添加音效库"] = "Add library",
   ["拖到 REAPER 编排区需要 SWS Extension"] =
     "Dragging to the REAPER arrange view requires SWS Extension",
@@ -1934,6 +1947,9 @@ I18N_EN = {
 }
 
 I18N_PREFIX_EN = {
+  ["已读取 "] = "Loaded ",
+  ["后台恢复扫描："] = "Resuming scan: ",
+  ["后台接续素材："] = "Resuming unfinished assets: ",
   ["已设置音效库封面："] = "Library artwork set: ",
   ["将重新查找音效库封面："] =
     "Library artwork will be rediscovered: ",

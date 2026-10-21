@@ -1387,6 +1387,8 @@ function load_scan_checkpoint()
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
+    elseif fields[1] == "phase" then
+      checkpoint.phase = fields[2]
     elseif fields[1] == "force_rebuild" then
       checkpoint.force_rebuild = fields[2] == "1"
     elseif fields[1] == "resume_allowed" then

@@ -101,28 +101,17 @@ end
 
 local function journal_split(line)
   local fields = {}
-  local current = {}
-  local escaped = false
   local text = tostring(line or "")
-  for index = 1, #text do
-    local character = text:sub(index, index)
-    if escaped then
-      current[#current + 1] = character == "t" and "\t"
-        or character == "r" and "\r"
-        or character == "n" and "\n"
-        or character
-      escaped = false
-    elseif character == "\\" then
-      escaped = true
-    elseif character == "\t" then
-      fields[#fields + 1] = table.concat(current)
-      current = {}
-    else
-      current[#current + 1] = character
+  for field in (text .. "\t"):gmatch("(.-)\t") do
+    if field:find("\\", 1, true) then
+      field = field:gsub("\\(.)", function(character)
+        return character == "t" and "\t"
+          or character == "r" and "\r"
+          or character == "n" and "\n" or character
+      end)
     end
+    fields[#fields + 1] = field
   end
-  if escaped then current[#current + 1] = "\\" end
-  fields[#fields + 1] = table.concat(current)
   return fields
 end
 
@@ -203,7 +192,7 @@ function encode_asset_journal(generation, fields, entries)
   return table.concat(lines, "\n") .. "\n"
 end
 
-function decode_asset_journal(text, expected_generation, expected_fields)
+function decode_asset_journal(text, expected_generation, expected_fields, checkpoint)
   text = tostring(text or "")
   if text == "" or text:sub(-1) ~= "\n" then
     return nil, "truncated_payload"
@@ -211,6 +200,7 @@ function decode_asset_journal(text, expected_generation, expected_fields)
   local lines = {}
   for line in text:gmatch("([^\n]*)\n") do
     lines[#lines + 1] = line:gsub("\r$", "")
+    if checkpoint and #lines % 64 == 0 then checkpoint() end
   end
   if #lines < 3 then return nil, "truncated_header" end
 
@@ -251,11 +241,12 @@ function decode_asset_journal(text, expected_generation, expected_fields)
       end
       entries[#entries + 1] = { op = operation, values = values }
     end
+    if checkpoint and index % 16 == 0 then checkpoint() end
   end
   return entries, nil, header
 end
 
-function read_asset_journal(path, expected_generation, expected_fields)
+function read_asset_journal(path, expected_generation, expected_fields, checkpoint)
   local file, open_error = io.open(path, "rb")
   if not file then return nil, open_error or "missing" end
   local text, read_error = file:read("*a")
@@ -266,7 +257,8 @@ function read_asset_journal(path, expected_generation, expected_fields)
   return decode_asset_journal(
     text,
     expected_generation,
-    expected_fields
+    expected_fields,
+    checkpoint
   )
 end
 
