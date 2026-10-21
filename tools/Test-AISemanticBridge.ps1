@@ -105,7 +105,7 @@ try {
         $httpStatusPath = Join-Path $work "http-status.json"
         [IO.File]::WriteAllText(
             $bodyPath,
-            '{"model":"deepseek-flash","messages":[{"role":"user","content":"test"}]}',
+            '{"model":"gpt-6-luna","messages":[{"role":"user","content":"JSON connection test"}],"max_completion_tokens":256,"reasoning_effort":"none","response_format":{"type":"json_object"},"stream":false}',
             $utf8
         )
         [IO.File]::WriteAllText(
@@ -162,7 +162,12 @@ try {
             $receivedBody = -join $buffer[0..([Math]::Max(0, $read - 1))]
             if ($requestLine -notmatch '^POST /chat/completions HTTP/') { throw "Unexpected HTTP request line." }
             if ($headers['Authorization'] -ne "Bearer $expected") { throw "AI bridge Authorization header was not restored from DPAPI." }
-            if ($receivedBody -notmatch 'deepseek-flash') { throw "AI bridge request body was not forwarded." }
+            $received = $receivedBody | ConvertFrom-Json
+            if ($received.model -ne 'gpt-6-luna' -or $received.max_completion_tokens -ne 256 -or
+                $received.reasoning_effort -ne 'none' -or $received.response_format.type -ne 'json_object' -or
+                $received.stream -ne $false -or $null -ne $received.max_tokens) {
+                throw "AI bridge modern gateway parameters were not forwarded intact."
+            }
             $responseBody = '{"choices":[{"message":{"content":"{\"ok\":true}"}}]}'
             $responseBytes = $utf8.GetBytes($responseBody)
             $responseHeader = "HTTP/1.1 200 OK`r`nContent-Type: application/json`r`nContent-Length: $($responseBytes.Length)`r`nConnection: close`r`n`r`n"

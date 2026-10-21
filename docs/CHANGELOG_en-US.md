@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.17
+
+### AI-compatible gateways and response diagnostics
+
+- Recognize gpt-6-luna (including dated snapshots) through custom gateways; send reasoning_effort none, max_completion_tokens, JSON mode and stream false instead of legacy max_tokens and fixed temperature.
+- Raise bounded probe/planner limits from 20/600 to 256/1200. Retry incomplete responses once at most, with 1024/2400 limits. These are caps, not fixed usage; retries may incur another API charge.
+- Distinguish truncation, reasoning-only answers, refusal/filtering and protocol mismatch. Never treat reasoning as the final result.
+- Recover JSON after quoted preambles and complete think tags while preserving valid JSON string content.
+- Parameter, response and probe-lifecycle simulation tests pass. No user credentials or live Kurogames gateway requests were used; server compatibility remains unverified.
+
 ## 0.9.0 Beta 7.16
 
 ### Preset deletion confirmation fix
@@ -1487,5 +1497,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.16/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_16_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.17/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_17_win_x64.zip
 

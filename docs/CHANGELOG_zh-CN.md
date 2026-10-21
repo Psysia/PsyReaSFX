@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.17
+
+### AI 兼容网关与响应诊断
+
+- 按模型识别 `gpt-6-luna`（含日期快照），自定义网关同样使用 `reasoning_effort: none`、`max_completion_tokens`、JSON mode 与非流式请求，不再发送旧 `max_tokens` 和固定温度。
+- 连接测试额度由 20 提高为 256，搜索计划由 600 提高为 1200；格式异常最多重试一次，测试重试上限 1024、搜索重试上限 2400。额度是上限，不是固定消耗，失败重试可能增加一次 API 费用。
+- 明确区分 token 截断、仅推理无最终答案、拒绝/过滤与非 Chat Completions 协议；不把推理文字冒充最终结果。
+- 修复前置说明中的未闭合引号阻挡 JSON 提取，支持跳过完整 think 标签；合法 JSON 字符串原样保留。
+- 模拟参数、响应和连接测试生命周期回归通过；未使用用户密钥或对 Kurogames 网关进行真实调用，不保证服务端实现完全兼容。
+
 ## 0.9.0 Beta 7.16
 
 ### 删除预设确认框修复
@@ -1362,5 +1372,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.16/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_16_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.17/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_17_win_x64.zip
 

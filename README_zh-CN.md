@@ -43,7 +43,7 @@
 https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 ```
 
-随后执行 `扩展 → ReaPack → 同步软件包`，直接搜索需要的工具并安装即可。使用 Beta 7.16 时，先为软件包启用
+随后执行 `扩展 → ReaPack → 同步软件包`，直接搜索需要的工具并安装即可。使用 Beta 7.17 时，先为软件包启用
 预发布版本并安装 `PsyReaSFX.lua`；如需 Windows x64 神经相似声音检索，再为同仓库
 中的独立可选包 [PsyReaSFX Neural Similarity][neural-download] 启用预发布并安装。
 
@@ -53,14 +53,14 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 EfficientAT 神经检索必须安装独立附加包，更新主脚本不会自动安装它。**
 AI 语义搜索是另一个功能，不依赖此包。
 
-**[直接下载完整神经包 ZIP · Beta 7.16 · Windows x64 · 约 42.4 MB][neural-download]**
+**[直接下载完整神经包 ZIP · Beta 7.17 · Windows x64 · 约 42.4 MB][neural-download]**
 （包含程序、模型与安装脚本；不要只下载 Release 中的裸 EXE，它不含模型。）
 
 - **推荐 ReaPack：** 使用上方仓库地址，同步后打开
   `扩展 → ReaPack → 浏览软件包 / Browse packages`，搜索
   [PsyReaSFX Neural Similarity][neural-download]，选中独立数据包（不是主程序）。
   右键勾选 **Enable pre-releases (bleeding-edge)**，在 **Versions** 选
-  `0.9.0-beta7.16`，取消 **Pin current version**，点击 **Apply / OK**，
+  `0.9.0-beta7.17`，取消 **Pin current version**，点击 **Apply / OK**，
   下载结束后关闭旧窗口并重新运行 PsyReaSFX。
 - **手动安装：** 下载上面的完整 ZIP，全部解压后双击
   `Install-NeuralSimilarity.cmd`，完成后重启 PsyReaSFX。便携版 REAPER 的资源目录
@@ -78,7 +78,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 1. 执行 `扩展 → ReaPack → 同步软件包`，再打开 `浏览软件包 / Browse packages`，搜索 `PsyReaSFX`。
 2. 右键主程序 `PsyReaSFX`（脚本包 `PsyReaSFX.lua`），勾选 **Enable pre-releases (bleeding-edge)**。
-3. 再次右键 → **Versions**，选择最新 `0.9.0-beta…`（当前 `0.9.0-beta7.16`）。不要勾选 **Pin current version**；已固定时先取消固定。
+3. 再次右键 → **Versions**，选择最新 `0.9.0-beta…`（当前 `0.9.0-beta7.17`）。不要勾选 **Pin current version**；已固定时先取消固定。
 4. 点击 **Apply**，或 **OK** 确认应用安装；下载完成后关闭旧 PsyReaSFX 窗口，从 REAPER 动作列表重新运行。
 
 <p><a href="website/assets/screenshots/reapack-enable-beta.jpg"><img src="website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack 右键菜单中的 Enable pre-releases 和 Versions：选择最新 Beta 后点击 Apply 或 OK" width="800"></a></p>
@@ -158,7 +158,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 | 通道 | 版本 | 说明 |
 |---|---|---|
 | 稳定版 | **0.8.5** | 推荐日常使用。 |
-| 预发布版 | **0.9.0 Beta 7.16** | 修复删除预设确认框层级与关闭；错误在框内显示，可重试或取消。 |
+| 预发布版 | **0.9.0 Beta 7.17** | 修复 gpt-6-luna 兼容网关参数、连接测试额度与响应诊断。 |
 | 可选组件 | [PsyReaSFX Neural Similarity][neural-download] | Windows x64 本地神经相似声音检索组件。 |
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
@@ -188,12 +188,12 @@ AI 语义搜索是另一个功能，不依赖此包。
 ReaPack 的 Versions 菜单仅保留最新 Beta、0.8.5 Stable 和 0.7.23 Stable；[可选神经组件][neural-download]仅保留最新 Beta。历史预发布仍可从 GitHub Releases 下载，不会删除已有安装或素材数据。
 
 - **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
-- **预发布通道：0.9.0 Beta 7.16** — 修复删除预设确认框的层级与关闭行为，失败原因在确认框内显示，可重试或取消。保留新建、切换、保存、删除工具栏、可靠的预设保存与独立加密 Key。
+- **预发布通道：0.9.0 Beta 7.17** — 自定义网关使用 `gpt-6-luna` 时自动关闭推理，使用 `max_completion_tokens` 并要求 JSON 输出；增大连接测试与搜索的有界额度，最多重试一次。错误区分截断、仅推理、内容过滤和协议不匹配。保留独立预设与删除确认修复；网关具体兼容性仍需实机验证。
 - **不会建立转码素材库** — 源音频只在内存中解码、下混并重采样为模型所需的 32 kHz，不会生成转换后的音频副本；持久缓存只保存紧凑的 320 维 FP16 embedding 和 HNSW 索引。
 
 0.9 预发布始终保留当前 15 维声学特征检索作为无需额外组件的基础模式。[神经相似度组件][neural-download]仅在本地运行，不上传用户音频；它对主程序可选，但对神经检索必需。
 
-Beta 7.16 包含独立的 **AI 语义搜索**。它与“查找相似声音”完全分离：顶部搜索框按 `Enter` 执行普通搜索，点击金色 AI 按钮执行语义搜索。AI 只把自然语言描述转换为中英文检索词；素材召回、排序和每批 120 条的分页追加均在本地完成。API 不再接收候选元数据，因此继续加载下一批无需等待网络，也不会再次产生 API 请求。音频、素材文件名、元数据、目录和文件路径均不会上传。
+Beta 7.17 包含独立的 **AI 语义搜索**。它与“查找相似声音”完全分离：顶部搜索框按 `Enter` 执行普通搜索，点击金色 AI 按钮执行语义搜索。AI 只把自然语言描述转换为中英文检索词；素材召回、排序和每批 120 条的分页追加均在本地完成。API 不再接收候选元数据，因此继续加载下一批无需等待网络，也不会再次产生 API 请求。音频、素材文件名、元数据、目录和文件路径均不会上传。
 
 > **ReaPack 安装方式：** 安装 `PsyReaSFX.lua` 即可使用主程序；Windows x64 用户如需神经检索，再从同一仓库安装第二个包 [PsyReaSFX Neural Similarity][neural-download]。两个包都由 ReaPack 独立更新，手动 ZIP 仅作为备用方案。
 
@@ -212,8 +212,8 @@ Beta 7.16 包含独立的 **AI 语义搜索**。它与“查找相似声音”�
 ### PsyReaSFX 下载
 
 - [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 7.16 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.16)
-- [Beta 7.16 完整神经组件 ZIP 精确下载][neural-download]
+- [PsyReaSFX 0.9.0 Beta 7.17 预发布](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.17)
+- [Beta 7.17 完整神经组件 ZIP 精确下载][neural-download]
 - [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [全部 Releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop 项目说明](desktop/README.md)
@@ -254,4 +254,4 @@ Copyright © 2026 Psysia. All rights reserved.
 
 仓库许可详情见 [LICENSE](LICENSE)，第三方资源继续遵循各自许可。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.16/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_16_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.17/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_17_win_x64.zip
