@@ -3911,8 +3911,9 @@ function process_import_recovery_audit()
       AppState.set("import_cancel_requested", false)
     else
       local checkpoint = load_scan_checkpoint()
-      if checkpoint and (checkpoint.reason == "恢复未完成导入"
-        or checkpoint.phase == "import") then clear_scan_checkpoint() end
+      if checkpoint and checkpoint.reason == "恢复未完成导入" then
+        clear_scan_checkpoint()
+      end
     end
   end
 end
@@ -4040,7 +4041,6 @@ function complete_scan_finalize(scan)
   state.scan = nil
 
   if #pending > 0 then
-    if scan.checkpoint_enabled then write_scan_checkpoint(scan, "import") end
     state.import_session = {
       label = scan.reason,
       roots = scan.roots,
@@ -25279,8 +25279,7 @@ if state.persistence_read_only then
     "数据格式只读保护已启用；浏览可用，扫描与保存已暂停",
     true
   )
-elseif interrupted_scan and interrupted_scan.reason ~= "恢复未完成导入"
-  and interrupted_scan.phase ~= "import" then
+elseif interrupted_scan and interrupted_scan.reason ~= "恢复未完成导入" then
   start_scan(
     "恢复中断扫描",
     interrupted_scan.roots,
