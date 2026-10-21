@@ -125,6 +125,8 @@ PsyReaSFX keeps normal acoustic search available without the optional neural com
 
 ### Development status
 
+The ReaPack Versions menu keeps only the latest Beta, 0.8.5 Stable and 0.7.23 Stable; the optional neural package keeps only the latest Beta. Older previews remain available on GitHub Releases. Existing installations and asset data are not deleted.
+
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
 - **Preview channel: 0.9.0 Beta 7.13** — a centered branded startup splash with lightweight cyan waveform motion, real loading stages, asset counts and elapsed time. Opens the library immediately after validation, without any minimum animation duration. Retains Beta 7.12 startup optimizations.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.

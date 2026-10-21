@@ -127,6 +127,8 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 ### 当前开发状态
 
+ReaPack 的 Versions 菜单仅保留最新 Beta、0.8.5 Stable 和 0.7.23 Stable；可选神经组件仅保留最新 Beta。历史预发布仍可从 GitHub Releases 下载，不会删除已有安装或素材数据。
+
 - **稳定通道：0.8.5** — 面向日常使用的默认 ReaPack 版本。
 - **预发布通道：0.9.0 Beta 7.13** — 居中品牌启动画面与青色波形动效，显示真实加载阶段、素材数量和已用时间。完整校验后立即进入素材库，不强制等待动画播放；保留 Beta 7.12 启动性能优化。
 - **不会建立转码素材库** — 源音频只在内存中解码、下混并重采样为模型所需的 32 kHz，不会生成转换后的音频副本；持久缓存只保存紧凑的 320 维 FP16 embedding 和 HNSW 索引。
