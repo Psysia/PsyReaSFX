@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.15
+-- @version 0.9.0-beta7.16
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -90,7 +90,9 @@
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 7.13：居中品牌启动画面与轻量青色波形动画，显示真实阶段、数量和已用时间
---   - Beta 7.15：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
+--   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
+--   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
+--   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -196,7 +198,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.15"
+local VERSION = "0.9.0 Beta 7.16"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -950,6 +952,7 @@ local state = {
   ai_preset_name = "",
   ai_preset_sequence = 0,
   ai_preset_delete_id = "",
+  ai_preset_delete_requested = false,
   ai_presets_loaded = false,
   ai_presets_json = nil,
   ai_presets_error = "",
@@ -36637,8 +36640,13 @@ function draw_settings_ai()
   end
   ImGui.SameLine(ctx, 0, 8)
   if dark_button("删除预设", preset_button_width) then
-    AppState.set("ai_preset_delete_id", state.ai_active_preset_id)
-    ImGui.OpenPopup(ctx, "##ai_preset_delete")
+    local deleting = ai_semantic_preset_by_id(state.ai_active_preset_id)
+    if deleting then
+      AppState.apply({ ai_preset_delete_id = deleting.id,
+        ai_preset_delete_requested = true, ai_preset_status = "" })
+    else
+      set_status("请先新建预设", true)
+    end
   end
   if ImGui.BeginPopup(ctx, "##ai_preset_picker") then
     for _, preset in ipairs(state.ai_presets or {}) do
@@ -36649,19 +36657,6 @@ function draw_settings_ai()
         ai_semantic_select_preset(preset.id)
       end
     end
-    ImGui.EndPopup(ctx)
-  end
-  if ImGui.BeginPopup(ctx, "##ai_preset_delete") then
-    local deleting = ai_semantic_preset_by_id(state.ai_preset_delete_id)
-    ImGui.TextWrapped(ctx, "确认删除预设：" .. (deleting and deleting.name or "—"))
-    ImGui.TextWrapped(ctx, "将删除此组配置与加密 Key，不影响其他预设。")
-    if dark_button("确认删除", 112) then
-      local ok, reason = ai_semantic_delete_preset(state.ai_preset_delete_id)
-      set_status(ok and "预设已删除" or reason, not ok)
-      ImGui.CloseCurrentPopup(ctx)
-    end
-    ImGui.SameLine(ctx)
-    if dark_button("取消", 80) then ImGui.CloseCurrentPopup(ctx) end
     ImGui.EndPopup(ctx)
   end
   if state.ai_preset_status ~= "" then
@@ -36826,6 +36821,45 @@ function draw_settings_ai()
     ctx,
     "API 请求可能由服务商计费；费用、配额和内容保留策略以所选服务商为准。"
   )
+end
+
+function draw_ai_preset_delete_popup()
+  -- Open and draw at the settings-modal level, outside settings_content.
+  -- A regular popup nested in that child can be blocked by the parent modal.
+  if state.ai_preset_delete_requested then
+    AppState.set("ai_preset_delete_requested", false)
+    ImGui.OpenPopup(ctx, "删除预设##ai_preset_delete")
+  end
+  if not ImGui.BeginPopupModal(ctx, "删除预设##ai_preset_delete", nil,
+    ImGui.WindowFlags_AlwaysAutoResize) then return end
+  local id = state.ai_preset_delete_id
+  local deleting = ai_semantic_preset_by_id(id)
+  if not deleting then
+    AppState.set("ai_preset_delete_id", "")
+    ImGui.CloseCurrentPopup(ctx)
+  else
+    ImGui.TextWrapped(ctx, "确认删除预设：" .. deleting.name)
+    ImGui.TextWrapped(ctx, "将删除此组配置与加密 Key，不影响其他预设。")
+    if dark_button("确认删除", 112) then
+      local ok, reason = ai_semantic_delete_preset(id)
+      set_status(ok and "预设已删除" or reason, not ok)
+      -- A key cleanup error can follow successful metadata removal. Close the
+      -- obsolete confirmation then; report that cleanup error in settings.
+      if ok or not ai_semantic_preset_by_id(id) then
+        AppState.set("ai_preset_delete_id", "")
+        ImGui.CloseCurrentPopup(ctx)
+      end
+    end
+    ImGui.SameLine(ctx)
+    if dark_button("取消", 80) then
+      AppState.set("ai_preset_delete_id", "")
+      ImGui.CloseCurrentPopup(ctx)
+    end
+    if state.ai_preset_status_error and state.ai_preset_status ~= "" then
+      ImGui.TextColored(ctx, COLOR.error, state.ai_preset_status)
+    end
+  end
+  ImGui.EndPopup(ctx)
 end
 
 function color_edit_flags()
@@ -39519,6 +39553,7 @@ function draw_settings_popup()
   end
 
   ImGui.EndChild(ctx)
+  draw_ai_preset_delete_popup()
   ImGui.Separator(ctx)
 
   local button_width = 132

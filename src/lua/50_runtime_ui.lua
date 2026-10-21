@@ -21465,8 +21465,13 @@ function draw_settings_ai()
   end
   ImGui.SameLine(ctx, 0, 8)
   if dark_button("删除预设", preset_button_width) then
-    AppState.set("ai_preset_delete_id", state.ai_active_preset_id)
-    ImGui.OpenPopup(ctx, "##ai_preset_delete")
+    local deleting = ai_semantic_preset_by_id(state.ai_active_preset_id)
+    if deleting then
+      AppState.apply({ ai_preset_delete_id = deleting.id,
+        ai_preset_delete_requested = true, ai_preset_status = "" })
+    else
+      set_status("请先新建预设", true)
+    end
   end
   if ImGui.BeginPopup(ctx, "##ai_preset_picker") then
     for _, preset in ipairs(state.ai_presets or {}) do
@@ -21477,19 +21482,6 @@ function draw_settings_ai()
         ai_semantic_select_preset(preset.id)
       end
     end
-    ImGui.EndPopup(ctx)
-  end
-  if ImGui.BeginPopup(ctx, "##ai_preset_delete") then
-    local deleting = ai_semantic_preset_by_id(state.ai_preset_delete_id)
-    ImGui.TextWrapped(ctx, "确认删除预设：" .. (deleting and deleting.name or "—"))
-    ImGui.TextWrapped(ctx, "将删除此组配置与加密 Key，不影响其他预设。")
-    if dark_button("确认删除", 112) then
-      local ok, reason = ai_semantic_delete_preset(state.ai_preset_delete_id)
-      set_status(ok and "预设已删除" or reason, not ok)
-      ImGui.CloseCurrentPopup(ctx)
-    end
-    ImGui.SameLine(ctx)
-    if dark_button("取消", 80) then ImGui.CloseCurrentPopup(ctx) end
     ImGui.EndPopup(ctx)
   end
   if state.ai_preset_status ~= "" then
@@ -21654,6 +21646,45 @@ function draw_settings_ai()
     ctx,
     "API 请求可能由服务商计费；费用、配额和内容保留策略以所选服务商为准。"
   )
+end
+
+function draw_ai_preset_delete_popup()
+  -- Open and draw at the settings-modal level, outside settings_content.
+  -- A regular popup nested in that child can be blocked by the parent modal.
+  if state.ai_preset_delete_requested then
+    AppState.set("ai_preset_delete_requested", false)
+    ImGui.OpenPopup(ctx, "删除预设##ai_preset_delete")
+  end
+  if not ImGui.BeginPopupModal(ctx, "删除预设##ai_preset_delete", nil,
+    ImGui.WindowFlags_AlwaysAutoResize) then return end
+  local id = state.ai_preset_delete_id
+  local deleting = ai_semantic_preset_by_id(id)
+  if not deleting then
+    AppState.set("ai_preset_delete_id", "")
+    ImGui.CloseCurrentPopup(ctx)
+  else
+    ImGui.TextWrapped(ctx, "确认删除预设：" .. deleting.name)
+    ImGui.TextWrapped(ctx, "将删除此组配置与加密 Key，不影响其他预设。")
+    if dark_button("确认删除", 112) then
+      local ok, reason = ai_semantic_delete_preset(id)
+      set_status(ok and "预设已删除" or reason, not ok)
+      -- A key cleanup error can follow successful metadata removal. Close the
+      -- obsolete confirmation then; report that cleanup error in settings.
+      if ok or not ai_semantic_preset_by_id(id) then
+        AppState.set("ai_preset_delete_id", "")
+        ImGui.CloseCurrentPopup(ctx)
+      end
+    end
+    ImGui.SameLine(ctx)
+    if dark_button("取消", 80) then
+      AppState.set("ai_preset_delete_id", "")
+      ImGui.CloseCurrentPopup(ctx)
+    end
+    if state.ai_preset_status_error and state.ai_preset_status ~= "" then
+      ImGui.TextColored(ctx, COLOR.error, state.ai_preset_status)
+    end
+  end
+  ImGui.EndPopup(ctx)
 end
 
 function color_edit_flags()
@@ -24347,6 +24378,7 @@ function draw_settings_popup()
   end
 
   ImGui.EndChild(ctx)
+  draw_ai_preset_delete_popup()
   ImGui.Separator(ctx)
 
   local button_width = 132

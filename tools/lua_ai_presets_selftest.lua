@@ -306,4 +306,69 @@ state.ai_api_url, state.ai_model = "https://ui.example/v1/chat/completions", "ui
 assert(ai_semantic_save_settings())
 assert(ai_semantic_preset_by_id(state.ai_active_preset_id).provider == "openai")
 assert(not ai_semantic_preset_dirty())
+
+-- Model the settings modal's child/window stack: an ordinary confirmation
+-- popup inside the child is not an interactive modal. Render the real helper
+-- after EndChild and require a nested modal with a stable captured group ID.
+local popup_open, popup_inside, parent_child = false, false, true
+local captured_messages = {}
+ImGui.OpenPopup = function(_, label)
+  assert(not parent_child, "confirmation must open outside settings_content")
+  assert(label == "删除预设##ai_preset_delete")
+  popup_open = true
+end
+ImGui.BeginPopupModal = function(_, label)
+  assert(not parent_child and label == "删除预设##ai_preset_delete")
+  popup_inside = popup_open
+  return popup_inside
+end
+ImGui.CloseCurrentPopup = function()
+  assert(popup_inside, "close the confirmation, not its settings parent")
+  popup_open = false
+end
+ImGui.EndPopup = function() assert(popup_inside) popup_inside = false end
+ImGui.TextColored = function(_, _, message) captured_messages[#captured_messages + 1] = message end
+local preset_before_delete = state.ai_active_preset_id
+clicked_button = "删除预设"
+draw_settings_ai()
+assert(state.ai_preset_delete_requested and state.ai_preset_delete_id == preset_before_delete)
+assert(not popup_open)
+parent_child = false
+clicked_button = ""
+draw_ai_preset_delete_popup()
+assert(popup_open and not state.ai_preset_delete_requested)
+clicked_button = "取消"
+draw_ai_preset_delete_popup()
+assert(not popup_open and state.ai_preset_delete_id == "")
+assert(ai_semantic_preset_by_id(preset_before_delete))
+
+-- Failure is visible in the confirmation; it can be retried and then closes.
+state.ai_preset_delete_id, state.ai_preset_delete_requested = preset_before_delete, true
+clicked_button = ""
+draw_ai_preset_delete_popup()
+save_config = function() return false end
+clicked_button = "确认删除"
+draw_ai_preset_delete_popup()
+assert(popup_open and ai_semantic_preset_by_id(preset_before_delete))
+assert(captured_messages[#captured_messages] == "预设删除失败，请检查配置写入权限")
+save_config = real_save
+assert(ai_semantic_select_preset("legacy")) -- captured deletion identity stays fixed
+draw_ai_preset_delete_popup()
+assert(not popup_open and state.ai_preset_delete_id == "")
+assert(not ai_semantic_preset_by_id(preset_before_delete))
+assert(ai_semantic_preset_by_id("legacy"))
+local persisted_after_delete = neural_json_decode(persisted)
+for _, preset in ipairs(persisted_after_delete.presets) do assert(preset.id ~= preset_before_delete) end
+clicked_button = ""
+draw_ai_preset_delete_popup()
+assert(not popup_open) -- no reopen on the following frame
+
+-- The final group's removal also closes instead of leaving a stale dialog.
+state.ai_preset_delete_id, state.ai_preset_delete_requested = "legacy", true
+clicked_button = "确认删除"
+local popup_remove = os.remove
+os.remove = function(path) virtual_files[path] = nil return true end
+draw_ai_preset_delete_popup()
+os.remove = popup_remove
+assert(not popup_open and #state.ai_presets == 0)
 print("Lua AI presets self-test passed (migration, independent keys, drafts, reload, endpoint safety, request isolation)")

@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.16
+
+### 删除预设确认框修复
+
+- 删除确认改为设置窗口层级的独立模态框，不再嵌于滚动内容子窗口中的普通弹窗。
+- 成功删除后清除确认目标并关闭弹窗；取消保留原预设，下一帧不重复打开。
+- 删除受阻时在确认框内显示原因，保留配置，支持重试；配置已删除但密钥清理失败时关闭过期确认并报告错误。
+- 增加真实弹窗绘制函数的交互回归，覆盖取消、失败重试、固定删除目标及最后一组删除。
+
 ## 0.9.0 Beta 7.15
 
 ### 预设管理操作与保存修复
@@ -1353,5 +1362,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.15/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_15_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.16/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_16_win_x64.zip
 
