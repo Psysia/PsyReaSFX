@@ -905,6 +905,19 @@ h2 {
 .comparison-table tbody td:last-child { color: #d6f6ff; background: rgba(25, 216, 255, .035); }
 .comparison-links { display: flex; flex-wrap: wrap; gap: 16px 30px; margin-top: 24px; }
 
+[data-neural-download],
+.beta-feature-requirements a { color: var(--cyan); text-decoration: underline; text-underline-offset: 3px; }
+.button[data-neural-download] { color: #00161c; text-decoration: none; }
+.neural-download-callout { display: grid; justify-items: center; gap: 20px; padding: 28px; border: 1px solid var(--line-bright); border-radius: var(--radius); background: var(--panel); text-align: center; }
+.neural-download-callout p { margin: 0; max-width: 800px; color: var(--muted); font-size: 14px; }
+.neural-install-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
+.neural-path { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.neural-after-install { margin-top: 24px; color: var(--muted); font-size: 14px; }
+@media (max-width: 760px) {
+  .neural-install-grid { grid-template-columns: 1fr; }
+  .neural-download-callout { padding: 22px 18px; }
+}
+
 .beta-install-guide {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, .9fr);

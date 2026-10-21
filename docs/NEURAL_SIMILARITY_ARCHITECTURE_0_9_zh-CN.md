@@ -1,5 +1,12 @@
 # PsyReaSFX 0.9 神经音频相似度架构
 
+**使用神经检索必须安装 [PsyReaSFX Neural Similarity 完整神经包 ZIP][neural-download]**
+（当前 Beta 7.13，Windows x64，约 42.4 MB，含程序、模型与安装脚本）。
+推荐在 ReaPack 浏览软件包中搜索同名独立数据包，启用预发布、选择最新 Beta，
+点击 Apply / OK 后重启；手动方式为完整解压 ZIP 并运行
+`Install-NeuralSimilarity.cmd`。[完整安装步骤](https://psysia.github.io/PsyReaSFX/#neural-install)。
+基础声学相似检索与独立 AI 语义搜索不依赖此包。
+
 更新日期：2026-09-15
 状态：Beta 7；Lua 可选接入、进度、取消、混合重排、故障回退、通用媒体解码/重采样及 ReaPack 可选组件安装已实现
 
@@ -177,7 +184,7 @@ HNSW 索引使用 `PSYHNSW1` magic，并保存格式版本、profile、模型哈
 - REAPER UI 在推理和建索引期间保持可交互，试听优先级高于后台分析；
 - helper、ONNX Runtime、模型权重和 HNSW 依赖均有固定版本、SHA-256、许可证和
   可复现构建记录；
-- ReaPack 默认安装仍可不包含神经组件，用户必须明确选择下载体积更大的可选包。
+- ReaPack 默认安装仍可不包含[神经组件][neural-download]，用户必须明确选择下载体积更大的可选包。
 
 ## 9. 实施顺序
 
@@ -195,3 +202,5 @@ HNSW 索引使用 `PSYHNSW1` magic，并保存格式版本、profile、模型哈
 - EfficientAT_HEAR：<https://github.com/fschmid56/EfficientAT_HEAR>
 - EfficientAT 论文：<https://arxiv.org/abs/2211.04772>
 - Low-complexity Audio Embedding Extractors：<https://arxiv.org/abs/2303.01879>
+
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip

@@ -5,6 +5,12 @@
 
 ## 1. 产品边界
 
+当前 0.9 Beta 在同一“相似声音”入口自动选择两种引擎：下文描述的是内置
+15 维声学检索；EfficientAT 神经检索必须安装
+[PsyReaSFX Neural Similarity 完整包 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip)。
+Windows x64 安装方式见[精确图解与步骤](https://psysia.github.io/PsyReaSFX/#neural-install)；
+组件不可用时自动回退声学检索。AI 语义搜索是独立的描述检索功能，不依赖此包。
+
 相似声音必须比较音频内容，不能把文件名、UCS 分类或用户元数据相似冒充为
 声音相似。Beta 4 的入口位于素材右键菜单和下方预览区“更多操作”，用户可以选择：
 

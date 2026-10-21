@@ -6,8 +6,12 @@
         <description><![CDATA[
 PsyReaSFX is a high-performance sound asset browser, audition, waveform,
 metadata, region, collection, REAPER insertion, and Transfer workflow.
+Neural similar-sound search requires the separate Windows x64 data package
+PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
+        <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
       <version name="0.9.0-beta7.13" author="Psysia" time="2026-10-21T03:25:01Z">
         <changelog><![CDATA[
@@ -50,8 +54,14 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
 Optional Windows x64 EfficientAT embedding and HNSW component for PsyReaSFX.
 Runs locally, never uploads audio, and keeps rebuildable caches outside the package.
 Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating.
+In Browse packages, enable pre-releases for this data package, select the latest
+Beta in Versions, unpin if needed, then Apply / OK. Neural search requires it;
+the main script update does not install it. The manual ZIP includes the model
+and Install-NeuralSimilarity.cmd; the standalone EXE does not include the model.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
+        <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">ReaPack and manual installation steps / 安装说明</link>
       </metadata>
       <version name="0.9.0-beta7.13" author="Psysia" time="2026-10-21T03:25:01Z">
         <changelog><![CDATA[

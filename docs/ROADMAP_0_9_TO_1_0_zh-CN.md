@@ -17,7 +17,7 @@ Beta 4 已按 `SIMILARITY_ARCHITECTURE_0_9_zh-CN.md` 建立基于时长、包络
 动态、频段与 tonality 的内容相似检索、解释标签和紧凑缓存。Beta 4.5 已完成波形
 定位试听与反向完整试听边界修复。Beta 5 已发布可选本地 EfficientAT embedding、
 增量缓存、HNSW 召回、Lua 混合重排与透明回退；Beta 6 已补齐不落盘的通用媒体
-解码/重采样、动态格式能力探测与单文件失败隔离；Beta 6.1 已将可选神经组件
+解码/重采样、动态格式能力探测与单文件失败隔离；Beta 6.1 已将[可选神经组件][neural-download]
 接入 ReaPack，支持在 REAPER 内安装和更新；Beta 7.9 已更新独立 AI 语义搜索的 DeepSeek 模型、设置反馈与旧日志兼容，修复后台资源冲突、完成状态及 JSON Output 兼容问题，通过两级召回优化大型素材库性能，并加入按 120 条本地分页；AI 只生成检索词，素材元数据不再上传。Beta 7.10 为 Windows 超长路径 PCM/float WAV 增加内置分帧波形读取，绕过 REAPER 峰值接口在 260 字符以上路径持续返回 0 的限制。首版
 支持 DeepSeek、OpenAI 和兼容接口。Beta 7.11 已加入窗口优先显示、索引与增量日志分帧加载，以及未完成索引素材直接接续；使用真实 60,548 条索引完成只读加载验证，REAPER 完整实机性能验收仍需继续。完整 FFT 时频图需单独
 冻结需求，DSP 尚未进入实现。
@@ -119,3 +119,5 @@ embedding，使缺少有效文件名和描述的素材也能参与语义检索�
 3. 持续执行真实环境和大型素材库验收；稳定性修复按需回移 0.8.x 主分支。
 4. 冻结并验收完整 0.9 功能范围，再发布公开版本。
 5. 同步 Desktop，并完成 1.0 Stable 发布门槛。
+
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip

@@ -55,22 +55,34 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
 <p><a href="../website/assets/screenshots/reapack-enable-beta.jpg"><img src="../website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack：启用预发布，在 Versions 选择最新 Beta，再点击 Apply 或 OK" width="800"></a></p>
 
 新增功能见 [README 版本功能对比](../README_zh-CN.md#版本功能对比)。
-更新主脚本无需重建音效库。AI 语义搜索无需神经组件，但需要在设置中填写自己的
+更新主脚本无需重建音效库。AI 语义搜索无需[神经组件][neural-download]，但需要在设置中填写自己的
 API Key 和模型；神经相似检索则需要下面的独立可选包。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
 
 ### 可选神经相似度组件（Beta 7.13）
 
-Windows x64 用户在同步仓库后，打开 ReaPack 软件包浏览器，搜索并安装第二个包
-`PsyReaSFX Neural Similarity`。先为该包启用预发布版本并选择
-`0.9.0-beta7.13`；它与 `PsyReaSFX.lua` 分开安装。ReaPack 会把程序和模型放到
-REAPER 的 `Data` 目录，并独立负责后续更新与卸载。安装或更新后请重新启动
-PsyReaSFX。
+**神经检索必须单独安装附加包；只更新 PsyReaSFX.lua 不会自动安装。
+基础 15 维声学检索与 AI 语义搜索都不需要此包。**
 
-该组件为自包含程序，不要求另装 .NET，只在本机处理音频且不会上传文件。GitHub
-Release 仍提供 ZIP 和 `Install-NeuralSimilarity.cmd` 作为手动备用方式；便携版也
-可以按 ZIP 内说明显式指定资源目录。
+**[完整神经包 ZIP 精确下载 · Beta 7.13 · Windows x64 · 约 42.4 MB][neural-download]**
+包含程序、模型和安装脚本；不要只下载裸 EXE。
+
+推荐方式：同步仓库，打开 `扩展 → ReaPack → 浏览软件包 / Browse packages`，
+搜索独立数据包 [PsyReaSFX Neural Similarity][neural-download]。右键启用
+**Enable pre-releases (bleeding-edge)**，在 **Versions** 选择 `0.9.0-beta7.13`，
+取消 **Pin current version**，点击 **Apply / OK**。下载结束后关闭旧窗口，
+重新运行 PsyReaSFX。ReaPack 会把程序和模型安装到
+`<REAPER 资源目录>\Data\PsyReaSFX\neural_similarity\`，独立负责后续更新与卸载。
+
+手动备用方式：下载[完整 ZIP][neural-download]，全部解压后双击
+`Install-NeuralSimilarity.cmd`，完成后重启 PsyReaSFX；默认安装到
+`%APPDATA%\REAPER\Scripts\PsyReaSFX\neural_similarity\`。便携版请按
+[安装说明](../neural/package/README_zh-CN.md#手动-zip-备用方式)显式指定资源目录。
+
+两种安装方式任选一种即可。无需另装 Python 或 .NET，只在本机处理音频，
+不上传文件，不生成转换后的音频副本。首次使用会建立可取消的特征缓存与 HNSW
+索引；组件缺失或异常时自动回退基础声学检索。
 
 ### 手动安装
 
@@ -670,7 +682,7 @@ Beta 7.13 显示居中品牌启动画面、青色波形动效、真实加载阶�
 
 ### 神经相似度没有启用
 
-- 确认已安装 ReaPack 可选包 `PsyReaSFX Neural Similarity`，并在安装后重新启动 PsyReaSFX。
+- 确认已安装 ReaPack 可选包 [PsyReaSFX Neural Similarity][neural-download]，并在安装后重新启动 PsyReaSFX。
 - 检查素材扩展名是否在当前组件能力列表中；OGG、Opus、WavPack、CAF 需要 FFmpeg，其余文档列出的格式使用 Windows 解码能力。
 - 删除或损坏的模型、协议版本不匹配、任务失败和超时都会安全回退到基础算法。
 - 可以在 ReaPack 中重新安装组件包（或重新运行手动备用安装脚本）以覆盖程序与模型；已有 embedding/HNSW 缓存会按文件签名复用或重建。
@@ -703,3 +715,5 @@ GitHub Release 仍永久保留 0.7.23 Stable ZIP。
 3. 可重复的具体步骤；
 4. 完整 ReaScript 报错文字；
 5. 如果属于视觉问题，提供截图或短录屏。
+
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip

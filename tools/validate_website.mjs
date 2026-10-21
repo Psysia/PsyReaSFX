@@ -84,9 +84,89 @@ for (const required of [
   'data-neural-download',
   'id="beta-install"',
   'id="version-comparison"',
+  'id="neural-install"',
   'assets/screenshots/reapack-enable-beta.jpg',
 ]) {
   if (!html.includes(required)) fail(`Missing required homepage marker: ${required}`);
+}
+
+const neuralZipPattern = /^https:\/\/github\.com\/Psysia\/PsyReaSFX\/releases\/download\/v[\d.]+-beta[\d.]+\/PsyReaSFX_Neural_Similarity_v[\d_]+_beta[\d_]+_win_x64\.zip$/;
+const fallbackNeuralUrl = vm.runInNewContext("NEURAL_FALLBACK_URL", sandbox);
+if (!neuralZipPattern.test(fallbackNeuralUrl)) fail("Neural fallback must be a complete release ZIP");
+for (const source of [html, ...Object.values(messages.en), ...Object.values(messages.zh)]) {
+  for (const match of source.matchAll(/<a\b([^>]*\bdata-neural-download\b[^>]*)>/g)) {
+    const href = match[1].match(/\bhref="([^"]+)"/)?.[1];
+    if (href !== fallbackNeuralUrl) fail(`Neural download link must target the verified ZIP: ${href}`);
+  }
+}
+
+try {
+  const links = [{ href: "" }];
+  const languageElement = {
+    dataset: { i18n: "compareAddon" },
+    set innerHTML(value) {
+      // Model a language switch replacing the nested download link.
+      links[0].href = value.match(/href="([^"]+)"/)?.[1] || "";
+    },
+  };
+  sandbox.document.documentElement = {};
+  sandbox.document.querySelectorAll = (selector) =>
+    selector === "[data-neural-download]" ? links
+      : selector === "[data-i18n]" ? [languageElement] : [];
+  sandbox.localStorage = { setItem() {} };
+  sandbox.__neuralFixture = {
+    assets: [
+      { name: "PsyReaSFX_v0_9_0_beta99_1.zip", browser_download_url: "https://example.com/lua.zip" },
+      { name: "PsyReaSFX.NeuralSidecar_v0_9_0_beta99_1_win_x64.exe", browser_download_url: "https://example.com/bare.exe" },
+      {
+        name: "PsyReaSFX_Neural_Similarity_v0_9_0_beta99_1_win_x64.zip",
+        browser_download_url: fallbackNeuralUrl.replaceAll("7.13", "99.1").replaceAll("7_13", "99_1"),
+      },
+    ],
+  };
+  vm.runInNewContext(`
+    updateNeuralDownload(null);
+    if (neuralDownloadUrl !== NEURAL_FALLBACK_URL) throw new Error("Missing release must keep ZIP fallback");
+    updateNeuralDownload(__neuralFixture);
+    if (neuralDownloadUrl !== __neuralFixture.assets[2].browser_download_url) throw new Error("Wrong neural asset");
+    applyLanguage("zh");
+    applyLanguage("en");
+    updateNeuralDownload({ assets: [__neuralFixture.assets[0], __neuralFixture.assets[1]] });
+  `, sandbox);
+  if (links[0].href !== sandbox.__neuralFixture.assets[2].browser_download_url) {
+    throw new Error("Language switching or Lua-only release lost the complete neural ZIP");
+  }
+} catch (error) {
+  fail(`Neural download runtime regression failed: ${error.message}`);
+}
+
+for (const relative of [
+  "README.md", "README_zh-CN.md", "docs/USER_GUIDE_en-US.md", "docs/USER_GUIDE_zh-CN.md",
+  "neural/README.md", "neural/package/README.md", "neural/package/README_zh-CN.md",
+  "docs/CHANGELOG_en-US.md", "docs/CHANGELOG_zh-CN.md",
+  "docs/NEURAL_SIMILARITY_ARCHITECTURE_0_9_zh-CN.md", "docs/ROADMAP_0_9_TO_1_0_zh-CN.md",
+]) {
+  const markdown = fs.readFileSync(path.join(repositoryRoot, relative), "utf8");
+  const references = markdown.match(/^\[neural-download\]: (.+)$/gm) || [];
+  if (references.length !== 1 || references[0] !== `[neural-download]: ${fallbackNeuralUrl}`) {
+    fail(`Missing or stale precise neural download reference: ${relative}`);
+  }
+  if (/\x60PsyReaSFX Neural Similarity\x60|\*\*PsyReaSFX Neural Similarity\*\*/.test(markdown)) {
+    fail(`Unlinked neural package mention: ${relative}`);
+  }
+  if (/\[[^\]\n]*\[[^\]\n]*\]\[neural-download\]\]\(/.test(markdown)) {
+    fail(`Nested neural download link: ${relative}`);
+  }
+}
+
+const reapackIndex = fs.readFileSync(path.join(repositoryRoot, "index.xml"), "utf8");
+for (const name of ["PsyReaSFX.lua", "PsyReaSFX Neural Similarity"]) {
+  const metadata = reapackIndex.match(
+    new RegExp(`<reapack name="${name.replace(".", "\\.")}"[^>]*>\\s*<metadata>([\\s\\S]*?)<\\/metadata>`),
+  )?.[1];
+  if (!metadata?.includes(`href="${fallbackNeuralUrl}"`)) {
+    fail(`ReaPack package metadata needs the complete ZIP download: ${name}`);
+  }
 }
 
 const comparison = html.match(/<table class="comparison-table">([\s\S]*?)<\/table>/)?.[1];
