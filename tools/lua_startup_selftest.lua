@@ -45,11 +45,12 @@ assert(file_probes == 0 and persisted.last_seen == 123, "trusted database identi
 ensure_asset_identity(persisted)
 assert(file_probes == 1 and persisted.last_seen >= 123, "live identity updates must retain file verification")
 
-local database_row_source = region(runtime, "function database_asset_from_values(headers, values)", "function database_asset_values(asset)")
+local database_row_source = region(runtime, "function database_asset_from_line(headers, line)", "function database_asset_values(asset)")
 assert(database_row_source:find("ensure_asset_identity(asset, false)", 1, true), "database rows must not probe the filesystem at startup")
 
-local database_load_source = region(runtime, "function load_database()", "function database_asset_from_values(headers, values)")
-assert(database_load_source:find("add_or_update_asset(asset, false)", 1, true), "database loading must preserve the no-probe contract")
+local database_load_source = region(runtime, "function load_database()", "function database_asset_from_line(headers, line)")
+assert(database_load_source:find("add_loaded_database_asset(asset, key)", 1, true), "snapshot loading must use the normalized bulk path")
+assert(region(catalog, "function add_loaded_database_asset(asset, key)", "function rebuild_assets()"):find("add_or_update_asset(asset, false)", 1, true), "duplicate snapshot rows must retain no-probe merge semantics")
 
 local history_source = region(runtime, "function load_history()", "function save_history()")
 assert(history_source:find("ensure_asset_identity(asset, false)", 1, true), "history loading must not re-probe catalog files")

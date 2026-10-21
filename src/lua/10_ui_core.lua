@@ -930,6 +930,18 @@ function is_ignored_directory_name(name)
 end
 
 function is_ignored_media_path(path)
+  -- Most indexed paths contain no system-metadata markers. Avoid splitting,
+  -- trimming and lowercasing every directory segment for that common case.
+  local raw = tostring(path or "")
+  local lower = raw:lower()
+  if not lower:find("._", 1, true)
+    and not lower:find("__macosx", 1, true)
+    and not lower:find(".appledouble", 1, true)
+    and not lower:find(".spotlight-v100", 1, true)
+    and not lower:find(".trashes", 1, true)
+    and not lower:find("@eadir", 1, true) then
+    return false
+  end
   local name = basename(path or "")
 
   -- macOS writes AppleDouble resource-fork metadata as `._filename` on

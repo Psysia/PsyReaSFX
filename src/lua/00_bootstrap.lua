@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.11
+-- @version 0.9.0-beta7.12
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -88,6 +88,7 @@
 --   - Beta 7.9：修复 AI 完成状态清理、下一批加载和长文件波形峰值构建
 --   - Beta 7.10：Windows 超长路径 PCM/float WAV 改用分帧直接波形读取
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
+--   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -193,7 +194,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.11"
+local VERSION = "0.9.0 Beta 7.12"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1851,6 +1852,9 @@ I18N_EN = {
   ["恢复未完成导入"] = "Resume incomplete import",
   ["接续未完成素材"] = "Resume unfinished assets",
   ["正在打开素材库…"] = "Opening sound library…",
+  ["已读取 %d 条素材"] = "Loaded %d assets",
+  ["已用 %.1f 秒"] = "Elapsed %.1f s",
+  ["素材预览 · 完整索引校验后开放搜索与试听"] = "Asset preview · search and audition unlock after full catalog validation",
   ["索引加载失败"] = "Catalog loading failed",
   ["读取设置"] = "Loading settings",
   ["读取音效库"] = "Loading libraries",
@@ -2256,6 +2260,8 @@ I18N_EN["当前批次没有可显示的 AI 语义结果。"] =
   "The current batch has no AI semantic results to display."
 
 I18N_PATTERNS_EN = {
+  { "^已读取 (%d+) 条素材$", "Loaded %1 assets" },
+  { "^已用 ([%d%.]+) 秒$", "Elapsed %1 s" },
   {
     "^AI 语义结果  (%d+)$",
     "AI semantic results  %1",

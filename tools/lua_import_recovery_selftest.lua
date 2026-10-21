@@ -56,6 +56,7 @@ assert(closed == 1 and writes == 0, "closing during loading must close reads wit
 local ended, drawn = 0, 0
 function push_theme() return 0, 0 end
 function pop_theme() end
+function translate_ui_text(value) return value end
 ImGui = {
   SetNextWindowSize = function() end,
   Cond_FirstUseEver = 1, WindowFlags_NoCollapse = 1,
@@ -73,4 +74,31 @@ assert(ended == 1 and drawn == 1)
 ImGui.Begin = function() return false, true end
 draw_main()
 assert(ended == 1, "ReaImGui hidden windows must not receive an extra End")
+ImGui.Begin = function() return true, true end
+local rows = 0
+ImGui.Separator = function() end
+ImGui.BeginTable = function() return true end
+ImGui.EndTable = function() end
+ImGui.TableSetupColumn = function() end
+ImGui.TableHeadersRow = function() end
+ImGui.TableNextRow = function() rows = rows + 1 end
+ImGui.TableSetColumnIndex = function() end
+state.startup_session.started_at = 0
+for index = 1, 50 do state.assets[index] = { name = "asset", duration = 1 } end
+draw_main()
+assert(rows == 12 and ended == 2, "startup preview must stay bounded and balance the visible window")
+assert(load(region("function process_startup()", "function loop()")))()
+local now = 10
+state.watch_interval = 60
+reaper.time_precise = function() return now end
+reaper.GetPlayState = function() return 0 end
+local function loading() coroutine.yield() coroutine.yield() end
+state.startup_session = { thread = coroutine.create(loading) }
+process_startup()
+assert(math.abs(state.startup_session.deadline - 10.024) < 0.0001)
+reaper.GetPlayState = function() return 1 end
+process_startup()
+assert(math.abs(state.startup_session.deadline - 10.012) < 0.0001, "playing transport must retain shorter work budget")
+process_startup()
+assert(not state.startup_session, "finished startup must unlock normal UI")
 print("Lua import recovery and loading lifecycle self-test passed")

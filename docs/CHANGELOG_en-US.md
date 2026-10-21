@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.12
+
+### Faster catalog startup and loading preview
+
+- Decode TSV rows directly into assets, avoiding temporary arrays and repeated identity, path and aggregate-cache bookkeeping.
+- Optimize ordinary-path system-metadata filtering while retaining folder and AppleDouble exclusions.
+- Increase idle startup work slices to 24 ms to reduce defer overhead; retain 12 ms during playback.
+- Show elapsed time and up to 12 read-only asset samples while loading. Search and audition unlock after full validation; closing never saves partial data.
+- Test real catalog helpers, decoder equivalence, duplicate-row activity preservation and transport-dependent scheduling.
+- Read-only benchmark on a 47 MB / 60,548-asset snapshot: catalog CPU time approximately 3.66 s → 1.64 s. With assumed 30 ms defer gaps, estimated catalog time approximately 11.16 s → 3.56 s. These exclude UI, other initialization and disk latency; actual REAPER startup needs on-device verification.
+
 ## 0.9.0 Beta 7.11
 
 ### Responsive startup and targeted recovery

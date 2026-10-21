@@ -295,6 +295,22 @@ function add_or_update_asset(asset, probe_file)
   return asset
 end
 
+-- Snapshot rows have already been decoded and normalized, and no views exist
+-- yet. Invalidate aggregate caches once in the loader, not once per row.
+function add_loaded_database_asset(asset, key)
+  if state.by_path[key] then
+    -- Preserve the historical duplicate-row merge and user activity semantics.
+    return add_or_update_asset(asset, false)
+  end
+  state.by_path[key] = asset
+  state.assets[#state.assets + 1] = asset
+  if asset.ucs_status == "pending" then
+    state.ucs_pending_lookup[key] = asset
+    AppState.set("ucs_pending_count", state.ucs_pending_count + 1)
+  end
+  return asset
+end
+
 function rebuild_assets()
   if invalidate_similarity_index then invalidate_similarity_index() end
   state.assets = {}
