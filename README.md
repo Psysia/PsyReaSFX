@@ -18,6 +18,14 @@
   <img src="https://img.shields.io/badge/Author-Psysia-555555" alt="Psysia">
 </p>
 
+<p align="center">
+  <a href="https://psysia.github.io/PsyReaSFX/">
+    <img src="website/assets/showcase/prs-workspace-0-9.png" alt="PsyReaSFX 0.9 Beta 7.10 real application interface" width="1000">
+  </a>
+</p>
+<p align="center"><em>Actual PsyReaSFX 0.9 Beta 7.10 workspace · UCS navigation, sound lists, inline waveforms and detailed audition.</em></p>
+<p align="center"><a href="https://psysia.github.io/PsyReaSFX/">Website / 官网</a> · <a href="https://psysia.github.io/PsyReaSFX/#scripts">Live GIF demos / 动态演示</a> · <a href="https://github.com/Psysia/PsyReaSFX/releases">Releases</a></p>
+
 ## Overview
 
 This repository contains two parts:
@@ -44,6 +52,8 @@ For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The opti
 | Category | Tool | Purpose |
 |---|---|---|
 | Rendering | Create Folder Region and Render Matrix | Single-source Regions use the exact source track for both naming and Matrix; multi-track selections use the nearest common parent. |
+| Rendering | Smart Bounce (Track FX / Parent FX) | Merge selected Items or Folder/track content into one WAV (5 s max tail), without altering Solo; new-item peaks rebuild automatically. |
+| Rendering | Create Nearest Parent Folder Region and Render Matrix | Single child tracks use the immediate parent Folder for both Region naming and Matrix targeting. |
 | Rendering | Smart Tail Render Panel | Configure render tail, silence trimming, and safety padding. |
 | Rendering | Open Render Dialog with Auto Tail | Apply saved tail settings before opening REAPER's Render dialog. |
 | Track management | Sort Tracks by Earliest Item Position | Folder-aware sorting that preserves complete folder subtrees. |
@@ -59,6 +69,47 @@ For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The opti
 | Display | Video Item Source Filename Overlay | Show the source video filename without its extension; directly switch back to track-name mode at any time. |
 
 Detailed behavior, edge cases, dependencies, and shortcut suggestions are documented in the [REAPER Tools Guide](docs/REAPER_TOOLS_GUIDE_en-US.md).
+
+## See the REAPER tools in action
+
+**Real GIF recordings — not mockups.** Every clip below is a working ReaScript demonstration captured in REAPER. Individual tools can be installed through the same ReaPack repository.
+
+[**Explore the animated gallery on the website ↗**](https://psysia.github.io/PsyReaSFX/#scripts) · [All scripts](Scripts/Psysia/) · [Full tool guide](docs/REAPER_TOOLS_GUIDE_en-US.md)
+
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>Smart Bounce</strong><br><img src="website/assets/showcase/smart-bounce.gif" width="440" alt="Smart Bounce REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>Video item track name overlay</strong><br><img src="website/assets/showcase/video-track-overlay.gif" width="440" alt="Video item track name overlay REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>Folder regions & render matrix</strong><br><img src="website/assets/showcase/folder-region-matrix.gif" width="440" alt="Folder regions & render matrix REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>Cycle folder compact state</strong><br><img src="website/assets/showcase/cycle-folder-compact.gif" width="440" alt="Cycle folder compact state REAPER workflow GIF"></td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>Show 8 more REAPER tool demos</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>Sort tracks by earliest item</strong><br><img src="website/assets/showcase/sort-tracks.gif" width="440" alt="Sort tracks by earliest item REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>Nearest parent folder regions</strong><br><img src="website/assets/showcase/parent-folder-region-matrix.gif" width="440" alt="Nearest parent folder regions REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>Rename from parent folder</strong><br><img src="website/assets/showcase/rename-from-parent.gif" width="440" alt="Rename from parent folder REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>Split selected items</strong><br><img src="website/assets/showcase/split-items.gif" width="440" alt="Split selected items REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>Remove gaps between items</strong><br><img src="website/assets/showcase/remove-item-gaps.gif" width="440" alt="Remove gaps between items REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>Reverse items in place</strong><br><img src="website/assets/showcase/reverse-items.gif" width="440" alt="Reverse items in place REAPER workflow GIF"></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><strong>Toggle LUFS-M and spectrogram</strong><br><img src="website/assets/showcase/toggle-lufs-spectrogram.gif" width="440" alt="Toggle LUFS-M and spectrogram REAPER workflow GIF"></td>
+    <td width="50%" align="center"><strong>Create Folder with Pro-L 2</strong><br><img src="website/assets/showcase/create-folder-prol2.gif" width="440" alt="Create Folder with Pro-L 2 REAPER workflow GIF"></td>
+  </tr>
+</table>
+
+</details>
 
 ## PsyReaSFX
 

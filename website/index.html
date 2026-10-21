@@ -23,14 +23,15 @@
   <title>PsyReaSFX — Sound Assets Organized</title>
   <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon-64.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="preload" href="assets/screenshots/compact-workspace.webp" as="image" type="image/webp">
-  <link rel="stylesheet" href="styles.css?v=20260915-2">
+  <link rel="preload" href="assets/showcase/prs-workspace-0-9.png" as="image" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=20261014-1">
   <script src="app.js?v=20261021-1" defer></script>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "PsyReaSFX",
+      "screenshot": "https://psysia.github.io/PsyReaSFX/assets/showcase/prs-workspace-0-9.png",
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Windows",
       "softwareVersion": "0.8.5",
@@ -56,6 +57,7 @@
         <a href="#product" data-i18n="navProduct">Product</a>
         <a href="#status" data-i18n="navStatus">Releases</a>
         <a href="#workflow" data-i18n="navWorkflow">Workflow</a>
+        <a href="#scripts" class="nav-gallery"><span data-lang="en">Tool demos</span><span data-lang="zh">工具演示</span></a>
         <a href="#install" data-i18n="navInstall">Install</a>
         <a href="#docs" data-i18n="navDocs">Docs</a>
       </nav>
@@ -91,6 +93,7 @@
             <a class="button secondary" data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5" data-i18n="downloadStable">Download Stable</a>
             <a class="button quiet" data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.11" data-i18n="viewPreview">View Beta 7.11</a>
           </div>
+          <a class="hero-demo-link" href="#scripts"><span data-lang="en">Explore the REAPER tools in motion ↓</span><span data-lang="zh">观看 REAPER Lua 工具操作动图 ↓</span></a>
           <div class="hero-meta">
             <span data-i18n="freeUpdate">One repository · Automatic updates</span>
             <span class="meta-dot"></span>
@@ -99,15 +102,20 @@
         </div>
 
         <div class="hero-visual">
+          <div class="interface-pill"><span class="live-dot"></span><span data-lang="en">ACTUAL PRODUCT · 0.9 BETA</span><span data-lang="zh">真实软件界面 · 0.9 测试版</span></div>
           <div class="window-chrome">
             <div class="window-bar">
               <span></span><span></span><span></span>
               <p>PsyReaSFX <b data-preview-version>0.9.0 Beta 7.11</b></p>
             </div>
             <picture>
-              <source srcset="assets/screenshots/compact-workspace-960.webp 960w, assets/screenshots/compact-workspace.webp 1700w" sizes="(max-width: 760px) 145vw, (max-width: 1060px) 100vw, 62vw" type="image/webp">
-              <img src="assets/screenshots/compact-workspace.png" alt="PsyReaSFX workspace with navigation, inline waveforms and metadata inspector" width="1700" height="1050" decoding="async" fetchpriority="high">
+              <img src="assets/showcase/prs-workspace-0-9.png"
+                   alt="PsyReaSFX 0.9 Beta 7.10 — real working interface showing UCS library navigation, searchable sound files, inline waveforms and an audition panel / PsyReaSFX 0.9 实际界面"
+                   width="1700" height="1050" decoding="async" fetchpriority="high">
             </picture>
+            <a class="preview-expand" href="assets/showcase/prs-workspace-0-9.png" target="_blank" rel="noopener">
+              <span data-lang="en">VIEW FULL RESOLUTION ↗</span><span data-lang="zh">查看原尺寸截图 ↗</span>
+            </a>
           </div>
           <div class="floating-stat stat-top">
             <strong data-i18n="inlineWaveforms">Inline waveforms</strong>
@@ -117,6 +125,151 @@
             <strong data-i18n="nonDestructive">Non-destructive</strong>
             <span data-i18n="sourceSafe">Source media stays untouched</span>
           </div>
+        </div>
+      </div>
+    </section>
+
+
+    <section class="section script-gallery" id="scripts" aria-labelledby="scripts-heading">
+      <div class="shell">
+        <div class="gallery-heading">
+          <div>
+            <p class="kicker gallery-kicker"><span data-lang="en">THE TOOLS · IN MOTION</span><span data-lang="zh">REAPER 工具 · 动态演示</span></p>
+            <h2 id="scripts-heading"><span data-lang="en">See the workflow, not just the feature list.</span><span data-lang="zh">让工作流自己说话。</span></h2>
+            <p class="gallery-lead"><span data-lang="en">Real recordings of the Psysia ReaScripts inside REAPER. Explore twelve practical tools—then add only the ones you need through ReaPack.</span><span data-lang="zh">来自 REAPER 实际操作的十二个 Lua 工具动图。直观看到操作效果，再通过 ReaPack 安装所需脚本。</span></p>
+          </div>
+          <a class="gallery-index-link" href="#install"><span data-lang="en">Install via ReaPack ↗</span><span data-lang="zh">通过 ReaPack 安装 ↗</span></a>
+        </div>
+        <div class="gallery-featured-label"><span data-lang="en">01 — FEATURED WORKFLOWS</span><span data-lang="zh">01 — 精选工作流</span> <span> / </span> 04</div>
+        <div class="script-card-grid script-card-grid-featured">
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/smart-bounce.gif" loading="lazy" decoding="async" width="960" height="600" alt="Smart Bounce / 智能合并渲染 — actual REAPER workflow animation">
+              <span class="card-index">01</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Render</span><span data-lang="zh">渲染</span></span>
+              <h3><span data-lang="en">Smart Bounce</span><span data-lang="zh">智能合并渲染</span></h3><p><span data-lang="en">Render selected material to a new WAV with automated tail handling.</span><span data-lang="zh">将选中素材智能合并为 WAV，处理渲染尾音。</span></p>
+            </div>
+          </article>
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/video-track-overlay.gif" loading="lazy" decoding="async" width="960" height="600" alt="Video item name overlay / 视频素材轨道名覆盖显示 — actual REAPER workflow animation">
+              <span class="card-index">02</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Display</span><span data-lang="zh">显示</span></span>
+              <h3><span data-lang="en">Video item name overlay</span><span data-lang="zh">视频素材轨道名覆盖显示</span></h3><p><span data-lang="en">Make video item labels readable directly inside the arrange view.</span><span data-lang="zh">在编排区直接清晰显示视频素材对应的轨道名称。</span></p>
+            </div>
+          </article>
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/folder-region-matrix.gif" loading="lazy" decoding="async" width="960" height="600" alt="Folder regions & render matrix / 创建文件夹区域与渲染矩阵 — actual REAPER workflow animation">
+              <span class="card-index">03</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Rendering</span><span data-lang="zh">区域渲染</span></span>
+              <h3><span data-lang="en">Folder regions & render matrix</span><span data-lang="zh">创建文件夹区域与渲染矩阵</span></h3><p><span data-lang="en">Build regions and map them to the right render targets.</span><span data-lang="zh">根据轨道与文件夹结构批量建立区域及渲染矩阵。</span></p>
+            </div>
+          </article>
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/cycle-folder-compact.gif" loading="lazy" decoding="async" width="960" height="600" alt="Cycle folder visibility / 统一轮换文件夹折叠状态 — actual REAPER workflow animation">
+              <span class="card-index">04</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
+              <h3><span data-lang="en">Cycle folder visibility</span><span data-lang="zh">统一轮换文件夹折叠状态</span></h3><p><span data-lang="en">Move through folder display states without losing your hierarchy.</span><span data-lang="zh">按文件夹层级轮换折叠状态，保持工程结构清晰。</span></p>
+            </div>
+          </article>
+        </div>
+        <div class="gallery-featured-label gallery-all-label"><span data-lang="en">02 — MORE REASCRIPTS</span><span data-lang="zh">02 — 更多实用脚本</span> <span> / </span> 08</div>
+        <div class="script-card-grid script-card-grid-more">
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/sort-tracks.gif" loading="lazy" decoding="async" width="960" height="600" alt="Sort tracks by first item / 按最早素材位置排序轨道 — actual REAPER workflow animation">
+              <span class="card-index">05</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
+              <h3><span data-lang="en">Sort tracks by first item</span><span data-lang="zh">按最早素材位置排序轨道</span></h3><p><span data-lang="en">Order tracks using the earliest item in each folder-aware group.</span><span data-lang="zh">按素材最早位置排序，同时保留文件夹分组。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/parent-folder-region-matrix.gif" loading="lazy" decoding="async" width="960" height="600" alt="Nearest parent render regions / 按最近父文件夹创建区域与渲染矩阵 — actual REAPER workflow animation">
+              <span class="card-index">06</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Rendering</span><span data-lang="zh">区域渲染</span></span>
+              <h3><span data-lang="en">Nearest parent render regions</span><span data-lang="zh">按最近父文件夹创建区域与渲染矩阵</span></h3><p><span data-lang="en">Name regions from the closest parent folder and prepare the matrix.</span><span data-lang="zh">根据最近父级文件夹命名区域并配置渲染矩阵。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/rename-from-parent.gif" loading="lazy" decoding="async" width="960" height="600" alt="Rename from parent folder / 根据父级文件夹名重命名选中轨道 — actual REAPER workflow animation">
+              <span class="card-index">07</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
+              <h3><span data-lang="en">Rename from parent folder</span><span data-lang="zh">根据父级文件夹名重命名选中轨道</span></h3><p><span data-lang="en">Rename selected child tracks consistently from their parent folder.</span><span data-lang="zh">依据父文件夹名称快速批量命名所选轨道。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/split-items.gif" loading="lazy" decoding="async" width="960" height="600" alt="Split items to new tracks / 拆分选中素材到新轨道 — actual REAPER workflow animation">
+              <span class="card-index">08</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
+              <h3><span data-lang="en">Split items to new tracks</span><span data-lang="zh">拆分选中素材到新轨道</span></h3><p><span data-lang="en">Move selected audio items into their own clean tracks.</span><span data-lang="zh">将选中音频素材快速拆分到新的独立轨道。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/remove-item-gaps.gif" loading="lazy" decoding="async" width="960" height="600" alt="Remove gaps between items / 移除选中素材间隙 — actual REAPER workflow animation">
+              <span class="card-index">09</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
+              <h3><span data-lang="en">Remove gaps between items</span><span data-lang="zh">移除选中素材间隙</span></h3><p><span data-lang="en">Close empty space between selected items in one action.</span><span data-lang="zh">一键消除选中素材之间的空白间隙。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/reverse-items.gif" loading="lazy" decoding="async" width="960" height="600" alt="Reverse selected items / 原位反转选中素材 — actual REAPER workflow animation">
+              <span class="card-index">10</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
+              <h3><span data-lang="en">Reverse selected items</span><span data-lang="zh">原位反转选中素材</span></h3><p><span data-lang="en">Reverse selected items in place with a single reversible action.</span><span data-lang="zh">在当前位置快速反转选中素材。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/toggle-lufs-spectrogram.gif" loading="lazy" decoding="async" width="960" height="600" alt="LUFS-M / spectrogram / 切换 LUFS-M 与频谱图 — actual REAPER workflow animation">
+              <span class="card-index">11</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Analysis</span><span data-lang="zh">分析显示</span></span>
+              <h3><span data-lang="en">LUFS-M / spectrogram</span><span data-lang="zh">切换 LUFS-M 与频谱图</span></h3><p><span data-lang="en">Switch the visible waveform analysis without breaking your flow.</span><span data-lang="zh">在 LUFS-M 与频谱显示之间快速切换。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/create-folder-prol2.gif" loading="lazy" decoding="async" width="960" height="600" alt="Create bus with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2 — actual REAPER workflow animation">
+              <span class="card-index">12</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Routing</span><span data-lang="zh">路由处理</span></span>
+              <h3><span data-lang="en">Create bus with Pro-L 2</span><span data-lang="zh">从选中轨道创建文件夹并挂载 Pro-L 2</span></h3><p><span data-lang="en">Wrap selected tracks in a parent bus with Pro-L 2 ready.</span><span data-lang="zh">为选中轨道创建父级文件夹并加载 Pro-L 2。</span></p>
+            </div>
+          </article>
+        </div>
+        <div class="gallery-footer">
+          <div><strong><span data-lang="en">Built for people who work in REAPER.</span><span data-lang="zh">为真实 REAPER 工作流而设计。</span></strong><p><span data-lang="en">Each utility is independently installable. Detailed behavior, requirements and shortcuts are documented in the tool guide.</span><span data-lang="zh">所有工具均可独立安装；使用方法、依赖及快捷键见工具手册。</span></p></div>
+          <a class="button secondary" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/REAPER_TOOLS_GUIDE_en-US.md" data-lang="en">REAPER tools guide ↗</a>
+          <a class="button secondary" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/REAPER_TOOLS_GUIDE_zh-CN.md" data-lang="zh">REAPER 工具手册 ↗</a>
         </div>
       </div>
     </section>

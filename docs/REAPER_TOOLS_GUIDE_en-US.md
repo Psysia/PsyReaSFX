@@ -25,6 +25,8 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 | Tool | Version | Primary use |
 |---|---:|---|
 | Create Folder Region and Render Matrix | 2.6 | Region creation and Region Render Matrix setup. |
+| Smart Bounce (Track FX / Parent FX) | 1.0.2 | Merge selected Items or Folder/track content to one WAV with a 5-second maximum tail. |
+| Create Nearest Parent Folder Region and Render Matrix | 1.0 | Force a single child track to use its immediate parent Folder for Region naming and Matrix targeting. |
 | Sort Tracks by Earliest Item Position | 1.4 | Folder-aware track ordering. |
 | Open Render Dialog with Auto Tail | 1.0 | Apply saved tail settings before rendering. |
 | Smart Tail Render Panel | 1.1 | Configure render tail and ending-silence trimming. |
@@ -41,6 +43,24 @@ Utility scripts are stored under `Scripts/Psysia/`. Copy the required `.lua` fil
 
 ## Rendering
 
+### Smart Bounce (Track FX Only / Include Parent Folder FX) · 1.0.2
+
+This package installs **three Actions** and a shared engine:
+
+- **Smart Bounce - Track FX Only:** selected tracks' own FX are retained; FX on ancestor-only Folder buses are temporarily bypassed.
+- **Smart Bounce - Include Parent Folder FX:** the same signals also flow through their ancestor Folder FX chains.
+- **Smart Bounce Settings:** tail threshold, trailing-silence completeness check, safety padding, and tail mode.
+
+**Selection:** selected media Items always take priority over selected tracks. With selected Items, only those Items are rendered, mixed across tracks into a **single file**. Otherwise, the complete Item content of the selected tracks is included; selecting a Folder also includes every descendant track. The earliest Item left edge and latest Item right edge define the base render bounds, with any gaps kept intact. The new result is inserted as one Item on a **new top-level track just below the source group**, aligned to the original start time. Existing Items and tracks are not replaced.
+
+**Tail:** the hard maximum is **5 seconds** beyond the final source Item. Auto mode measures the rendered stereo WAV in 10 ms RMS windows (default **−60 dBFS**) and adds **200 ms** safety padding after the last detectable tail. The adjustable silence-hold value determines whether the 5-second boundary should trigger a possible-truncation warning. Fixed mode keeps the entire 5 seconds; None adds no tail. The **inserted Item is cropped** to the detected extent; the underlying saved WAV may still contain the extra sampled tail.
+
+**Rendering:** uses REAPER's native master-mix renderer with temporary media/track isolation, then restores mute, solo, enabled-FX states, and render settings. Output prefers `PsysiaSmartBounce/` under the project's media directory. **If the dedicated subfolder cannot be created** (for example, due to Unicode-path filesystem limitations), v1.0.1 uses the existing project media directory directly, without aborting. Both modes **exclude Master FX** to avoid printing Master FX into an Item that passes through the Master again on playback.
+
+**Momentary SWS/BR Solo protection (v1.0.2):** Smart Bounce never modifies track Solo or temporary Item solo flags. If any track is currently soloed, the Action refuses to start and asks for the momentary shortcut to be released (or manual Solo to be cleared). This avoids corrupting the key-release restoration of SWS/BR audition actions. After inserting the WAV, the script builds waveform peaks and refreshes the new Item automatically. If a previous version already latched a SWS momentary action, release/clear its Solo once before testing.
+
+**Important constraints:** specialized cross-branch send/sidechain routing and sound generated solely by standalone FX without source Items are not fully covered by the selection model. Long reverb/Delay tails beyond five seconds will be truncated. Test on a copy of a complex routing project before relying on the result for delivery.
+
 ### Create Folder Region and Render Matrix · 2.6
 
 Creates or updates Regions from the current item or track selection with an explicit source-count rule.
@@ -49,6 +69,18 @@ Creates or updates Regions from the current item or track selection with an expl
 - **Two or more source tracks:** the script finds the nearest common parent and uses it for both naming and Matrix targeting. If no common parent exists, it combines the source-track names and targets the source tracks individually.
 - Matrix writes are read back immediately. If REAPER did not actually apply the expected Matrix entries, the script reports the expected and actual tracks instead of silently continuing.
 - Multiple logical Regions may still share the same time range.
+
+### Create Nearest Parent Folder Region and Render Matrix · 1.0
+
+A dedicated parent-Folder variant for cases where selecting one child track is intended to represent its nearest Folder bus.
+
+- **One ordinary child track:** use the immediate parent Folder for both the Region name and Region Render Matrix.
+- **One Folder track:** use that Folder itself; do not jump to a higher parent.
+- **No parent Folder:** fall back to the source track itself.
+- **Two or more source tracks:** use the nearest common parent when available; otherwise keep the source-track fallback.
+- Render Matrix entries are read back after writing and a mismatch is reported instead of silently continuing.
+
+Use this Action when the child track is only a convenient selection handle for its parent Folder. Use **Create Folder Region and Render Matrix** when a single selected track must render as itself.
 
 ### Smart Tail Render Panel · 1.1
 
@@ -186,7 +218,7 @@ Most utilities use only native REAPER ReaScript APIs.
 
 - **SWS Extension:** optional for Open All Subprojects path resolution.
 - **Pro-L 2:** required only by Create Folder from Selected Tracks with Pro-L 2.
-- **js_ReaScriptAPI:** required by Video Item Track Name Overlay.
+- **js_ReaScriptAPI:** required by video overlays.
 - **ReaPack:** installation/update mechanism only; not a runtime dependency for the scripts themselves.
 
 ## Updating
