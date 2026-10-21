@@ -59,24 +59,37 @@ lists only the newest Beta, 0.8.5 Stable and 0.7.23 Stable.
 
 See the [README feature comparison](../README.md#feature-comparison) for additions.
 Updating the main script does not require rebuilding your libraries. AI semantic
-search needs your own API key/model in Settings, not the neural component.
+search needs your own API key/model in Settings, not the [neural component][neural-download].
 Local neural similarity requires the separate optional package below.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
 ### Optional neural similarity component (Beta 7.13)
 
-On Windows x64, open ReaPack's package browser after synchronizing, search for
-`PsyReaSFX Neural Similarity`, enable pre-release versions for that package,
-choose `0.9.0-beta7.13`, and install it beside `PsyReaSFX.lua`. ReaPack places
-the executable and model under REAPER's `Data`
-directory and updates or uninstalls those files independently. Restart
-PsyReaSFX after installing or updating the component.
+**Neural retrieval requires this separate component; updating PsyReaSFX.lua
+does not install it. Built-in 15-feature acoustic search and AI semantic search
+do not require it.**
 
-The component is self-contained, needs no separate .NET runtime, processes
-audio locally, and never uploads files. The GitHub Release ZIP and
-`Install-NeuralSimilarity.cmd` remain available as a manual fallback, including
-for portable setups where you want to specify the resource path explicitly.
+**[Download the complete neural ZIP · Beta 7.13 · Windows x64 · about 42.4 MB][neural-download]**
+Includes executable, model and installers; do not download only the standalone EXE.
+
+Recommended: synchronize, open `Extensions → ReaPack → Browse packages`, and search for
+the separate [PsyReaSFX Neural Similarity][neural-download] data package.
+Right-click → **Enable pre-releases (bleeding-edge)** → **Versions** →
+`0.9.0-beta7.13`; uncheck **Pin current version**, click **Apply / OK**,
+wait for downloads, then close the old window and rerun PsyReaSFX.
+ReaPack places the executable and model under
+`<REAPER Resource Path>\Data\PsyReaSFX\neural_similarity\` and handles updates/uninstallation.
+
+Manual fallback: download the [complete ZIP][neural-download], extract everything,
+double-click `Install-NeuralSimilarity.cmd`, and restart PsyReaSFX.
+Its default destination is `%APPDATA%\REAPER\Scripts\PsyReaSFX\neural_similarity\`.
+For portable setups, see the [resource-path instructions](../neural/package/README.md#manual-zip-fallback).
+
+Choose one installation method. No separate Python or .NET runtime is needed.
+Audio stays local and no converted copies are created. First use builds a
+cancelable embedding cache and HNSW index; a missing or failed component falls back
+to built-in acoustic search.
 
 ### Manual installation
 
@@ -717,7 +730,7 @@ Beta 7.13 shows a centered branded startup splash with cyan waveform motion, rea
 
 ### Neural similarity does not activate
 
-- Confirm that the optional `PsyReaSFX Neural Similarity` ReaPack package is installed, then restart PsyReaSFX.
+- Confirm that the optional [PsyReaSFX Neural Similarity][neural-download] ReaPack package is installed, then restart PsyReaSFX.
 - Check whether the file extension is supported by the installed component. OGG, Opus, WavPack and CAF require FFmpeg; the other documented formats use Windows codecs.
 - Missing/damaged models, protocol mismatches, failed jobs, and timeouts safely use the baseline algorithm.
 - Reinstall the ReaPack component package (or re-run the manual fallback installer) to replace the executable and model. Existing embedding/HNSW data is reused or rebuilt by signature.
@@ -751,3 +764,5 @@ When reporting an issue, include:
 3. exact steps;
 4. complete ReaScript error text;
 5. a screenshot or short recording when the issue is visual.
+
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip

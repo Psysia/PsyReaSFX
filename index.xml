@@ -6,8 +6,12 @@
         <description><![CDATA[
 PsyReaSFX is a high-performance sound asset browser, audition, waveform,
 metadata, region, collection, REAPER insertion, and Transfer workflow.
+Neural similar-sound search requires the separate Windows x64 data package
+PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
+        <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
       <version name="0.9.0-beta7.13" author="Psysia" time="2026-10-21T03:25:01Z">
         <changelog><![CDATA[
@@ -50,8 +54,14 @@ metadata, region, collection, REAPER insertion, and Transfer workflow.
 Optional Windows x64 EfficientAT embedding and HNSW component for PsyReaSFX.
 Runs locally, never uploads audio, and keeps rebuildable caches outside the package.
 Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating.
+In Browse packages, enable pre-releases for this data package, select the latest
+Beta in Versions, unpin if needed, then Apply / OK. Neural search requires it;
+the main script update does not install it. The manual ZIP includes the model
+and Install-NeuralSimilarity.cmd; the standalone EXE does not include the model.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
+        <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">ReaPack and manual installation steps / 安装说明</link>
       </metadata>
       <version name="0.9.0-beta7.13" author="Psysia" time="2026-10-21T03:25:01Z">
         <changelog><![CDATA[
@@ -69,8 +79,8 @@ Install PsyReaSFX.lua separately. Restart PsyReaSFX after installing or updating
         <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-NAudio.txt" hash="122004b12da4303b43ee14d72b17d1157f53ad5e0082a48d74b9afdfdb3f5d2ab499">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7.13/neural/package/LICENSE-NAudio.txt</source>
         <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-ONNXRuntime.txt" hash="12202f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE</source>
         <source platform="win64" file="PsyReaSFX/neural_similarity/ThirdPartyNotices-ONNXRuntime.txt" hash="1220143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/ThirdPartyNotices.txt</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="1220a2344d784a141205b9c840fe90f03de72e0a07755906d8b8083191660ef211b8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7.13/neural/package/README.md</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="122024313b684f8f815944a0c401d7cb2beef38335d7160dc96e8bdfd42f6324afd2">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7.13/neural/package/README_zh-CN.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="1220cb83b41d2c1b154656d18b66eaf39f34fbe0f9e0a06eea4ac17b8914299320f8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/e3584a3ce333289029b50ed69d3bcd906fc2bdb8/neural/package/README.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="122004814d2a8ee1c616ab14159f39e8eb59956c61dae1a67ed699896ee2e6021bf7">https://raw.githubusercontent.com/Psysia/PsyReaSFX/e3584a3ce333289029b50ed69d3bcd906fc2bdb8/neural/package/README_zh-CN.md</source>
       </version>
     </reapack>
     <reapack name="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua" type="script" desc="Psysia Smart Bounce / 智能合并渲染（两种 FX 模式）">

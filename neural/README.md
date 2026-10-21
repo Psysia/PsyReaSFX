@@ -1,12 +1,23 @@
 # PsyReaSFX neural similarity sidecar
 
-This directory contains the optional local neural-audio component. It is a
+This directory contains the [local neural-audio component][neural-download]. It is a
 separate optional ReaPack data package and does not upload audio.
 
-Beta 6.1 users can install `PsyReaSFX Neural Similarity` directly through the
-same ReaPack repository as the Lua package. The self-contained Windows x64 ZIP
-and `Install-NeuralSimilarity.cmd` remain a manual fallback; no separate .NET
-runtime is required. Package and layout smoke tests are implemented by
+**[Download the complete Windows x64 neural ZIP · Beta 7.13 · about 42.4 MB][neural-download]**
+includes executable, model and installers; the standalone EXE alone is insufficient.
+Neural retrieval requires this component; built-in acoustic search and AI semantic
+search do not.
+
+Synchronize the [ReaPack repository](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml),
+open `Extensions → ReaPack → Browse packages`, and search for
+[PsyReaSFX Neural Similarity][neural-download]. Enable pre-releases for this separate
+data package, choose the latest Beta under Versions (currently `0.9.0-beta7.13`),
+unpin if needed, click Apply / OK, and restart PsyReaSFX.
+Alternatively, download the complete ZIP above, extract everything, and run
+`Install-NeuralSimilarity.cmd`; see the [installer guide](package/README.md).
+No separate Python or .NET runtime is required.
+
+Package and layout smoke tests are implemented by
 `tools/Build-BetaRelease.ps1`, `tools/Test-NeuralPackage.ps1`, and
 `tools/Test-ReaPackNeuralPackage.ps1`.
 
@@ -102,3 +113,5 @@ searches, and transparently falls back to the existing 15-dimensional search.
 It uses the extensions advertised by the installed sidecar rather than imposing
 a fixed sample-rate or bit-depth rule. Older sidecars without decoder capability
 metadata keep the Beta 5 restriction for safety.
+
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip
