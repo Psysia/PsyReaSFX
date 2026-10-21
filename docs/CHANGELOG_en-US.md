@@ -1,5 +1,17 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 8
+
+### Custom font size and folder navigation
+
+- Add Settings → Font & navigation: 10–24 px fonts and navigation width. Rows, headers, waveform columns and audition controls scale together; saved widths stay in base units.
+- Add file-manager-style navigation: libraries, folders or both; choose indexed hierarchy or imported roots only.
+- Independently hide workflow, collections/project bins, saved searches, UCS and activity modules. Display changes preserve data and filters; restore modules from the navigation header.
+- Wrap audition controls and metrics, temporarily fold side panels on narrow windows, retain waveform horizontal scrolling and allow short preview panels to scroll. Balance font/style stacks.
+- Reuse the existing index with bounded tree construction/merge sorting and cached visible-row rendering. Browsing does not enumerate disks; empty folders are omitted.
+- Add persistence, font, layout and folder interaction regressions. 100k assets / 10k folders take about 0.54 CPU seconds across 125 work slices on local synthetic data, not a REAPER timing guarantee.
+- Update the main script and reopen. No neural component update or library rebuild required. Live DPI, multichannel and tiny-window checks remain necessary.
+
 ## 0.9.0 Beta 7.17
 
 ### AI-compatible gateways and response diagnostics
@@ -1497,5 +1509,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.17/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_17_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_win_x64.zip
 

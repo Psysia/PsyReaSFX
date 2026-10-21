@@ -172,7 +172,7 @@ local input_at = assert(
   "toolbar must render the search input"
 )
 local previous_item_at = assert(
-  toolbar:find("ImGui.SetNextItemWidth(ctx, -267)", 1, true),
+  toolbar:find("ImGui.SetNextItemWidth(ctx, search_width)", 1, true),
   "search input width marker is missing"
 )
 assert(

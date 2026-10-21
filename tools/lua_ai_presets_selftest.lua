@@ -11,6 +11,7 @@ SEP = "/"
 Host = { file_exists = function(path) return virtual_files[path] ~= nil end,
   time_precise = function() return 10 end }
 AppState = { set = function(key, value) state[key] = value end,
+  update = function(key, updater) state[key] = updater(state[key]) end,
   apply = function(values) for key, value in pairs(values) do state[key] = value end end }
 function trim(value) return tostring(value or ""):match("^%s*(.-)%s*$") end
 function safe_lower(value) return string.lower(tostring(value or "")) end
@@ -137,6 +138,8 @@ local catalog_file = assert(io.open("src/lua/30_catalog.lua", "rb"))
 local catalog = catalog_file:read("*a")
 catalog_file:close()
 local first = assert(catalog:find("function load_config()", 1, true))
+assert(loadfile("src/lua/11_ui_workspace.lua"))()
+state.sidebar_modules = {}
 local last = assert(catalog:find("function save_config()", first + 1, true))
 local save_last = catalog:find("\nfunction ", last + 1, true) or (#catalog + 1)
 local original_open, original_save = io.open, save_config
@@ -171,6 +174,9 @@ setmetatable(state, { __index = function(_, key)
   return ""
 end })
 state.ai_preset_name = "Saved name"
+state.ui_font_size = 18
+state.sidebar_navigation_mode, state.sidebar_folder_mode = "both", "roots"
+state.sidebar_modules.workflow = false
 assert(ai_semantic_save_preset())
 setmetatable(state, nil)
 local saved_tsv = table.concat(saved_lines)
@@ -179,7 +185,10 @@ assert(not saved_tsv:find("sk-custom-test", 1, true))
 assert(not saved_tsv:find("sk-unsaved-draft", 1, true))
 local ai_lines = {}
 for line in saved_tsv:gmatch("[^\n]+") do
-  if line:find("setting\tai_", 1, true) == 1 then ai_lines[#ai_lines + 1] = line end
+  if line:find("setting\tai_", 1, true) == 1 or line:find("setting\tui_font_size\t",1,true) == 1
+    or line:find("setting\tsidebar_show_",1,true) == 1
+    or line:find("setting\tsidebar_navigation_mode\t",1,true) == 1
+    or line:find("setting\tsidebar_folder_mode\t",1,true) == 1 then ai_lines[#ai_lines + 1] = line end
 end
 io.open = function(path, mode)
   if path ~= CONFIG_FILE then return original_open(path, mode) end
@@ -188,8 +197,13 @@ io.open = function(path, mode)
     close = function() end }
 end
 state.ai_presets_json = nil
+state.ui_font_size = 13
+state.sidebar_navigation_mode, state.sidebar_folder_mode = "libraries", "tree"
+state.sidebar_modules = {}
 assert(load(catalog:sub(first, last - 1), "config-reader", "t", _ENV))()
 load_config()
+assert(state.ui_font_size == 18 and state.sidebar_navigation_mode == "both" and state.sidebar_folder_mode == "roots")
+assert(state.sidebar_modules.workflow == false)
 io.open, save_config = original_open, original_save
 assert(ai_semantic_initialize_presets())
 assert(state.ai_preset_name == "Saved name" and state.ai_active_preset_id == "legacy")

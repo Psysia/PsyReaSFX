@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.0-beta7.17",
+    [string]$Version = "0.9.0-beta8",
     [string]$OutputDirectory = ""
 )
 
@@ -51,6 +51,7 @@ try {
         "SIMILARITY_ARCHITECTURE_0_9_zh-CN.md",
         "SPECTRAL_ANALYSIS_ARCHITECTURE_0_9_zh-CN.md",
         "UCS_CLASSIFICATION_ARCHITECTURE_0_9_zh-CN.md",
+        "UI_WORKSPACE_ARCHITECTURE_0_9_zh-CN.md",
         "USER_GUIDE_en-US.md",
         "USER_GUIDE_zh-CN.md"
     )) {
