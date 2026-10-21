@@ -86,7 +86,11 @@ for (const required of [
   if (!html.includes(required)) fail(`Missing required homepage marker: ${required}`);
 }
 
-if (/0\.7\.23 Stable|Alpha_1_win_x64/.test(html + script)) {
+// Archive versions may be documented in installation notes, but must not
+// become the default stable download again.
+if (/Alpha_1_win_x64/.test(html + script)
+  || /const STABLE_FALLBACK\s*=\s*\{[^}]*version:\s*"0\.7\.23"/.test(script)
+  || /data-stable-version[^>]*>\s*0\.7\.23/.test(html)) {
   fail("Website contains a stale release fallback");
 }
 

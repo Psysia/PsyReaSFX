@@ -27,6 +27,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Verify ReaPack version menu policy
+        shell: pwsh
+        run: ./tools/Test-ReaPackVersionPolicy.ps1
+
       - name: Set up pinned Lua test runtime
         shell: pwsh
         run: |
