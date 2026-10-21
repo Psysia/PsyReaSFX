@@ -13328,6 +13328,7 @@ function begin_module(
       window_flags
     )
 
+  if not visible then ImGui.PopStyleColor(ctx, 2) end
   return visible
 end
 
@@ -19940,7 +19941,7 @@ function draw_control_deck(asset)
     end
   end
 
-  ImGui.EndChild(ctx)
+  if strip_visible then ImGui.EndChild(ctx) end
   ImGui.PopStyleColor(ctx)
   ImGui.PopStyleVar(ctx, 2)
 end
@@ -24330,9 +24331,9 @@ function draw_settings_popup()
     settings_nav_item("transfer", "传输", "处理、命名与导出")
     settings_nav_item("maintenance", "维护", "环境、缓存与重建")
     settings_nav_item("about", "关于", "版本、版权与项目主页")
+    ImGui.EndChild(ctx)
   end
 
-  ImGui.EndChild(ctx)
   ImGui.SameLine(ctx)
 
   if ImGui.BeginChild(
@@ -24380,9 +24381,9 @@ function draw_settings_popup()
     else
       draw_settings_general()
     end
+    ImGui.EndChild(ctx)
   end
 
-  ImGui.EndChild(ctx)
   draw_ai_preset_delete_popup()
   ImGui.Separator(ctx)
 
@@ -25009,9 +25010,9 @@ function draw_main()
         true
       ) then
         draw_sidebar()
+        end_module()
       end
 
-      end_module()
       ImGui.SameLine(ctx)
     end
 
@@ -25076,9 +25077,8 @@ function draw_main()
         true
       ) then
         draw_results()
+        end_module()
       end
-
-      end_module()
 
       draw_bottom_splitter(
         center_available_w,
@@ -25093,12 +25093,11 @@ function draw_main()
         true
       ) then
         draw_bottom(selected_asset())
+        end_module()
       end
 
-      end_module()
+      ImGui.EndChild(ctx)
     end
-
-    ImGui.EndChild(ctx)
 
     if render_inspector then
       ImGui.SameLine(ctx)
@@ -25112,9 +25111,9 @@ function draw_main()
         false
       ) then
         draw_metadata_inspector()
+        end_module()
       end
 
-      end_module()
     end
 
     draw_help_popup()
