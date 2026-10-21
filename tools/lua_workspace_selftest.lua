@@ -43,9 +43,25 @@ state.ui_font_size = 24
 assert(ui_px(100) == 100, "settings edits must not change metrics halfway through a frame")
 apply_ui_density_metrics()
 assert(ui_px(100) > 180)
+state.ui_font_size=13 state.config_dirty=false apply_ui_density_metrics()
+for _, size in ipairs({14,18,24,20,10}) do
+  assert(not workspace_edit_font_size(true,size,true))
+  apply_ui_density_metrics()
+  assert(state.ui_font_size==13 and state.ui_font_size_draft==size and ui_px(100)==100)
+  assert(not state.config_dirty, "drag must not dirty or autosave intermediate font sizes")
+end
+assert(workspace_edit_font_size(false,10,false))
+assert(state.ui_font_size==10 and state.ui_font_size_draft==nil and state.config_dirty)
+assert(not workspace_edit_font_size(false,10,false), "release commits once")
+state.config_dirty=false
+assert(not workspace_commit_font_size(10) and not state.config_dirty)
+state.ui_font_size=24 apply_ui_density_metrics()
 local lines = {}
+workspace_edit_font_size(true,18,true)
 workspace_write_settings({ write = function(_,...) local t={} for i=1,select('#',...) do t[i]=tostring(select(i,...)) end lines[#lines+1]=table.concat(t) end })
 assert(table.concat(lines):find("ui_font_size\t24",1,true))
+assert(not table.concat(lines):find("ui_font_size_draft",1,true), "font drafts are never persisted")
+AppState.set("ui_font_size_draft",nil)
 assert(workspace_load_setting("sidebar_show_workflow", "0") and state.sidebar_modules.workflow == false)
 assert(workspace_load_setting("sidebar_folder_mode", "roots") and state.sidebar_folder_mode == "roots")
 assert(workspace_load_setting("sidebar_navigation_mode", "folders") and workspace_navigation_enabled("folders"))
@@ -270,4 +286,47 @@ visible_main=false draw_main()
 assert(font_balance==0 and var_balance==0 and color_balance==0)
 workspace_load_setting("sidebar_width", tostring(math.huge))
 assert(state.sidebar_width==240)
+
+-- Real font editor keeps its slider bounds stable through a full drag.
+local editor_width, slider_x, slider_y, slider_w, next_width = 500,0,0,0,0
+local slider_value, slider_active, slider_changed = 13,true,true
+local preview_size, editor_fonts, applied_button = nil,0,nil
+ImGui.GetContentRegionAvail=function() return editor_width-cursor_x,300 end
+ImGui.GetCursorScreenPos=function() return cursor_x,cursor_y end
+ImGui.SetNextItemWidth=function(_,w) next_width=w end
+ImGui.Text=function() ImGui.Dummy(ctx,80,ui_px(20)) end
+ImGui.TextWrapped=function() ImGui.Dummy(ctx,editor_width,ui_px(40)) end
+ImGui.SliderInt=function(_,id,value,minimum,maximum,format)
+  assert(id=="##workspace_font_size" and minimum==10 and maximum==24 and format=="%d px")
+  slider_x,slider_y,slider_w=cursor_x,cursor_y,next_width
+  ImGui.Dummy(ctx,next_width,ui_px(24))
+  return slider_changed,slider_value
+end
+ImGui.IsItemActive=function() return slider_active end
+ImGui.PushFont=function(_,_,size) preview_size=size editor_fonts=editor_fonts+1 end
+ImGui.PopFont=function() editor_fonts=editor_fonts-1 end
+function mark_interaction() end
+function dark_button(label,w) ImGui.Dummy(ctx,w,ui_px(28)) return label==applied_button end
+ImGui.SameLine=function(_,_,gap) cursor_x,cursor_y=last_right+gap,last_y end
+state.ui_font_size=13 state.config_dirty=false apply_ui_density_metrics()
+local geometry
+for _,size in ipairs({14,18,24,10,20}) do
+  slider_value=size cursor_x,cursor_y=0,0
+  apply_ui_density_metrics()
+  draw_workspace_font_editor()
+  local current=string.format("%.2f:%.2f:%.2f",slider_x,slider_y,slider_w)
+  geometry=geometry or current assert(current==geometry,"slider must not chase the mouse")
+  assert(state.ui_font_size==13 and preview_size==size and editor_fonts==0 and not state.config_dirty)
+end
+slider_active,slider_changed=false,false cursor_x,cursor_y=0,0
+draw_workspace_font_editor()
+assert(state.ui_font_size==20 and state.ui_font_size_draft==nil and editor_fonts==0)
+apply_ui_density_metrics()
+assert(math.abs(ui_scale()-20/13)<0.0001)
+applied_button="−##font_smaller" cursor_x,cursor_y=0,0
+draw_workspace_font_editor() assert(state.ui_font_size==19)
+applied_button="+##font_larger" cursor_x,cursor_y=0,0
+draw_workspace_font_editor() assert(state.ui_font_size==20)
+applied_button="恢复默认字体（13 px）" cursor_x,cursor_y=0,0
+draw_workspace_font_editor() assert(state.ui_font_size==13)
 print("Lua workspace settings, font scaling and folder navigation self-test passed")

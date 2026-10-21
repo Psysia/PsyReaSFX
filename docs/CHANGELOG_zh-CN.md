@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 8.1
+
+### 字号拖动稳定性
+
+- 修复字号拖动时滑块与设置页同步缩放，导致控件坐标变化、鼠标映射回跳的问题。
+- 拖动仅改变固定高度预览区，松开后一次性应用全局字号与布局；整数滑块、±1 按钮和 Ctrl+单击输入支持精调。
+- 临时字号不写入配置、不触发中间保存；关闭设置或切换页面会清理未提交预览，原已应用字号保留。
+- 新增拖动坐标稳定、跨帧布局不变、松手只提交一次、预览字体栈和精调回归。仍需 REAPER 实机确认体验，不宣称消除宿主或字体首次加载延迟。
+
 ## 0.9.0 Beta 8
 
 ### 自定义字号与文件夹导航
@@ -1384,5 +1393,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_1_win_x64.zip
 
