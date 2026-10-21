@@ -172,7 +172,7 @@ local input_at = assert(
   "toolbar must render the search input"
 )
 local previous_item_at = assert(
-  toolbar:find("ImGui.SetNextItemWidth(ctx, -267)", 1, true),
+  toolbar:find("ImGui.SetNextItemWidth(ctx, search_width)", 1, true),
   "search input width marker is missing"
 )
 assert(
@@ -232,7 +232,7 @@ assert(preset_new < preset_switch and preset_switch < preset_save and preset_sav
 assert(ai_settings:find('"删除预设##ai_preset_delete"', 1, true)
   and ai_settings:find("ai_semantic_delete_preset(id)", 1, true)
   and ai_settings:find('ImGui.BeginPopupModal(ctx, "删除预设##ai_preset_delete"', 1, true)
-  and source:match("ImGui%.EndChild%(ctx%)%s+draw_ai_preset_delete_popup%(%)"),
+  and source:match("ImGui%.EndChild%(ctx%)%s+end%s+draw_ai_preset_delete_popup%(%)"),
   "preset deletion requires an explicit group-specific confirmation")
 assert(source:find("local ok, reason = ai_semantic_save_settings()", 1, true),
   "Save and close must commit the active preset before closing")

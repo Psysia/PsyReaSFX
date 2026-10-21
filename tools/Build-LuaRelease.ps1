@@ -13,6 +13,7 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $modules = @(
     "00_bootstrap.lua",
     "10_ui_core.lua",
+    "11_ui_workspace.lua",
     "12_state_store.lua",
     "15_host_adapter.lua",
     "20_jobs_storage.lua",

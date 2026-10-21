@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.17
+-- @version 0.9.0-beta8
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -93,6 +93,7 @@
 --   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
 --   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
 --   - Beta 7.17：兼容 gpt-6-luna 网关，修复推理额度与空响应诊断
+--   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -199,7 +200,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.17"
+local VERSION = "0.9.0 Beta 8"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1126,6 +1127,7 @@ local state = {
   language = "zh",
   mini_wave_points = MINI_WAVE_DEFAULT_POINTS,
   ui_density = "compact",
+  ui_font_size = 13,
   surface_style = "dark",
   settings_tab = "general",
   settings_close_requested = false,
@@ -1142,9 +1144,15 @@ local state = {
   region_hex = "#E2B764",
 
   sidebar_visible = true,
+  sidebar_width = 240,
+  sidebar_navigation_mode = "libraries",
+  sidebar_folder_mode = "tree",
+  sidebar_modules = {},
+  folder_sidebar_cache = nil,
   sidebar_sections = {
     sounds = true,
     libraries = true,
+    folders = true,
     ucs = true,
     collections = true,
     saved_searches = true,
@@ -1222,6 +1230,31 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["字体与导航"] = "Font & navigation",
+  ["缩放、目录与模块"] = "Scale, folders & modules",
+  ["导航显示设置…"] = "Navigation display settings…",
+  ["切换为文件夹层级"] = "Show folder hierarchy",
+  ["切换为根目录列表"] = "Show imported roots only",
+  ["正在从索引整理文件夹…"] = "Preparing folders from the index…",
+  ["正在准备可见目录…"] = "Preparing visible folders…",
+  ["尚无导入目录；添加来源后在此浏览。"] = "No imported folders. Add a source to browse here.",
+  ["+ 添加来源目录"] = "+ Add source folder",
+  ["模块隐藏不会删除数据或清除筛选；可随时从此处恢复。"] = "Hiding modules does not delete data or clear filters. Restore them here at any time.",
+  ["音效库视图"] = "Library view",
+  ["文件夹视图"] = "Folder view",
+  ["同时显示两种导航"] = "Show both navigation views",
+  ["显示文件夹层级"] = "Show folder hierarchy",
+  ["仅显示导入根目录"] = "Imported roots only",
+  ["字体与布局缩放"] = "Font & layout scale",
+  ["字体、行高、列宽和试听控件联动；更改在下一帧生效。"] = "Font, rows, columns and audition controls scale together. Changes apply next frame.",
+  ["字体大小"] = "Font size",
+  ["恢复默认字体（13 px）"] = "Reset font size (13 px)",
+  ["字体预览：金属撞击 · Metal impact · 48 kHz / 24 bit"] = "Font preview: Metal impact · 48 kHz / 24 bit",
+  ["波形列随字体同比缩放，手动列宽按基准尺寸保存；空间不足时保留横向滚动，不压扁波形。小窗口临时折叠侧栏，不改保存的开关。"] = "Waveform columns scale with the font. Manual widths are saved at base scale; horizontal scrolling preserves waveform detail. Narrow windows temporarily fold side panels without changing saved visibility.",
+  ["左侧导航"] = "Left navigation",
+  ["选择音效库或文件管理器式导航；仅显示已导入索引中的目录。"] = "Choose library or file-manager navigation. Only imported, indexed folders appear.",
+  ["导航基准宽度"] = "Navigation base width",
+  ["层级树复用素材索引，按需分帧建立与排序；浏览不会扫描硬盘、复制或移动音频。空目录不会显示。展开箭头仅展开，点击名称筛选，双击名称展开并筛选。"] = "The tree reuses the asset index and builds/sorts in bounded frames. Browsing never scans disks, copies or moves audio. Empty folders are omitted. Arrows expand; names filter; double-click names to expand and filter.",
   ["音效库"] = "Libraries",
   ["传输"] = "Transfer",
   ["Transfer 导出"] = "Transfer export",
@@ -3110,18 +3143,21 @@ function apply_ui_density_metrics()
     UI_DENSITY_PROFILES[state.ui_density]
     or UI_DENSITY_PROFILES.balanced
 
-  ROW_H = profile.row_h
-  HEADER_H = profile.header_h
-  UI_METRIC.radius = profile.radius
-  UI_METRIC.radius_small = profile.radius_small
-  UI_METRIC.icon_button = profile.icon_button
-  UI_METRIC.icon_gap = profile.icon_gap
-  UI_METRIC.panel_padding = profile.panel_padding
-  UI_METRIC.parameter_h = profile.parameter_h
-  UI_METRIC.parameter_min_w = profile.parameter_min_w
-  UI_METRIC.parameter_max_w = profile.parameter_max_w
-  UI_METRIC.control_panel_h = profile.control_panel_h
-  PANEL_GAP = profile.panel_gap
+  local scale = ui_font_size() / 13
+  UI_METRIC.scale = scale
+  ROW_H = profile.row_h * scale
+  HEADER_H = profile.header_h * scale
+  UI_METRIC.radius = profile.radius * scale
+  UI_METRIC.radius_small = profile.radius_small * scale
+  UI_METRIC.icon_button = profile.icon_button * scale
+  UI_METRIC.icon_gap = profile.icon_gap * scale
+  UI_METRIC.panel_padding = profile.panel_padding * scale
+  UI_METRIC.parameter_h = profile.parameter_h * scale
+  UI_METRIC.parameter_min_w = profile.parameter_min_w * scale
+  UI_METRIC.parameter_max_w = profile.parameter_max_w * scale
+  UI_METRIC.control_panel_h = profile.control_panel_h * scale
+  UI_METRIC.item_y = profile.item_y * scale
+  PANEL_GAP = profile.panel_gap * scale
 end
 
 function apply_surface_style()
@@ -3781,6 +3817,7 @@ function path_is_inside(path, root)
 end
 
 function invalidate_folder_navigation()
+  if folder_sidebar_invalidate then folder_sidebar_invalidate() end
   -- A large import can add tens of thousands of assets before the hierarchy
   -- is requested. Once the cache is already dirty, avoid allocating another
   -- empty table and advancing the revision for every discovered file.
@@ -3802,6 +3839,7 @@ end
 function new_folder_navigation_node(name, path, parent, root_id)
   return {
     name = name or basename(path),
+    sort_name = safe_lower(name or basename(path)),
     path = canonical_source_path(path),
     key = path_key(path),
     parent = parent,
@@ -3813,7 +3851,7 @@ function new_folder_navigation_node(name, path, parent, root_id)
   }
 end
 
-function add_asset_to_folder_navigation(asset, trees)
+function add_asset_to_folder_navigation(asset, trees, nodes)
   local root_id = tostring(asset.root_id or "")
   local root_node = trees[root_id]
 
@@ -3822,7 +3860,7 @@ function add_asset_to_folder_navigation(asset, trees)
   end
 
   local folder = canonical_source_path(
-    asset.folder ~= "" and asset.folder
+    asset.folder and asset.folder ~= "" and asset.folder
       or dirname(asset.path)
   )
 
@@ -3831,6 +3869,7 @@ function add_asset_to_folder_navigation(asset, trees)
   end
 
   local node = root_node
+  node.total_count = node.total_count + 1
   local relative = folder:sub(#root_node.path + 1)
   relative = relative:gsub("^[\\/]+", "")
 
@@ -3848,9 +3887,11 @@ function add_asset_to_folder_navigation(asset, trees)
       )
       node.children_by_key[child_key] = child
       node.children[#node.children + 1] = child
+      if nodes then nodes[#nodes + 1] = child end
     end
 
     node = child
+    node.total_count = node.total_count + 1
   end
 
   node.direct_count = node.direct_count + 1
@@ -3883,6 +3924,7 @@ end
 
 function start_folder_navigation_build()
   local trees = {}
+  local nodes = {}
 
   for _, record in ipairs(state.root_records) do
     if record.enabled and record.path ~= "" then
@@ -3893,6 +3935,7 @@ function start_folder_navigation_build()
         nil,
         record.id
       )
+      nodes[#nodes + 1] = trees[record.id]
     end
   end
 
@@ -3903,6 +3946,9 @@ function start_folder_navigation_build()
     index = 1,
     total = #state.assets,
     trees = trees,
+    nodes = nodes,
+    phase = "assets",
+    finalize_index = 1,
   }
 end
 
@@ -3940,28 +3986,28 @@ function process_folder_navigation_build()
   end
 
   local processed = 0
-  local budget = 700
+  local budget = 2000
+  job.deadline = Host.time_precise() + 0.004
 
-  while job.index <= job.total and processed < budget do
+  while job.phase == "assets" and job.index <= job.total and processed < budget do
     local asset = state.assets[job.index]
 
     if asset and asset.ready and not asset.pending_batch then
-      add_asset_to_folder_navigation(asset, job.trees)
+      add_asset_to_folder_navigation(asset, job.trees, job.nodes)
     end
 
     job.index = job.index + 1
     processed = processed + 1
+    if processed % 32 == 0 and Host.time_precise() >= job.deadline then break end
   end
 
-  if job.index > job.total then
-    for _, tree in pairs(job.trees) do
-      finalize_folder_navigation_node(tree)
-    end
-
+  if job.index > job.total then job.phase = "sort" end
+  if job.phase == "sort" and folder_navigation_sort_step(job, 2000) then
     state.folder_navigation_trees = job.trees
     state.folder_navigation_built_revision = job.revision
     state.folder_navigation_ready = true
     state.folder_navigation_job = nil
+    folder_sidebar_invalidate()
   end
 end
 
@@ -4591,6 +4637,324 @@ Jobs = {
   active = {},
   history = {},
 }
+
+-- Workspace preferences and bounded, index-only folder navigation.
+-- No disk enumeration, audio work or persistent catalog edits here.
+
+WORKSPACE_SECTION_KEYS = { "sounds", "libraries", "folders", "ucs", "collections", "saved_searches", "workflow", "activity" }
+
+function ui_font_size(value)
+  local size = tonumber(value == nil and state.ui_font_size or value) or 13
+  if size ~= size then size = 13 end
+  return math.floor(math.max(10, math.min(24, size)) + 0.5)
+end
+
+function ui_scale()
+  -- Freeze for the whole frame. Changing settings takes effect next frame,
+  -- so row clipping and mouse-to-waveform mapping use identical geometry.
+  return UI_METRIC.scale or ui_font_size() / 13
+end
+
+function ui_px(value)
+  return value * ui_scale()
+end
+
+function ui_flow_next(width, gap)
+  gap = gap or ui_px(6)
+  local right = select(1, ImGui.GetCursorScreenPos(ctx)) + select(1, ImGui.GetContentRegionAvail(ctx))
+  local previous_right = select(1, ImGui.GetItemRectMax(ctx))
+  if previous_right + gap + width <= right then ImGui.SameLine(ctx, 0, gap) end
+end
+
+function ui_grid_columns(width, item_width, gap, count)
+  return math.max(1, math.min(count, math.floor((width + gap) / (item_width + gap))))
+end
+
+function ui_metric_flow(label, value)
+  local width = select(1, ImGui.CalcTextSize(ctx, translate_ui_text(label)))
+    + select(1, ImGui.CalcTextSize(ctx, tostring(value or ""))) + ui_px(20)
+  ui_flow_next(width, ui_px(6))
+end
+
+function workspace_channel_layout(width, channel_count)
+  local gap = ui_px(5)
+  local button_width = ui_px(51)
+  local all_width = math.max(ui_px(72), select(1, ImGui.CalcTextSize(ctx, translate_ui_text("全部声道"))) + ui_px(8))
+  local label_width = select(1, ImGui.CalcTextSize(ctx, translate_ui_text("声道条")))
+  local count_width = select(1, ImGui.CalcTextSize(ctx, tostring(channel_count) .. " / " .. tostring(channel_count)))
+  local row_widths = { label_width, all_width }
+  for _ = 1, channel_count do row_widths[#row_widths + 1] = button_width end
+  row_widths[#row_widths + 1] = count_width
+  local rows, used = 1, 0
+  for _, item in ipairs(row_widths) do
+    if used > 0 and used + gap + item > width then rows, used = rows + 1, 0 end
+    used = used + (used > 0 and gap or 0) + item
+  end
+  return { rows = rows, button_width = button_width, all_width = all_width, count_width = count_width, gap = gap }
+end
+
+function workspace_load_setting(name, value)
+  if name == "ui_font_size" then
+    AppState.set(name, ui_font_size(value))
+  elseif name == "sidebar_width" then
+    local width = tonumber(value) or 240
+    if width ~= width or math.abs(width) == math.huge then width = 240 end
+    AppState.set(name, math.max(160, math.min(520, width)))
+  elseif name == "sidebar_navigation_mode" then
+    if value == "libraries" or value == "folders" or value == "both" then AppState.set(name, value) end
+  elseif name == "sidebar_folder_mode" then
+    if value == "tree" or value == "roots" then AppState.set(name, value) end
+  elseif name:match("^sidebar_show_") then
+    local key = name:sub(14)
+    for _, known in ipairs(WORKSPACE_SECTION_KEYS) do
+      if key == known then
+        AppState.update("sidebar_modules", function(modules) modules = modules or {} modules[key] = value ~= "0" return modules end)
+        return true
+      end
+    end
+    return false
+  else
+    return false
+  end
+  return true
+end
+
+function workspace_write_settings(file)
+  file:write("setting\tui_font_size\t", ui_font_size(), "\n")
+  file:write("setting\tsidebar_width\t", tostring(state.sidebar_width or 240), "\n")
+  file:write("setting\tsidebar_navigation_mode\t", state.sidebar_navigation_mode or "libraries", "\n")
+  file:write("setting\tsidebar_folder_mode\t", state.sidebar_folder_mode or "tree", "\n")
+  for _, key in ipairs(WORKSPACE_SECTION_KEYS) do
+    file:write("setting\tsidebar_show_", key, "\t", state.sidebar_modules[key] ~= false and "1" or "0", "\n")
+  end
+end
+
+function workspace_reset_preferences()
+  AppState.apply({ ui_font_size = 13, sidebar_width = 240, sidebar_navigation_mode = "libraries",
+    sidebar_folder_mode = "tree", sidebar_modules = {}, config_dirty = true })
+  AppState.set("folder_sidebar_cache", nil)
+end
+
+function workspace_navigation_enabled(key)
+  local mode = state.sidebar_navigation_mode or "libraries"
+  return key == "folders" and mode ~= "libraries" or key == "libraries" and mode ~= "folders"
+end
+
+function folder_sidebar_invalidate()
+  AppState.set("folder_sidebar_cache", nil)
+end
+
+function folder_sidebar_toggle(node)
+  AppState.update("expanded_folder_nodes", function(nodes) nodes[node.key] = not (nodes[node.key] == true) return nodes end)
+  AppState.mark_dirty("config_dirty")
+  folder_sidebar_invalidate()
+end
+
+-- Bottom-up mergesort yields after a bounded number of copies. Even one
+-- directory containing 100,000 subfolders cannot trigger an all-at-once sort.
+function folder_navigation_sort_step(job, limit)
+  local steps = 0
+  while job.finalize_index <= #job.nodes and steps < limit do
+    local node = job.nodes[job.finalize_index]
+    local sort = job.sort
+    if #node.children < 2 then
+      job.finalize_index = job.finalize_index + 1
+      steps = steps + 1
+    else
+      if not sort then
+        sort = { source = node.children, target = {}, run = 1, base = 1, count = #node.children }
+        job.sort = sort
+      end
+      if not sort.left then
+        sort.left = sort.base
+        sort.left_end = math.min(sort.count, sort.base + sort.run - 1)
+        sort.right = sort.base + sort.run
+        sort.right_end = math.min(sort.count, sort.base + 2 * sort.run - 1)
+        sort.output = sort.base
+      end
+      local a, b = sort.source[sort.left], sort.source[sort.right]
+      local take_left = sort.right > sort.right_end
+        or (sort.left <= sort.left_end and (a.sort_name < b.sort_name
+          or (a.sort_name == b.sort_name and a.key <= b.key)))
+      sort.target[sort.output] = take_left and a or b
+      if take_left then sort.left = sort.left + 1 else sort.right = sort.right + 1 end
+      sort.output = sort.output + 1
+      steps = steps + 1
+      if sort.output > sort.right_end then
+        sort.base = sort.base + 2 * sort.run
+        sort.left = nil
+        if sort.base > sort.count then
+          sort.source, sort.target = sort.target, sort.source
+          sort.run, sort.base = sort.run * 2, 1
+          if sort.run >= sort.count then
+            node.children = sort.source
+            job.sort = nil
+            job.finalize_index = job.finalize_index + 1
+          end
+        end
+      end
+    end
+    if steps % 64 == 0 and Host.time_precise() >= job.deadline then break end
+  end
+  return job.finalize_index > #job.nodes
+end
+
+function folder_sidebar_rows()
+  local tree_mode = state.sidebar_folder_mode ~= "roots"
+  local ready = not tree_mode or state.folder_navigation_ready
+  local revision = state.folder_navigation_revision or 0
+  local cache = state.folder_sidebar_cache
+  if not cache or cache.revision ~= revision or cache.tree_mode ~= tree_mode or cache.ready ~= ready then
+    cache = { revision = revision, tree_mode = tree_mode, ready = ready, rows = {}, stack = {}, root_index = 1 }
+    AppState.set("folder_sidebar_cache", cache)
+  end
+  local deadline = Host.time_precise() + 0.003
+  local work = 0
+  while not cache.complete and work < 1000 do
+    local top = cache.stack[#cache.stack]
+    local node, record, depth
+    if top then
+      node = top.node.children[top.index]
+      record, depth = top.record, top.depth
+      if node then top.index = top.index + 1 else cache.stack[#cache.stack] = nil end
+    else
+      record = state.root_records[cache.root_index]
+      cache.root_index = cache.root_index + 1
+      if not record then cache.complete = true break end
+      if record.enabled and record.path ~= "" then
+        node = tree_mode and ready and state.folder_navigation_trees[record.id]
+          or { path = record.path, key = path_key(record.path), name = record.alias ~= "" and record.alias or basename(record.path), children = {} }
+        depth = 0
+      end
+    end
+    if node then
+      cache.rows[#cache.rows + 1] = { node = node, record = record, depth = depth }
+      if tree_mode and ready and #node.children > 0 and state.expanded_folder_nodes[node.key] then
+        cache.stack[#cache.stack + 1] = { node = node, record = record, depth = depth + 1, index = 1 }
+      end
+    end
+    work = work + 1
+    if work % 32 == 0 and Host.time_precise() >= deadline then break end
+  end
+  return cache.rows, cache.complete
+end
+
+function draw_folder_sidebar_row(row)
+  local node, record = row.node, row.record
+  local has_children = #node.children > 0
+  local expanded = state.expanded_folder_nodes[node.key] == true
+  local selected = state.root_filter and path_key(state.root_filter) == node.key
+    and (not state.library_filter_id or record.library_id == state.library_filter_id)
+  local width = math.max(1, select(1, ImGui.GetContentRegionAvail(ctx)))
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local height = ui_px(24)
+  local indent = math.min(ui_px(row.depth * 16), math.max(0, width - ui_px(100)))
+  local arrow_width = ui_px(22)
+  local label_x = x + indent + arrow_width + ui_px(20)
+  ImGui.PushID(ctx, record.id .. ":" .. node.key)
+  local clicked = ImGui.Selectable(ctx, "##folder_sidebar_row", selected, 0, width, height)
+  local mouse_x = select(1, ImGui.GetMousePos(ctx))
+  if clicked then
+    if has_children and mouse_x < x + indent + arrow_width then
+      folder_sidebar_toggle(node)
+    else
+      activate_folder_path(node.path, record.library_id, false)
+      if has_children and ImGui.IsMouseDoubleClicked(ctx, 0) then folder_sidebar_toggle(node) end
+    end
+  end
+  tooltip(node.path)
+  if ImGui.BeginPopupContextItem(ctx, "folder_sidebar_context") then
+    if ImGui.MenuItem(ctx, "打开目录") then open_folder(node.path) end
+    if has_children and ImGui.MenuItem(ctx, expanded and "折叠此层级" or "展开此层级") then folder_sidebar_toggle(node) end
+    if row.depth == 0 and ImGui.MenuItem(ctx, "扫描此来源") then start_scan("扫描 " .. node.name, { record.path }) end
+    ImGui.EndPopup(ctx)
+  end
+  accept_folder_drop_target(record.library_id)
+  local draw_list = ImGui.GetWindowDrawList(ctx)
+  if has_children then
+    ImGui.DrawList_AddText(draw_list, x + indent + ui_px(4), y + ui_px(3), COLOR.dim, expanded and "▾" or "▸")
+  end
+  -- Code-native folder outline: no icon font or external asset dependency.
+  local fx, fy = x + indent + arrow_width + ui_px(2), y + ui_px(7)
+  ImGui.DrawList_AddRect(draw_list, fx, fy, fx + ui_px(13), fy + ui_px(10), COLOR.dim, ui_px(1))
+  ImGui.DrawList_AddLine(draw_list, fx, fy, fx + ui_px(5), fy - ui_px(3), COLOR.dim)
+  local count = node.total_count and tostring(node.total_count) or ""
+  local count_width = select(1, ImGui.CalcTextSize(ctx, count))
+  if label_x + ui_px(30) + count_width + ui_px(12) > x + width then count, count_width = "", 0 end
+  draw_clipped_text(draw_list, label_x, y + ui_px(3), selected and COLOR.selected_text or COLOR.text,
+    node.name, math.min(label_x, x + width), y, x + width - count_width - ui_px(12), y + height)
+  if count ~= "" then ImGui.DrawList_AddText(draw_list, x + width - count_width - ui_px(4), y + ui_px(3), COLOR.dim, count) end
+  ImGui.PopID(ctx)
+end
+
+function draw_folder_sidebar()
+  if state.sidebar_folder_mode ~= "roots" then ensure_folder_navigation_build() end
+  if dark_button("roots" == state.sidebar_folder_mode and "切换为文件夹层级" or "切换为根目录列表", -1) then
+    AppState.set("sidebar_folder_mode", "roots" == state.sidebar_folder_mode and "tree" or "roots")
+    AppState.mark_dirty("config_dirty")
+    folder_sidebar_invalidate()
+  end
+  local ready = "roots" == state.sidebar_folder_mode or state.folder_navigation_ready
+  if not ready then ImGui.TextDisabled(ctx, "正在从索引整理文件夹…") end
+  local rows, complete = folder_sidebar_rows()
+  if #rows == 0 and complete then ImGui.TextWrapped(ctx, "尚无导入目录；添加来源后在此浏览。") end
+  local spacing = UI_METRIC.item_y or ui_px(3)
+  local row_h = ui_px(24) + spacing
+  local base_y = select(2, ImGui.GetCursorPos(ctx))
+  local scroll = ImGui.GetScrollY(ctx)
+  local window_h = select(2, ImGui.GetWindowSize(ctx))
+  local first = math.max(1, math.floor((scroll - base_y) / row_h) + 1)
+  local last = math.min(#rows, math.ceil((scroll + window_h - base_y) / row_h) + 1)
+  if first > 1 then ImGui.Dummy(ctx, 0, math.min(#rows, first - 1) * row_h - spacing) end
+  for index = first, last do draw_folder_sidebar_row(rows[index]) end
+  local remaining = #rows - math.max(last, first - 1)
+  if remaining > 0 then ImGui.Dummy(ctx, 0, remaining * row_h - spacing) end
+  if not complete then ImGui.TextDisabled(ctx, "正在准备可见目录…") end
+  if dark_button("+ 添加来源目录", -1) then add_root(state.library_filter_id) end
+end
+
+function draw_workspace_navigation_options()
+  ImGui.TextWrapped(ctx, "模块隐藏不会删除数据或清除筛选；可随时从此处恢复。")
+  for _, mode in ipairs({ "libraries", "folders", "both" }) do
+    local label = ({ libraries = "音效库视图", folders = "文件夹视图", both = "同时显示两种导航" })[mode]
+    if ImGui.RadioButton(ctx, translate_ui_text(label), mode == state.sidebar_navigation_mode) then
+      AppState.set("sidebar_navigation_mode", mode)
+      AppState.mark_dirty("config_dirty")
+    end
+  end
+  ImGui.Separator(ctx)
+  for _, mode in ipairs({ "tree", "roots" }) do
+    if ImGui.RadioButton(ctx, translate_ui_text(mode == "tree" and "显示文件夹层级" or "仅显示导入根目录"), mode == state.sidebar_folder_mode) then
+      AppState.set("sidebar_folder_mode", mode)
+      AppState.mark_dirty("config_dirty")
+      folder_sidebar_invalidate()
+    end
+  end
+  ImGui.Separator(ctx)
+  for _, key in ipairs(WORKSPACE_SECTION_KEYS) do
+    local changed, enabled = ImGui.Checkbox(ctx, sidebar_section_label(key) .. "##show_" .. key, state.sidebar_modules[key] ~= false)
+    if changed then
+      AppState.update("sidebar_modules", function(modules) modules[key] = enabled return modules end)
+      AppState.mark_dirty("config_dirty")
+    end
+  end
+end
+
+function draw_settings_workspace()
+  settings_section_title("字体与布局缩放", "字体、行高、列宽和试听控件联动；更改在下一帧生效。")
+  ImGui.SetNextItemWidth(ctx, math.min(ui_px(280), select(1, ImGui.GetContentRegionAvail(ctx)) * 0.6))
+  local changed, size = ImGui.SliderDouble(ctx, "字体大小", ui_font_size(), 10, 24, "%.0f px")
+  if changed then AppState.set("ui_font_size", ui_font_size(size)) AppState.mark_dirty("config_dirty") end
+  if dark_button("恢复默认字体（13 px）", -1) then AppState.set("ui_font_size", 13) AppState.mark_dirty("config_dirty") end
+  ImGui.TextWrapped(ctx, "字体预览：金属撞击 · Metal impact · 48 kHz / 24 bit")
+  ImGui.TextWrapped(ctx, "波形列随字体同比缩放，手动列宽按基准尺寸保存；空间不足时保留横向滚动，不压扁波形。小窗口临时折叠侧栏，不改保存的开关。")
+  settings_section_title("左侧导航", "选择音效库或文件管理器式导航；仅显示已导入索引中的目录。")
+  ImGui.SetNextItemWidth(ctx, math.min(ui_px(280), select(1, ImGui.GetContentRegionAvail(ctx)) * 0.6))
+  changed, size = ImGui.SliderDouble(ctx, "导航基准宽度", state.sidebar_width or 240, 160, 520, "%.0f px")
+  if changed then AppState.set("sidebar_width", size) AppState.mark_dirty("config_dirty") end
+  draw_workspace_navigation_options()
+  ImGui.TextWrapped(ctx, "层级树复用素材索引，按需分帧建立与排序；浏览不会扫描硬盘、复制或移动音频。空目录不会显示。展开箭头仅展开，点击名称筛选，双击名称展开并筛选。")
+end
 
 -- Controlled mutation boundary for new modules. Legacy UI code still reads
 -- the shared table directly, but new services can update it through this API
@@ -7822,6 +8186,8 @@ function load_config()
         state.auto_collect_project_usage = value ~= "0"
       elseif name == "auto_preview" then
         state.auto_preview = value == "1"
+      elseif workspace_load_setting(name, value) then
+        -- Workspace-only preferences do not affect catalog persistence.
       elseif name == "enter_insert_shortcuts" then
         AppState.set("enter_insert_shortcuts", value == "1")
       elseif name == "insert_lowercase" then
@@ -8161,6 +8527,7 @@ function save_config()
 
   write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
+  workspace_write_settings(file)
 
   for path in pairs(state.favorites) do
     file:write(
@@ -8738,6 +9105,7 @@ function save_config()
   for _, key in ipairs({
     "sounds",
     "libraries",
+    "folders",
     "ucs",
     "collections",
     "saved_searches",
@@ -26327,6 +26695,7 @@ function roots_for_library(library_id)
 end
 
 function reset_interface_settings()
+  workspace_reset_preferences()
   stop_preview()
   if state.ai_semantic_session then
     ai_semantic_cancel()
@@ -26449,6 +26818,7 @@ function reset_interface_settings()
   state.wave_view_end = 1
   state.sidebar_visible = true
   state.sidebar_sections = {
+    folders = true,
     sounds = true,
     libraries = true,
     ucs = true,
@@ -27850,8 +28220,8 @@ function draw_brand_mark(compact)
   local x, y =
     ImGui.GetCursorScreenPos(ctx)
 
-  local width = compact and 38 or 166
-  local height = 34
+  local width = ui_px(compact and 38 or 166)
+  local height = ui_px(34)
 
   ImGui.InvisibleButton(
     ctx,
@@ -27860,11 +28230,11 @@ function draw_brand_mark(compact)
     height
   )
 
-  draw_brand_symbol(draw_list, x + 1, y + 1, 32)
+  draw_brand_symbol(draw_list, x + ui_px(1), y + ui_px(1), ui_px(32))
 
   if not compact then
-    local word_x = x + 42
-    local word_y = y + 8
+    local word_x = x + ui_px(42)
+    local word_y = y + ui_px(8)
     draw_brand_wordmark(
       draw_list,
       word_x,
@@ -27884,8 +28254,8 @@ function metric_chip(label, value, accent)
   local value_w =
     select(1, ImGui.CalcTextSize(ctx, value_text)) or 0
 
-  local width = label_w + value_w + 20
-  local height = 22
+  local width = label_w + value_w + ui_px(20)
+  local height = ui_px(22)
   local x, y = ImGui.GetCursorScreenPos(ctx)
   local draw_list = ImGui.GetWindowDrawList(ctx)
 
@@ -27894,7 +28264,7 @@ function metric_chip(label, value, accent)
   ImGui.DrawList_AddText(
     draw_list,
     x + 2,
-    y + 4,
+    y + ui_px(4),
     COLOR.dim,
     translated_label
   )
@@ -27902,7 +28272,7 @@ function metric_chip(label, value, accent)
   ImGui.DrawList_AddText(
     draw_list,
     x + width - value_w - 2,
-    y + 4,
+    y + ui_px(4),
     accent and COLOR.playhead or COLOR.text,
     value_text
   )
@@ -27916,7 +28286,7 @@ function inline_metric_text(text, color, maximum_width)
   local text_width =
     select(1, ImGui.CalcTextSize(ctx, fitted)) or 0
   local width = math.min(maximum_width, text_width + 4)
-  local height = 22
+  local height = ui_px(22)
   local x, y = ImGui.GetCursorScreenPos(ctx)
   local draw_list = ImGui.GetWindowDrawList(ctx)
 
@@ -27925,7 +28295,7 @@ function inline_metric_text(text, color, maximum_width)
   ImGui.DrawList_AddText(
     draw_list,
     x + 2,
-    y + 4,
+    y + ui_px(4),
     color,
     fitted
   )
@@ -27952,7 +28322,7 @@ function draw_parameter_card(
   height = height or UI_METRIC.parameter_h
 
   local x, y = ImGui.GetCursorScreenPos(ctx)
-  local compact_card = height <= 40
+  local compact_card = height <= ui_px(40)
   local translated_label = translate_ui_text(label)
   local value_text = string.format(format_string, value)
   local value_w =
@@ -27965,7 +28335,7 @@ function draw_parameter_card(
   local value_right = x + width - 6
   local value_top = y + 1
   local value_bottom =
-    y + (compact_card and 22 or 30)
+    y + ui_px(compact_card and 22 or 30)
   local editing =
     state.parameter_edit
     and state.parameter_edit.id == id
@@ -28077,20 +28447,15 @@ function draw_parameter_card(
   end
 
   local draw_list = ImGui.GetWindowDrawList(ctx)
-  local text_y = compact_card and (y + 4) or (y + 8)
+  local text_y = y + math.max(ui_px(2), (height - ImGui.GetTextLineHeight(ctx)) * 0.5 - ui_px(2))
 
-  ImGui.DrawList_AddText(
-    draw_list,
-    x + 10,
-    text_y,
-    COLOR.dim,
-    translated_label
-  )
+  draw_clipped_text(draw_list, x + ui_px(8), text_y, COLOR.dim, translated_label,
+    x, y, math.max(x, x + width - value_w - ui_px(16)), y + height)
 
   if not editing then
     ImGui.DrawList_AddText(
       draw_list,
-      x + width - value_w - 10,
+      x + width - value_w - ui_px(10),
       text_y,
       active and COLOR.selected_text or COLOR.header_text,
       value_text
@@ -28099,8 +28464,7 @@ function draw_parameter_card(
 
   local track_left = x + 10
   local track_right = x + width - 10
-  local track_y =
-    compact_card and (y + height - 4) or (y + height - 13)
+  local track_y = y + height - ui_px(compact_card and 4 or 8)
   local normalized =
     clamp(
       (value - minimum)
@@ -28365,7 +28729,7 @@ end
 function bottom_controls_reserve_height(width, asset)
   local layout = preview_control_layout_metrics(width)
   local base =
-    54
+    ui_px(54)
       + layout.panel_height
   local channel_count =
     asset
@@ -28374,11 +28738,8 @@ function bottom_controls_reserve_height(width, asset)
 
   if state.preview_channel_strip_expanded
     and channel_count > 2 then
-    base = base + (
-      state.ui_density == "comfortable"
-        and 42
-        or 38
-    )
+    local channel_layout = workspace_channel_layout(math.max(1, width - ui_px(4)), channel_count)
+    base = base + channel_layout.rows * (layout.button_size + ui_px(8)) + ui_px(10)
   end
 
   return base
@@ -28418,7 +28779,7 @@ function draw_bottom_splitter(width, total_height)
         1,
         math.min(
           BOTTOM_MAX_H,
-          total_height - BOTTOM_SPLITTER_H - 24
+          (total_height - BOTTOM_SPLITTER_H - ui_px(24)) / ui_scale()
         )
       )
 
@@ -28428,7 +28789,7 @@ function draw_bottom_splitter(width, total_height)
     state.bottom_panel_height =
       clamp(
         state.bottom_split_drag.start_height
-          - (mouse_y - state.bottom_split_drag.start_y),
+          - (mouse_y - state.bottom_split_drag.start_y) / ui_scale(),
         minimum_drag_height,
         maximum_drag_height
       )
@@ -28560,6 +28921,7 @@ function begin_module(
       window_flags
     )
 
+  if not visible then ImGui.PopStyleColor(ctx, 2) end
   return visible
 end
 
@@ -29092,6 +29454,8 @@ function sidebar_item(
 end
 
 function sidebar_section_header(key, label)
+  if state.sidebar_modules and state.sidebar_modules[key] == false then return false end
+  if (key == "libraries" or key == "folders") and not workspace_navigation_enabled(key) then return false end
   local expanded =
     state.sidebar_sections[key] ~= false
 
@@ -29139,6 +29503,7 @@ end
 SIDEBAR_SECTION_LABELS = {
   sounds = { zh = "素材", en = "SOUNDS" },
   libraries = { zh = "音效库", en = "LIBRARIES" },
+  folders = { zh = "文件夹", en = "FOLDERS" },
   ucs = { zh = "UCS 目录", en = "UCS DIRECTORY" },
   collections = { zh = "集合", en = "COLLECTIONS" },
   saved_searches = { zh = "保存搜索", en = "SAVED SEARCHES" },
@@ -29488,6 +29853,7 @@ function draw_folder_tree_node(node, depth, library_id)
   if has_children then
     if dark_button(expanded and "▾" or "▸", 20) then
       state.expanded_folder_nodes[node.key] = not expanded
+      folder_sidebar_invalidate()
       state.config_dirty = true
       expanded = not expanded
     end
@@ -29528,6 +29894,7 @@ function draw_folder_tree_node(node, depth, library_id)
         expanded and "折叠此层级" or "展开此层级"
       ) then
       state.expanded_folder_nodes[node.key] = not expanded
+      folder_sidebar_invalidate()
       state.config_dirty = true
       expanded = not expanded
     end
@@ -30046,6 +30413,11 @@ function draw_path_condition_bar()
 end
 
 function draw_sidebar()
+  if dark_button("导航显示设置…", -1) then ImGui.OpenPopup(ctx, "##workspace_navigation_options") end
+  if ImGui.BeginPopup(ctx, "##workspace_navigation_options") then
+    draw_workspace_navigation_options()
+    ImGui.EndPopup(ctx)
+  end
   if dark_button("隐藏导航 <", -1) then
     state.sidebar_visible = false
     state.config_dirty = true
@@ -30505,6 +30877,8 @@ function draw_sidebar()
 
   end
 
+  if sidebar_section_header("folders", sidebar_section_label("folders")) then draw_folder_sidebar() end
+
   if sidebar_section_header(
     "ucs",
     sidebar_section_label("ucs")
@@ -30827,11 +31201,11 @@ function draw_toolbar()
   local toolbar_width =
     select(1, ImGui.GetContentRegionAvail(ctx))
 
-  local compact_toolbar = toolbar_width < 1080
-  local control_size = 32
+  local compact_toolbar = toolbar_width < ui_px(1080)
+  local control_size = ui_px(32)
 
   draw_brand_mark(compact_toolbar)
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "sidebar",
@@ -30847,7 +31221,7 @@ function draw_toolbar()
     state.config_dirty = true
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "inspector",
@@ -30863,7 +31237,7 @@ function draw_toolbar()
     state.config_dirty = true
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   local focus_mode =
     not state.sidebar_visible
@@ -30889,7 +31263,7 @@ function draw_toolbar()
     state.config_dirty = true
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   local folder_clicked =
     icon_button(
@@ -30911,7 +31285,7 @@ function draw_toolbar()
   end
 
   draw_folder_hover_popup()
-  ImGui.SameLine(ctx)
+  ui_flow_next(ui_px(100))
 
   ImGui.PushStyleColor(
     ctx,
@@ -30938,10 +31312,10 @@ function draw_toolbar()
 
   local search_x, search_y = ImGui.GetCursorScreenPos(ctx)
   local search_width = math.max(
-    260,
-    select(1, ImGui.GetContentRegionAvail(ctx)) - 267
+    ui_px(100),
+    select(1, ImGui.GetContentRegionAvail(ctx)) - ui_px(267)
   )
-  ImGui.SetNextItemWidth(ctx, -267)
+  ImGui.SetNextItemWidth(ctx, search_width)
 
   if state.focus_search then
     ImGui.SetKeyboardFocusHere(ctx)
@@ -30993,7 +31367,7 @@ function draw_toolbar()
     AppState.set("ucs_search_popup_visible", false)
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "ai_semantic",
@@ -31014,7 +31388,7 @@ function draw_toolbar()
     end
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "clear_search",
@@ -31028,7 +31402,7 @@ function draw_toolbar()
     AppState.set("ucs_search_popup_visible", false)
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "auto_preview",
@@ -31043,7 +31417,7 @@ function draw_toolbar()
     state.config_dirty = true
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "played_reset",
@@ -31055,7 +31429,7 @@ function draw_toolbar()
     clear_session_played_highlights()
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   local background_scan_active =
     (state.scan and state.scan.silent)
@@ -31090,7 +31464,7 @@ function draw_toolbar()
     end
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "help",
@@ -31102,7 +31476,7 @@ function draw_toolbar()
     state.help_popup_requested = 1
   end
 
-  ImGui.SameLine(ctx)
+  ui_flow_next(control_size)
 
   if icon_button(
     "settings",
@@ -31983,16 +32357,17 @@ function column_layout(width)
 
     local item = {
       definition = definition,
+      minimum = ui_px(definition.minimum),
       width = math.max(
-        definition.minimum,
-        preferred
+        ui_px(definition.minimum),
+        ui_px(preferred)
       ),
     }
 
     items[#items + 1] = item
     total = total + item.width
     minimum_total =
-      minimum_total + definition.minimum
+      minimum_total + item.minimum
 
     if definition.flexible then
       flexible_count = flexible_count + 1
@@ -32141,8 +32516,8 @@ function draw_column_splitters(
           select(1, ImGui.GetMousePos(ctx)),
         start_left = left.width,
         start_right = right.width,
-        left_minimum = left.definition.minimum,
-        right_minimum = right.definition.minimum,
+        left_minimum = left.minimum,
+        right_minimum = right.minimum,
       }
     end
 
@@ -32173,10 +32548,10 @@ function draw_column_splitters(
         )
 
       state.column_widths[drag.left_key] =
-        new_left
+        new_left / ui_scale()
 
       state.column_widths[drag.right_key] =
-        combined - new_left
+        (combined - new_left) / ui_scale()
 
       state.config_dirty = true
     end
@@ -33276,21 +33651,18 @@ function draw_large_wave(asset)
     ImGui.GetContentRegionAvail(ctx)
 
   local minimum_wave_height =
-    available_height < 126 and 28
-      or available_height < 168 and 40
-      or available_height < 205 and 54
-      or 72
+    math.min(available_height * 0.3, ui_px(72))
 
   local height =
-    clamp(
+    math.max(1, math.min(available_height, clamp(
       available_height
         - bottom_controls_reserve_height(width, asset),
       minimum_wave_height,
       state.multichannel_waveform
         and (asset.channels or 1) > 2
         and 360
-        or 280
-    )
+        or ui_px(280)
+    )))
 
   local view_span = wave_view_span()
   local large_points
@@ -33828,18 +34200,8 @@ function draw_inline_channel_selector(asset, button_size)
   button_size = button_size or UI_METRIC.icon_button
   local available_width =
     select(1, ImGui.GetContentRegionAvail(ctx))
-  local channel_button_width =
-    clamp(
-      (
-        available_width
-          - 48
-          - 72
-          - 58
-          - (channel_count + 2) * 5
-      ) / channel_count,
-      34,
-      51
-    )
+  local channel_layout = workspace_channel_layout(available_width, channel_count)
+  local channel_button_width = channel_layout.button_width
 
   local start_x, start_y =
     ImGui.GetCursorScreenPos(ctx)
@@ -33853,7 +34215,7 @@ function draw_inline_channel_selector(asset, button_size)
     ctx,
     translate_ui_text("声道条")
   )
-  ImGui.SameLine(ctx, 0, 9)
+  ui_flow_next(channel_layout.all_width, channel_layout.gap)
 
   local all_selected = selected_total == channel_count
 
@@ -33876,7 +34238,7 @@ function draw_inline_channel_selector(asset, button_size)
     ctx,
     translate_ui_text("全部声道")
       .. "##inline_channel_all",
-    72,
+    channel_layout.all_width,
     button_size
   ) then
     select_all_preview_channels(asset)
@@ -33885,7 +34247,7 @@ function draw_inline_channel_selector(asset, button_size)
   ImGui.PopStyleColor(ctx, 2)
 
   for channel = 1, channel_count do
-    ImGui.SameLine(ctx, 0, 5)
+    ui_flow_next(channel_button_width, channel_layout.gap)
 
     local is_selected = selected[channel] == true
 
@@ -33903,7 +34265,7 @@ function draw_inline_channel_selector(asset, button_size)
     )
 
     local button_label =
-      channel_button_width < 42
+      channel_button_width < ui_px(42)
         and tostring(channel)
         or preview_channel_label(
           channel,
@@ -33962,7 +34324,7 @@ function draw_inline_channel_selector(asset, button_size)
     end
   end
 
-  ImGui.SameLine(ctx, 0, 9)
+  ui_flow_next(channel_layout.count_width, channel_layout.gap)
   ImGui.TextDisabled(
     ctx,
     string.format(
@@ -33973,11 +34335,12 @@ function draw_inline_channel_selector(asset, button_size)
   )
 
   local mouse_x, mouse_y = ImGui.GetMousePos(ctx)
+  local rail_end_y = select(2, ImGui.GetItemRectMax(ctx))
   local rail_hovered =
     mouse_x >= start_x
       and mouse_x <= start_x + available_width
       and mouse_y >= start_y
-      and mouse_y <= start_y + button_size + 4
+      and mouse_y <= rail_end_y
 
   if rail_hovered
     and ctrl
@@ -34418,7 +34781,7 @@ function draw_action_strip(asset, minimal, button_size)
     begin_external_drag(asset, true)
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "play_stop",
@@ -34434,7 +34797,7 @@ function draw_action_strip(asset, minimal, button_size)
     end
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "insert_current",
@@ -34446,7 +34809,7 @@ function draw_action_strip(asset, minimal, button_size)
     insert_asset(asset, false, false)
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "transfer_export",
@@ -34459,7 +34822,7 @@ function draw_action_strip(asset, minimal, button_size)
   end
 
   if not minimal then
-    ImGui.SameLine(ctx, 0, button_gap)
+    ui_flow_next(button_size, button_gap)
 
     if icon_button(
       "insert_new_track",
@@ -34471,9 +34834,11 @@ function draw_action_strip(asset, minimal, button_size)
       insert_asset(asset, true, false)
     end
 
-    ImGui.SameLine(ctx, 0, button_gap)
-    toolbar_separator(button_size)
-    ImGui.SameLine(ctx, 0, button_gap)
+    if select(1, ImGui.GetWindowSize(ctx)) >= button_size * 9 + button_gap * 10 + ui_px(7) then
+      ui_flow_next(ui_px(7), button_gap)
+      toolbar_separator(button_size)
+    end
+    ui_flow_next(button_size, button_gap)
 
     if icon_button(
       "favorite",
@@ -34485,7 +34850,7 @@ function draw_action_strip(asset, minimal, button_size)
       toggle_favorite(asset)
     end
 
-    ImGui.SameLine(ctx, 0, button_gap)
+    ui_flow_next(button_size, button_gap)
 
     if icon_button(
       "clear_selection",
@@ -34499,7 +34864,7 @@ function draw_action_strip(asset, minimal, button_size)
       state.active_region_index = 0
     end
 
-    ImGui.SameLine(ctx, 0, button_gap)
+    ui_flow_next(button_size, button_gap)
 
     if icon_button(
       "regions",
@@ -34513,7 +34878,7 @@ function draw_action_strip(asset, minimal, button_size)
 
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "more_actions",
@@ -34548,7 +34913,7 @@ function draw_preview_toggle_icons(asset, button_size)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "loop_selection",
@@ -34561,7 +34926,7 @@ function draw_preview_toggle_icons(asset, button_size)
     state.config_dirty = true
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "loudness_match",
@@ -34575,7 +34940,7 @@ function draw_preview_toggle_icons(asset, button_size)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   local channel_count =
     preview_asset_channel_count(asset)
@@ -34625,7 +34990,7 @@ function draw_preview_toggle_icons(asset, button_size)
     end
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "loop_preview",
@@ -34638,7 +35003,7 @@ function draw_preview_toggle_icons(asset, button_size)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, button_gap)
+  ui_flow_next(button_size, button_gap)
 
   if icon_button(
     "reverse_preview",
@@ -34852,34 +35217,34 @@ function draw_time_metrics(asset)
     true
   )
 
-  ImGui.SameLine(ctx, 0, 6)
+  ui_metric_flow("In", format_time(in_seconds))
   metric_chip("In", format_time(in_seconds), false)
 
-  ImGui.SameLine(ctx, 0, 6)
+  ui_metric_flow("Out", format_time(out_seconds))
   metric_chip("Out", format_time(out_seconds), false)
 
-  ImGui.SameLine(ctx, 0, 6)
+  ui_metric_flow("Duration", format_time(asset.duration or 0))
   metric_chip(
     "Duration",
     format_time(asset.duration or 0),
     false
   )
 
-  ImGui.SameLine(ctx, 0, 6)
+  ui_metric_flow("Zoom", string.format("×%.1f", 1 / wave_view_span()))
   metric_chip(
     "Zoom",
     string.format("×%.1f", 1 / wave_view_span()),
     false
   )
 
-  ImGui.SameLine(ctx, 0, 10)
+  ui_flow_next(ui_px(100), ui_px(10))
 
   local remaining_width =
     select(1, ImGui.GetContentRegionAvail(ctx))
 
   local summary_drawn = false
 
-  if remaining_width > 190 then
+  if remaining_width > ui_px(190) then
     local summary_width =
       math.min(
         remaining_width * 0.38,
@@ -34926,7 +35291,7 @@ function draw_time_metrics(asset)
 
   if status_text ~= "" then
     if summary_drawn then
-      ImGui.SameLine(ctx, 0, 12)
+      ui_flow_next(ui_px(100), ui_px(12))
     end
 
     remaining_width =
@@ -34961,7 +35326,7 @@ function draw_studio_parameters(asset, card_width, card_height)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, 10)
+  ui_flow_next(card_width, ui_px(10))
 
   local new_rate, rate_changed =
     draw_parameter_card(
@@ -34981,7 +35346,7 @@ function draw_studio_parameters(asset, card_width, card_height)
     update_preview_parameters()
   end
 
-  ImGui.SameLine(ctx, 0, 10)
+  ui_flow_next(card_width, ui_px(10))
 
   local new_gain, gain_changed =
     draw_parameter_card(
@@ -35007,9 +35372,9 @@ function preview_control_layout_metrics(width)
   local minimal = mode == "minimal_rack"
   local focused = mode == "focus_rack"
   local button_size =
-    state.ui_density == "compact" and 28
+    ui_px(state.ui_density == "compact" and 28
       or state.ui_density == "comfortable" and 32
-      or 30
+      or 30)
   local button_gap =
     math.max(
       3,
@@ -35018,22 +35383,23 @@ function preview_control_layout_metrics(width)
   local action_width =
     button_size * (minimal and 5 or 9)
       + button_gap * (minimal and 4 or 10)
-      + (minimal and 0 or 7)
+      + (minimal and 0 or ui_px(7))
   local toggle_width =
     button_size * 6
       + button_gap * 5
   local parameter_min_width =
-    UI_METRIC.parameter_min_w * 3 + 20
-  local separator_width = 27
+    UI_METRIC.parameter_min_w * 3 + ui_px(20)
+  local separator_width = ui_px(27)
   local all_inline_min_width =
     action_width
       + parameter_min_width
       + toggle_width
       + separator_width * 2
-      + 12
+      + ui_px(12)
+  local inner_width = math.max(1, width - ui_px(4))
   local two_rows =
     not minimal
-      and width
+      and inner_width
         < action_width
           + parameter_min_width
           + separator_width
@@ -35042,14 +35408,14 @@ function preview_control_layout_metrics(width)
   local toggles_inline =
     toggles_visible
       and not two_rows
-      and width >= all_inline_min_width
-  local row_count =
-    minimal and 1
-      or two_rows and 2
-      or 1
+      and inner_width >= all_inline_min_width
+  local action_rows = math.ceil((minimal and 5 or 9) / ui_grid_columns(inner_width, button_size, button_gap, minimal and 5 or 9))
+  local parameter_rows = math.ceil(3 / ui_grid_columns(inner_width, UI_METRIC.parameter_min_w, ui_px(10), 3))
+  local toggle_rows = math.ceil(6 / ui_grid_columns(inner_width, button_size, button_gap, 6))
+  local row_count = minimal and action_rows or two_rows and (action_rows + parameter_rows) or 1
 
   if toggles_visible and not toggles_inline then
-    row_count = row_count + 1
+    row_count = row_count + toggle_rows
   end
 
   return {
@@ -35066,8 +35432,8 @@ function preview_control_layout_metrics(width)
     row_count = row_count,
     panel_height =
       row_count * button_size
-        + math.max(0, row_count - 1) * 8
-        + 4,
+        + math.max(0, row_count - 1) * ui_px(8)
+        + ui_px(16),
   }
 end
 
@@ -35084,16 +35450,17 @@ function draw_control_deck(asset)
   local panel_height = layout.panel_height
 
   if show_channel_rail then
-    panel_height =
-      panel_height + button_size + 10
+    local channel_layout = workspace_channel_layout(math.max(1, width - ui_px(4)), preview_asset_channel_count(asset))
+    panel_height = panel_height + channel_layout.rows * (button_size + ui_px(8)) + ui_px(10)
   end
 
   ImGui.PushStyleVar(
     ctx,
     ImGui.StyleVar_WindowPadding,
-    2,
-    2
+    ui_px(2),
+    ui_px(2)
   )
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, layout.button_gap, ui_px(8))
   ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, COLOR.window)
 
   local strip_visible = ImGui.BeginChild(
@@ -35113,18 +35480,18 @@ function draw_control_deck(asset)
       if two_rows then
         ImGui.Spacing(ctx)
       else
-        ImGui.SameLine(ctx, 0, 10)
+        ImGui.SameLine(ctx, 0, ui_px(10))
         toolbar_separator(button_size)
-        ImGui.SameLine(ctx, 0, 10)
+        ImGui.SameLine(ctx, 0, ui_px(10))
       end
 
       local card_width =
         clamp(
           (
-            width
+            (width - ui_px(4))
               - (
                 two_rows
-                  and 20
+                  and ui_px(20)
                   or layout.action_width
                     + layout.separator_width
                     + (
@@ -35134,10 +35501,10 @@ function draw_control_deck(asset)
                         or 0
                     )
               )
-              - 20
+              - ui_px(20)
           ) / 3,
           UI_METRIC.parameter_min_w,
-          150
+          UI_METRIC.parameter_max_w
         )
 
       draw_studio_parameters(
@@ -35147,9 +35514,9 @@ function draw_control_deck(asset)
       )
 
       if layout.toggles_inline then
-        ImGui.SameLine(ctx, 0, 10)
+        ImGui.SameLine(ctx, 0, ui_px(10))
         toolbar_separator(button_size)
-        ImGui.SameLine(ctx, 0, 10)
+        ImGui.SameLine(ctx, 0, ui_px(10))
         draw_preview_toggle_icons(asset, button_size)
       elseif layout.toggles_visible then
         ImGui.Spacing(ctx)
@@ -35167,9 +35534,9 @@ function draw_control_deck(asset)
     end
   end
 
-  ImGui.EndChild(ctx)
+  if strip_visible then ImGui.EndChild(ctx) end
   ImGui.PopStyleColor(ctx)
-  ImGui.PopStyleVar(ctx)
+  ImGui.PopStyleVar(ctx, 2)
 end
 
 function format_loudness_value(value, suffix)
@@ -35333,7 +35700,7 @@ function draw_preview_header(asset)
       ImGui.GetContentRegionAvail(ctx)
     )
 
-  local height = 32
+  local height = ui_px(32)
   local x, y =
     ImGui.GetCursorScreenPos(ctx)
 
@@ -35370,7 +35737,8 @@ function draw_preview_header(asset)
   local items =
     collect_loudness_summary_items(asset)
 
-  local right_x = x + width - 12
+  local text_y = y + math.max(0, (height - ImGui.GetTextLineHeight(ctx)) * 0.5)
+  local right_x = x + width - ui_px(12)
 
   for index = #items, 1, -1 do
     local item = items[index]
@@ -35392,29 +35760,30 @@ function draw_preview_header(asset)
       ) or 0
 
     local item_w =
-      label_w + value_w + 12
+      label_w + value_w + ui_px(12)
 
+    if right_x - item_w < x + math.min(width * 0.4, ui_px(160)) then break end
     right_x = right_x - item_w
 
     ImGui.DrawList_AddText(
       draw_list,
       right_x,
-      y + 9,
+      text_y,
       COLOR.dim,
       label
     )
 
     ImGui.DrawList_AddText(
       draw_list,
-      right_x + label_w + 6,
-      y + 9,
+      right_x + label_w + ui_px(6),
+      text_y,
       item.accent
         and COLOR.playhead
         or COLOR.text,
       value
     )
 
-    right_x = right_x - 14
+    right_x = right_x - ui_px(14)
 
     if index > 1 then
       ImGui.DrawList_AddCircleFilled(
@@ -35438,7 +35807,7 @@ function draw_preview_header(asset)
   draw_clipped_text(
     draw_list,
     name_start,
-    y + 8,
+    text_y,
     COLOR.selected_text,
     asset.name,
     name_start,
@@ -35477,7 +35846,7 @@ function draw_preview_header(asset)
     draw_clipped_text(
       draw_list,
       metadata_x,
-      y + 8,
+      text_y,
       COLOR.dim,
       metadata,
       metadata_x,
@@ -36403,7 +36772,7 @@ function settings_tab_button(key, label)
   end
 
   if clicked then
-    state.settings_tab = key
+    AppState.set("settings_tab", key)
   end
 end
 
@@ -37333,7 +37702,7 @@ function settings_section_title(title, description)
   )
 
   if description and description ~= "" then
-    ImGui.TextDisabled(ctx, description)
+    ImGui.TextWrapped(ctx, description)
   end
 
   ImGui.Spacing(ctx)
@@ -39413,7 +39782,7 @@ function settings_nav_item(key, label, description)
       ImGui.GetContentRegionAvail(ctx)
     )
 
-  local height = 58
+  local height = ui_px(58)
   local x, y =
     ImGui.GetCursorScreenPos(ctx)
 
@@ -39466,27 +39835,27 @@ function settings_nav_item(key, label, description)
   draw_clipped_text(
     draw_list,
     x + 14,
-    y + 10,
+    y + ui_px(10),
     selected
       and COLOR.selected_text
       or COLOR.header_text,
     translate_ui_text(label),
     x + 10,
-    y + 5,
+    y + ui_px(5),
     x + width - 10,
-    y + 31
+    y + ui_px(31)
   )
 
   draw_clipped_text(
     draw_list,
     x + 14,
-    y + 34,
+    y + ui_px(34),
     COLOR.dim,
     translate_ui_text(description or ""),
     x + 10,
-    y + 29,
+    y + ui_px(29),
     x + width - 10,
-    y + height - 6
+    y + height - ui_px(6)
   )
 end
 
@@ -39500,10 +39869,11 @@ function draw_settings_popup()
       ImGui.OpenPopup(ctx, "设置##reasfx")
     end
   end
+  local parent_w, parent_h = ImGui.GetWindowSize(ctx)
   ImGui.SetNextWindowSize(
     ctx,
-    980,
-    700,
+    math.min(ui_px(980), math.max(320, parent_w - 20)),
+    math.min(ui_px(700), math.max(240, parent_h - 20)),
     ImGui.Cond_Appearing
   )
 
@@ -39520,8 +39890,8 @@ function draw_settings_popup()
   local width, height =
     ImGui.GetContentRegionAvail(ctx)
 
-  local nav_width = 226
-  local footer_height = 42
+  local nav_width = math.min(ui_px(226), width * 0.32)
+  local footer_height = ui_px(42)
 
   if ImGui.BeginChild(
     ctx,
@@ -39529,7 +39899,7 @@ function draw_settings_popup()
     nav_width,
     height - footer_height,
     ImGui.ChildFlags_Borders,
-    ImGui.WindowFlags_NoScrollbar
+    0
   ) then
     ImGui.TextColored(
       ctx,
@@ -39547,15 +39917,16 @@ function draw_settings_popup()
     ImGui.Spacing(ctx)
 
     settings_nav_item("general", "常规", "语言、面板与插入")
+    settings_nav_item("workspace", "字体与导航", "缩放、目录与模块")
     settings_nav_item("appearance", "外观", "预设、颜色与 Artwork")
     settings_nav_item("waveforms", "波形", "精度、瞬态与响度")
     settings_nav_item("ai", "AI 搜索", "API、模型与隐私")
     settings_nav_item("transfer", "传输", "处理、命名与导出")
     settings_nav_item("maintenance", "维护", "环境、缓存与重建")
     settings_nav_item("about", "关于", "版本、版权与项目主页")
+    ImGui.EndChild(ctx)
   end
 
-  ImGui.EndChild(ctx)
   ImGui.SameLine(ctx)
 
   if ImGui.BeginChild(
@@ -39568,6 +39939,7 @@ function draw_settings_popup()
   ) then
     local page_title = {
       general = "常规",
+      workspace = "字体与导航",
       appearance = "外观",
       waveforms = "波形",
       ai = "AI 语义搜索",
@@ -39585,7 +39957,9 @@ function draw_settings_popup()
 
     ImGui.Separator(ctx)
 
-    if state.settings_tab == "appearance" then
+    if state.settings_tab == "workspace" then
+      draw_settings_workspace()
+    elseif state.settings_tab == "appearance" then
       draw_settings_appearance()
     elseif state.settings_tab == "waveforms" then
       draw_settings_waveforms()
@@ -39600,13 +39974,13 @@ function draw_settings_popup()
     else
       draw_settings_general()
     end
+    ImGui.EndChild(ctx)
   end
 
-  ImGui.EndChild(ctx)
   draw_ai_preset_delete_popup()
   ImGui.Separator(ctx)
 
-  local button_width = 132
+  local button_width = math.min(ui_px(132), width)
 
   ImGui.SetCursorPosX(
     ctx,
@@ -39869,6 +40243,7 @@ end
 ----------------------------------------------------------------
 
 function push_theme()
+  ImGui.PushFont(ctx, nil, ui_font_size())
   apply_ui_density_metrics()
   apply_theme_palette()
   apply_surface_style()
@@ -39930,14 +40305,17 @@ function push_theme()
   ImGui.PushStyleVar(
     ctx,
     ImGui.StyleVar_ItemSpacing,
-    profile.item_x,
-    profile.item_y
+    ui_px(profile.item_x),
+    ui_px(profile.item_y)
   )
 
-  return #colors, 4
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, ui_px(4), ui_px(3))
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, ui_px(8), ui_px(8))
+  return #colors, 6
 end
 
 function pop_theme(color_count, var_count)
+  ImGui.PopFont(ctx)
   ImGui.PopStyleVar(ctx, var_count)
   ImGui.PopStyleColor(ctx, color_count)
 end
@@ -39977,8 +40355,7 @@ function draw_inspector_splitter(height)
     state.inspector_width =
       clamp(
         state.inspector_resize.width
-          + state.inspector_resize.mouse_x
-          - mouse_x,
+          + (state.inspector_resize.mouse_x - mouse_x) / ui_scale(),
         240,
         480
       )
@@ -40116,27 +40493,30 @@ function draw_main()
     local width, height =
       ImGui.GetContentRegionAvail(ctx)
 
-    local content_height = math.max(170, height)
+    local content_height = math.max(1, height)
 
+    local center_min_w = ui_px(CENTER_MIN_W)
+    local sidebar_min_w = ui_px(SIDEBAR_MIN_W)
+    local inspector_min_w = ui_px(INSPECTOR_MIN_W)
     local render_sidebar = state.sidebar_visible
     local render_inspector = state.inspector_visible
 
     local sidebar_width =
       render_sidebar
       and clamp(
-        width * 0.15,
-        SIDEBAR_MIN_W,
-        SIDEBAR_W
+        ui_px(state.sidebar_width or 240),
+        sidebar_min_w,
+        math.max(sidebar_min_w, width * 0.4)
       )
       or 0
 
     local inspector_width =
       render_inspector
       and clamp(
-        state.inspector_width,
-        INSPECTOR_MIN_W,
+        ui_px(state.inspector_width),
+        inspector_min_w,
         math.max(
-          INSPECTOR_MIN_W,
+          inspector_min_w,
           width * 0.30
         )
       )
@@ -40164,26 +40544,26 @@ function draw_main()
         - inspector_width
         - current_gap_total()
 
-    if center_width < CENTER_MIN_W
+    if center_width < center_min_w
       and render_inspector then
-      local deficit = CENTER_MIN_W - center_width
+      local deficit = center_min_w - center_width
       local reducible =
         math.max(
           0,
-          inspector_width - INSPECTOR_MIN_W
+          inspector_width - inspector_min_w
         )
       local reduction = math.min(deficit, reducible)
       inspector_width = inspector_width - reduction
       center_width = center_width + reduction
     end
 
-    if center_width < CENTER_MIN_W
+    if center_width < center_min_w
       and render_sidebar then
-      local deficit = CENTER_MIN_W - center_width
+      local deficit = center_min_w - center_width
       local reducible =
         math.max(
           0,
-          sidebar_width - SIDEBAR_MIN_W
+          sidebar_width - sidebar_min_w
         )
       local reduction = math.min(deficit, reducible)
       sidebar_width = sidebar_width - reduction
@@ -40192,7 +40572,7 @@ function draw_main()
 
     state.layout_notice = ""
 
-    if center_width < CENTER_MIN_W
+    if center_width < center_min_w
       and render_inspector then
       render_inspector = false
       inspector_width = 0
@@ -40204,7 +40584,7 @@ function draw_main()
         "窗口较窄：右侧元数据面板已临时折叠"
     end
 
-    if center_width < CENTER_MIN_W
+    if center_width < center_min_w
       and render_sidebar then
       render_sidebar = false
       sidebar_width = 0
@@ -40213,8 +40593,7 @@ function draw_main()
         "窗口较窄：左右面板已临时折叠"
     end
 
-    center_width =
-      math.max(220, center_width)
+    center_width = math.max(1, center_width)
 
     if render_sidebar then
       if begin_module(
@@ -40224,9 +40603,9 @@ function draw_main()
         true
       ) then
         draw_sidebar()
+        end_module()
       end
 
-      end_module()
       ImGui.SameLine(ctx)
     end
 
@@ -40262,20 +40641,20 @@ function draw_main()
         math.max(
           1,
           math.min(
-            BOTTOM_MAX_H,
+            ui_px(BOTTOM_MAX_H),
             panel_space - runtime_min_list
           )
         )
 
       local runtime_min_bottom =
         math.min(
-          BOTTOM_MIN_H,
+          ui_px(BOTTOM_MIN_H),
           maximum_bottom
         )
 
       local bottom_height =
         clamp(
-          state.bottom_panel_height,
+          ui_px(state.bottom_panel_height),
           runtime_min_bottom,
           maximum_bottom
         )
@@ -40291,9 +40670,8 @@ function draw_main()
         true
       ) then
         draw_results()
+        end_module()
       end
-
-      end_module()
 
       draw_bottom_splitter(
         center_available_w,
@@ -40304,16 +40682,15 @@ function draw_main()
         "bottom_module",
         center_available_w,
         bottom_height,
-        false,
+        true,
         true
       ) then
         draw_bottom(selected_asset())
+        end_module()
       end
 
-      end_module()
+      ImGui.EndChild(ctx)
     end
-
-    ImGui.EndChild(ctx)
 
     if render_inspector then
       ImGui.SameLine(ctx)
@@ -40327,9 +40704,9 @@ function draw_main()
         false
       ) then
         draw_metadata_inspector()
+        end_module()
       end
 
-      end_module()
     end
 
     draw_help_popup()
@@ -40341,6 +40718,7 @@ function draw_main()
     process_external_drag()
     draw_tooltip_overlay()
 
+    -- ReaImGui automatically ends a Begin() that returns false.
     ImGui.End(ctx)
   end
 

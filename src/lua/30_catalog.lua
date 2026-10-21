@@ -602,6 +602,8 @@ function load_config()
         state.auto_collect_project_usage = value ~= "0"
       elseif name == "auto_preview" then
         state.auto_preview = value == "1"
+      elseif workspace_load_setting(name, value) then
+        -- Workspace-only preferences do not affect catalog persistence.
       elseif name == "enter_insert_shortcuts" then
         AppState.set("enter_insert_shortcuts", value == "1")
       elseif name == "insert_lowercase" then
@@ -941,6 +943,7 @@ function save_config()
 
   write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
+  workspace_write_settings(file)
 
   for path in pairs(state.favorites) do
     file:write(
@@ -1518,6 +1521,7 @@ function save_config()
   for _, key in ipairs({
     "sounds",
     "libraries",
+    "folders",
     "ucs",
     "collections",
     "saved_searches",

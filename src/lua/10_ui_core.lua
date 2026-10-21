@@ -398,18 +398,21 @@ function apply_ui_density_metrics()
     UI_DENSITY_PROFILES[state.ui_density]
     or UI_DENSITY_PROFILES.balanced
 
-  ROW_H = profile.row_h
-  HEADER_H = profile.header_h
-  UI_METRIC.radius = profile.radius
-  UI_METRIC.radius_small = profile.radius_small
-  UI_METRIC.icon_button = profile.icon_button
-  UI_METRIC.icon_gap = profile.icon_gap
-  UI_METRIC.panel_padding = profile.panel_padding
-  UI_METRIC.parameter_h = profile.parameter_h
-  UI_METRIC.parameter_min_w = profile.parameter_min_w
-  UI_METRIC.parameter_max_w = profile.parameter_max_w
-  UI_METRIC.control_panel_h = profile.control_panel_h
-  PANEL_GAP = profile.panel_gap
+  local scale = ui_font_size() / 13
+  UI_METRIC.scale = scale
+  ROW_H = profile.row_h * scale
+  HEADER_H = profile.header_h * scale
+  UI_METRIC.radius = profile.radius * scale
+  UI_METRIC.radius_small = profile.radius_small * scale
+  UI_METRIC.icon_button = profile.icon_button * scale
+  UI_METRIC.icon_gap = profile.icon_gap * scale
+  UI_METRIC.panel_padding = profile.panel_padding * scale
+  UI_METRIC.parameter_h = profile.parameter_h * scale
+  UI_METRIC.parameter_min_w = profile.parameter_min_w * scale
+  UI_METRIC.parameter_max_w = profile.parameter_max_w * scale
+  UI_METRIC.control_panel_h = profile.control_panel_h * scale
+  UI_METRIC.item_y = profile.item_y * scale
+  PANEL_GAP = profile.panel_gap * scale
 end
 
 function apply_surface_style()
@@ -1069,6 +1072,7 @@ function path_is_inside(path, root)
 end
 
 function invalidate_folder_navigation()
+  if folder_sidebar_invalidate then folder_sidebar_invalidate() end
   -- A large import can add tens of thousands of assets before the hierarchy
   -- is requested. Once the cache is already dirty, avoid allocating another
   -- empty table and advancing the revision for every discovered file.
@@ -1090,6 +1094,7 @@ end
 function new_folder_navigation_node(name, path, parent, root_id)
   return {
     name = name or basename(path),
+    sort_name = safe_lower(name or basename(path)),
     path = canonical_source_path(path),
     key = path_key(path),
     parent = parent,
@@ -1101,7 +1106,7 @@ function new_folder_navigation_node(name, path, parent, root_id)
   }
 end
 
-function add_asset_to_folder_navigation(asset, trees)
+function add_asset_to_folder_navigation(asset, trees, nodes)
   local root_id = tostring(asset.root_id or "")
   local root_node = trees[root_id]
 
@@ -1110,7 +1115,7 @@ function add_asset_to_folder_navigation(asset, trees)
   end
 
   local folder = canonical_source_path(
-    asset.folder ~= "" and asset.folder
+    asset.folder and asset.folder ~= "" and asset.folder
       or dirname(asset.path)
   )
 
@@ -1119,6 +1124,7 @@ function add_asset_to_folder_navigation(asset, trees)
   end
 
   local node = root_node
+  node.total_count = node.total_count + 1
   local relative = folder:sub(#root_node.path + 1)
   relative = relative:gsub("^[\\/]+", "")
 
@@ -1136,9 +1142,11 @@ function add_asset_to_folder_navigation(asset, trees)
       )
       node.children_by_key[child_key] = child
       node.children[#node.children + 1] = child
+      if nodes then nodes[#nodes + 1] = child end
     end
 
     node = child
+    node.total_count = node.total_count + 1
   end
 
   node.direct_count = node.direct_count + 1
@@ -1171,6 +1179,7 @@ end
 
 function start_folder_navigation_build()
   local trees = {}
+  local nodes = {}
 
   for _, record in ipairs(state.root_records) do
     if record.enabled and record.path ~= "" then
@@ -1181,6 +1190,7 @@ function start_folder_navigation_build()
         nil,
         record.id
       )
+      nodes[#nodes + 1] = trees[record.id]
     end
   end
 
@@ -1191,6 +1201,9 @@ function start_folder_navigation_build()
     index = 1,
     total = #state.assets,
     trees = trees,
+    nodes = nodes,
+    phase = "assets",
+    finalize_index = 1,
   }
 end
 
@@ -1228,28 +1241,28 @@ function process_folder_navigation_build()
   end
 
   local processed = 0
-  local budget = 700
+  local budget = 2000
+  job.deadline = Host.time_precise() + 0.004
 
-  while job.index <= job.total and processed < budget do
+  while job.phase == "assets" and job.index <= job.total and processed < budget do
     local asset = state.assets[job.index]
 
     if asset and asset.ready and not asset.pending_batch then
-      add_asset_to_folder_navigation(asset, job.trees)
+      add_asset_to_folder_navigation(asset, job.trees, job.nodes)
     end
 
     job.index = job.index + 1
     processed = processed + 1
+    if processed % 32 == 0 and Host.time_precise() >= job.deadline then break end
   end
 
-  if job.index > job.total then
-    for _, tree in pairs(job.trees) do
-      finalize_folder_navigation_node(tree)
-    end
-
+  if job.index > job.total then job.phase = "sort" end
+  if job.phase == "sort" and folder_navigation_sort_step(job, 2000) then
     state.folder_navigation_trees = job.trees
     state.folder_navigation_built_revision = job.revision
     state.folder_navigation_ready = true
     state.folder_navigation_job = nil
+    folder_sidebar_invalidate()
   end
 end
 

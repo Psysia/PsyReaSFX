@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.17
+-- @version 0.9.0-beta8
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -93,6 +93,7 @@
 --   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
 --   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
 --   - Beta 7.17：兼容 gpt-6-luna 网关，修复推理额度与空响应诊断
+--   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -199,7 +200,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.17"
+local VERSION = "0.9.0 Beta 8"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1126,6 +1127,7 @@ local state = {
   language = "zh",
   mini_wave_points = MINI_WAVE_DEFAULT_POINTS,
   ui_density = "compact",
+  ui_font_size = 13,
   surface_style = "dark",
   settings_tab = "general",
   settings_close_requested = false,
@@ -1142,9 +1144,15 @@ local state = {
   region_hex = "#E2B764",
 
   sidebar_visible = true,
+  sidebar_width = 240,
+  sidebar_navigation_mode = "libraries",
+  sidebar_folder_mode = "tree",
+  sidebar_modules = {},
+  folder_sidebar_cache = nil,
   sidebar_sections = {
     sounds = true,
     libraries = true,
+    folders = true,
     ucs = true,
     collections = true,
     saved_searches = true,
@@ -1222,6 +1230,31 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["字体与导航"] = "Font & navigation",
+  ["缩放、目录与模块"] = "Scale, folders & modules",
+  ["导航显示设置…"] = "Navigation display settings…",
+  ["切换为文件夹层级"] = "Show folder hierarchy",
+  ["切换为根目录列表"] = "Show imported roots only",
+  ["正在从索引整理文件夹…"] = "Preparing folders from the index…",
+  ["正在准备可见目录…"] = "Preparing visible folders…",
+  ["尚无导入目录；添加来源后在此浏览。"] = "No imported folders. Add a source to browse here.",
+  ["+ 添加来源目录"] = "+ Add source folder",
+  ["模块隐藏不会删除数据或清除筛选；可随时从此处恢复。"] = "Hiding modules does not delete data or clear filters. Restore them here at any time.",
+  ["音效库视图"] = "Library view",
+  ["文件夹视图"] = "Folder view",
+  ["同时显示两种导航"] = "Show both navigation views",
+  ["显示文件夹层级"] = "Show folder hierarchy",
+  ["仅显示导入根目录"] = "Imported roots only",
+  ["字体与布局缩放"] = "Font & layout scale",
+  ["字体、行高、列宽和试听控件联动；更改在下一帧生效。"] = "Font, rows, columns and audition controls scale together. Changes apply next frame.",
+  ["字体大小"] = "Font size",
+  ["恢复默认字体（13 px）"] = "Reset font size (13 px)",
+  ["字体预览：金属撞击 · Metal impact · 48 kHz / 24 bit"] = "Font preview: Metal impact · 48 kHz / 24 bit",
+  ["波形列随字体同比缩放，手动列宽按基准尺寸保存；空间不足时保留横向滚动，不压扁波形。小窗口临时折叠侧栏，不改保存的开关。"] = "Waveform columns scale with the font. Manual widths are saved at base scale; horizontal scrolling preserves waveform detail. Narrow windows temporarily fold side panels without changing saved visibility.",
+  ["左侧导航"] = "Left navigation",
+  ["选择音效库或文件管理器式导航；仅显示已导入索引中的目录。"] = "Choose library or file-manager navigation. Only imported, indexed folders appear.",
+  ["导航基准宽度"] = "Navigation base width",
+  ["层级树复用素材索引，按需分帧建立与排序；浏览不会扫描硬盘、复制或移动音频。空目录不会显示。展开箭头仅展开，点击名称筛选，双击名称展开并筛选。"] = "The tree reuses the asset index and builds/sorts in bounded frames. Browsing never scans disks, copies or moves audio. Empty folders are omitted. Arrows expand; names filter; double-click names to expand and filter.",
   ["音效库"] = "Libraries",
   ["传输"] = "Transfer",
   ["Transfer 导出"] = "Transfer export",
