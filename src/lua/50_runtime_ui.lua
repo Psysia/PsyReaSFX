@@ -50,25 +50,24 @@ function load_database()
   end
 
   local ignored = 0
-  local path_field
-  for index, field in ipairs(headers) do
-    if field == "path" then path_field = index break end
-  end
   local journal_probe = io.open(DATABASE_JOURNAL_FILE, "rb")
   local asset_positions = journal_probe and {} or nil
   if journal_probe then journal_probe:close() end
 
+  invalidate_similarity_index()
+  invalidate_library_counts()
+  invalidate_folder_navigation()
+  invalidate_ucs_counts()
+  AppState.set("database_ordered_assets", nil)
   local loaded = 0
   for line in file:lines() do
-    local values = split_tsv(line)
-    local asset = database_asset_from_values(headers, values)
-    local raw_path = path_field and values[path_field] or ""
+    local asset, raw_path = database_asset_from_line(headers, line)
 
     if asset then
-      local key = asset_positions and path_key(asset.path) or nil
-      local existed = key and state.by_path[key] ~= nil
-      add_or_update_asset(asset, false)
-      if key and not existed then
+      local key = path_key(asset.path)
+      local existed = state.by_path[key] ~= nil
+      add_loaded_database_asset(asset, key)
+      if asset_positions and not existed then
         asset_positions[key] = #state.assets
       end
     elseif raw_path ~= "" then
@@ -96,11 +95,28 @@ function load_database()
   end
 end
 
+function database_asset_from_line(headers, line)
+  local asset, position = {}, 1
+  local escaped = line:find("%", 1, true) ~= nil
+  for _, field in ipairs(headers) do
+    local last = line:find("\t", position, true)
+    local value = last and line:sub(position, last - 1) or line:sub(position)
+    asset[field] = escaped and unescape_tsv(value) or value
+    position = last and last + 1 or #line + 1
+  end
+  local raw_path = asset.path or ""
+  return normalize_database_asset(asset), raw_path
+end
+
 function database_asset_from_values(headers, values)
   local asset = {}
   for index, field in ipairs(headers or {}) do
     asset[field] = values[index] or ""
   end
+  return normalize_database_asset(asset)
+end
+
+function normalize_database_asset(asset)
   if not asset.path or asset.path == ""
     or is_ignored_media_path(asset.path) then
     return nil
@@ -138,6 +154,8 @@ function database_asset_from_values(headers, values)
     mark_database_snapshot_dirty()
   end
   asset.last_seen = tonumber(asset.last_seen) or 0
+  asset.artwork_path = tostring(asset.artwork_path or "")
+  asset.artwork_checked = asset.artwork_path ~= ""
   ensure_asset_identity(asset, false)
   return asset
 end
@@ -24670,8 +24688,34 @@ function draw_main()
       local session = state.startup_session
       ImGui.Text(ctx, session.failure and "索引加载失败" or "正在打开素材库…")
       ImGui.TextDisabled(ctx, session.phase or "读取设置")
-      ImGui.TextDisabled(ctx, string.format("已读取 %d 条素材", #state.assets))
+      ImGui.TextDisabled(ctx, string.format(translate_ui_text("已读取 %d 条素材"), #state.assets))
+      if session.started_at then
+        ImGui.TextDisabled(ctx, string.format(translate_ui_text("已用 %.1f 秒"), reaper.time_precise() - session.started_at))
+      end
       if session.failure then ImGui.TextWrapped(ctx, session.failure) end
+      if #state.assets > 0 then
+        ImGui.Separator(ctx)
+        ImGui.TextDisabled(ctx, "素材预览 · 完整索引校验后开放搜索与试听")
+        -- Read-only samples: journal changes and user history are not yet
+        -- restored. Never expose mutations or audition from a partial catalog.
+        if ImGui.BeginTable(ctx, "startup_assets", 3, ImGui.TableFlags_RowBg) then
+          ImGui.TableSetupColumn(ctx, "名称")
+          ImGui.TableSetupColumn(ctx, "音效库")
+          ImGui.TableSetupColumn(ctx, "时长")
+          ImGui.TableHeadersRow(ctx)
+          for index = 1, math.min(12, #state.assets) do
+            local asset = state.assets[index]
+            ImGui.TableNextRow(ctx)
+            ImGui.TableSetColumnIndex(ctx, 0)
+            ImGui.Text(ctx, asset.name or "")
+            ImGui.TableSetColumnIndex(ctx, 1)
+            ImGui.Text(ctx, asset.library or "")
+            ImGui.TableSetColumnIndex(ctx, 2)
+            ImGui.Text(ctx, string.format("%.2f s", asset.duration or 0))
+          end
+          ImGui.EndTable(ctx)
+        end
+      end
       ImGui.End(ctx)
       pop_theme(color_count, var_count)
       return
@@ -25295,13 +25339,16 @@ end
 
 AppState.set("startup_session", {
   thread = coroutine.create(initialize_runtime),
-  phase = "读取设置", deadline = 0,
+  phase = "读取设置", deadline = 0, started_at = reaper.time_precise(),
 })
 
 function process_startup()
   local session = state.startup_session
   if not session or session.failure then return end
-  session.deadline = reaper.time_precise() + 0.012
+  -- REAPER defer gaps amplify small work slices. Spend up to 24ms when the
+  -- transport is idle, retaining the shorter 12ms budget during playback.
+  local playing = reaper.GetPlayState and (reaper.GetPlayState() & 1) ~= 0
+  session.deadline = reaper.time_precise() + (playing and 0.012 or 0.024)
   local ok, failure = coroutine.resume(session.thread)
   if not ok then
     session.failure = tostring(failure)

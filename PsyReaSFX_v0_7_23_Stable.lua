@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.11
+-- @version 0.9.0-beta7.12
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -88,6 +88,7 @@
 --   - Beta 7.9：修复 AI 完成状态清理、下一批加载和长文件波形峰值构建
 --   - Beta 7.10：Windows 超长路径 PCM/float WAV 改用分帧直接波形读取
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
+--   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -193,7 +194,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.11"
+local VERSION = "0.9.0 Beta 7.12"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1851,6 +1852,9 @@ I18N_EN = {
   ["恢复未完成导入"] = "Resume incomplete import",
   ["接续未完成素材"] = "Resume unfinished assets",
   ["正在打开素材库…"] = "Opening sound library…",
+  ["已读取 %d 条素材"] = "Loaded %d assets",
+  ["已用 %.1f 秒"] = "Elapsed %.1f s",
+  ["素材预览 · 完整索引校验后开放搜索与试听"] = "Asset preview · search and audition unlock after full catalog validation",
   ["索引加载失败"] = "Catalog loading failed",
   ["读取设置"] = "Loading settings",
   ["读取音效库"] = "Loading libraries",
@@ -2256,6 +2260,8 @@ I18N_EN["当前批次没有可显示的 AI 语义结果。"] =
   "The current batch has no AI semantic results to display."
 
 I18N_PATTERNS_EN = {
+  { "^已读取 (%d+) 条素材$", "Loaded %1 assets" },
+  { "^已用 ([%d%.]+) 秒$", "Elapsed %1 s" },
   {
     "^AI 语义结果  (%d+)$",
     "AI semantic results  %1",
@@ -3567,6 +3573,18 @@ function is_ignored_directory_name(name)
 end
 
 function is_ignored_media_path(path)
+  -- Most indexed paths contain no system-metadata markers. Avoid splitting,
+  -- trimming and lowercasing every directory segment for that common case.
+  local raw = tostring(path or "")
+  local lower = raw:lower()
+  if not lower:find("._", 1, true)
+    and not lower:find("__macosx", 1, true)
+    and not lower:find(".appledouble", 1, true)
+    and not lower:find(".spotlight-v100", 1, true)
+    and not lower:find(".trashes", 1, true)
+    and not lower:find("@eadir", 1, true) then
+    return false
+  end
   local name = basename(path or "")
 
   -- macOS writes AppleDouble resource-fork metadata as `._filename` on
@@ -7425,6 +7443,22 @@ function add_or_update_asset(asset, probe_file)
   state.database_ordered_assets = nil
   invalidate_library_counts()
   invalidate_folder_navigation()
+  return asset
+end
+
+-- Snapshot rows have already been decoded and normalized, and no views exist
+-- yet. Invalidate aggregate caches once in the loader, not once per row.
+function add_loaded_database_asset(asset, key)
+  if state.by_path[key] then
+    -- Preserve the historical duplicate-row merge and user activity semantics.
+    return add_or_update_asset(asset, false)
+  end
+  state.by_path[key] = asset
+  state.assets[#state.assets + 1] = asset
+  if asset.ucs_status == "pending" then
+    state.ucs_pending_lookup[key] = asset
+    AppState.set("ucs_pending_count", state.ucs_pending_count + 1)
+  end
   return asset
 end
 
@@ -14747,25 +14781,24 @@ function load_database()
   end
 
   local ignored = 0
-  local path_field
-  for index, field in ipairs(headers) do
-    if field == "path" then path_field = index break end
-  end
   local journal_probe = io.open(DATABASE_JOURNAL_FILE, "rb")
   local asset_positions = journal_probe and {} or nil
   if journal_probe then journal_probe:close() end
 
+  invalidate_similarity_index()
+  invalidate_library_counts()
+  invalidate_folder_navigation()
+  invalidate_ucs_counts()
+  AppState.set("database_ordered_assets", nil)
   local loaded = 0
   for line in file:lines() do
-    local values = split_tsv(line)
-    local asset = database_asset_from_values(headers, values)
-    local raw_path = path_field and values[path_field] or ""
+    local asset, raw_path = database_asset_from_line(headers, line)
 
     if asset then
-      local key = asset_positions and path_key(asset.path) or nil
-      local existed = key and state.by_path[key] ~= nil
-      add_or_update_asset(asset, false)
-      if key and not existed then
+      local key = path_key(asset.path)
+      local existed = state.by_path[key] ~= nil
+      add_loaded_database_asset(asset, key)
+      if asset_positions and not existed then
         asset_positions[key] = #state.assets
       end
     elseif raw_path ~= "" then
@@ -14793,11 +14826,28 @@ function load_database()
   end
 end
 
+function database_asset_from_line(headers, line)
+  local asset, position = {}, 1
+  local escaped = line:find("%", 1, true) ~= nil
+  for _, field in ipairs(headers) do
+    local last = line:find("\t", position, true)
+    local value = last and line:sub(position, last - 1) or line:sub(position)
+    asset[field] = escaped and unescape_tsv(value) or value
+    position = last and last + 1 or #line + 1
+  end
+  local raw_path = asset.path or ""
+  return normalize_database_asset(asset), raw_path
+end
+
 function database_asset_from_values(headers, values)
   local asset = {}
   for index, field in ipairs(headers or {}) do
     asset[field] = values[index] or ""
   end
+  return normalize_database_asset(asset)
+end
+
+function normalize_database_asset(asset)
   if not asset.path or asset.path == ""
     or is_ignored_media_path(asset.path) then
     return nil
@@ -14835,6 +14885,8 @@ function database_asset_from_values(headers, values)
     mark_database_snapshot_dirty()
   end
   asset.last_seen = tonumber(asset.last_seen) or 0
+  asset.artwork_path = tostring(asset.artwork_path or "")
+  asset.artwork_checked = asset.artwork_path ~= ""
   ensure_asset_identity(asset, false)
   return asset
 end
@@ -39367,8 +39419,34 @@ function draw_main()
       local session = state.startup_session
       ImGui.Text(ctx, session.failure and "索引加载失败" or "正在打开素材库…")
       ImGui.TextDisabled(ctx, session.phase or "读取设置")
-      ImGui.TextDisabled(ctx, string.format("已读取 %d 条素材", #state.assets))
+      ImGui.TextDisabled(ctx, string.format(translate_ui_text("已读取 %d 条素材"), #state.assets))
+      if session.started_at then
+        ImGui.TextDisabled(ctx, string.format(translate_ui_text("已用 %.1f 秒"), reaper.time_precise() - session.started_at))
+      end
       if session.failure then ImGui.TextWrapped(ctx, session.failure) end
+      if #state.assets > 0 then
+        ImGui.Separator(ctx)
+        ImGui.TextDisabled(ctx, "素材预览 · 完整索引校验后开放搜索与试听")
+        -- Read-only samples: journal changes and user history are not yet
+        -- restored. Never expose mutations or audition from a partial catalog.
+        if ImGui.BeginTable(ctx, "startup_assets", 3, ImGui.TableFlags_RowBg) then
+          ImGui.TableSetupColumn(ctx, "名称")
+          ImGui.TableSetupColumn(ctx, "音效库")
+          ImGui.TableSetupColumn(ctx, "时长")
+          ImGui.TableHeadersRow(ctx)
+          for index = 1, math.min(12, #state.assets) do
+            local asset = state.assets[index]
+            ImGui.TableNextRow(ctx)
+            ImGui.TableSetColumnIndex(ctx, 0)
+            ImGui.Text(ctx, asset.name or "")
+            ImGui.TableSetColumnIndex(ctx, 1)
+            ImGui.Text(ctx, asset.library or "")
+            ImGui.TableSetColumnIndex(ctx, 2)
+            ImGui.Text(ctx, string.format("%.2f s", asset.duration or 0))
+          end
+          ImGui.EndTable(ctx)
+        end
+      end
       ImGui.End(ctx)
       pop_theme(color_count, var_count)
       return
@@ -39992,13 +40070,16 @@ end
 
 AppState.set("startup_session", {
   thread = coroutine.create(initialize_runtime),
-  phase = "读取设置", deadline = 0,
+  phase = "读取设置", deadline = 0, started_at = reaper.time_precise(),
 })
 
 function process_startup()
   local session = state.startup_session
   if not session or session.failure then return end
-  session.deadline = reaper.time_precise() + 0.012
+  -- REAPER defer gaps amplify small work slices. Spend up to 24ms when the
+  -- transport is idle, retaining the shorter 12ms budget during playback.
+  local playing = reaper.GetPlayState and (reaper.GetPlayState() & 1) ~= 0
+  session.deadline = reaper.time_precise() + (playing and 0.012 or 0.024)
   local ok, failure = coroutine.resume(session.thread)
   if not ok then
     session.failure = tostring(failure)
