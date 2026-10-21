@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 8.1
+
+### Stable font-size dragging
+
+- Fix the feedback loop where scaling the settings page also moved/resized the active font slider and changed its mouse mapping.
+- Preview only in a fixed-height region while dragging; apply global font/layout once on release. Add an integer slider, ±1 buttons and Ctrl-click numeric input.
+- Keep temporary sizes out of persistence; closing settings or leaving the page clears uncommitted preview without changing the applied size.
+- Add stable slider geometry, frozen drag metrics, single-release commit, preview font-stack and fine-tuning regressions. Live REAPER checks remain; host scheduling and first-use font loading may still affect latency.
+
 ## 0.9.0 Beta 8
 
 ### Custom font size and folder navigation
@@ -1509,5 +1518,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_1_win_x64.zip
 

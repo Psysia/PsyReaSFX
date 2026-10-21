@@ -24291,8 +24291,11 @@ function draw_settings_popup()
     ImGui.WindowFlags_NoScrollbar
       | ImGui.WindowFlags_NoScrollWithMouse
   ) then
+    AppState.set("ui_font_size_draft", nil)
     return
   end
+
+  if state.settings_tab ~= "workspace" then AppState.set("ui_font_size_draft", nil) end
 
   local width, height =
     ImGui.GetContentRegionAvail(ctx)

@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8
+-- @version 0.9.0-beta8.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -94,6 +94,7 @@
 --   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
 --   - Beta 7.17：兼容 gpt-6-luna 网关，修复推理额度与空响应诊断
 --   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
+--   - Beta 8.1：字号拖动仅预览，松手应用布局，支持整数与 ±1 精调
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -200,7 +201,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8"
+local VERSION = "0.9.0 Beta 8.1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1230,6 +1231,8 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["拖动时预览，松开后应用；字体、行高、列宽和试听控件联动。"] = "Preview while dragging, apply on release. Font, rows, columns and audition controls scale together.",
+  ["拖动时仅预览字号，松开后统一应用布局；支持 ±1 精调，Ctrl+单击滑块可输入整数。"] = "Dragging previews the font only; release to apply the layout. Use ±1 to fine-tune or Ctrl-click the slider to type an integer.",
   ["字体与导航"] = "Font & navigation",
   ["缩放、目录与模块"] = "Scale, folders & modules",
   ["导航显示设置…"] = "Navigation display settings…",
@@ -4649,6 +4652,53 @@ function ui_font_size(value)
   return math.floor(math.max(10, math.min(24, size)) + 0.5)
 end
 
+function workspace_commit_font_size(value)
+  local size = ui_font_size(value)
+  AppState.set("ui_font_size_draft", nil)
+  if size == ui_font_size() then return false end
+  AppState.set("ui_font_size", size)
+  AppState.mark_dirty("config_dirty")
+  return true
+end
+
+function workspace_edit_font_size(changed, value, active)
+  -- Do not resize the control that owns the drag: moving its bounds changes
+  -- mouse-to-value mapping and feeds the changed size back into itself.
+  if changed then AppState.set("ui_font_size_draft", ui_font_size(value)) end
+  if not active and state.ui_font_size_draft then
+    return workspace_commit_font_size(state.ui_font_size_draft)
+  end
+  return false
+end
+
+function draw_workspace_font_editor()
+  ImGui.Text(ctx, "字体大小")
+  local width = math.max(1, select(1, ImGui.GetContentRegionAvail(ctx)))
+  ImGui.SetNextItemWidth(ctx, math.min(ui_px(320), width))
+  local changed, size = ImGui.SliderInt(ctx, "##workspace_font_size",
+    state.ui_font_size_draft or ui_font_size(), 10, 24, "%d px")
+  local active = ImGui.IsItemActive(ctx)
+  workspace_edit_font_size(changed, size, active)
+  if active then mark_interaction() end
+
+  if dark_button("−##font_smaller", ui_px(32)) then workspace_commit_font_size(ui_font_size() - 1) end
+  ui_flow_next(ui_px(32))
+  if dark_button("+##font_larger", ui_px(32)) then workspace_commit_font_size(ui_font_size() + 1) end
+  ui_flow_next(ui_px(220))
+  if dark_button("恢复默认字体（13 px）", math.min(ui_px(220), width)) then workspace_commit_font_size(13) end
+
+  -- A fixed-height preview changes only this text, not the slider or global
+  -- geometry. Keep the exact integer sizes; interpolated fonts churn the atlas.
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local preview_h = math.max(40, ui_px(44))
+  ImGui.Dummy(ctx, width, preview_h)
+  ImGui.PushFont(ctx, nil, state.ui_font_size_draft or ui_font_size())
+  draw_clipped_text(ImGui.GetWindowDrawList(ctx), x + ui_px(4), y + ui_px(6), COLOR.text,
+    translate_ui_text("字体预览：金属撞击 · Metal impact · 48 kHz / 24 bit"), x, y, x + width, y + preview_h)
+  ImGui.PopFont(ctx)
+  ImGui.TextWrapped(ctx, "拖动时仅预览字号，松开后统一应用布局；支持 ±1 精调，Ctrl+单击滑块可输入整数。")
+end
+
 function ui_scale()
   -- Freeze for the whole frame. Changing settings takes effect next frame,
   -- so row clipping and mouse-to-waveform mapping use identical geometry.
@@ -4730,6 +4780,7 @@ function workspace_write_settings(file)
 end
 
 function workspace_reset_preferences()
+  AppState.set("ui_font_size_draft", nil)
   AppState.apply({ ui_font_size = 13, sidebar_width = 240, sidebar_navigation_mode = "libraries",
     sidebar_folder_mode = "tree", sidebar_modules = {}, config_dirty = true })
   AppState.set("folder_sidebar_cache", nil)
@@ -4941,16 +4992,12 @@ function draw_workspace_navigation_options()
 end
 
 function draw_settings_workspace()
-  settings_section_title("字体与布局缩放", "字体、行高、列宽和试听控件联动；更改在下一帧生效。")
-  ImGui.SetNextItemWidth(ctx, math.min(ui_px(280), select(1, ImGui.GetContentRegionAvail(ctx)) * 0.6))
-  local changed, size = ImGui.SliderDouble(ctx, "字体大小", ui_font_size(), 10, 24, "%.0f px")
-  if changed then AppState.set("ui_font_size", ui_font_size(size)) AppState.mark_dirty("config_dirty") end
-  if dark_button("恢复默认字体（13 px）", -1) then AppState.set("ui_font_size", 13) AppState.mark_dirty("config_dirty") end
-  ImGui.TextWrapped(ctx, "字体预览：金属撞击 · Metal impact · 48 kHz / 24 bit")
+  settings_section_title("字体与布局缩放", "拖动时预览，松开后应用；字体、行高、列宽和试听控件联动。")
+  draw_workspace_font_editor()
   ImGui.TextWrapped(ctx, "波形列随字体同比缩放，手动列宽按基准尺寸保存；空间不足时保留横向滚动，不压扁波形。小窗口临时折叠侧栏，不改保存的开关。")
   settings_section_title("左侧导航", "选择音效库或文件管理器式导航；仅显示已导入索引中的目录。")
   ImGui.SetNextItemWidth(ctx, math.min(ui_px(280), select(1, ImGui.GetContentRegionAvail(ctx)) * 0.6))
-  changed, size = ImGui.SliderDouble(ctx, "导航基准宽度", state.sidebar_width or 240, 160, 520, "%.0f px")
+  local changed, size = ImGui.SliderDouble(ctx, "导航基准宽度", state.sidebar_width or 240, 160, 520, "%.0f px")
   if changed then AppState.set("sidebar_width", size) AppState.mark_dirty("config_dirty") end
   draw_workspace_navigation_options()
   ImGui.TextWrapped(ctx, "层级树复用素材索引，按需分帧建立与排序；浏览不会扫描硬盘、复制或移动音频。空目录不会显示。展开箭头仅展开，点击名称筛选，双击名称展开并筛选。")
@@ -39884,8 +39931,11 @@ function draw_settings_popup()
     ImGui.WindowFlags_NoScrollbar
       | ImGui.WindowFlags_NoScrollWithMouse
   ) then
+    AppState.set("ui_font_size_draft", nil)
     return
   end
+
+  if state.settings_tab ~= "workspace" then AppState.set("ui_font_size_draft", nil) end
 
   local width, height =
     ImGui.GetContentRegionAvail(ctx)

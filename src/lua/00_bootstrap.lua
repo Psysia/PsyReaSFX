@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8
+-- @version 0.9.0-beta8.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -94,6 +94,7 @@
 --   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
 --   - Beta 7.17：兼容 gpt-6-luna 网关，修复推理额度与空响应诊断
 --   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
+--   - Beta 8.1：字号拖动仅预览，松手应用布局，支持整数与 ±1 精调
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -200,7 +201,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8"
+local VERSION = "0.9.0 Beta 8.1"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1230,6 +1231,8 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["拖动时预览，松开后应用；字体、行高、列宽和试听控件联动。"] = "Preview while dragging, apply on release. Font, rows, columns and audition controls scale together.",
+  ["拖动时仅预览字号，松开后统一应用布局；支持 ±1 精调，Ctrl+单击滑块可输入整数。"] = "Dragging previews the font only; release to apply the layout. Use ±1 to fine-tune or Ctrl-click the slider to type an integer.",
   ["字体与导航"] = "Font & navigation",
   ["缩放、目录与模块"] = "Scale, folders & modules",
   ["导航显示设置…"] = "Navigation display settings…",
