@@ -57,6 +57,12 @@ local ended, drawn = 0, 0
 function push_theme() return 0, 0 end
 function pop_theme() end
 function translate_ui_text(value) return value end
+function fit_text_to_width(value) return value end
+function rgba_with_alpha(color, alpha) return (color & 0xffffff00) | alpha end
+COLOR = { panel = 1, panel_alt = 2, button = 3, border = 4,
+  header_text = 5, accent = 0x66ddffff, dim = 7, text = 8, error = 9 }
+local viewport_w, viewport_h = 1360, 800
+local bars, coordinates, labels = 0, {}, {}
 ImGui = {
   SetNextWindowSize = function() end,
   Cond_FirstUseEver = 1, WindowFlags_NoCollapse = 1,
@@ -65,28 +71,55 @@ ImGui = {
   End = function() ended = ended + 1 end,
   Text = function() drawn = drawn + 1 end,
   TextDisabled = function() end,
+  TextWrapped = function(value, text) labels[#labels + 1] = text end,
+  GetContentRegionAvail = function() return viewport_w, viewport_h end,
+  GetCursorScreenPos = function() return 0, 0 end,
+  GetWindowDrawList = function() return {} end,
+  Dummy = function() end,
+  CalcTextSize = function(_, value) return #value * 8, 18 end,
+  DrawList_AddText = function(_, x, y, _, value) labels[#labels + 1] = value end,
+  DrawList_AddRectFilled = function() end,
+  DrawList_AddRect = function() end,
+  DrawList_AddQuadFilled = function() end,
+  DrawList_AddQuad = function() end,
+  DrawList_AddLine = function(_, x1, y1, x2, y2)
+    bars = bars + 1
+    coordinates[#coordinates + 1] = { x1, y1, x2, y2 }
+    assert(x1 >= 0 and x2 <= viewport_w and y1 >= 0 and y2 <= viewport_h, "splash must fit viewport")
+  end,
 }
 SCRIPT_NAME, VERSION = "PsyReaSFX", "test"
+assert(load(region("function draw_brand_symbol(", "function draw_brand_mark(")))()
+assert(load(region("function draw_startup_splash(session)", "function draw_main()")))()
 assert(load(region("function draw_main()", "function autosave()")))()
 state = { open = true, assets = {}, startup_session = { phase = "loading" } }
 draw_main()
-assert(ended == 1 and drawn == 1)
+assert(ended == 1 and bars == 55, "splash must use a fixed 48 waveform bars and 7 logo bars")
 ImGui.Begin = function() return false, true end
 draw_main()
 assert(ended == 1, "ReaImGui hidden windows must not receive an extra End")
 ImGui.Begin = function() return true, true end
-local rows = 0
-ImGui.Separator = function() end
-ImGui.BeginTable = function() return true end
-ImGui.EndTable = function() end
-ImGui.TableSetupColumn = function() end
-ImGui.TableHeadersRow = function() end
-ImGui.TableNextRow = function() rows = rows + 1 end
-ImGui.TableSetColumnIndex = function() end
 state.startup_session.started_at = 0
 for index = 1, 50 do state.assets[index] = { name = "asset", duration = 1 } end
+local earlier_y = coordinates[20][2]
+bars, coordinates, labels = 0, {}, {}
 draw_main()
-assert(rows == 12 and ended == 2, "startup preview must stay bounded and balance the visible window")
+assert(bars == 55 and ended == 2, "splash cost must not grow with catalog size")
+assert(coordinates[20][2] ~= earlier_y, "waveform must move with elapsed time")
+assert(table.concat(labels, "|"):find("已读取 50 条素材", 1, true), "real counts must remain visible")
+viewport_w, viewport_h = 300, 300
+bars = 0
+draw_main()
+assert(bars == 55, "minimum splash layout must fit")
+viewport_w = 220
+bars = 0
+draw_main()
+assert(bars == 0 and drawn == 1, "tiny windows must use readable text fallback")
+viewport_w, viewport_h = 1360, 800
+state.startup_session.failure = "fixture loading error"
+bars, labels = 0, {}
+draw_main()
+assert(bars == 0 and labels[1] == "fixture loading error", "failed startup must stop motion and show diagnostics")
 assert(load(region("function process_startup()", "function loop()")))()
 local now = 10
 state.watch_interval = 60

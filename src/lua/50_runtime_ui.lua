@@ -24649,6 +24649,67 @@ function draw_inspector_splitter(height)
   end
 end
 
+-- A bounded vector splash, not a timed intro. It only reads startup state and
+-- disappears as soon as the initialization coroutine finishes.
+function draw_startup_splash(session)
+  local now = reaper.time_precise()
+  local elapsed = math.max(0, now - (session.started_at or now))
+  local width, height = ImGui.GetContentRegionAvail(ctx)
+  local origin_x, origin_y = ImGui.GetCursorScreenPos(ctx)
+  if session.failure or width < 300 or height < 300 then
+    ImGui.Text(ctx, session.failure and "索引加载失败" or "正在打开素材库…")
+    ImGui.TextDisabled(ctx, session.phase or "读取设置")
+    ImGui.TextDisabled(ctx, string.format(translate_ui_text("已读取 %d 条素材"), #state.assets))
+    ImGui.TextDisabled(ctx, string.format(translate_ui_text("已用 %.1f 秒"), elapsed))
+    if session.failure then ImGui.TextWrapped(ctx, session.failure) end
+    return
+  end
+
+  local draw_list = ImGui.GetWindowDrawList(ctx)
+  local card_w, card_h = math.min(560, width - 24), 284
+  local left = origin_x + (width - card_w) * 0.5
+  local top = origin_y + (height - card_h) * 0.5
+  local center_x = left + card_w * 0.5
+  ImGui.Dummy(ctx, width, height)
+  ImGui.DrawList_AddRectFilled(draw_list, left, top, left + card_w, top + card_h, COLOR.panel, 16)
+  ImGui.DrawList_AddRect(draw_list, left, top, left + card_w, top + card_h, COLOR.border, 16, 0, 1)
+
+  draw_brand_symbol(draw_list, center_x - 27, top + 19, 54)
+  if brand_font then ImGui.PushFont(ctx, brand_font, 26) end
+  local word_width = ImGui.CalcTextSize(ctx, "PsyReaSFX")
+  if brand_font then ImGui.PopFont(ctx) end
+  draw_brand_wordmark(draw_list, center_x - word_width * 0.5, top + 83, 26)
+
+  local function centered(text, y, color)
+    text = fit_text_to_width(translate_ui_text(text), card_w - 40)
+    local text_w = ImGui.CalcTextSize(ctx, text)
+    ImGui.DrawList_AddText(draw_list, center_x - text_w * 0.5, y, color, text)
+  end
+  centered(VERSION, top + 117, COLOR.dim)
+
+  -- Fixed 48 bars: no image decoding, audio access, catalog iteration or fake
+  -- progress percentage. Time controls motion, actual phase/counts explain work.
+  local wave_w = math.min(320, card_w - 48)
+  local wave_left, wave_y = center_x - wave_w * 0.5, top + 166
+  local motion = session.failure and 0 or elapsed
+  for index = 0, 47 do
+    local position = index / 47
+    local envelope = math.sin(position * math.pi) ^ 0.7
+    local pulse = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(position * 19 - motion * 3.2))
+    local amplitude = 2 + 20 * envelope * pulse
+    local color = session.failure and COLOR.error
+      or rgba_with_alpha(COLOR.accent, math.floor(95 + pulse * 150))
+    local x = wave_left + position * wave_w
+    ImGui.DrawList_AddLine(draw_list, x, wave_y - amplitude, x, wave_y + amplitude, color, 2)
+  end
+  centered(session.failure and "索引加载失败" or (session.phase or "读取设置"), top + 202,
+    session.failure and COLOR.error or COLOR.text)
+  local counts = string.format(translate_ui_text("已读取 %d 条素材"), #state.assets)
+  local timing = string.format(translate_ui_text("已用 %.1f 秒"), elapsed)
+  centered(counts .. "  ·  " .. timing, top + 228, COLOR.dim)
+  centered("完整校验后自动进入素材库", top + 254, COLOR.dim)
+end
+
 function draw_main()
   -- 每帧重置，只有当前真正悬停的控件可以登记一个提示。
   state.tooltip_pending_text = nil
@@ -24685,37 +24746,7 @@ function draw_main()
 
   if visible then
     if state.startup_session then
-      local session = state.startup_session
-      ImGui.Text(ctx, session.failure and "索引加载失败" or "正在打开素材库…")
-      ImGui.TextDisabled(ctx, session.phase or "读取设置")
-      ImGui.TextDisabled(ctx, string.format(translate_ui_text("已读取 %d 条素材"), #state.assets))
-      if session.started_at then
-        ImGui.TextDisabled(ctx, string.format(translate_ui_text("已用 %.1f 秒"), reaper.time_precise() - session.started_at))
-      end
-      if session.failure then ImGui.TextWrapped(ctx, session.failure) end
-      if #state.assets > 0 then
-        ImGui.Separator(ctx)
-        ImGui.TextDisabled(ctx, "素材预览 · 完整索引校验后开放搜索与试听")
-        -- Read-only samples: journal changes and user history are not yet
-        -- restored. Never expose mutations or audition from a partial catalog.
-        if ImGui.BeginTable(ctx, "startup_assets", 3, ImGui.TableFlags_RowBg) then
-          ImGui.TableSetupColumn(ctx, "名称")
-          ImGui.TableSetupColumn(ctx, "音效库")
-          ImGui.TableSetupColumn(ctx, "时长")
-          ImGui.TableHeadersRow(ctx)
-          for index = 1, math.min(12, #state.assets) do
-            local asset = state.assets[index]
-            ImGui.TableNextRow(ctx)
-            ImGui.TableSetColumnIndex(ctx, 0)
-            ImGui.Text(ctx, asset.name or "")
-            ImGui.TableSetColumnIndex(ctx, 1)
-            ImGui.Text(ctx, asset.library or "")
-            ImGui.TableSetColumnIndex(ctx, 2)
-            ImGui.Text(ctx, string.format("%.2f s", asset.duration or 0))
-          end
-          ImGui.EndTable(ctx)
-        end
-      end
+      draw_startup_splash(state.startup_session)
       ImGui.End(ctx)
       pop_theme(color_count, var_count)
       return
