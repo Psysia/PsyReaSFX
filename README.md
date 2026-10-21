@@ -118,7 +118,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.8.5** | Recommended for everyday use. |
-| Preview | **0.9.0 Beta 7.12** | Faster catalog decoding, idle startup scheduling and read-only loading preview. |
+| Preview | **0.9.0 Beta 7.13** | Branded startup splash with lightweight waveform motion and live loading status. |
 | Optional component | **PsyReaSFX Neural Similarity** | Local neural similar-sound search for Windows x64. |
 
 PsyReaSFX keeps normal acoustic search available without the optional neural component. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
@@ -126,12 +126,12 @@ PsyReaSFX keeps normal acoustic search available without the optional neural com
 ### Development status
 
 - **Stable channel: 0.8.5** — the default ReaPack release for everyday use.
-- **Preview channel: 0.9.0 Beta 7.12** — faster snapshot decoding and less repeated catalog bookkeeping, with optimized idle startup scheduling. Loading shows read-only asset samples and elapsed time; search and audition unlock after full validation.
+- **Preview channel: 0.9.0 Beta 7.13** — a centered branded startup splash with lightweight cyan waveform motion, real loading stages, asset counts and elapsed time. Opens the library immediately after validation, without any minimum animation duration. Retains Beta 7.12 startup optimizations.
 - **No conversion library** — source audio is decoded, downmixed and resampled to the model's 32 kHz input in memory. PsyReaSFX does not create converted audio copies; the persistent cache stores only compact 320-dimensional FP16 embeddings and the HNSW index.
 
 The 0.9 preview retains the current 15-dimensional acoustic search as a dependency-free baseline. The neural similarity component remains optional, runs locally, and never uploads user audio.
 
-Beta 7.12 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` for normal search or click the gold AI button for semantic search. The AI only converts the natural-language request into bilingual retrieval terms. Candidate recall, ranking, and 120-result paging then run locally, so **Load next 120** appends immediately without another API request. Audio, filenames, metadata, directories, and file paths are never uploaded; only the query is sent. On Windows, the API key is encrypted for the current user with DPAPI.
+Beta 7.13 includes the separate **AI semantic search** implementation. It remains separate from Find Similar Sounds: press `Enter` for normal search or click the gold AI button for semantic search. The AI only converts the natural-language request into bilingual retrieval terms. Candidate recall, ranking, and 120-result paging then run locally, so **Load next 120** appends immediately without another API request. Audio, filenames, metadata, directories, and file paths are never uploaded; only the query is sent. On Windows, the API key is encrypted for the current user with DPAPI.
 
 > **ReaPack setup:** install `PsyReaSFX.lua` for the application. To enable neural search on Windows x64, install `PsyReaSFX Neural Similarity` from the same repository as a second package. ReaPack updates both packages independently; the manual ZIP remains available only as a fallback.
 
@@ -150,8 +150,8 @@ Beta 7.12 includes the separate **AI semantic search** implementation. It remain
 ### PsyReaSFX releases
 
 - [Latest PsyReaSFX Stable](https://github.com/Psysia/PsyReaSFX/releases/latest)
-- [PsyReaSFX 0.9.0 Beta 7.12 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.12)
-- [Manual ZIP fallback for the optional Beta 7.12 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.12/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_12_win_x64.zip)
+- [PsyReaSFX 0.9.0 Beta 7.13 preview](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.13)
+- [Manual ZIP fallback for the optional Beta 7.13 neural component](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.13/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_13_win_x64.zip)
 - [PsyReaSFX 0.7.23 Stable archive](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
 - [All releases](https://github.com/Psysia/PsyReaSFX/releases)
 - [Desktop project notes](desktop/README.md)

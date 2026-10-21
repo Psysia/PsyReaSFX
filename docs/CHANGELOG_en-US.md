@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.13
+
+### Lightweight branded startup animation
+
+- Replace the temporary asset sample table with a centered brand mark, wordmark, version and cyan waveform motion.
+- Show real loading stages, loaded asset counts and elapsed time; motion indicates activity, not an invented percentage.
+- No minimum intro duration: enter the workspace immediately after full validation, retaining Beta 7.12 startup optimizations.
+- Fixed 48-bar vector animation: no GIF/video decoding, audio reads, catalog iteration or optional component required.
+- Tiny windows and loading failures use readable text; errors stop motion. Closing during startup never saves partial data.
+- Regression coverage includes elapsed-time motion, fixed draw cost, minimum layout, error fallback and immediate completion.
+
 ## 0.9.0 Beta 7.12
 
 ### Faster catalog startup and loading preview
