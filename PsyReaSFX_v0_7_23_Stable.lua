@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.10
+-- @version 0.9.0-beta7.11
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -87,6 +87,7 @@
 --   - Beta 7.8：移除 AI 远程重排与相关度列，翻页改为即时本地追加
 --   - Beta 7.9：修复 AI 完成状态清理、下一批加载和长文件波形峰值构建
 --   - Beta 7.10：Windows 超长路径 PCM/float WAV 改用分帧直接波形读取
+--   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -192,7 +193,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.10"
+local VERSION = "0.9.0 Beta 7.11"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -1848,6 +1849,18 @@ I18N_EN = {
   ["扫描完成"] = "Scan complete",
   ["首次扫描"] = "Initial scan",
   ["恢复未完成导入"] = "Resume incomplete import",
+  ["接续未完成素材"] = "Resume unfinished assets",
+  ["正在打开素材库…"] = "Opening sound library…",
+  ["索引加载失败"] = "Catalog loading failed",
+  ["读取设置"] = "Loading settings",
+  ["读取音效库"] = "Loading libraries",
+  ["读取素材索引"] = "Loading asset catalog",
+  ["校验素材增量日志"] = "Validating saved asset changes",
+  ["恢复已保存的素材修改"] = "Restoring saved asset changes",
+  ["恢复素材库视图"] = "Restoring library view",
+  ["读取集合"] = "Loading collections",
+  ["读取试听历史"] = "Loading preview history",
+  ["完成素材库加载"] = "Finishing library load",
   ["添加音效库"] = "Add library",
   ["拖到 REAPER 编排区需要 SWS Extension"] =
     "Dragging to the REAPER arrange view requires SWS Extension",
@@ -1934,6 +1947,9 @@ I18N_EN = {
 }
 
 I18N_PREFIX_EN = {
+  ["已读取 "] = "Loaded ",
+  ["后台恢复扫描："] = "Resuming scan: ",
+  ["后台接续素材："] = "Resuming unfinished assets: ",
   ["已设置音效库封面："] = "Library artwork set: ",
   ["将重新查找音效库封面："] =
     "Library artwork will be rediscovered: ",
@@ -4324,6 +4340,7 @@ function escape_tsv(value)
 end
 
 function unescape_tsv(value)
+  if not (value or ""):find("%", 1, true) then return value or "" end
   return (value or ""):gsub(
     "%%(%x%x)",
     function(hex)
@@ -5945,6 +5962,8 @@ function load_scan_checkpoint()
       checkpoint.roots[#checkpoint.roots + 1] = normalize_slashes(fields[2])
     elseif fields[1] == "reason" and fields[2] and fields[2] ~= "" then
       checkpoint.reason = fields[2]
+    elseif fields[1] == "phase" then
+      checkpoint.phase = fields[2]
     elseif fields[1] == "force_rebuild" then
       checkpoint.force_rebuild = fields[2] == "1"
     elseif fields[1] == "resume_allowed" then
@@ -8983,28 +9002,17 @@ end
 
 local function journal_split(line)
   local fields = {}
-  local current = {}
-  local escaped = false
   local text = tostring(line or "")
-  for index = 1, #text do
-    local character = text:sub(index, index)
-    if escaped then
-      current[#current + 1] = character == "t" and "\t"
-        or character == "r" and "\r"
-        or character == "n" and "\n"
-        or character
-      escaped = false
-    elseif character == "\\" then
-      escaped = true
-    elseif character == "\t" then
-      fields[#fields + 1] = table.concat(current)
-      current = {}
-    else
-      current[#current + 1] = character
+  for field in (text .. "\t"):gmatch("(.-)\t") do
+    if field:find("\\", 1, true) then
+      field = field:gsub("\\(.)", function(character)
+        return character == "t" and "\t"
+          or character == "r" and "\r"
+          or character == "n" and "\n" or character
+      end)
     end
+    fields[#fields + 1] = field
   end
-  if escaped then current[#current + 1] = "\\" end
-  fields[#fields + 1] = table.concat(current)
   return fields
 end
 
@@ -9085,7 +9093,7 @@ function encode_asset_journal(generation, fields, entries)
   return table.concat(lines, "\n") .. "\n"
 end
 
-function decode_asset_journal(text, expected_generation, expected_fields)
+function decode_asset_journal(text, expected_generation, expected_fields, checkpoint)
   text = tostring(text or "")
   if text == "" or text:sub(-1) ~= "\n" then
     return nil, "truncated_payload"
@@ -9093,6 +9101,7 @@ function decode_asset_journal(text, expected_generation, expected_fields)
   local lines = {}
   for line in text:gmatch("([^\n]*)\n") do
     lines[#lines + 1] = line:gsub("\r$", "")
+    if checkpoint and #lines % 64 == 0 then checkpoint() end
   end
   if #lines < 3 then return nil, "truncated_header" end
 
@@ -9133,11 +9142,12 @@ function decode_asset_journal(text, expected_generation, expected_fields)
       end
       entries[#entries + 1] = { op = operation, values = values }
     end
+    if checkpoint and index % 16 == 0 then checkpoint() end
   end
   return entries, nil, header
 end
 
-function read_asset_journal(path, expected_generation, expected_fields)
+function read_asset_journal(path, expected_generation, expected_fields, checkpoint)
   local file, open_error = io.open(path, "rb")
   if not file then return nil, open_error or "missing" end
   local text, read_error = file:read("*a")
@@ -9148,7 +9158,8 @@ function read_asset_journal(path, expected_generation, expected_fields)
   return decode_asset_journal(
     text,
     expected_generation,
-    expected_fields
+    expected_fields,
+    checkpoint
   )
 end
 
@@ -14684,12 +14695,24 @@ function step_duplicate_comparison(comparison, chunk_size)
   return comparison.result
 end
 
+-- Startup runs in a coroutine while the loading window remains responsive.
+-- Synchronous loaders and command-line callers retain their existing behavior.
+function startup_checkpoint(phase)
+  local session = state.startup_session
+  if not session then return end
+  if phase then session.phase = phase end
+  if reaper.time_precise() >= session.deadline then
+    coroutine.yield()
+  end
+end
+
 function load_database()
   local file = io.open(DATABASE_FILE, "rb")
 
   if not file then
     return
   end
+  if state.startup_session then state.startup_session.reader = file end
 
   local header_line = file:read("*l")
 
@@ -14724,20 +14747,19 @@ function load_database()
   end
 
   local ignored = 0
+  local path_field
+  for index, field in ipairs(headers) do
+    if field == "path" then path_field = index break end
+  end
   local journal_probe = io.open(DATABASE_JOURNAL_FILE, "rb")
   local asset_positions = journal_probe and {} or nil
   if journal_probe then journal_probe:close() end
 
+  local loaded = 0
   for line in file:lines() do
     local values = split_tsv(line)
     local asset = database_asset_from_values(headers, values)
-    local raw_path = ""
-    for index, field in ipairs(headers) do
-      if field == "path" then
-        raw_path = values[index] or ""
-        break
-      end
-    end
+    local raw_path = path_field and values[path_field] or ""
 
     if asset then
       local key = asset_positions and path_key(asset.path) or nil
@@ -14749,9 +14771,12 @@ function load_database()
     elseif raw_path ~= "" then
       ignored = ignored + 1
     end
+    loaded = loaded + 1
+    if loaded % 64 == 0 then startup_checkpoint("读取素材索引") end
   end
 
   file:close()
+  if state.startup_session then state.startup_session.reader = nil end
 
   local journal_ok = replay_database_journal(asset_positions)
 
@@ -14944,7 +14969,8 @@ function replay_database_journal(asset_positions)
   local entries, journal_error, journal_fields = read_asset_journal(
     DATABASE_JOURNAL_FILE,
     state.database_generation or 0,
-    nil
+    nil,
+    function() startup_checkpoint("校验素材增量日志") end
   )
   if not entries then
     if journal_error == "generation_mismatch" then
@@ -14966,7 +14992,8 @@ function replay_database_journal(asset_positions)
   if not path_field then return false end
 
   local actions = {}
-  for _, entry in ipairs(entries) do
+  local current_fields = asset_journal_fields_equal(journal_fields, DB_FIELDS)
+  for index, entry in ipairs(entries) do
     local path = tostring(entry.values[path_field] or "")
     if path == "" or is_ignored_media_path(path) then
       state.persistence_read_only = true
@@ -14979,11 +15006,14 @@ function replay_database_journal(asset_positions)
       op = entry.op,
       key = path_key(path),
     }
-    local current_values, remap_error = asset_journal_remap_values(
-      journal_fields,
-      entry.values,
-      DB_FIELDS
-    )
+    local current_values, remap_error
+    if current_fields then
+      current_values = entry.values
+    else
+      current_values, remap_error = asset_journal_remap_values(
+        journal_fields, entry.values, DB_FIELDS
+      )
+    end
     if not current_values then
       AppState.apply({
         persistence_read_only = true,
@@ -15005,9 +15035,10 @@ function replay_database_journal(asset_positions)
       end
     end
     actions[#actions + 1] = action
+    if index % 64 == 0 then startup_checkpoint("校验素材增量日志") end
   end
 
-  for _, action in ipairs(actions) do
+  for index, action in ipairs(actions) do
     local key = action.key
     if action.op == "delete" then
       remove_ucs_pending_membership(key)
@@ -15037,6 +15068,7 @@ function replay_database_journal(asset_positions)
         and database_asset_values(action.asset)
         or action.values
     )
+    if index % 64 == 0 then startup_checkpoint("恢复已保存的素材修改") end
   end
   if #actions > 0 then
     if not asset_journal_fields_equal(journal_fields, DB_FIELDS) then
@@ -18513,7 +18545,7 @@ end
 ----------------------------------------------------------------
 
 function start_import_recovery_audit()
-  if state.persistence_read_only or #state.roots == 0
+  if state.persistence_read_only or not state.resume_scan_on_start or #state.roots == 0
     or #state.assets == 0 then
     state.import_recovery_audit = nil
     return
@@ -18522,6 +18554,7 @@ function start_import_recovery_audit()
     assets = state.assets,
     index = 1,
     total = #state.assets,
+    pending = {},
   }
 end
 
@@ -18543,6 +18576,7 @@ function process_import_recovery_audit()
     audit.assets = state.assets
     audit.index = 1
     audit.total = #state.assets
+    audit.pending = {}
   end
 
   local last = math.min(
@@ -18551,15 +18585,33 @@ function process_import_recovery_audit()
   )
   for index = audit.index, last do
     local asset = audit.assets[index]
-    if asset and not asset.ready then
-      state.import_recovery_audit = nil
-      start_scan("恢复未完成导入")
-      return
+    if asset and not asset.ready
+      and not state.failed_tasks[path_key(asset.path)] then
+      local _, root = root_for_path(asset.path)
+      if root and root.enabled ~= false then
+        audit.pending[#audit.pending + 1] = asset
+      end
     end
   end
   audit.index = last + 1
   if audit.index > audit.total then
     state.import_recovery_audit = nil
+    if #audit.pending > 0 then
+      local token = Jobs.begin("catalog_pipeline", "catalog_exclusive", false)
+      if not token then return end
+      AppState.set("import_session", {
+        label = "接续未完成素材", roots = {}, assets = audit.pending,
+        total = #audit.pending, done = 0, failed = 0,
+        started = reaper.time_precise(), phase = "prepare",
+        silent = true, compact_status = true, job_token = token,
+      })
+      AppState.set("import_cancel_requested", false)
+    else
+      local checkpoint = load_scan_checkpoint()
+      if checkpoint and checkpoint.reason == "恢复未完成导入" then
+        clear_scan_checkpoint()
+      end
+    end
   end
 end
 
@@ -18602,6 +18654,7 @@ function start_scan(reason, roots_override, options)
     new_assets = {},
     started = reaper.time_precise(),
     silent = silent,
+    compact_status = options and options.compact_status == true,
     force_rebuild = force_rebuild,
     checkpoint_enabled = checkpoint_enabled,
   }
@@ -18696,6 +18749,7 @@ function complete_scan_finalize(scan)
       started = scan.started,
       phase = "prepare",
       silent = scan.silent,
+      compact_status = scan.compact_status,
       removed = removed,
       job_token = scan.job_token,
     }
@@ -18824,7 +18878,7 @@ function process_scan_cancel(scan)
     )
     for index = scan.cancel_index, last do
       local asset = scan.new_assets[index]
-      if asset and not asset.ready then
+      if asset and not asset.ready and not scan.compact_status then
         scan.cancel_keys[path_key(asset.path)] = true
       end
     end
@@ -18955,7 +19009,8 @@ function process_scan()
               asset.ready = false
               asset.indexed = false
               scan.new_assets[#scan.new_assets + 1] = asset
-            elseif not state.by_path[key].ready then
+            elseif not state.by_path[key].ready
+              and (scan.reason ~= "Watch Folder" or not state.failed_tasks[key]) then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
             end
@@ -20850,6 +20905,7 @@ function finish_import_session()
     reaper.time_precise() - session.started
 
   state.import_session = nil
+  state.next_watch = reaper.time_precise() + state.watch_interval
   state.import_cancel_requested = false
   state.results_dirty = true
   mark_database_snapshot_dirty()
@@ -20909,7 +20965,7 @@ function cancel_import_session()
     for index = session.cleanup_index, last do
       local asset = session.assets[index]
       if asset then
-        if not asset.ready then
+        if not asset.ready and not session.compact_status then
           state.by_path[path_key(asset.path)] = nil
         else
           asset.pending_batch = nil
@@ -30724,6 +30780,16 @@ function draw_sub_toolbar()
 end
 
 function draw_import_progress()
+  local recovery = state.import_session and state.import_session.compact_status
+      and state.import_session
+    or state.scan and state.scan.compact_status and state.scan
+  if recovery then
+    ImGui.TextDisabled(ctx, state.scan
+      and string.format("后台恢复扫描：%d 个音频 / %d 个目录", recovery.files, recovery.directories)
+      or string.format("后台接续素材：%d / %d，失败 %d", recovery.done, recovery.total, recovery.failed))
+    ImGui.SameLine(ctx)
+    if dark_button("取消", 64) then Jobs.cancel(recovery.job_token) end
+  end
   local visible_scan =
     state.scan and not state.scan.silent
   local visible_import =
@@ -39297,6 +39363,16 @@ function draw_main()
   end
 
   if visible then
+    if state.startup_session then
+      local session = state.startup_session
+      ImGui.Text(ctx, session.failure and "索引加载失败" or "正在打开素材库…")
+      ImGui.TextDisabled(ctx, session.phase or "读取设置")
+      ImGui.TextDisabled(ctx, string.format("已读取 %d 条素材", #state.assets))
+      if session.failure then ImGui.TextWrapped(ctx, session.failure) end
+      ImGui.End(ctx)
+      pop_theme(color_count, var_count)
+      return
+    end
     -- PsyReaSFX owns Space and the other browser shortcuts while its main
     -- window (or any child panel) is focused. Explicit capture prevents the
     -- same Space press from also reaching REAPER's global transport action.
@@ -39627,6 +39703,13 @@ function watch_folders()
 end
 
 function cleanup()
+  if state.startup_session then
+    if state.startup_session.reader then
+      pcall(function() state.startup_session.reader:close() end)
+    end
+    -- Never persist a partially loaded catalog on close or initialization error.
+    return
+  end
   Jobs.stop_accepting()
   if state.ai_semantic_session then
     ai_semantic_cancel()
@@ -39812,6 +39895,7 @@ end
 
 reaper.atexit(cleanup)
 
+function initialize_runtime()
 ensure_dirs()
 recover_atomic_data_files()
 preflight_persistence_schemas()
@@ -39822,9 +39906,11 @@ if not state.persistence_read_only then
 end
 load_or_migrate_project_url()
 load_config()
+startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
 state.next_watch = reaper.time_precise() + state.watch_interval
 load_or_migrate_libraries()
+startup_checkpoint("读取音效库")
 apply_unified_interface(false, false)
 apply_wave_cache_directory(
   state.wave_cache_dir
@@ -39832,6 +39918,7 @@ apply_wave_cache_directory(
 )
 install_i18n_wrappers()
 load_database()
+startup_checkpoint("恢复素材库视图")
 refresh_all_asset_library_bindings()
 load_failed_tasks()
 load_backup_state()
@@ -39853,10 +39940,12 @@ if state.folder_browser_open then
 end
 
 load_collections()
+startup_checkpoint("读取集合")
 load_project_usage()
 refresh_current_project_binding()
 load_saved_searches()
 load_history()
+startup_checkpoint("读取试听历史")
 load_last_played_session()
 
 if state.restore_played_on_start then
@@ -39865,6 +39954,7 @@ end
 
 load_regions()
 load_loudness_cache()
+startup_checkpoint("完成素材库加载")
 schedule_legacy_schema_migrations()
 apply_surface_style()
 apply_theme_palette()
@@ -39886,20 +39976,55 @@ if state.persistence_read_only then
     "数据格式只读保护已启用；浏览可用，扫描与保存已暂停",
     true
   )
-elseif interrupted_scan then
+elseif interrupted_scan and interrupted_scan.reason ~= "恢复未完成导入" then
   start_scan(
     "恢复中断扫描",
     interrupted_scan.roots,
-    { force_rebuild = interrupted_scan.force_rebuild }
+    { force_rebuild = interrupted_scan.force_rebuild, silent = true,
+      compact_status = true, checkpoint_enabled = true }
   )
 elseif #state.roots > 0 and #state.assets == 0 then
   start_scan("首次扫描")
 elseif #state.roots > 0 then
   start_import_recovery_audit()
 end
+end
+
+AppState.set("startup_session", {
+  thread = coroutine.create(initialize_runtime),
+  phase = "读取设置", deadline = 0,
+})
+
+function process_startup()
+  local session = state.startup_session
+  if not session or session.failure then return end
+  session.deadline = reaper.time_precise() + 0.012
+  local ok, failure = coroutine.resume(session.thread)
+  if not ok then
+    session.failure = tostring(failure)
+    return
+  end
+  if coroutine.status(session.thread) == "dead" then
+    AppState.set("startup_session", nil)
+    AppState.set("next_watch", reaper.time_precise() + state.watch_interval)
+  end
+end
 
 function loop()
   if not state.open then
+    return
+  end
+  if state.startup_session then
+    -- Draw before resuming disk work so the first frame appears immediately.
+    draw_main()
+    if state.open then
+      if state.startup_session.visible_once then
+        process_startup()
+      else
+        state.startup_session.visible_once = true
+      end
+      reaper.defer(loop)
+    end
     return
   end
 

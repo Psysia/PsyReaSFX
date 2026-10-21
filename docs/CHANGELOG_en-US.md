@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.11
+
+### Responsive startup and targeted recovery
+
+- Shows the window first, then loads the asset catalog and validates its journal across UI frames with compact loading text.
+- Speeds up TSV and journal decoding and avoids repeated field remapping for current-schema journals.
+- Resumes unfinished indexed assets directly instead of rescanning every source folder for one unfinished record.
+- Uses one compact status line and a cancel button for automatic recovery; manual imports retain total progress.
+- Leaves known failures for manual recovery and makes the startup-recovery switch apply to unfinished-asset audits too.
+- Prevents partial catalog saves when closed during loading, preserves indexed assets when recovery is canceled, and retains complete journal validation.
+
 ## 0.9.0 Beta 7.10
 
 ### Windows long-path WAV waveform fix

@@ -51,6 +51,16 @@ local entries = {
 }
 local encoded = assert(encode_asset_journal(17, fields, entries))
 local decoded = assert(decode_asset_journal(encoded, 17, fields))
+local yielded = 0
+local bounded_entries = {}
+for index = 1, 128 do bounded_entries[index] = entries[(index - 1) % #entries + 1] end
+local bounded_text = assert(encode_asset_journal(17, fields, bounded_entries))
+local bounded = assert(decode_asset_journal(bounded_text, 17, fields, function()
+  yielded = yielded + 1
+end))
+assert(#bounded == 128 and yielded > 0, "journal validation must offer bounded startup checkpoints")
+local _, corrupt_error = decode_asset_journal(bounded_text:gsub("C:", "D:", 1), 17, fields)
+assert(corrupt_error == "checksum_mismatch", "incremental validation must reject corrupted journals before replay")
 assert(#decoded == #entries)
 assert(decoded[1].values[1] == entries[1].values[1])
 assert(decoded[1].values[3] == entries[1].values[3])

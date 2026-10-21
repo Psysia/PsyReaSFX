@@ -195,6 +195,7 @@ write_scan_checkpoint({
 }, "scan")
 local forced_checkpoint = assert(load_scan_checkpoint())
 assert(forced_checkpoint.force_rebuild == true)
+assert(forced_checkpoint.phase == "scan")
 assert(forced_checkpoint.roots[1] == "C:/Audio/Library")
 assert(read_all(SCAN_CHECKPOINT_FILE):match("version\t3\n"))
 clear_scan_checkpoint()

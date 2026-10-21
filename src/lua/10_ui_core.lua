@@ -1703,6 +1703,7 @@ function escape_tsv(value)
 end
 
 function unescape_tsv(value)
+  if not (value or ""):find("%", 1, true) then return value or "" end
   return (value or ""):gsub(
     "%%(%x%x)",
     function(hex)
