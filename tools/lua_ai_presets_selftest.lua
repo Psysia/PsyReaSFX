@@ -45,6 +45,13 @@ assert(not persisted:find("encrypted", 1, true))
 
 local deepseek_config = ai_semantic_current_api_config()
 assert(ai_semantic_select_provider_preset("custom"))
+assert(#state.ai_presets == 1 and state.ai_active_preset_id == "legacy")
+assert(state.ai_api_url == deepseek_config.url and state.ai_model == deepseek_config.model)
+assert(ai_semantic_preset_by_id("legacy").provider == "deepseek")
+assert(ai_semantic_preset_dirty())
+assert(ai_semantic_select_provider_preset("deepseek"))
+assert(not ai_semantic_preset_dirty())
+assert(ai_semantic_new_preset("custom"))
 local custom_id, custom_secret = state.ai_active_preset_id, state.ai_semantic_paths.secret
 assert(custom_id == "p1" and not state.ai_api_key_saved)
 assert(custom_secret ~= deepseek_config.secret)
@@ -64,7 +71,7 @@ assert(not persisted:find("key_input", 1, true))
 local custom_config = ai_semantic_current_api_config()
 assert(ai_semantic_start_api_job("test", "JSON", "test", 20))
 assert(requests[#requests].secretPath == custom_secret)
-assert(ai_semantic_select_provider_preset("deepseek"))
+assert(ai_semantic_select_preset("legacy"))
 assert(state.ai_active_preset_id == "legacy")
 assert(state.ai_api_url == deepseek_config.url and state.ai_model == "deepseek-flash")
 assert(ai_semantic_preset_key_usable())
@@ -77,7 +84,7 @@ state.ai_model = "draft-model"
 state.ai_preset_name = "Draft name"
 state.ai_api_key_input = "sk-unsaved-draft"
 assert(ai_semantic_preset_dirty())
-assert(ai_semantic_select_provider_preset("deepseek"))
+assert(ai_semantic_select_preset("legacy"))
 assert(not ai_semantic_presets_config_json():find("sk-unsaved-draft", 1, true))
 assert(ai_semantic_select_preset(custom_id))
 assert(state.ai_model == "draft-model" and state.ai_preset_name == "Draft name")
@@ -103,7 +110,7 @@ save_config = real_save
 
 -- A request and its format retry retain the original preset after switching.
 state.ai_semantic_session = { phase = "test_wait", api_config = custom_config }
-assert(ai_semantic_select_provider_preset("deepseek"))
+assert(ai_semantic_select_preset("legacy"))
 assert(not ai_semantic_save_api_key("sk-active-test"))
 assert(not ai_semantic_delete_api_key())
 assert(not ai_semantic_save_preset())
@@ -122,7 +129,7 @@ assert(ai_semantic_initialize_presets())
 assert(state.ai_active_preset_id == custom_id)
 assert(state.ai_model == "compatible-model" and state.ai_preset_name == "My compatible endpoint")
 assert(state.ai_api_key_saved and state.ai_api_key_input == "")
-assert(ai_semantic_select_provider_preset("deepseek"))
+assert(ai_semantic_select_preset("legacy"))
 assert(state.ai_model == "deepseek-flash" and state.ai_semantic_paths.secret == deepseek_config.secret)
 
 -- Exercise the real TSV configuration reader/writer with an in-memory file.
@@ -201,7 +208,38 @@ assert(not ai_semantic_start_api_job("test", "JSON", "test", 20))
 state.ai_presets_json = before
 assert(ai_semantic_initialize_presets())
 
+-- Explicit deletion affects only the selected group. Save failure and active
+-- requests must leave both its metadata and credential untouched.
+assert(ai_semantic_select_preset(custom_id))
+local remove_for_delete = os.remove
+os.remove = function(path) virtual_files[path] = nil return true end
+state.ai_semantic_session = { phase = "test_wait" }
+assert(not ai_semantic_delete_preset(custom_id))
+state.ai_semantic_session = nil
+save_config = function() return false end
+assert(not ai_semantic_delete_preset(custom_id))
+assert(state.ai_active_preset_id == custom_id and ai_semantic_preset_by_id(custom_id))
+assert(virtual_files[custom_secret] == "encrypted:sk-custom-test")
+save_config = real_save
+assert(ai_semantic_delete_preset(custom_id))
+assert(not ai_semantic_preset_by_id(custom_id) and not virtual_files[custom_secret])
+assert(virtual_files[deepseek_config.secret] == "encrypted-deepseek-original")
+state.ai_presets_json = persisted
+assert(ai_semantic_initialize_presets())
+assert(not ai_semantic_preset_by_id(custom_id))
+assert(ai_semantic_delete_preset("p3"))
+assert(ai_semantic_delete_preset("legacy"))
+assert(#state.ai_presets == 0 and state.ai_active_preset_id == "")
+assert(not state.ai_api_key_saved and state.ai_semantic_paths.secret == nil)
+state.ai_presets_json = persisted
+assert(ai_semantic_initialize_presets())
+assert(#state.ai_presets == 0 and not ai_semantic_select_provider_preset("deepseek"))
+assert(ai_semantic_new_preset("custom") and state.ai_active_preset_id == "p4")
+os.remove = remove_for_delete
+
 -- Reset removes only known credential paths, no config-stored path is trusted.
+state.ai_presets_json = before
+assert(ai_semantic_initialize_presets())
 local original_remove = os.remove
 local removed = {}
 os.remove = function(path) removed[path] = true return true end
@@ -223,13 +261,19 @@ ctx, COLOR = {}, { error = 1, success = 2, warning = 3 }
 ImGui = setmetatable({
   InputTextFlags_Password = 1,
   InputTextFlags_AutoSelectAll = 2,
+  GetContentRegionAvail = function() return 640 end,
   InputText = function(_, _, value) return false, value end,
   InputTextWithHint = function(_, _, _, value) return false, value end,
 }, { __index = function() return function() return false end end })
 function settings_section_title() end
 function translate_ui_text(value) return value end
 function ai_semantic_provider_label(value) return value end
-function dark_button(label) return label == "加密保存 Key" end
+local clicked_button = "加密保存 Key"
+local button_layout = {}
+function dark_button(label, width)
+  button_layout[#button_layout + 1] = { label = label, width = width }
+  return label == clicked_button
+end
 local status_message, status_error
 function set_status(message, is_error) status_message, status_error = message, is_error end
 assert(load(ui:sub(ui_start, ui_end - 1), "ai-settings-renderer", "t", _ENV))()
@@ -240,4 +284,26 @@ draw_settings_ai()
 assert(not status_error and state.ai_api_key_input == "")
 assert(neural_json_decode(persisted).presets[1].name == "Key button saved group")
 assert(not persisted:find("sk-ui-test", 1, true))
+assert(button_layout[1].label == "新建预设" and button_layout[2].label == "切换预设"
+  and button_layout[3].label == "保存预设" and button_layout[4].label == "删除预设")
+assert(button_layout[1].width * 4 + 24 == 640)
+state.ai_model = "saved-by-footer"
+assert(ai_semantic_preset_dirty())
+assert(ai_semantic_save_settings())
+assert(not ai_semantic_preset_dirty())
+assert(neural_json_decode(persisted).presets[1].model == "saved-by-footer")
+state.ai_model = ""
+assert(not ai_semantic_save_settings() and ai_semantic_preset_dirty())
+state.ai_model = "saved-by-top-row"
+clicked_button = "保存预设"
+draw_settings_ai()
+assert(not status_error and not ai_semantic_preset_dirty())
+assert(neural_json_decode(persisted).presets[1].model == "saved-by-top-row")
+assert(ai_semantic_new_preset("custom"))
+assert(ai_semantic_select_provider_preset("openai"))
+assert(state.ai_provider == "openai" and state.ai_api_url == "")
+state.ai_api_url, state.ai_model = "https://ui.example/v1/chat/completions", "ui-model"
+assert(ai_semantic_save_settings())
+assert(ai_semantic_preset_by_id(state.ai_active_preset_id).provider == "openai")
+assert(not ai_semantic_preset_dirty())
 print("Lua AI presets self-test passed (migration, independent keys, drafts, reload, endpoint safety, request isolation)")

@@ -21451,11 +21451,27 @@ function draw_settings_ai()
   end
   local current_preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
   ImGui.TextWrapped(ctx, "当前预设：" .. (current_preset and current_preset.name or "—"))
-  if dark_button("切换已保存预设", 160) then ImGui.OpenPopup(ctx, "##ai_preset_picker") end
+  local preset_button_width = math.max(1, (ImGui.GetContentRegionAvail(ctx) - 24) / 4)
+  if dark_button("新建预设", preset_button_width) then
+    local ok, reason = ai_semantic_new_preset(state.ai_provider)
+    if not ok then set_status(reason, true) end
+  end
+  ImGui.SameLine(ctx, 0, 8)
+  if dark_button("切换预设", preset_button_width) then ImGui.OpenPopup(ctx, "##ai_preset_picker") end
+  ImGui.SameLine(ctx, 0, 8)
+  if dark_button("保存预设", preset_button_width) then
+    local ok, reason = ai_semantic_save_preset()
+    set_status(ok and "预设已保存" or reason, not ok)
+  end
+  ImGui.SameLine(ctx, 0, 8)
+  if dark_button("删除预设", preset_button_width) then
+    AppState.set("ai_preset_delete_id", state.ai_active_preset_id)
+    ImGui.OpenPopup(ctx, "##ai_preset_delete")
+  end
   if ImGui.BeginPopup(ctx, "##ai_preset_picker") then
     for _, preset in ipairs(state.ai_presets or {}) do
       local label = compact(preset.name, 40) .. " · " .. ai_semantic_provider_label(preset.provider)
-        .. (preset.saved and " · " .. translate_ui_text("已保存") or " · " .. translate_ui_text("待保存"))
+        .. " · " .. translate_ui_text(ai_semantic_preset_dirty(preset.id) and "待保存" or "已保存")
         .. "##ai_preset_" .. preset.id
       if ImGui.Selectable(ctx, label, preset.id == state.ai_active_preset_id) then
         ai_semantic_select_preset(preset.id)
@@ -21463,9 +21479,25 @@ function draw_settings_ai()
     end
     ImGui.EndPopup(ctx)
   end
-  if dark_button("新建预设", 112) then
-    local ok, reason = ai_semantic_new_preset(state.ai_provider)
-    if not ok then set_status(reason, true) end
+  if ImGui.BeginPopup(ctx, "##ai_preset_delete") then
+    local deleting = ai_semantic_preset_by_id(state.ai_preset_delete_id)
+    ImGui.TextWrapped(ctx, "确认删除预设：" .. (deleting and deleting.name or "—"))
+    ImGui.TextWrapped(ctx, "将删除此组配置与加密 Key，不影响其他预设。")
+    if dark_button("确认删除", 112) then
+      local ok, reason = ai_semantic_delete_preset(state.ai_preset_delete_id)
+      set_status(ok and "预设已删除" or reason, not ok)
+      ImGui.CloseCurrentPopup(ctx)
+    end
+    ImGui.SameLine(ctx)
+    if dark_button("取消", 80) then ImGui.CloseCurrentPopup(ctx) end
+    ImGui.EndPopup(ctx)
+  end
+  if state.ai_preset_status ~= "" then
+    ImGui.TextColored(ctx, state.ai_preset_status_error and COLOR.error or COLOR.success, state.ai_preset_status)
+  end
+  if not ai_semantic_preset_by_id(state.ai_active_preset_id) then
+    ImGui.TextWrapped(ctx, "请先新建预设")
+    return
   end
   ImGui.Text(ctx, "预设名称")
   ImGui.SetNextItemWidth(ctx, -1)
@@ -21481,6 +21513,7 @@ function draw_settings_ai()
   ImGui.SameLine(ctx)
   if dark_button("兼容接口", 112) then select_ai_semantic_provider("custom") end
   ImGui.TextDisabled(ctx, "当前选择：" .. ai_semantic_provider_label(state.ai_provider))
+  ImGui.TextWrapped(ctx, "服务商只修改当前预设类型，不自动新建；已有配置请用切换预设选择。")
 
   ImGui.Text(ctx, "API 地址")
   ImGui.SetNextItemWidth(ctx, -1)
@@ -21528,10 +21561,6 @@ function draw_settings_ai()
     end
   else
     ImGui.TextDisabled(ctx, "兼容接口请填写服务实际提供的模型 ID")
-  end
-  if dark_button("保存当前预设", 152) then ai_semantic_save_preset() end
-  if state.ai_preset_status ~= "" then
-    ImGui.TextColored(ctx, state.ai_preset_status_error and COLOR.error or COLOR.success, state.ai_preset_status)
   end
 
   ImGui.Separator(ctx)
@@ -24331,9 +24360,13 @@ function draw_settings_popup()
   )
 
   if dark_button("保存并关闭", button_width) then
-    save_config()
-    if state.db_dirty then save_database_changes() end
-    ImGui.CloseCurrentPopup(ctx)
+    local ok, reason = ai_semantic_save_settings()
+    if ok then
+      if state.db_dirty then save_database_changes() end
+      ImGui.CloseCurrentPopup(ctx)
+    else
+      set_status(reason, true)
+    end
   end
 
   if state.settings_close_requested then

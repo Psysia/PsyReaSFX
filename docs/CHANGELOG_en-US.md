@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.15
+
+### Explicit preset management and save fix
+
+- Adaptive-width New / Switch / Save / Delete preset toolbar; confirmed deletion affects only the selected group's settings and encrypted key.
+- Provider buttons edit the current type without implicitly creating/switching groups or replacing endpoints/models.
+- Fix Save and close leaving presets unsaved; failed saves keep the window and draft intact.
+- Picker saved state reflects actual drafts and remains consistent after save, switch and reload.
+- Allow deleting the last group without recreating it; cover deletion rollback, isolated key cleanup, monotonic IDs and save-button interaction.
+
 ## 0.9.0 Beta 7.14
 
 ### Independent API presets and safe switching
@@ -1468,5 +1478,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.14/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_14_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.15/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_15_win_x64.zip
 
