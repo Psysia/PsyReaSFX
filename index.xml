@@ -80,8 +80,8 @@ and Install-NeuralSimilarity.cmd; the standalone EXE does not include the model.
         <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-NAudio.txt" hash="122004b12da4303b43ee14d72b17d1157f53ad5e0082a48d74b9afdfdb3f5d2ab499">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7.14/neural/package/LICENSE-NAudio.txt</source>
         <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-ONNXRuntime.txt" hash="12202f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE</source>
         <source platform="win64" file="PsyReaSFX/neural_similarity/ThirdPartyNotices-ONNXRuntime.txt" hash="1220143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/ThirdPartyNotices.txt</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="1220aa5593180b204e8072c3508dd5171b1450a839ecf940cb128d81f6625925592b">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7.14/neural/package/README.md</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="1220056a11cc4e4e4c9877bb5f1c5bfb29f3ac194dbc47a78c5e4a83ac13ed0e980b">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta7.14/neural/package/README_zh-CN.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="1220aa5593180b204e8072c3508dd5171b1450a839ecf940cb128d81f6625925592b">https://raw.githubusercontent.com/Psysia/PsyReaSFX/396acba27b27d0891c6c7b038aa8c7fb1c872bcd/neural/package/README.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="1220056a11cc4e4e4c9877bb5f1c5bfb29f3ac194dbc47a78c5e4a83ac13ed0e980b">https://raw.githubusercontent.com/Psysia/PsyReaSFX/396acba27b27d0891c6c7b038aa8c7fb1c872bcd/neural/package/README_zh-CN.md</source>
       </version>
     </reapack>
     <reapack name="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua" type="script" desc="Psysia Smart Bounce / 智能合并渲染（两种 FX 模式）">
