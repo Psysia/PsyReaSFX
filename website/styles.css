@@ -140,6 +140,10 @@ a {
   color: var(--text);
 }
 
+.desktop-nav .project-home-link { color: var(--cyan); font-weight: 650; white-space: nowrap; }
+.project-home-hint { margin: 18px 0 0; color: var(--muted); font-size: 13px; }
+.project-home-hint .text-link { white-space: nowrap; text-decoration: underline; text-underline-offset: 3px; }
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -1223,6 +1227,29 @@ footer {
   .docs-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* Keep the labeled project entry and language controls accessible on tablets. */
+@media (min-width: 761px) and (max-width: 1060px) {
+  .header-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding-block: 10px;
+  }
+
+  .desktop-nav {
+    order: 3;
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .desktop-nav::-webkit-scrollbar { display: none; }
+  .desktop-nav a { flex: 0 0 auto; white-space: nowrap; }
+  .header-actions { justify-self: end; }
 }
 
 @media (max-width: 760px) {
