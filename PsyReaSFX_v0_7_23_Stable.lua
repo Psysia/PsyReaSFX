@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.16
+-- @version 0.9.0-beta7.17
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -92,6 +92,7 @@
 --   - Beta 7.13：居中品牌启动画面与轻量青色波形动画，显示真实阶段、数量和已用时间
 --   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
 --   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
+--   - Beta 7.17：兼容 gpt-6-luna 网关，修复推理额度与空响应诊断
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -198,7 +199,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.16"
+local VERSION = "0.9.0 Beta 7.17"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2283,6 +2284,11 @@ I18N_EN["连接测试通过"] = "Connection test passed"
 I18N_EN["连接测试失败"] = "Connection test failed"
 I18N_EN["测试已取消"] = "Test canceled"
 I18N_EN["连接成功"] = "Connected"
+I18N_EN["API 响应缺少 Chat Completions 的 choices/message，请检查接口协议"] = "API response is missing Chat Completions choices/message; check the endpoint protocol"
+I18N_EN["模型拒绝了请求或触发内容过滤，请调整声音描述"] = "The model refused the request or applied a content filter; revise the sound description"
+I18N_EN["模型输出达到 token 上限，最终 JSON 未完整返回"] = "Model output reached its token limit; the final JSON is incomplete"
+I18N_EN["模型仅返回推理内容，没有最终答案；请使用非推理模式或模型"] = "The model returned reasoning only, without a final answer; use a non-reasoning mode or model"
+I18N_EN["AI 连接测试响应不完整，正在自动重试一次…"] = "Incomplete AI connection-test response; retrying once…"
 I18N_EN["API 已响应"] = "API responded"
 I18N_PREFIX_EN["当前预设："] = "Current preset: "
 I18N_PREFIX_EN["正在测试预设："] = "Testing preset: "
@@ -13607,6 +13613,9 @@ AISemantic = {
   frame_budget = 0.008,
   poll_interval = 0.10,
   request_timeout = 90,
+  plan_tokens = 1200,
+  retry_tokens = 2400,
+  test_tokens = 256,
 }
 
 function ai_semantic_paths()
@@ -14339,21 +14348,34 @@ end
 function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens, config)
   config = config or ai_semantic_current_api_config()
   local provider = config.provider
+  -- Apply documented model parameters even through a custom gateway. Do not
+  -- infer support for unrelated aliases or inject vendor options globally.
+  local model = trim(config.model or ""):lower()
+  local luna = model == "gpt-6-luna" or model:match("^gpt%-6%-luna%-%d%d%d%d%-%d%d%-%d%d$")
   local body = {
     model = config.model,
     messages = {
       { role = "system", content = system_prompt },
       { role = "user", content = user_prompt },
     },
-    temperature = 0.1,
-    max_tokens = maximum_tokens or 1200,
+    stream = false,
   }
+  local token_limit = math.max(AISemantic.test_tokens, maximum_tokens or AISemantic.plan_tokens)
+  if luna then
+    -- Completion tokens include reasoning. Query expansion needs no thinking;
+    -- a 20-token connection probe cannot reliably produce an answer otherwise.
+    body.max_completion_tokens = token_limit
+    body.reasoning_effort = "none"
+  else
+    body.temperature = 0.1
+    body.max_tokens = token_limit
+  end
   if provider == "deepseek" then
     -- Current DeepSeek models enable thinking by default. Structured search
     -- planning is more reliable and uses fewer tokens with thinking disabled.
     body.thinking = { type = "disabled" }
   end
-  if provider ~= "custom" then
+  if provider ~= "custom" or luna then
     body.response_format = { type = "json_object" }
   end
   return neural_json_encode(body)
@@ -14402,8 +14424,14 @@ end
 function ai_semantic_decode_content_json(content)
   content = trim(content or "")
   if content == "" then return nil end
-  content = content:gsub("^```[%w_-]*%s*", ""):gsub("%s*```$", "")
   local decoded_ok, decoded = pcall(neural_json_decode, content)
+  if decoded_ok and type(decoded) == "table" then return decoded end
+  -- Some compatible services put analysis in tagged text. Only parse the
+  -- final answer, never an example object in that analysis.
+  content = content:gsub("<think>.-</think>", "")
+  if content:find("<think>", 1, true) then return nil end
+  content = content:gsub("^```[%w_-]*%s*", ""):gsub("%s*```$", "")
+  decoded_ok, decoded = pcall(neural_json_decode, content)
   if decoded_ok and type(decoded) == "table" then return decoded end
 
   local depth = 0
@@ -14420,7 +14448,7 @@ function ai_semantic_decode_content_json(content)
       elseif byte == 34 then
         quoted = false
       end
-    elseif byte == 34 then
+    elseif byte == 34 and depth > 0 then
       quoted = true
     elseif byte == 123 then
       if depth == 0 then start_index = index end
@@ -14464,9 +14492,23 @@ function ai_semantic_extract_content(response_text)
     return nil, tostring(response.error.message or "API 请求失败")
   end
   local choice = type(response.choices) == "table" and response.choices[1] or nil
-  local message = choice and choice.message or nil
+  local message = type(choice) == "table" and choice.message or nil
+  if type(choice) ~= "table" or type(message) ~= "table" then
+    return nil, "API 响应缺少 Chat Completions 的 choices/message，请检查接口协议"
+  end
+  if choice.finish_reason == "content_filter"
+    or (type(message.refusal) == "string" and trim(message.refusal) ~= "") then
+    return nil, "模型拒绝了请求或触发内容过滤，请调整声音描述"
+  end
+  if choice.finish_reason == "length" then
+    return nil, "模型输出达到 token 上限，最终 JSON 未完整返回"
+  end
   local content = ai_semantic_message_content(message)
   if type(content) ~= "string" or trim(content) == "" then
+    if (type(message.reasoning_content) == "string" and trim(message.reasoning_content) ~= "")
+      or (type(message.reasoning) == "string" and trim(message.reasoning) ~= "") then
+      return nil, "模型仅返回推理内容，没有最终答案；请使用非推理模式或模型"
+    end
     return nil, "API 没有返回可用内容"
   end
   local decoded = ai_semantic_decode_content_json(content)
@@ -14479,31 +14521,35 @@ end
 function ai_semantic_retryable_response_error(reason)
   return reason == "API 没有返回可用内容"
     or reason == "模型没有返回要求的 JSON 结构"
+    or reason == "模型输出达到 token 上限，最终 JSON 未完整返回"
+    or reason == "模型仅返回推理内容，没有最终答案；请使用非推理模式或模型"
 end
 
 function ai_semantic_retry_api(session, phase, reason)
   local retry_key = phase .. "_retry_count"
   if not ai_semantic_retryable_response_error(reason)
     or (session[retry_key] or 0) >= 1 then return false end
-  if phase ~= "plan" then return false end
+  if phase ~= "plan" and phase ~= "test" then return false end
 
   if session.api_job then
     ai_semantic_cleanup_job(session.api_job)
     session.api_job = nil
   end
 
+  local test = phase == "test"
   local api_job = ai_semantic_start_api_job(
-    "plan-retry",
-    ai_semantic_plan_system_prompt()
+    phase .. "-retry",
+    (test and [[Return JSON only: {"ok":true}.]] or ai_semantic_plan_system_prompt())
       .. "\nReturn one complete JSON object only. Do not include analysis, prose, or markdown fences.",
-    session.query,
-    600,
+    test and "Connection test" or session.query,
+    test and 1024 or AISemantic.retry_tokens,
     session.api_config
   )
   if not api_job then return false end
   session[retry_key] = (session[retry_key] or 0) + 1
   session.api_job = api_job
-  set_status("AI 返回格式异常，正在自动重试搜索计划…")
+  set_status(test and "AI 连接测试响应不完整，正在自动重试一次…"
+    or "AI 返回格式异常，正在自动重试搜索计划…")
   return true
 end
 
@@ -14851,7 +14897,7 @@ function start_ai_semantic_search(query)
     "plan",
     ai_semantic_plan_system_prompt(),
     query,
-    600
+    AISemantic.plan_tokens
   )
   if not api_job then
     Jobs.finish(token, false, api_reason)
@@ -14978,7 +15024,7 @@ function start_ai_semantic_connection_test()
     "test",
     [[Return JSON only: {"ok":true}.]],
     "Connection test",
-    20
+    AISemantic.test_tokens
   )
   if not api_job then
     ai_semantic_record_test({ api_config = api_config }, false, api_reason)
@@ -14999,7 +15045,11 @@ end
 function process_ai_semantic_connection_test(session)
   local ready, value = ai_semantic_poll_api(session)
   if ready == nil then return true end
-  if not ready then ai_semantic_fail(session, value) return true end
+  if not ready then
+    if ai_semantic_retry_api(session, "test", value) then return true end
+    ai_semantic_fail(session, value)
+    return true
+  end
   ai_semantic_record_test(session, true, value.ok == true and "连接成功" or "API 已响应")
   Jobs.finish(session.job_token, true, "connection test")
   AppState.set("ai_semantic_session", nil)

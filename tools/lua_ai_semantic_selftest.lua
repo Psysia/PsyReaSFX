@@ -324,14 +324,44 @@ local invalid_content, invalid_reason = ai_semantic_extract_content(neural_json_
 }))
 assert(invalid_content == nil and ai_semantic_retryable_response_error(invalid_reason))
 
+-- A quoted preamble must not hide the actual JSON; reasoning examples are
+-- not final answers. Never silently accept a truncated or filtered response.
+decoded = assert(ai_semantic_extract_content(neural_json_encode({
+  choices = { { finish_reason = "stop", message = { content = [[<think>{"ok":false}</think>
+Here's a "quoted preamble followed by the answer:
+{"positive_terms":["impact"],"negative_terms":[],"concepts":[],"summary":"impact"}]] } } },
+})))
+assert(decoded.positive_terms[1] == "impact" and decoded.ok == nil)
+decoded = assert(ai_semantic_decode_content_json('{"summary":"literal <think>text</think>"}'))
+assert(decoded.summary == "literal <think>text</think>")
+local function response_error(choice)
+  local value, reason = ai_semantic_extract_content(neural_json_encode({ choices = { choice } }))
+  assert(value == nil)
+  return reason
+end
+assert(response_error({ finish_reason = "length", message = { content = '{"ok":' } })
+  == "模型输出达到 token 上限，最终 JSON 未完整返回")
+assert(response_error({ message = { content = "", reasoning_content = '{"ok":true}' } })
+  == "模型仅返回推理内容，没有最终答案；请使用非推理模式或模型")
+assert(not ai_semantic_retryable_response_error(response_error({
+  finish_reason = "content_filter", message = { content = '{"ok":true}' },
+})))
+assert(not ai_semantic_retryable_response_error(response_error({
+  message = { refusal = "no", content = "" },
+})))
+local unsupported, protocol_reason = ai_semantic_extract_content('{"output_text":"hello"}')
+assert(unsupported == nil and protocol_reason:find("choices/message", 1, true))
+unsupported, protocol_reason = ai_semantic_extract_content('{"choices":[42]}')
+assert(unsupported == nil and protocol_reason:find("choices/message", 1, true))
+
 local original_start_api_job_for_retry = ai_semantic_start_api_job
 local retry_calls = 0
 ai_semantic_start_api_job = function(kind, system_prompt, user_prompt, maximum_tokens)
   retry_calls = retry_calls + 1
-  assert(kind == "plan-retry")
+  assert(kind == "plan-retry" or kind == "test-retry")
   assert(system_prompt:find("one complete JSON object", 1, true))
-  assert(user_prompt == "wood door")
-  assert(maximum_tokens == 600)
+  assert(user_prompt == (kind == "test-retry" and "Connection test" or "wood door"))
+  assert(maximum_tokens == (kind == "test-retry" and 1024 or AISemantic.retry_tokens))
   return { kind = kind }
 end
 local retry_session = { query = "wood door" }
@@ -339,7 +369,36 @@ assert(ai_semantic_retry_api(retry_session, "plan", invalid_reason))
 assert(retry_calls == 1 and retry_session.plan_retry_count == 1)
 assert(not ai_semantic_retry_api(retry_session, "plan", invalid_reason))
 assert(retry_calls == 1, "invalid JSON must be retried at most once")
+local test_retry_session = { query = "" }
+assert(ai_semantic_retry_api(test_retry_session, "test", empty_reason))
+assert(retry_calls == 2 and test_retry_session.test_retry_count == 1)
+assert(not ai_semantic_retry_api(test_retry_session, "test", empty_reason))
 ai_semantic_start_api_job = original_start_api_job_for_retry
+
+-- Exercise the polling path: a truncated probe retries using its frozen
+-- preset, then completes and clears the job. Do not send any live requests.
+local original_poll, original_record, original_start = ai_semantic_poll_api,
+  ai_semantic_record_test, ai_semantic_start_api_job
+local frozen_config = { provider = "custom", model = "gpt-6-luna", url = "https://example.test/v1/chat/completions" }
+local probe_session = { phase = "test_wait", query = "", api_config = frozen_config,
+  job_token = assert(Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)) }
+state.ai_semantic_session = probe_session
+ai_semantic_poll_api = function() return false, "模型输出达到 token 上限，最终 JSON 未完整返回" end
+ai_semantic_start_api_job = function(kind, prompt, query, tokens, config)
+  assert(kind == "test-retry" and tokens == 1024 and config == frozen_config)
+  return { kind = kind }
+end
+assert(process_ai_semantic_connection_test(probe_session))
+assert(state.ai_semantic_session == probe_session and probe_session.test_retry_count == 1)
+ai_semantic_poll_api = function() return true, { ok = true } end
+local test_recorded = false
+ai_semantic_record_test = function(session, ok)
+  assert(session.api_config == frozen_config and ok)
+  test_recorded = true
+end
+assert(process_ai_semantic_connection_test(probe_session))
+assert(test_recorded and state.ai_semantic_session == nil and not Jobs.active.ai_semantic_search)
+ai_semantic_poll_api, ai_semantic_record_test, ai_semantic_start_api_job = original_poll, original_record, original_start
 
 local body = ai_semantic_chat_body("system", "user", 50)
 local request = neural_json_decode(body)
@@ -348,11 +407,28 @@ assert(request.messages[1].content == "system")
 assert(request.messages[2].content == "user")
 assert(request.response_format.type == "json_object")
 assert(request.thinking.type == "disabled")
+assert(request.stream == false and request.max_tokens == AISemantic.test_tokens)
 
 state.ai_provider = "custom"
 request = neural_json_decode(ai_semantic_chat_body("system", "user", 50))
 assert(request.response_format == nil)
 assert(request.thinking == nil)
+local original_model, original_url = state.ai_model, state.ai_api_url
+state.ai_model = "gpt-6-luna"
+state.ai_api_url = "https://ai-gateway.kurogames.com/v1/chat/completions"
+assert(ai_semantic_validate_endpoint(state.ai_api_url))
+request = neural_json_decode(ai_semantic_chat_body("JSON", "user", 20))
+assert(request.reasoning_effort == "none")
+assert(request.max_completion_tokens == 256 and request.max_tokens == nil)
+assert(request.temperature == nil and request.thinking == nil and request.stream == false)
+assert(request.response_format.type == "json_object")
+request = neural_json_decode(ai_semantic_chat_body("JSON", "user", AISemantic.plan_tokens))
+assert(request.max_completion_tokens == 1200)
+state.ai_model = "other-compatible-model"
+request = neural_json_decode(ai_semantic_chat_body("JSON", "user", 600))
+assert(request.max_tokens == 600 and request.max_completion_tokens == nil)
+assert(request.reasoning_effort == nil and request.response_format == nil)
+state.ai_model, state.ai_api_url = original_model, original_url
 state.ai_provider = "deepseek"
 
 state.ai_provider = "deepseek"
