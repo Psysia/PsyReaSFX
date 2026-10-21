@@ -257,7 +257,7 @@ function ai_semantic_select_preset(id)
   paths.secret = ai_semantic_preset_secret_path(id)
   AppState.apply({
     ai_active_preset_id = id, ai_preset_name = draft.name,
-    ai_provider = preset.provider, ai_api_url = draft.url, ai_model = draft.model,
+    ai_provider = draft.provider, ai_api_url = draft.url, ai_model = draft.model,
     ai_api_key_input = draft.key_input or "",
     ai_api_key_status = draft.key_status or "",
     ai_api_key_status_error = draft.key_status_error == true,
@@ -293,7 +293,9 @@ function ai_semantic_initialize_presets()
   if raw and raw ~= "" then
     local ok, data = pcall(neural_json_decode, raw)
     local valid = ok and type(data) == "table" and data.version == 1
-      and type(data.presets) == "table" and #data.presets > 0 and #data.presets <= 32
+      and type(data.presets) == "table" and #data.presets <= 32
+      and (data.next_id == nil or (type(data.next_id) == "number"
+        and data.next_id >= 0 and data.next_id < 1e14 and data.next_id % 1 == 0))
     local seen = {}
     if valid then
       for _, value in ipairs(data.presets) do
@@ -322,7 +324,8 @@ function ai_semantic_initialize_presets()
       AppState.set("ai_api_key_saved", false)
       return false
     end
-    active_id = seen[data.active_id] and data.active_id or presets[1].id
+    sequence = math.max(sequence, data.next_id or 0)
+    active_id = seen[data.active_id] and data.active_id or (presets[1] and presets[1].id or "")
   else
     local provider = state.ai_provider or "deepseek"
     presets[1] = {
@@ -338,8 +341,21 @@ function ai_semantic_initialize_presets()
     ai_preset_drafts = {}, ai_preset_tests = {}, ai_active_preset_id = "",
     ai_presets_loaded = true, ai_presets_error = "",
   })
-  ai_semantic_select_preset(active_id)
+  if active_id ~= "" then ai_semantic_select_preset(active_id)
+  else ai_semantic_clear_active_preset() end
   return true
+end
+
+function ai_semantic_clear_active_preset()
+  local paths = {}
+  for key, value in pairs(state.ai_semantic_paths or {}) do
+    if key ~= "secret" then paths[key] = value end
+  end
+  AppState.apply({ ai_active_preset_id = "", ai_preset_name = "",
+    ai_provider = "custom", ai_api_url = "", ai_model = "", ai_api_key_input = "",
+    ai_api_key_saved = false, ai_api_key_status = "", ai_api_key_status_error = false,
+    ai_semantic_paths = paths, ai_preset_status = "", ai_preset_status_error = false,
+    config_dirty = true })
 end
 
 function ai_semantic_new_preset(provider)
@@ -367,18 +383,27 @@ end
 
 function ai_semantic_select_provider_preset(provider)
   local current = ai_semantic_preset_by_id(state.ai_active_preset_id)
-  if current and current.provider == provider then return true end
-  for _, preset in ipairs(state.ai_presets or {}) do
-    if preset.provider == provider then return ai_semantic_select_preset(preset.id) end
+  if not current then return false, "请先新建预设" end
+  if provider ~= "deepseek" and provider ~= "openai" and provider ~= "custom" then
+    return false, "服务商类型无效"
   end
-  return ai_semantic_new_preset(provider)
+  -- Provider is an editable field, not an implicit create/switch action.
+  -- Never replace the current endpoint, model, key or another preset.
+  AppState.apply({ ai_provider = provider, ai_preset_status = "" })
+  return true
 end
 
-function ai_semantic_preset_dirty()
-  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
-  return preset and (not preset.saved or preset.name ~= trim(state.ai_preset_name)
-    or preset.url ~= trim(state.ai_api_url) or preset.model ~= trim(state.ai_model)
-    or trim(state.ai_api_key_input) ~= "") or false
+function ai_semantic_preset_dirty(id)
+  id = id or state.ai_active_preset_id
+  local preset = ai_semantic_preset_by_id(id)
+  if not preset then return false end
+  local draft = id == state.ai_active_preset_id and {
+    name = state.ai_preset_name, provider = state.ai_provider,
+    url = state.ai_api_url, model = state.ai_model, key_input = state.ai_api_key_input,
+  } or (state.ai_preset_drafts or {})[id] or preset
+  return not preset.saved or preset.name ~= trim(draft.name)
+    or preset.provider ~= draft.provider or preset.url ~= trim(draft.url)
+    or preset.model ~= trim(draft.model) or trim(draft.key_input) ~= ""
 end
 
 function ai_semantic_preset_key_usable()
@@ -411,17 +436,75 @@ function ai_semantic_save_preset()
     local key_ok, key_reason = ai_semantic_save_api_key(state.ai_api_key_input)
     if not key_ok then return fail(key_reason) end
   end
-  local old = { name = preset.name, url = preset.url, model = preset.model, saved = preset.saved }
-  preset.name, preset.url, preset.model, preset.saved = name, trim(state.ai_api_url), trim(state.ai_model), true
+  local old = { name = preset.name, provider = preset.provider, url = preset.url, model = preset.model, saved = preset.saved }
+  preset.name, preset.provider = name, state.ai_provider
+  preset.url, preset.model, preset.saved = trim(state.ai_api_url), trim(state.ai_model), true
   AppState.set("config_dirty", true)
   -- Explicit Save is durable, rather than waiting for a later UI autosave.
   local saved = save_config()
   if saved ~= true or state.config_dirty then
-    preset.name, preset.url, preset.model, preset.saved = old.name, old.url, old.model, old.saved
+    preset.name, preset.provider = old.name, old.provider
+    preset.url, preset.model, preset.saved = old.url, old.model, old.saved
     return fail("预设保存失败，请检查配置写入权限")
   end
   ai_semantic_preset_stash()
   AppState.apply({ ai_preset_status = "预设已保存", ai_preset_status_error = false })
+  return true
+end
+
+function ai_semantic_delete_preset(id)
+  local function fail(reason)
+    AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
+    return false, reason
+  end
+  if state.ai_semantic_session then return fail("请等待当前 AI 请求结束后再删除预设") end
+  if not state.ai_presets_loaded then return fail("预设数据不可用") end
+  local preset = ai_semantic_preset_by_id(id)
+  if not preset then return fail("预设不存在") end
+  ai_semantic_preset_stash()
+  local previous = state.ai_presets
+  local active_id = state.ai_active_preset_id
+  local remaining = {}
+  for _, item in ipairs(previous) do
+    if item.id ~= id then remaining[#remaining + 1] = item end
+  end
+  AppState.set("ai_presets", remaining)
+  if active_id == id then
+    if remaining[1] then ai_semantic_select_preset(remaining[1].id)
+    else ai_semantic_clear_active_preset() end
+  end
+  AppState.set("config_dirty", true)
+  if save_config() ~= true or state.config_dirty then
+    AppState.set("ai_presets", previous)
+    ai_semantic_select_preset(active_id)
+    return fail("预设删除失败，请检查配置写入权限")
+  end
+  local drafts, tests = state.ai_preset_drafts or {}, state.ai_preset_tests or {}
+  drafts[id], tests[id] = nil, nil
+  AppState.apply({ ai_preset_drafts = drafts, ai_preset_tests = tests })
+  -- Persist removal before removing only this group's derived credential paths.
+  local path = ai_semantic_preset_secret_path(id)
+  if path then
+    for _, target in ipairs({ path, path .. ".bak", path .. ".tmp" }) do
+      if Host.file_exists(target) then
+        local removed = os.remove(target)
+        if not removed then return fail("预设已删除，但加密密钥文件清理失败") end
+      end
+    end
+  end
+  AppState.apply({ ai_preset_status = "预设已删除", ai_preset_status_error = false })
+  return true
+end
+
+function ai_semantic_save_settings()
+  -- The footer Save must commit the active preset, not merely serialize its
+  -- old saved fields while leaving the editor as an unsaved draft.
+  if ai_semantic_preset_dirty() then
+    return ai_semantic_save_preset()
+  end
+  if save_config() ~= true or state.config_dirty then
+    return false, "设置保存失败，请检查配置写入权限"
+  end
   return true
 end
 
@@ -623,6 +706,7 @@ function ai_semantic_delete_api_key()
   if state.ai_semantic_session then return false, "请等待当前 AI 请求结束后再修改密钥" end
   if not state.ai_semantic_paths then return false end
   local path = state.ai_semantic_paths.secret
+  if not path then return false, "请先新建预设" end
   if Host.file_exists(path) then
     local removed, reason = os.remove(path)
     if not removed then return false, tostring(reason or "密钥删除失败") end

@@ -1,5 +1,15 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 7.15
+
+### 预设管理操作与保存修复
+
+- 新建、切换、保存、删除预设按钮并排显示，按可用宽度分配；删除有确认，仅移除此组及加密 Key。
+- 服务商按钮只编辑当前组类型，不再自动创建或切换预设，也不替换地址、模型。
+- 修复设置页“保存并关闭”只保存全局配置、预设仍待保存的问题；保存失败保留窗口和草稿。
+- 预设列表统一按实际草稿显示待保存状态；保存成功、切换和重启后状态一致。
+- 可删除最后一组，保持空列表直到主动新建；新增删除回滚、独立密钥清理、ID 延续及保存按钮交互回归。
+
 ## 0.9.0 Beta 7.14
 
 ### 独立 API 预设与安全切换
@@ -1343,5 +1353,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.14/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_14_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.15/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_15_win_x64.zip
 

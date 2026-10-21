@@ -223,6 +223,17 @@ assert(
     and ai_settings:find("ai_semantic_config_signature", 1, true),
   "AI settings must expose independent named presets, draft status and preset-specific test results"
 )
+local preset_new = assert(ai_settings:find('dark_button("新建预设", preset_button_width)', 1, true))
+local preset_switch = assert(ai_settings:find('dark_button("切换预设", preset_button_width)', 1, true))
+local preset_save = assert(ai_settings:find('dark_button("保存预设", preset_button_width)', 1, true))
+local preset_delete = assert(ai_settings:find('dark_button("删除预设", preset_button_width)', 1, true))
+assert(preset_new < preset_switch and preset_switch < preset_save and preset_save < preset_delete,
+  "preset create/switch/save/delete must share one ordered adaptive-width toolbar")
+assert(ai_settings:find('"##ai_preset_delete"', 1, true)
+  and ai_settings:find("ai_semantic_delete_preset(state.ai_preset_delete_id)", 1, true),
+  "preset deletion requires an explicit group-specific confirmation")
+assert(source:find("local ok, reason = ai_semantic_save_settings()", 1, true),
+  "Save and close must commit the active preset before closing")
 local provider_selector = function_region(
   "function select_ai_semantic_provider(provider)", "function settings_tab_button(key, label)"
 )

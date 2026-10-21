@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.14
+-- @version 0.9.0-beta7.15
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -90,7 +90,7 @@
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 7.13：居中品牌启动画面与轻量青色波形动画，显示真实阶段、数量和已用时间
---   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
+--   - Beta 7.15：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -121,7 +121,7 @@
 --   - About 复用主工具栏矢量标志与 Orbitron 双色字标
 --   - 0.7.13：修复同帧收起声道条时 SetCursorPos 越过 Child 边界的崩溃
 --   - 多声道右键明确为波形聚焦，不再误称为 SWS 无法提供的源声道 Solo
---   - 0.7.14：空格停止试听使用短音量斜坡，减少连续从头试听的爆音
+--   - 0.7.15：空格停止试听使用短音量斜坡，减少连续从头试听的爆音
 --   - Preview 安全淡入延长，定位在播放前写入，降低缓冲边界不连续
 --   - 全部声道按钮显式区分选中、未选中与悬停状态
 --   - 0.7.15：试听统一经过带源边界淡入的 Section Source
@@ -196,7 +196,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.14"
+local VERSION = "0.9.0 Beta 7.15"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -949,6 +949,7 @@ local state = {
   ai_active_preset_id = "",
   ai_preset_name = "",
   ai_preset_sequence = 0,
+  ai_preset_delete_id = "",
   ai_presets_loaded = false,
   ai_presets_json = nil,
   ai_presets_error = "",
@@ -2242,6 +2243,20 @@ I18N_EN["API 预设"] = "API presets"
 I18N_EN["每组预设分别保存地址、模型与加密密钥；切换不会覆盖其他预设。"] = "Each preset keeps its own endpoint, model and encrypted key. Switching preserves other presets."
 I18N_EN["切换已保存预设"] = "Switch presets"
 I18N_EN["新建预设"] = "New preset"
+I18N_EN["切换预设"] = "Switch preset"
+I18N_EN["保存预设"] = "Save preset"
+I18N_EN["删除预设"] = "Delete preset"
+I18N_EN["确认删除"] = "Confirm deletion"
+I18N_EN["将删除此组配置与加密 Key，不影响其他预设。"] = "Deletes this preset and its encrypted key only; other presets are unaffected."
+I18N_EN["请先新建预设"] = "Create a preset first"
+I18N_EN["服务商类型无效"] = "Invalid provider type"
+I18N_EN["服务商只修改当前预设类型，不自动新建；已有配置请用切换预设选择。"] = "Provider edits the current preset type without creating a group. Use Switch preset for saved setups."
+I18N_EN["请等待当前 AI 请求结束后再删除预设"] = "Wait for the active AI request before deleting a preset"
+I18N_EN["预设删除失败，请检查配置写入权限"] = "Preset deletion failed; check configuration write permissions"
+I18N_EN["预设已删除，但加密密钥文件清理失败"] = "Preset deleted, but encrypted key cleanup failed"
+I18N_EN["预设已删除"] = "Preset deleted"
+I18N_EN["设置保存失败，请检查配置写入权限"] = "Settings save failed; check configuration write permissions"
+I18N_PREFIX_EN["确认删除预设："] = "Delete preset: "
 I18N_EN["预设名称"] = "Preset name"
 I18N_EN["保存当前预设"] = "Save current preset"
 I18N_EN["预设已保存"] = "Preset saved"
@@ -13830,7 +13845,7 @@ function ai_semantic_select_preset(id)
   paths.secret = ai_semantic_preset_secret_path(id)
   AppState.apply({
     ai_active_preset_id = id, ai_preset_name = draft.name,
-    ai_provider = preset.provider, ai_api_url = draft.url, ai_model = draft.model,
+    ai_provider = draft.provider, ai_api_url = draft.url, ai_model = draft.model,
     ai_api_key_input = draft.key_input or "",
     ai_api_key_status = draft.key_status or "",
     ai_api_key_status_error = draft.key_status_error == true,
@@ -13866,7 +13881,9 @@ function ai_semantic_initialize_presets()
   if raw and raw ~= "" then
     local ok, data = pcall(neural_json_decode, raw)
     local valid = ok and type(data) == "table" and data.version == 1
-      and type(data.presets) == "table" and #data.presets > 0 and #data.presets <= 32
+      and type(data.presets) == "table" and #data.presets <= 32
+      and (data.next_id == nil or (type(data.next_id) == "number"
+        and data.next_id >= 0 and data.next_id < 1e14 and data.next_id % 1 == 0))
     local seen = {}
     if valid then
       for _, value in ipairs(data.presets) do
@@ -13895,7 +13912,8 @@ function ai_semantic_initialize_presets()
       AppState.set("ai_api_key_saved", false)
       return false
     end
-    active_id = seen[data.active_id] and data.active_id or presets[1].id
+    sequence = math.max(sequence, data.next_id or 0)
+    active_id = seen[data.active_id] and data.active_id or (presets[1] and presets[1].id or "")
   else
     local provider = state.ai_provider or "deepseek"
     presets[1] = {
@@ -13911,8 +13929,21 @@ function ai_semantic_initialize_presets()
     ai_preset_drafts = {}, ai_preset_tests = {}, ai_active_preset_id = "",
     ai_presets_loaded = true, ai_presets_error = "",
   })
-  ai_semantic_select_preset(active_id)
+  if active_id ~= "" then ai_semantic_select_preset(active_id)
+  else ai_semantic_clear_active_preset() end
   return true
+end
+
+function ai_semantic_clear_active_preset()
+  local paths = {}
+  for key, value in pairs(state.ai_semantic_paths or {}) do
+    if key ~= "secret" then paths[key] = value end
+  end
+  AppState.apply({ ai_active_preset_id = "", ai_preset_name = "",
+    ai_provider = "custom", ai_api_url = "", ai_model = "", ai_api_key_input = "",
+    ai_api_key_saved = false, ai_api_key_status = "", ai_api_key_status_error = false,
+    ai_semantic_paths = paths, ai_preset_status = "", ai_preset_status_error = false,
+    config_dirty = true })
 end
 
 function ai_semantic_new_preset(provider)
@@ -13940,18 +13971,27 @@ end
 
 function ai_semantic_select_provider_preset(provider)
   local current = ai_semantic_preset_by_id(state.ai_active_preset_id)
-  if current and current.provider == provider then return true end
-  for _, preset in ipairs(state.ai_presets or {}) do
-    if preset.provider == provider then return ai_semantic_select_preset(preset.id) end
+  if not current then return false, "请先新建预设" end
+  if provider ~= "deepseek" and provider ~= "openai" and provider ~= "custom" then
+    return false, "服务商类型无效"
   end
-  return ai_semantic_new_preset(provider)
+  -- Provider is an editable field, not an implicit create/switch action.
+  -- Never replace the current endpoint, model, key or another preset.
+  AppState.apply({ ai_provider = provider, ai_preset_status = "" })
+  return true
 end
 
-function ai_semantic_preset_dirty()
-  local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
-  return preset and (not preset.saved or preset.name ~= trim(state.ai_preset_name)
-    or preset.url ~= trim(state.ai_api_url) or preset.model ~= trim(state.ai_model)
-    or trim(state.ai_api_key_input) ~= "") or false
+function ai_semantic_preset_dirty(id)
+  id = id or state.ai_active_preset_id
+  local preset = ai_semantic_preset_by_id(id)
+  if not preset then return false end
+  local draft = id == state.ai_active_preset_id and {
+    name = state.ai_preset_name, provider = state.ai_provider,
+    url = state.ai_api_url, model = state.ai_model, key_input = state.ai_api_key_input,
+  } or (state.ai_preset_drafts or {})[id] or preset
+  return not preset.saved or preset.name ~= trim(draft.name)
+    or preset.provider ~= draft.provider or preset.url ~= trim(draft.url)
+    or preset.model ~= trim(draft.model) or trim(draft.key_input) ~= ""
 end
 
 function ai_semantic_preset_key_usable()
@@ -13984,17 +14024,75 @@ function ai_semantic_save_preset()
     local key_ok, key_reason = ai_semantic_save_api_key(state.ai_api_key_input)
     if not key_ok then return fail(key_reason) end
   end
-  local old = { name = preset.name, url = preset.url, model = preset.model, saved = preset.saved }
-  preset.name, preset.url, preset.model, preset.saved = name, trim(state.ai_api_url), trim(state.ai_model), true
+  local old = { name = preset.name, provider = preset.provider, url = preset.url, model = preset.model, saved = preset.saved }
+  preset.name, preset.provider = name, state.ai_provider
+  preset.url, preset.model, preset.saved = trim(state.ai_api_url), trim(state.ai_model), true
   AppState.set("config_dirty", true)
   -- Explicit Save is durable, rather than waiting for a later UI autosave.
   local saved = save_config()
   if saved ~= true or state.config_dirty then
-    preset.name, preset.url, preset.model, preset.saved = old.name, old.url, old.model, old.saved
+    preset.name, preset.provider = old.name, old.provider
+    preset.url, preset.model, preset.saved = old.url, old.model, old.saved
     return fail("预设保存失败，请检查配置写入权限")
   end
   ai_semantic_preset_stash()
   AppState.apply({ ai_preset_status = "预设已保存", ai_preset_status_error = false })
+  return true
+end
+
+function ai_semantic_delete_preset(id)
+  local function fail(reason)
+    AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
+    return false, reason
+  end
+  if state.ai_semantic_session then return fail("请等待当前 AI 请求结束后再删除预设") end
+  if not state.ai_presets_loaded then return fail("预设数据不可用") end
+  local preset = ai_semantic_preset_by_id(id)
+  if not preset then return fail("预设不存在") end
+  ai_semantic_preset_stash()
+  local previous = state.ai_presets
+  local active_id = state.ai_active_preset_id
+  local remaining = {}
+  for _, item in ipairs(previous) do
+    if item.id ~= id then remaining[#remaining + 1] = item end
+  end
+  AppState.set("ai_presets", remaining)
+  if active_id == id then
+    if remaining[1] then ai_semantic_select_preset(remaining[1].id)
+    else ai_semantic_clear_active_preset() end
+  end
+  AppState.set("config_dirty", true)
+  if save_config() ~= true or state.config_dirty then
+    AppState.set("ai_presets", previous)
+    ai_semantic_select_preset(active_id)
+    return fail("预设删除失败，请检查配置写入权限")
+  end
+  local drafts, tests = state.ai_preset_drafts or {}, state.ai_preset_tests or {}
+  drafts[id], tests[id] = nil, nil
+  AppState.apply({ ai_preset_drafts = drafts, ai_preset_tests = tests })
+  -- Persist removal before removing only this group's derived credential paths.
+  local path = ai_semantic_preset_secret_path(id)
+  if path then
+    for _, target in ipairs({ path, path .. ".bak", path .. ".tmp" }) do
+      if Host.file_exists(target) then
+        local removed = os.remove(target)
+        if not removed then return fail("预设已删除，但加密密钥文件清理失败") end
+      end
+    end
+  end
+  AppState.apply({ ai_preset_status = "预设已删除", ai_preset_status_error = false })
+  return true
+end
+
+function ai_semantic_save_settings()
+  -- The footer Save must commit the active preset, not merely serialize its
+  -- old saved fields while leaving the editor as an unsaved draft.
+  if ai_semantic_preset_dirty() then
+    return ai_semantic_save_preset()
+  end
+  if save_config() ~= true or state.config_dirty then
+    return false, "设置保存失败，请检查配置写入权限"
+  end
   return true
 end
 
@@ -14196,6 +14294,7 @@ function ai_semantic_delete_api_key()
   if state.ai_semantic_session then return false, "请等待当前 AI 请求结束后再修改密钥" end
   if not state.ai_semantic_paths then return false end
   local path = state.ai_semantic_paths.secret
+  if not path then return false, "请先新建预设" end
   if Host.file_exists(path) then
     local removed, reason = os.remove(path)
     if not removed then return false, tostring(reason or "密钥删除失败") end
@@ -36524,11 +36623,27 @@ function draw_settings_ai()
   end
   local current_preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
   ImGui.TextWrapped(ctx, "当前预设：" .. (current_preset and current_preset.name or "—"))
-  if dark_button("切换已保存预设", 160) then ImGui.OpenPopup(ctx, "##ai_preset_picker") end
+  local preset_button_width = math.max(1, (ImGui.GetContentRegionAvail(ctx) - 24) / 4)
+  if dark_button("新建预设", preset_button_width) then
+    local ok, reason = ai_semantic_new_preset(state.ai_provider)
+    if not ok then set_status(reason, true) end
+  end
+  ImGui.SameLine(ctx, 0, 8)
+  if dark_button("切换预设", preset_button_width) then ImGui.OpenPopup(ctx, "##ai_preset_picker") end
+  ImGui.SameLine(ctx, 0, 8)
+  if dark_button("保存预设", preset_button_width) then
+    local ok, reason = ai_semantic_save_preset()
+    set_status(ok and "预设已保存" or reason, not ok)
+  end
+  ImGui.SameLine(ctx, 0, 8)
+  if dark_button("删除预设", preset_button_width) then
+    AppState.set("ai_preset_delete_id", state.ai_active_preset_id)
+    ImGui.OpenPopup(ctx, "##ai_preset_delete")
+  end
   if ImGui.BeginPopup(ctx, "##ai_preset_picker") then
     for _, preset in ipairs(state.ai_presets or {}) do
       local label = compact(preset.name, 40) .. " · " .. ai_semantic_provider_label(preset.provider)
-        .. (preset.saved and " · " .. translate_ui_text("已保存") or " · " .. translate_ui_text("待保存"))
+        .. " · " .. translate_ui_text(ai_semantic_preset_dirty(preset.id) and "待保存" or "已保存")
         .. "##ai_preset_" .. preset.id
       if ImGui.Selectable(ctx, label, preset.id == state.ai_active_preset_id) then
         ai_semantic_select_preset(preset.id)
@@ -36536,9 +36651,25 @@ function draw_settings_ai()
     end
     ImGui.EndPopup(ctx)
   end
-  if dark_button("新建预设", 112) then
-    local ok, reason = ai_semantic_new_preset(state.ai_provider)
-    if not ok then set_status(reason, true) end
+  if ImGui.BeginPopup(ctx, "##ai_preset_delete") then
+    local deleting = ai_semantic_preset_by_id(state.ai_preset_delete_id)
+    ImGui.TextWrapped(ctx, "确认删除预设：" .. (deleting and deleting.name or "—"))
+    ImGui.TextWrapped(ctx, "将删除此组配置与加密 Key，不影响其他预设。")
+    if dark_button("确认删除", 112) then
+      local ok, reason = ai_semantic_delete_preset(state.ai_preset_delete_id)
+      set_status(ok and "预设已删除" or reason, not ok)
+      ImGui.CloseCurrentPopup(ctx)
+    end
+    ImGui.SameLine(ctx)
+    if dark_button("取消", 80) then ImGui.CloseCurrentPopup(ctx) end
+    ImGui.EndPopup(ctx)
+  end
+  if state.ai_preset_status ~= "" then
+    ImGui.TextColored(ctx, state.ai_preset_status_error and COLOR.error or COLOR.success, state.ai_preset_status)
+  end
+  if not ai_semantic_preset_by_id(state.ai_active_preset_id) then
+    ImGui.TextWrapped(ctx, "请先新建预设")
+    return
   end
   ImGui.Text(ctx, "预设名称")
   ImGui.SetNextItemWidth(ctx, -1)
@@ -36554,6 +36685,7 @@ function draw_settings_ai()
   ImGui.SameLine(ctx)
   if dark_button("兼容接口", 112) then select_ai_semantic_provider("custom") end
   ImGui.TextDisabled(ctx, "当前选择：" .. ai_semantic_provider_label(state.ai_provider))
+  ImGui.TextWrapped(ctx, "服务商只修改当前预设类型，不自动新建；已有配置请用切换预设选择。")
 
   ImGui.Text(ctx, "API 地址")
   ImGui.SetNextItemWidth(ctx, -1)
@@ -36601,10 +36733,6 @@ function draw_settings_ai()
     end
   else
     ImGui.TextDisabled(ctx, "兼容接口请填写服务实际提供的模型 ID")
-  end
-  if dark_button("保存当前预设", 152) then ai_semantic_save_preset() end
-  if state.ai_preset_status ~= "" then
-    ImGui.TextColored(ctx, state.ai_preset_status_error and COLOR.error or COLOR.success, state.ai_preset_status)
   end
 
   ImGui.Separator(ctx)
@@ -39404,9 +39532,13 @@ function draw_settings_popup()
   )
 
   if dark_button("保存并关闭", button_width) then
-    save_config()
-    if state.db_dirty then save_database_changes() end
-    ImGui.CloseCurrentPopup(ctx)
+    local ok, reason = ai_semantic_save_settings()
+    if ok then
+      if state.db_dirty then save_database_changes() end
+      ImGui.CloseCurrentPopup(ctx)
+    else
+      set_status(reason, true)
+    end
   end
 
   if state.settings_close_requested then
