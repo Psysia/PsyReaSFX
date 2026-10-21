@@ -156,14 +156,15 @@ assert(load(region(runtime,"function draw_studio_parameters(","function preview_
 assert(load(region(runtime,"function draw_control_deck(","function format_loudness_value(")))()
 assert(load(region(runtime,"function draw_inline_channel_selector(","function draw_regions_popup(")))()
 local child_height, font_balance, var_balance, color_balance = 0,0,0,0
+local child_visible, child_ends = true,0
 ImGui.PushStyleVar=function() var_balance=var_balance+1 end
 ImGui.PopStyleVar=function(_,n) var_balance=var_balance-(n or 1) end
 ImGui.PushStyleColor=function() color_balance=color_balance+1 end
 ImGui.PopStyleColor=function(_,n) color_balance=color_balance-(n or 1) end
 ImGui.PushFont=function(_,_,size) assert(size==ui_font_size()) font_balance=font_balance+1 end
 ImGui.PopFont=function() font_balance=font_balance-1 end
-ImGui.BeginChild=function(_,_,w,h) surface_width=w-ui_px(4) cursor_x,cursor_y=0,0 child_height=h return true end
-ImGui.EndChild=function() assert(last_y+last_height<=child_height, string.format("wrapped controls overflow: font=%d width=%.1f mode=%s bottom=%.1f height=%.1f",ui_font_size(),surface_width,state.preview_control_layout,last_y+last_height,child_height)) end
+ImGui.BeginChild=function(_,_,w,h) surface_width=w-ui_px(4) cursor_x,cursor_y=0,0 child_height=h return child_visible end
+ImGui.EndChild=function() child_ends=child_ends+1 assert(last_y+last_height<=child_height, string.format("wrapped controls overflow: font=%d width=%.1f mode=%s bottom=%.1f height=%.1f",ui_font_size(),surface_width,state.preview_control_layout,last_y+last_height,child_height)) end
 ImGui.Spacing=function() cursor_y=cursor_y+ui_px(8) end
 ImGui.IsMouseDragging=function() return false end
 ImGui.IsMouseClicked=function() return false end
@@ -207,6 +208,12 @@ for _,size in ipairs({10,13,18,24}) do
     end
   end
 end
+child_visible=false
+local previous_ends=child_ends
+surface_width=800 cursor_x,cursor_y=0,0
+draw_control_deck({path="C:/clipped.wav"})
+assert(child_ends==previous_ends and var_balance==0 and color_balance==0, "clipped deck must not EndChild twice")
+child_visible=true
 assert(load(region(runtime,"function push_theme()","function draw_inspector_splitter(")))()
 function apply_theme_palette() end
 function apply_surface_style() end
@@ -231,7 +238,7 @@ ImGui.IsWindowFocused=function() return false end
 ImGui.Separator=function() end
 ImGui.GetContentRegionAvail=function() return main_width,main_height end
 ImGui.BeginChild=function(_,id,w,h) assert(w>0 and h>0) saved_regions[id]={w,h} return false end
-ImGui.EndChild=function() end
+ImGui.EndChild=function() error("ReaImGui already ended this clipped child") end
 ImGui.SameLine=function() end
 ImGui.WindowFlags_NoCollapse=4
 function begin_module(id,w,h) assert(w>0 and h>0) saved_regions[id]={w,h} return false end
