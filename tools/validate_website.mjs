@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const toolsDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -160,6 +161,14 @@ for (const relative of [
 }
 
 const reapackIndex = fs.readFileSync(path.join(repositoryRoot, "index.xml"), "utf8");
+for (const match of reapackIndex.matchAll(/<source[^>]*file="PsyReaSFX\/neural_similarity\/(README(?:_zh-CN)?\.md)"[^>]*hash="1220([a-f0-9]{64})"[^>]*>([^<]+)<\/source>/g)) {
+  const digest = crypto.createHash("sha256")
+    .update(fs.readFileSync(path.join(repositoryRoot, "neural/package", match[1]))).digest("hex");
+  if (digest !== match[2]) fail(`ReaPack documentation hash mismatch: ${match[1]}`);
+  if (!/^https:\/\/raw\.githubusercontent\.com\/Psysia\/PsyReaSFX\/[a-f0-9]{40}\/neural\/package\//.test(match[3])) {
+    fail(`Neural installer documentation must use an immutable commit URL: ${match[1]}`);
+  }
+}
 for (const name of ["PsyReaSFX.lua", "PsyReaSFX Neural Similarity"]) {
   const metadata = reapackIndex.match(
     new RegExp(`<reapack name="${name.replace(".", "\\.")}"[^>]*>\\s*<metadata>([\\s\\S]*?)<\\/metadata>`),
