@@ -45,7 +45,20 @@ https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 
 Then run `Extensions → ReaPack → Synchronize packages` and install the tools you need.
 
-For PsyReaSFX preview releases, enable pre-release versions in ReaPack. The optional **PsyReaSFX Neural Similarity** package is only needed for local neural similar-sound search on Windows x64.
+### Want the newest features? Install the 0.9 Beta
+
+Normal synchronization follows Stable; **it does not opt you into Beta**. New UCS classification, similar-sound search, AI semantic search and startup animation are in the 0.9 Beta:
+
+1. Run `Extensions → ReaPack → Synchronize packages`, open `Browse packages`, and search for `PsyReaSFX`.
+2. Right-click the main `PsyReaSFX` script package (`PsyReaSFX.lua`) and enable **Enable pre-releases (bleeding-edge)**.
+3. Right-click again → **Versions** → select the newest `0.9.0-beta…` (currently `0.9.0-beta7.13`). Leave **Pin current version** unchecked; unpin it first if needed.
+4. Click **Apply**, or **OK** to confirm installation. After downloads finish, close the old PsyReaSFX window and rerun it from REAPER's Action List.
+
+<p><a href="website/assets/screenshots/reapack-enable-beta.jpg"><img src="website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack context menu: Enable pre-releases and Versions, then Apply or OK to install the latest Beta" width="800"></a></p>
+
+The screenshot illustrates the menu locations and was captured before pruning older Betas. After synchronization, Versions contains only the newest Beta, 0.8.5 Stable and 0.7.23 Stable. Historical releases remain on GitHub Releases.
+
+**Neural search requires a separate package; AI search requires your own API settings.** On Windows x64, repeat the pre-release/install steps for **PsyReaSFX Neural Similarity** to enable local neural retrieval, then restart the main script. AI semantic search does not require that component, but needs your own DeepSeek / OpenAI / compatible API key and model in Settings. Enter remains normal search; the gold AI button triggers semantic search. Updating the main script does not require rebuilding your libraries.
 
 ## REAPER Utilities
 
@@ -122,6 +135,26 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Optional component | **PsyReaSFX Neural Similarity** | Local neural similar-sound search for Windows x64. |
 
 PsyReaSFX keeps normal acoustic search available without the optional neural component. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
+
+### Feature comparison
+
+REAPER / Lua editions only. Beta includes the Stable feature set; “—” means unavailable in that version.
+
+| Feature | 0.7.23 Stable | 0.8.5 Stable | Latest 0.9 Beta (7.13) |
+|---|---|---|---|
+| Browse, waveform audition, metadata, collections and Transfer | Included | Retained | Retained |
+| Interrupted-scan recovery, retries, backups and cache checks | — | Added | Retained and refined |
+| Missing/duplicate checks, source relinking and project usage | — | Added | Retained |
+| Incremental persistence and frame-budgeted large-library tasks | Earlier implementation | Hardened | Further startup optimization |
+| Official UCS classification, review queue and virtual folders | Basic UCS fields only | Basic UCS fields only | Added |
+| Spectral peak coloring | — | — | Added; opt-in |
+| Audio-content similar-sound retrieval | — | — | Built-in 15-feature acoustic retrieval |
+| EfficientAT local neural similarity | — | — | Optional Windows x64 neural package |
+| AI semantic search: query expansion, local recall and paging | — | — | Your API key/model; no neural package needed |
+| Branded startup animation and live loading status | — | — | Added; no fixed intro delay |
+
+See the [Changelog](docs/CHANGELOG_en-US.md) for detailed additions and fixes,
+or the [illustrated Beta installation guide](https://psysia.github.io/PsyReaSFX/#beta-install) to enable them.
 
 ### Development status
 

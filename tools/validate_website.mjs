@@ -82,8 +82,19 @@ for (const required of [
   'data-stable-download',
   'data-preview-download',
   'data-neural-download',
+  'id="beta-install"',
+  'id="version-comparison"',
+  'assets/screenshots/reapack-enable-beta.jpg',
 ]) {
   if (!html.includes(required)) fail(`Missing required homepage marker: ${required}`);
+}
+
+const comparison = html.match(/<table class="comparison-table">([\s\S]*?)<\/table>/)?.[1];
+if (!comparison || (comparison.match(/scope="row"/g) || []).length !== 10) {
+  fail("Version comparison must contain all ten documented feature rows");
+}
+for (const match of html.matchAll(/\bhref="#([^"]+)"/g)) {
+  if (!ids.has(match[1])) fail(`Missing local anchor: #${match[1]}`);
 }
 
 // Archive versions may be documented in installation notes, but must not

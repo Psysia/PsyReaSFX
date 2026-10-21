@@ -24,8 +24,8 @@
   <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon-64.png">
   <link rel="manifest" href="site.webmanifest">
   <link rel="preload" href="assets/showcase/prs-workspace-0-9.png" as="image" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20261014-1">
-  <script src="app.js?v=20261021-1" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261021-2">
+  <script src="app.js?v=20261021-2" defer></script>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -298,8 +298,46 @@
           <p data-i18n="previewSummary">Separate AI semantic search with DeepSeek and compatible APIs, plus optional local EfficientAT similarity.</p>
           <p class="release-install-note" data-i18n="neuralInstallNote">Enable pre-release versions and install PsyReaSFX.lua Beta 7.13. Versions lists only the latest Beta, 0.8.5 Stable and 0.7.23 Stable. The optional Windows x64 neural package lists only the latest Beta; older previews remain on GitHub Releases.</p>
           <a data-preview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta7.13" data-i18n="getPreview">View preview ↗</a>
-          <a class="release-sub-link" data-neural-download href="#install" data-i18n="neuralAddon">Install both packages with ReaPack ↓</a>
+          <a class="release-sub-link" data-neural-download href="#beta-install" data-i18n="neuralAddon">Beta installation guide + optional neural package ↓</a>
         </article>
+      </div>
+    </section>
+
+    <section class="section comparison-section" id="version-comparison" aria-labelledby="comparison-heading">
+      <div class="shell">
+        <div class="section-heading">
+          <p class="kicker" data-i18n="comparisonKicker">WHAT CHANGED</p>
+          <h2 id="comparison-heading" data-i18n="comparisonHeading">What does the latest Beta add?</h2>
+          <p data-i18n="comparisonLead">REAPER / Lua editions only, not the Desktop companion. Beta includes the Stable feature set; “—” means unavailable in that version.</p>
+        </div>
+        <p class="comparison-scroll-note" data-i18n="comparisonScroll">On small screens, swipe the table horizontally to compare all versions.</p>
+        <div class="comparison-scroll" role="region" tabindex="0" aria-labelledby="comparison-heading">
+          <table class="comparison-table">
+            <caption data-i18n="comparisonCaption">Feature overview · 0.7.23 Stable / 0.8.5 Stable / 0.9 Beta 7.13</caption>
+            <thead><tr>
+              <th scope="col" data-i18n="comparisonFeature">Feature</th>
+              <th scope="col">0.7.23 <span data-i18n="stableChannelShort">Stable</span></th>
+              <th scope="col">0.8.5 <span data-i18n="stableChannelShort">Stable</span></th>
+              <th scope="col"><span data-i18n="comparisonLatest">Latest Beta</span><br><span data-preview-version>0.9.0 Beta 7.13</span></th>
+            </tr></thead>
+            <tbody>
+              <tr><th scope="row" data-i18n="compareCore">Browse, waveform audition, metadata, collections and Transfer</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareRetained">Retained</td><td data-i18n="compareRetained">Retained</td></tr>
+              <tr><th scope="row" data-i18n="compareRecovery">Interrupted-scan recovery, retries, backups and cache checks</th><td data-i18n="compareNone">—</td><td data-i18n="compareAdded">Added</td><td data-i18n="compareRefined">Retained and refined</td></tr>
+              <tr><th scope="row" data-i18n="compareMaintenance">Missing/duplicate checks, source relinking and project usage</th><td data-i18n="compareNone">—</td><td data-i18n="compareAdded">Added</td><td data-i18n="compareRetained">Retained</td></tr>
+              <tr><th scope="row" data-i18n="comparePerformance">Incremental persistence and frame-budgeted large-library tasks</th><td data-i18n="compareEarly">Earlier implementation</td><td data-i18n="compareHardened">Hardened</td><td data-i18n="compareStartup">Further startup optimization</td></tr>
+              <tr><th scope="row" data-i18n="compareUcs">Official UCS classification, review queue and virtual folders</th><td data-i18n="compareUcsFields">Basic UCS fields only</td><td data-i18n="compareUcsFields">Basic UCS fields only</td><td data-i18n="compareAdded">Added</td></tr>
+              <tr><th scope="row" data-i18n="compareSpectral">Spectral peak coloring</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareOptIn">Added; opt-in</td></tr>
+              <tr><th scope="row" data-i18n="compareAcoustic">Audio-content similar-sound retrieval</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compare15Features">Built-in 15-feature acoustic retrieval</td></tr>
+              <tr><th scope="row" data-i18n="compareNeural">EfficientAT local neural similarity</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareAddon">Optional Windows x64 neural package</td></tr>
+              <tr><th scope="row" data-i18n="compareAi">AI semantic search: query expansion, local recall and paging</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareApi">Your API key/model; no neural package needed</td></tr>
+              <tr><th scope="row" data-i18n="compareAnimation">Branded startup animation and live loading status</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareNoDelay">Added; no fixed intro delay</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="comparison-links">
+          <a class="text-link" href="#beta-install" data-i18n="betaGuideLink">Install the latest Beta: illustrated guide ↓</a>
+          <a class="text-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/CHANGELOG_en-US.md" data-i18n="comparisonDetails">Detailed version history ↗</a>
+        </div>
       </div>
     </section>
 
@@ -492,6 +530,34 @@
           <a class="button primary full-width" data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5" data-i18n="downloadLatest">Download latest Stable</a>
         </div>
       </div>
+    </section>
+
+    <section class="beta-install-section" aria-labelledby="beta-install-heading">
+      <div class="shell beta-install-guide" id="beta-install" aria-labelledby="beta-install-heading">
+        <div class="beta-install-copy">
+          <p class="kicker" data-i18n="betaGuideKicker">GET THE NEWEST FEATURES</p>
+          <h2 id="beta-install-heading" data-i18n="betaGuideHeading">Enable Beta in ReaPack.</h2>
+          <p class="beta-install-callout" data-i18n="betaGuideLead">Normal synchronization does not opt you into Beta. Enable pre-releases for the main PsyReaSFX script package first.</p>
+          <ol class="install-steps">
+            <li data-i18n="betaStepOne">Run Extensions → ReaPack → Synchronize packages, then open Browse packages and search for PsyReaSFX.</li>
+            <li data-i18n="betaStepTwo">Right-click the main PsyReaSFX package (PsyReaSFX.lua) and check <strong>Enable pre-releases (bleeding-edge)</strong>.</li>
+            <li data-i18n="betaStepThree">Right-click again → <strong>Versions</strong> → choose the newest 0.9.0-beta… (currently beta7.13). Leave <strong>Pin current version</strong> unchecked; unpin first if needed.</li>
+            <li data-i18n="betaStepFour">Click <strong>Apply</strong>, or <strong>OK</strong> to confirm installation. Once downloads finish, close the old PsyReaSFX window and rerun it from REAPER's Action List.</li>
+          </ol>
+          <div class="beta-feature-requirements">
+            <p data-i18n="betaNeuralNote"><strong>Local neural similarity:</strong> Windows x64 only. Repeat the pre-release/install steps for the separate <strong>PsyReaSFX Neural Similarity</strong> package, then restart the main script. Without it, similar-sound search uses the built-in 15-feature acoustic method.</p>
+            <p data-i18n="betaAiNote"><strong>AI semantic search:</strong> no neural package required. Configure your own DeepSeek / OpenAI / compatible API key and model in Settings. Enter runs normal search; the gold AI button runs semantic search. Audio is not uploaded.</p>
+            <p data-i18n="betaDataNote">Updating the main script does not require rebuilding your libraries. Beta is a testing channel; use Stable for production work when reliability is the priority.</p>
+          </div>
+        </div>
+        <figure class="beta-install-figure">
+          <a href="assets/screenshots/reapack-enable-beta.jpg" target="_blank" rel="noopener" aria-label="View the ReaPack Beta installation screenshot at full resolution" data-i18n-aria-label="betaScreenshotLabel">
+            <img src="assets/screenshots/reapack-enable-beta.jpg" width="1079" height="1020" loading="lazy" decoding="async" alt="ReaPack: Enable pre-releases (bleeding-edge), Versions, Pin current version, Apply / OK">
+          </a>
+          <figcaption data-i18n="betaScreenshotCaption">Menu-location example; click to view full resolution. This screenshot predates the pruning of older Betas. After synchronization, Versions lists only the newest Beta, 0.8.5 Stable and 0.7.23 Stable. Older releases remain on GitHub Releases.</figcaption>
+        </figure>
+      </div>
+
     </section>
 
     <section class="section docs-section" id="docs">
