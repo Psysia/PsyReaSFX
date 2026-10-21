@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta7.15
+-- @version 0.9.0-beta7.16
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -90,7 +90,9 @@
 --   - Beta 7.11：启动索引分帧加载，未完成素材直接接续，自动恢复改为单行状态
 --   - Beta 7.12：索引直读与批量载入加速，空闲启动调度优化与只读素材预览
 --   - Beta 7.13：居中品牌启动画面与轻量青色波形动画，显示真实阶段、数量和已用时间
---   - Beta 7.15：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
+--   - Beta 7.14：独立命名 API 预设、加密密钥隔离、安全切换与连接测试归属
+--   - Beta 7.15：预设新建、切换、保存、删除与设置保存行为统一
+--   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
 --   - Artwork 改为实体来源路径独立归属，不再跨逻辑库来源共享封面
@@ -196,7 +198,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 7.15"
+local VERSION = "0.9.0 Beta 7.16"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -950,6 +952,7 @@ local state = {
   ai_preset_name = "",
   ai_preset_sequence = 0,
   ai_preset_delete_id = "",
+  ai_preset_delete_requested = false,
   ai_presets_loaded = false,
   ai_presets_json = nil,
   ai_presets_error = "",

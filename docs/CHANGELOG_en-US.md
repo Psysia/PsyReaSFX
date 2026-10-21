@@ -1,5 +1,14 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 7.16
+
+### Preset deletion confirmation fix
+
+- Render deletion confirmation as a nested modal at settings-window scope, outside the scrolling content child.
+- Clear the captured target and close after deletion or cancellation; do not reopen on the next frame.
+- Show blocked-deletion reasons inside the dialog and allow retry. Close an obsolete confirmation if metadata removal succeeded but key cleanup failed, while reporting the cleanup error.
+- Exercise the real confirmation renderer for cancel, failed-save retry, captured-target isolation and final-group deletion.
+
 ## 0.9.0 Beta 7.15
 
 ### Explicit preset management and save fix
@@ -1478,5 +1487,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.15/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_15_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.16/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_16_win_x64.zip
 

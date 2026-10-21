@@ -229,8 +229,10 @@ local preset_save = assert(ai_settings:find('dark_button("保存预设", preset_
 local preset_delete = assert(ai_settings:find('dark_button("删除预设", preset_button_width)', 1, true))
 assert(preset_new < preset_switch and preset_switch < preset_save and preset_save < preset_delete,
   "preset create/switch/save/delete must share one ordered adaptive-width toolbar")
-assert(ai_settings:find('"##ai_preset_delete"', 1, true)
-  and ai_settings:find("ai_semantic_delete_preset(state.ai_preset_delete_id)", 1, true),
+assert(ai_settings:find('"删除预设##ai_preset_delete"', 1, true)
+  and ai_settings:find("ai_semantic_delete_preset(id)", 1, true)
+  and ai_settings:find('ImGui.BeginPopupModal(ctx, "删除预设##ai_preset_delete"', 1, true)
+  and source:match("ImGui%.EndChild%(ctx%)%s+draw_ai_preset_delete_popup%(%)"),
   "preset deletion requires an explicit group-specific confirmation")
 assert(source:find("local ok, reason = ai_semantic_save_settings()", 1, true),
   "Save and close must commit the active preset before closing")

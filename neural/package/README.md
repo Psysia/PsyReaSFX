@@ -10,7 +10,7 @@ computer and is never uploaded.
 **Neural retrieval requires this package; built-in acoustic search and AI semantic
 search do not. Updating the main script does not install it.**
 
-**[Complete neural ZIP download · Beta 7.15 · Windows x64 · about 42.4 MB][neural-download]**
+**[Complete neural ZIP download · Beta 7.16 · Windows x64 · about 42.4 MB][neural-download]**
 includes the model and installers, unlike the standalone EXE.
 
 1. Import and synchronize the [PsyReaSFX repository](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml).
@@ -18,7 +18,7 @@ includes the model and installers, unlike the standalone EXE.
 3. Open `Extensions → ReaPack → Browse packages`, search for the separate
    [PsyReaSFX Neural Similarity][neural-download] data package, enable
    **Enable pre-releases (bleeding-edge)**, select the latest Beta under **Versions**
-   (currently `0.9.0-beta7.15`), uncheck **Pin current version**, then click **Apply / OK**.
+   (currently `0.9.0-beta7.16`), uncheck **Pin current version**, then click **Apply / OK**.
 4. Restart PsyReaSFX.
 
 ReaPack installs the component under REAPER's `Data` directory and handles
@@ -75,4 +75,4 @@ cache by default so a later reinstall can reuse it. To remove the cache too:
 Removing or breaking this optional component does not disable PsyReaSFX;
 similarity search transparently returns to the baseline algorithm.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.15/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_15_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta7.16/PsyReaSFX_Neural_Similarity_v0_9_0_beta7_16_win_x64.zip
