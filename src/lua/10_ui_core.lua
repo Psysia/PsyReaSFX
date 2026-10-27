@@ -1466,7 +1466,7 @@ function library_for_path(path, root)
 end
 
 function invalidate_library_counts()
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("background") end
   state.library_counts_dirty = true
   state.library_counts_job = nil
 end

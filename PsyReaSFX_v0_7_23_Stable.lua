@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.3
+-- @version 0.9.0-beta8.4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -97,6 +97,7 @@
 --   - Beta 8.1：字号拖动仅预览，松手应用布局，支持整数与 ±1 精调
 --   - Beta 8.2：独立浏览标签页、共享结果缓存、复制/重命名/关闭与轻量会话恢复
 --   - Beta 8.3：复用标签显示编号、延迟选中确认、结果更新提示与分帧构建提速
+--   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -203,7 +204,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.3"
+local VERSION = "0.9.0 Beta 8.4"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2015,6 +2016,10 @@ I18N_PREFIX_EN = {
   ["已读取 "] = "Loaded ",
   ["后台恢复扫描："] = "Resuming scan: ",
   ["后台接续素材："] = "Resuming unfinished assets: ",
+  ["后台补全元数据/波形："] = "Completing metadata/waveforms: ",
+  ["后台加载新增素材："] = "Loading newly found assets: ",
+  ["补处理索引中未完成的元数据和波形；不会复制音频。新增文件由 Watch Folder 定期发现。"] =
+    "Completes unfinished metadata and waveforms in the index without copying audio. Watch Folder periodically discovers new files.",
   ["已设置音效库封面："] = "Library artwork set: ",
   ["将重新查找音效库封面："] =
     "Library artwork will be rediscovered: ",
@@ -2229,6 +2234,7 @@ I18N_EN["只读保护下不能修改 UCS 分类"] =
 I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
 I18N_EN["标签页"] = "Tab"
 I18N_EN["正在更新结果…"] = "Updating results…"
+I18N_EN["后台更新中 · 保留当前结果"] = "Updating in background · current results retained"
 I18N_EN["新建标签页"] = "New tab"
 I18N_EN["复制标签页"] = "Duplicate tab"
 I18N_EN["重命名标签页"] = "Rename tab"
@@ -2605,6 +2611,7 @@ I18N_PATTERNS_EN = {
     "^后台更新：移除 (%d+) 个离线素材$",
     "Background update: %1 offline files removed",
   },
+  { "^后台补全完成：(%d+) 个素材，失败 (%d+) 个$", "Background completion: %1 assets, %2 failed" },
   { "^失败任务：(%d+)$", "Failed tasks: %1" },
   { "^正在重试 (%d+) 个失败任务$", "Retrying %1 failed tasks" },
   { "^开始检查 (%d+) 个波形缓存$", "Verifying %1 waveform cache files" },
@@ -4236,7 +4243,7 @@ function library_for_path(path, root)
 end
 
 function invalidate_library_counts()
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("background") end
   state.library_counts_dirty = true
   state.library_counts_job = nil
 end
@@ -5070,7 +5077,7 @@ AppState = new_state_store(state)
 -- Lightweight browser tabs. Assets, waveforms, API presets and maintenance
 -- jobs remain shared; only browsing context and completed result references
 -- belong to a tab. No disk scanning, audio copies or API calls on switching.
-WorkspaceTabs = { limit = 24, cache_tabs = 6, cache_rows = 500000 }
+WorkspaceTabs = { limit = 24, cache_tabs = 12, cache_rows = 1000000, refresh_interval = 1 }
 local context_keys = { "search", "view", "root_filter", "library_filter_id", "active_collection_id",
   "status_filter", "ucs_filter_category", "ucs_filter_subcategory", "ucs_filter_catid", "sort_mode", "sort_desc" }
 local runtime_keys = { "results", "selected_index", "selected_path", "selected_set", "selection_anchor",
@@ -5132,21 +5139,93 @@ function workspace_tab_by_id(id)
   end
 end
 
-function workspace_tabs_invalidate(history_only)
-  if not history_only then AppState.set("workspace_tabs_revision", (state.workspace_tabs_revision or 0) + 1) end
-  local relevant = not history_only or "previewed" == state.view or "previewed" == state.sort_mode
-    or (state.search or ""):find("played:",1,true) or (state.search or ""):find("previewed:",1,true)
-  if relevant then AppState.mark_dirty("results_dirty") end
-  -- Drop stale references immediately, even when an inactive tab is never
-  -- revisited. This also releases rows removed from the shared catalog.
-  for _, tab in ipairs(state.workspace_tabs or {}) do
-    local context = tab.context
-    if not history_only or context.view == "previewed" or context.sort_mode == "previewed"
-      or (context.search or ""):find("played:",1,true) or (context.search or ""):find("previewed:",1,true) then
-      if tab.runtime then tab.runtime.results = nil end
-      tab.runtime_valid = false
+local function context_depends_on(context, change, asset)
+  local query = (context.search or ""):lower()
+  local function field(names)
+    for _, name in ipairs(names) do if query:find(name..":",1,true) then return true end end
+    return false
+  end
+  if change == "display" then return false end
+  if change == true then
+    return context.view == "previewed" or context.sort_mode == "previewed" or field({"played","previewed"})
+  elseif change == "missing" then
+    return context.view == "missing" or field({"missing","offline"})
+  elseif change == "duplicates" then
+    return context.view == "duplicates" or context.view == "duplicates_confirmed"
+      or context.view == "duplicate_failures" or field({"duplicate","dupe"})
+  elseif change == "project" then
+    return context.view == "project_used" or field({"project","used"})
+  elseif change == "favorites" then
+    return context.view == "favorites" or field({"fav","favorite"})
+  elseif change == "usage" then
+    return context.view == "recent" or context.sort_mode == "used"
+  elseif change == "collection" then
+    return context.active_collection_id == asset
+  elseif change == "background" and asset then
+    if context.library_filter_id and context.library_filter_id ~= asset.library_id then return false end
+    if context.root_filter and type(path_is_inside) == "function"
+      and not path_is_inside(asset.path,context.root_filter) then return false end
+    if context.active_collection_id then
+      local collection = (state.collection_by_id or {})[context.active_collection_id]
+      if not collection or not (collection.items or {})[path_key(asset.path)] then return false end
     end
   end
+  return true
+end
+
+function workspace_tabs_invalidate(change, asset)
+  local structural = change == nil
+  if structural then AppState.set("workspace_tabs_revision", (state.workspace_tabs_revision or 0) + 1) end
+  local active = workspace_tab_by_id(state.workspace_tab_active)
+  for _, tab in ipairs(state.workspace_tabs or {}) do
+    local context = tab == active and state or tab.context
+    if context_depends_on(context, change, asset) then
+      if structural then
+        -- Removed/replaced catalog objects must not survive in a snapshot.
+        if tab.runtime then tab.runtime.results = nil end
+        tab.runtime_valid = false
+      end
+      tab.refresh_pending = true
+    end
+  end
+  if context_depends_on(state, change, asset) then
+    if change == "background" then
+      -- Coalesce background metadata/wave completion. Never restart an
+      -- in-flight build per asset; retain each page's last completed rows.
+      if not state.workspace_results_refresh_at then
+        AppState.set("workspace_results_refresh_at", workspace_tabs_now() + WorkspaceTabs.refresh_interval)
+      end
+    else AppState.mark_dirty("results_dirty") end
+  end
+end
+
+function workspace_tabs_now()
+  return HostApi and HostApi.time_precise and HostApi.time_precise() or os.clock()
+end
+
+function workspace_tabs_process_refresh()
+  local tab = workspace_tab_by_id(state.workspace_tab_active)
+  if not tab or not tab.refresh_pending or state.results_dirty or state.results_job then return end
+  local now = workspace_tabs_now()
+  local due = state.workspace_results_refresh_at
+  if not due then
+    AppState.set("workspace_results_refresh_at", now + WorkspaceTabs.refresh_interval)
+  elseif now >= due then
+    AppState.mark_dirty("results_dirty")
+  end
+end
+
+function workspace_tabs_results_started()
+  workspace_tabs_track()
+  local tab = workspace_tab_by_id(state.workspace_tab_active)
+  if tab then tab.refresh_pending = false end
+  AppState.set("workspace_results_refresh_at", workspace_tabs_now() + WorkspaceTabs.refresh_interval)
+end
+
+function workspace_tabs_results_completed()
+  -- Save at completion, not just when leaving the tab. A later background
+  -- update must not erase the last usable snapshot before a switch.
+  workspace_tab_capture()
 end
 
 function workspace_tabs_ensure()
@@ -5184,6 +5263,7 @@ function workspace_tabs_track()
   if not context_equal(tab.context, state) then
     tab.context = copy_fields(state, context_keys)
     tab.runtime = nil
+    tab.refresh_pending = false
     AppState.mark_dirty("config_dirty")
   end
   -- These global lookups are replaced by background jobs, without necessarily
@@ -5193,17 +5273,22 @@ function workspace_tabs_track()
   local prior = state.workspace_tabs_catalog_watch
   if prior then
     for index=1,7 do
-      if prior[index] ~= watched[index] then workspace_tabs_invalidate() break end
+      if prior[index] ~= watched[index] then
+        if index <= 2 then workspace_tabs_invalidate()
+        else workspace_tabs_invalidate(index <= 5 and "duplicates" or index == 6 and "missing" or "project") end
+      end
     end
   end
   AppState.set("workspace_tabs_catalog_watch", watched)
 end
 
 function workspace_tabs_trim_cache()
-  local cached, rows = {}, 0
+  local cached, rows, arrays = {}, 0, {}
   for _, tab in ipairs(state.workspace_tabs or {}) do
     if tab.runtime and tab.runtime.results then
-      rows = rows + #(tab.runtime.results or {})
+      local results = tab.runtime.results
+      if not arrays[results] then rows = rows + #results end
+      arrays[results] = (arrays[results] or 0) + 1
       cached[#cached+1] = tab
     end
   end
@@ -5212,7 +5297,9 @@ function workspace_tabs_trim_cache()
   for _, tab in ipairs(cached) do
     if count <= WorkspaceTabs.cache_tabs and rows <= WorkspaceTabs.cache_rows then break end
     if tab.id ~= state.workspace_tab_active then
-      rows = rows - #(tab.runtime.results or {})
+      local results = tab.runtime.results
+      arrays[results] = arrays[results] - 1
+      if arrays[results] == 0 then rows = rows - #results end
       tab.runtime.results = nil
       tab.runtime_valid = false
       count = count - 1
@@ -5228,8 +5315,14 @@ function workspace_tab_capture()
   -- Move ownership on ordinary switches; duplication alone needs a copy.
   -- Ctrl+A on a huge library must not clone its selection on every switch.
   runtime.selected_set = state.selected_set or {}
+  local complete = not state.results_dirty and not state.results_job
+  local previous = tab.runtime
+  if not complete and tab.runtime_valid and previous and previous.results
+    and tab.revision == (state.workspace_tabs_revision or 0) then
+    runtime.results = previous.results
+    tab.refresh_pending = true
+  else tab.runtime_valid = complete end
   tab.runtime = runtime
-  tab.runtime_valid = not state.results_dirty and not state.results_job
   tab.revision = state.workspace_tabs_revision or 0
   AppState.set("workspace_tab_clock", (state.workspace_tab_clock or 0) + 1)
   tab.used = state.workspace_tab_clock
@@ -5279,6 +5372,9 @@ local function restore_tab(tab)
     and tab.revision == (state.workspace_tabs_revision or 0) and context_equal(tab.context, state)
   if not valid then AppState.set("results", {}) end
   AppState.set("results_dirty", not valid)
+  if valid and tab.refresh_pending then
+    AppState.set("workspace_results_refresh_at", workspace_tabs_now() + WorkspaceTabs.refresh_interval)
+  end
   AppState.set("workspace_tab_scroll_restore", {x=state.results_scroll_x or 0,y=state.results_scroll_y or 0,frames=2})
   AppState.set("workspace_tab_active", tab.id)
   AppState.set("workspace_tab_select", tab.id)
@@ -5326,6 +5422,7 @@ function workspace_tab_new(duplicate_id)
         and cached.runtime and cached.runtime.results and context_equal(cached.context, tab.context) then
         tab.runtime = {results=cached.runtime.results}
         tab.runtime_valid, tab.revision = true, cached.revision
+        tab.refresh_pending = cached.refresh_pending
         break
       end
     end
@@ -5339,6 +5436,7 @@ function workspace_tab_new(duplicate_id)
       -- Result arrays/lookups reference the shared assets and are not cloned.
     end
     tab.runtime_valid, tab.revision = source.runtime_valid, source.revision
+    tab.refresh_pending = source.refresh_pending
   end
   table.insert(state.workspace_tabs, select(2, workspace_tab_by_id(current.id)) + 1, tab)
   AppState.set("workspace_tab_sequence", id)
@@ -5435,6 +5533,7 @@ function workspace_tabs_reset()
   AppState.set("workspace_tabs_catalog_watch", nil)
   AppState.set("workspace_tab_scroll_restore", nil)
   AppState.set("workspace_tab_rename_open", nil)
+  AppState.set("workspace_results_refresh_at", nil)
   workspace_tabs_ensure()
 end
 
@@ -16388,11 +16487,11 @@ function database_asset_values(asset)
   return values
 end
 
-function mark_asset_database_change(asset)
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
+function mark_asset_database_change(asset, result_change)
   if not asset or not asset.path or asset.path == "" then
     return false
   end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate(result_change or "background", asset) end
   if state.root_removal_session then
     local pending = state.root_removal_session.concurrent_asset_changes
     if not pending then
@@ -17167,9 +17266,11 @@ function record_project_usage(asset, action)
       collection.order[#collection.order + 1] = asset.path
       collection.count = (collection.count or 0) + 1
       state.collections_dirty = true
+      if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
     end
   end
 
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("project") end
   if state.view == "project_used" then
     state.results_dirty = true
   end
@@ -17752,7 +17853,7 @@ function delete_collection(collection)
   end
 
   state.collections = kept
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
   state.collection_by_id[collection.id] = nil
 
   if state.active_collection_id
@@ -17770,7 +17871,6 @@ function add_assets_to_collection(
   collection,
   assets
 )
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改集合", true)
     return 0
@@ -17795,6 +17895,7 @@ function add_assets_to_collection(
   end
 
   if added > 0 then
+    if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
     state.collections_dirty = true
 
     if state.active_collection_id
@@ -17818,7 +17919,6 @@ function remove_assets_from_collection(
   collection,
   assets
 )
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改集合", true)
     return 0
@@ -17844,6 +17944,7 @@ function remove_assets_from_collection(
   end
 
   if removed > 0 then
+    if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
     local order = {}
 
     for _, path in ipairs(collection.order) do
@@ -17854,7 +17955,7 @@ function remove_assets_from_collection(
 
     collection.order = order
     state.collections_dirty = true
-    state.results_dirty = true
+    if state.active_collection_id == collection.id then AppState.mark_dirty("results_dirty") end
 
     set_status(
       string.format(
@@ -19126,7 +19227,7 @@ function process_artwork_queue()
 
       if found ~= "" then
         asset.artwork_path = shared and "" or found
-        mark_asset_database_change(asset)
+        mark_asset_database_change(asset, "display")
       elseif current ~= "-" then
         asset.artwork_path = ""
       end
@@ -19700,7 +19801,6 @@ function index_asset(asset)
   reaper.PCM_Source_Destroy(source)
 
   mark_asset_database_change(asset)
-  state.results_dirty = true
   return true
 end
 
@@ -20142,7 +20242,7 @@ function process_import_recovery_audit()
         label = "接续未完成素材", roots = {}, assets = audit.pending,
         total = #audit.pending, done = 0, failed = 0,
         started = reaper.time_precise(), phase = "prepare",
-        silent = true, compact_status = true, job_token = token,
+        silent = true, compact_status = true, recovery = true, job_token = token,
       })
       AppState.set("import_cancel_requested", false)
     else
@@ -20338,7 +20438,7 @@ function complete_scan_finalize(scan)
     end
   end
 
-  state.results_dirty = true
+  if removed > 0 or #pending > 0 then AppState.mark_dirty("results_dirty") end
 end
 
 function process_scan_finalize(scan)
@@ -20932,6 +21032,7 @@ local function result_sort_comparator()
 end
 
 function start_results_rebuild()
+  if workspace_tabs_results_started then workspace_tabs_results_started() end
   AppState.set("results_dirty", false)
   AppState.set("results_job", begin_incremental_result_job(
     state.assets,
@@ -20961,6 +21062,7 @@ function process_results_rebuild()
     state.results = results
     state.selected_index = selected_index
     state.results_job = nil
+    if workspace_tabs_results_completed then workspace_tabs_results_completed() end
   end
 end
 
@@ -22452,7 +22554,8 @@ function finish_import_session()
   state.import_session = nil
   state.next_watch = reaper.time_precise() + state.watch_interval
   state.import_cancel_requested = false
-  state.results_dirty = true
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("background")
+  else AppState.mark_dirty("results_dirty") end
   mark_database_snapshot_dirty()
   state.clear_scan_checkpoint_after_database_save = true
 
@@ -22460,7 +22563,9 @@ function finish_import_session()
   save_database_changes()
   start_failed_tasks_save()
 
-  if session.silent then
+  if session.recovery then
+    set_status(string.format("后台补全完成：%d 个素材，失败 %d 个", session.done, session.failed), session.failed > 0)
+  elseif session.silent then
     set_status(
       string.format(
         "后台更新：新增 %d 个，移除 %d 个，失败 %d 个",
@@ -23583,7 +23688,6 @@ function toggle_mark(asset)
 end
 
 function toggle_favorite(asset)
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改收藏", true)
     return
@@ -23591,6 +23695,7 @@ function toggle_favorite(asset)
   if not asset then
     return
   end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("favorites") end
 
   local key = path_key(asset.path)
 
@@ -23629,7 +23734,7 @@ function push_recent(asset, project_action)
   asset.last_used = os.time()
 
   state.config_dirty = true
-  mark_asset_database_change(asset)
+  mark_asset_database_change(asset, "usage")
 
   if project_action then
     record_project_usage(asset, project_action)
@@ -26906,7 +27011,8 @@ function process_missing_audit()
     state.missing_asset_count = session.missing
     state.missing_audit = nil
     Jobs.finish(session.job_token, true)
-    state.results_dirty = true
+    if workspace_tabs_invalidate then workspace_tabs_invalidate("missing")
+    else AppState.mark_dirty("results_dirty") end
     set_status(string.format("缺失检查完成：%d 个离线来源，%d 个缺失素材", #state.offline_roots, state.missing_asset_count), state.missing_asset_count > 0)
   end
 end
@@ -26996,7 +27102,8 @@ function finish_duplicate_confirmation(session)
   state.duplicate_confirmation_failure_count = session.failure_count
   state.duplicate_confirmation = nil
   Jobs.finish(session.job_token, true)
-  state.results_dirty = true
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("duplicates")
+  else AppState.mark_dirty("results_dirty") end
   set_status(string.format(
     "完整确认完成：%d 组，%d 个素材，读取失败 %d",
     #session.confirmed_groups,
@@ -27166,7 +27273,8 @@ function finish_duplicate_scan(session)
   state.duplicate_asset_count = asset_count
   state.duplicate_scan = nil
   Jobs.finish(session.job_token, true)
-  state.results_dirty = true
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("duplicates")
+  else AppState.mark_dirty("results_dirty") end
   mark_database_snapshot_dirty()
   set_status(string.format("候选检查完成：%d 组，%d 个素材", #duplicates, asset_count))
 end
@@ -32244,7 +32352,7 @@ function draw_sub_toolbar()
 
   ImGui.SameLine(ctx)
 
-  ImGui.TextDisabled(ctx, results_pending() and "正在更新结果…"
+  ImGui.TextDisabled(ctx, results_pending() and (#state.results>0 and "后台更新中 · 保留当前结果" or "正在更新结果…")
     or string.format("　%d 个结果", #state.results))
 
   local sort_clicked = false
@@ -32337,7 +32445,9 @@ function draw_import_progress()
   if recovery then
     ImGui.TextDisabled(ctx, state.scan
       and string.format("后台恢复扫描：%d 个音频 / %d 个目录", recovery.files, recovery.directories)
-      or string.format("后台接续素材：%d / %d，失败 %d", recovery.done, recovery.total, recovery.failed))
+      or string.format(recovery.recovery and "后台补全元数据/波形：%d / %d，失败 %d"
+        or "后台加载新增素材：%d / %d，失败 %d", recovery.done, recovery.total, recovery.failed))
+    tooltip("补处理索引中未完成的元数据和波形；不会复制音频。新增文件由 Watch Folder 定期发现。")
     ImGui.SameLine(ctx)
     if dark_button("取消", 64) then Jobs.cancel(recovery.job_token) end
   end
@@ -36745,8 +36855,7 @@ function choose_artwork_for_asset(asset)
     asset.artwork_path =
       normalize_slashes(filename)
     asset.artwork_checked = true
-    mark_asset_database_change(asset)
-    state.results_dirty = true
+    mark_asset_database_change(asset, "display")
     set_status("已设置 Artwork")
   end
 end
@@ -36819,15 +36928,14 @@ function draw_inspector_artwork_header(asset)
     state.artwork_folder_cache = {}
     state.artwork_dimension_cache = {}
     queue_artwork(asset, true)
-    mark_asset_database_change(asset)
+    mark_asset_database_change(asset, "display")
   end
 
   if tostring(asset.artwork_path or "") ~= "" then
     if dark_button("清除封面", -1) then
       asset.artwork_path = "-"
       asset.artwork_checked = true
-      mark_asset_database_change(asset)
-      state.results_dirty = true
+      mark_asset_database_change(asset, "display")
     end
   end
 end
@@ -41809,6 +41917,7 @@ function loop()
   watch_folders()
   autosave()
 
+  if workspace_tabs_process_refresh then workspace_tabs_process_refresh() end
   if state.results_dirty or state.results_job then
     process_results_rebuild()
   end
