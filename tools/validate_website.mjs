@@ -191,8 +191,8 @@ for (const name of ["PsyReaSFX.lua", "PsyReaSFX Neural Similarity"]) {
 }
 
 const comparison = html.match(/<table class="comparison-table">([\s\S]*?)<\/table>/)?.[1];
-if (!comparison || (comparison.match(/scope="row"/g) || []).length !== 12) {
-  fail("Version comparison must contain all twelve documented feature rows");
+if (!comparison || (comparison.match(/scope="row"/g) || []).length !== 13 || !comparison.includes('data-i18n="compareTabs"')) {
+  fail("Version comparison must contain all thirteen documented feature rows, including browsing tabs");
 }
 for (const match of html.matchAll(/\bhref="#([^"]+)"/g)) {
   if (!ids.has(match[1])) fail(`Missing local anchor: #${match[1]}`);

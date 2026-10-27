@@ -260,7 +260,7 @@ ImGui.WindowFlags_NoCollapse=4
 function begin_module(id,w,h) assert(w>0 and h>0) saved_regions[id]={w,h} return false end
 function end_module() end
 function draw_inspector_splitter() end
-for _,name in ipairs({"draw_toolbar","draw_sub_toolbar","draw_path_condition_bar","draw_import_progress","draw_help_popup","draw_transient_detection_popup","draw_transfer_popup","draw_settings_popup","draw_folder_drop_choice_popup","keyboard","process_external_drag","draw_tooltip_overlay"}) do _G[name]=function() end end
+for _,name in ipairs({"draw_toolbar","draw_workspace_tabs","workspace_tabs_track","draw_sub_toolbar","draw_path_condition_bar","draw_import_progress","draw_help_popup","draw_transient_detection_popup","draw_transfer_popup","draw_settings_popup","draw_folder_drop_choice_popup","keyboard","process_external_drag","draw_tooltip_overlay"}) do _G[name]=function() end end
 assert(load(region(runtime,"function draw_main()","function autosave()")))()
 VERSION,SCRIPT_NAME="Test","PsyReaSFX"
 state.open=true state.inspector_width=320 state.sidebar_width=240

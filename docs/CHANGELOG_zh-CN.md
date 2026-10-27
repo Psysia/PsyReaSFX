@@ -1,5 +1,17 @@
 ﻿# PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 8.2
+
+### 独立浏览标签页
+
+- 搜索下方新增标签栏：新建、复制、重命名、中键/关闭按钮、关闭其他/右侧、左右移动；最多 24 页，溢出滚动和列表菜单。
+- Ctrl+N 新建、Ctrl+Shift+N 复制、Ctrl+W 关闭、Ctrl+Tab / Ctrl+Shift+Tab 切换，原 Ctrl+T Transfer 保留。
+- 分页保留搜索、库/目录/集合/UCS/工作流筛选、排序、选择、滚动、大波形选区和缩放；切换停止旧页试听，不自动播放新页。
+- 完成的 AI/相似声音结果与 AI 下一批进度保留在内存，切换不重新请求 API；进行中的任务须先完成或取消。共享素材/波形，结果引用缓存最多 6 页、50 万行，超限或库变化后仅当前页分帧重建。
+- 重启恢复标签名称、顺序和普通条件；AI/相似结果不落盘、不自动调用网络或音频分析，恢复页有提示。
+- 新增状态隔离、复制分页、关闭边界、缓存淘汰、JSON 安全恢复、滚动恢复及 UI 栈回归；10 万共享行 200 次切换约 0.002 秒 CPU（模拟，不是 REAPER 界面时间）。
+- 更新主脚本并重开即可，无需更新神经包或重建素材库。真实 REAPER 鼠标/DPI 体验仍需测试。
+
 ## 0.9.0 Beta 8.1
 
 ### 字号拖动稳定性
@@ -1393,5 +1405,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_1_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_2_win_x64.zip
 

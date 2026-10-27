@@ -15,6 +15,7 @@ $modules = @(
     "10_ui_core.lua",
     "11_ui_workspace.lua",
     "12_state_store.lua",
+    "13_workspace_tabs.lua",
     "15_host_adapter.lua",
     "20_jobs_storage.lua",
     "25_ucs_catalog.lua",

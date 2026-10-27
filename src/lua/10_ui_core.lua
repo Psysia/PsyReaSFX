@@ -732,6 +732,7 @@ function migrate_last_played_session_schema()
 end
 
 function restore_last_session_played_highlights(silent)
+  if workspace_tabs_invalidate then workspace_tabs_invalidate(true) end
   if state.auxiliary_save_session
     and state.auxiliary_save_session.kind == "session_played" then
     cancel_auxiliary_save("restore session highlights")
@@ -770,6 +771,7 @@ function restore_last_session_played_highlights(silent)
 end
 
 function clear_session_played_highlights()
+  if workspace_tabs_invalidate then workspace_tabs_invalidate(true) end
   state.session_played = {}
 
   -- 只清空当前界面，不覆盖上次保存快照。
@@ -1464,6 +1466,7 @@ function library_for_path(path, root)
 end
 
 function invalidate_library_counts()
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   state.library_counts_dirty = true
   state.library_counts_job = nil
 end

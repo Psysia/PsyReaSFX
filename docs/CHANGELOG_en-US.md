@@ -1,5 +1,16 @@
 ﻿# PsyReaSFX Changelog
 
+## 0.9.0 Beta 8.2
+
+### Independent browsing tabs
+
+- Add a tab bar below search with new, duplicate, rename, close/middle-click, close others/right and move left/right. Up to 24 tabs with overflow scrolling/list.
+- Ctrl+N creates, Ctrl+Shift+N duplicates, Ctrl+W closes and Ctrl+Tab / Ctrl+Shift+Tab switches. Ctrl+T still opens Transfer.
+- Keep per-tab queries, library/folder/collection/UCS/status filters, sorting, selection, scroll and waveform range/zoom. Stop old audition on switch; never auto-play the new page.
+- Completed AI/similarity results and AI paging stay in memory, without another API call. Finish or cancel running searches first. Share assets/waveforms; bound result references to 6 cached tabs / 500k rows, rebuilding only the active page after invalidation/eviction.
+- Restore lightweight names/order/normal filters on restart. Ranked payloads are not persisted and startup does not automatically call APIs or analyze audio.
+- Add state, paging, cache, persistence, scroll and UI-stack regressions. A simulated 100k-row / 200-switch case takes about 0.002s CPU, not REAPER UI time. Update the main script and reopen; no index rebuild or neural package update needed. Real REAPER/DPI testing remains required.
+
 ## 0.9.0 Beta 8.1
 
 ### Stable font-size dragging
@@ -1518,5 +1529,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_1_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_2_win_x64.zip
 

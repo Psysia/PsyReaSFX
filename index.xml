@@ -10,20 +10,20 @@ Neural similar-sound search requires the separate Windows x64 data package
 PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
-        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_1_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_2_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
-      <version name="0.9.0-beta8.1" author="Psysia" time="2026-10-21T12:32:02Z">
+      <version name="0.9.0-beta8.2" author="Psysia" time="2026-10-27T07:49:29Z">
         <changelog><![CDATA[
-- Keep font slider geometry stable: preview while dragging, apply the global layout once on release.
-- Add integer font adjustment, plus/minus 1 px buttons and Ctrl-click numeric entry.
-- Preserve applied font size, library indexes and existing workspace preferences.
+- Add independent browser tabs: new, duplicate, rename, close others/right and move left/right.
+- Preserve per-tab queries, scopes, selection, scrolling and completed AI/similarity result references.
+- Restore lightweight tab descriptors on restart; no automatic API requests or library rebuild.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/fonts/OFL.txt</source>
-        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/ucs/ucs-8.2.1.tsv</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/ucs/ucs-8.2.1.tsv</source>
       </version>
       <version name="0.8.5" author="Psysia" time="2026-09-10T04:41:03Z">
         <changelog><![CDATA[
@@ -60,27 +60,27 @@ the main script update does not install it. The manual ZIP includes the model
 and Install-NeuralSimilarity.cmd; the standalone EXE does not include the model.
         ]]></description>
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX">Project homepage</link>
-        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_1_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_2_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">ReaPack and manual installation steps / 安装说明</link>
       </metadata>
-      <version name="0.9.0-beta8.1" author="Psysia" time="2026-10-21T12:32:02Z">
+      <version name="0.9.0-beta8.2" author="Psysia" time="2026-10-27T07:49:29Z">
         <changelog><![CDATA[
-- Matching optional neural component for PsyReaSFX Beta 8.1; the neural executable and model are unchanged.
+- Matching optional neural component for PsyReaSFX Beta 8.2; the neural executable and model are unchanged.
         ]]></changelog>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/PsyReaSFX.NeuralSidecar.exe">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.1/PsyReaSFX.NeuralSidecar_v0_9_0_beta8_1_win_x64.exe</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/manifest-v1.json" hash="1220c9bf94a7bc7cef61f15b416e7866d376b957574569c0b31878d4223048d4cdd8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/manifest-v1.json</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx" hash="12205efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav" hash="1220a72b5e8574318217ccfb55928bd7317c00909f1ebe48f166a43d6b4863488e84">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/evolving_scene_12s.wav" hash="122097379fb8a8656cb39d6c620ec74237460cd80925f474f2cbb7edd35e36961008">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/evolving_scene_12s.wav</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/modulated_texture_3s.wav" hash="122015a5227098377e9374b9eb0be5676028fb3837a5d3c7207a455a7cc53efefe69">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/modulated_texture_3s.wav</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/golden-v1.json" hash="122003923df2754bf8a0c67b8dd72ffb1b23236a4a76124316c381117cd8fab9464d">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/golden-v1.json</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt" hash="12207fecf57238d733faf76a0d178f4973e9d3423e49e400d312a43e647700ce41ff">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/assets/neural/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-PsyReaSFX.txt" hash="12204f12881c03a7ce6ae05adf771524067b324485a9bc8245fdc2b4b29526663b35">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/LICENSE</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-NAudio.txt" hash="122004b12da4303b43ee14d72b17d1157f53ad5e0082a48d74b9afdfdb3f5d2ab499">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.1/neural/package/LICENSE-NAudio.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/PsyReaSFX.NeuralSidecar.exe">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX.NeuralSidecar_v0_9_0_beta8_2_win_x64.exe</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/manifest-v1.json" hash="1220c9bf94a7bc7cef61f15b416e7866d376b957574569c0b31878d4223048d4cdd8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/manifest-v1.json</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx" hash="12205efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav" hash="1220a72b5e8574318217ccfb55928bd7317c00909f1ebe48f166a43d6b4863488e84">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/evolving_scene_12s.wav" hash="122097379fb8a8656cb39d6c620ec74237460cd80925f474f2cbb7edd35e36961008">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/evolving_scene_12s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/modulated_texture_3s.wav" hash="122015a5227098377e9374b9eb0be5676028fb3837a5d3c7207a455a7cc53efefe69">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/modulated_texture_3s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/golden-v1.json" hash="122003923df2754bf8a0c67b8dd72ffb1b23236a4a76124316c381117cd8fab9464d">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/golden-v1.json</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt" hash="12207fecf57238d733faf76a0d178f4973e9d3423e49e400d312a43e647700ce41ff">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/assets/neural/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-PsyReaSFX.txt" hash="12204f12881c03a7ce6ae05adf771524067b324485a9bc8245fdc2b4b29526663b35">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/LICENSE</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-NAudio.txt" hash="122004b12da4303b43ee14d72b17d1157f53ad5e0082a48d74b9afdfdb3f5d2ab499">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0-beta8.2/neural/package/LICENSE-NAudio.txt</source>
         <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-ONNXRuntime.txt" hash="12202f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE</source>
         <source platform="win64" file="PsyReaSFX/neural_similarity/ThirdPartyNotices-ONNXRuntime.txt" hash="1220143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/ThirdPartyNotices.txt</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="12206b1eec3b7676c32d37d5d73502e23a2669615fb62e64fc14e0729e3bc3dc4a88">https://raw.githubusercontent.com/Psysia/PsyReaSFX/88a0627c51ec6816616dbf5fdb2408cc8141f636/neural/package/README.md</source>
-        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="12202ccb9d4f3dd68da2085d271c7535ccfe70ae545b16073c589dea6a3e010d8ee1">https://raw.githubusercontent.com/Psysia/PsyReaSFX/88a0627c51ec6816616dbf5fdb2408cc8141f636/neural/package/README_zh-CN.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="12204843d5a8fa9970a7dc2eadbbfe8c6d7d9d5f143a295c944f46357ef396083917">https://raw.githubusercontent.com/Psysia/PsyReaSFX/eadff3e27c46b28a83e0194387a8ccb457eaa4e4/neural/package/README.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="1220ae97cb503e13d8ec841e1142eccba1df1353c0ee7f10ea26c6e96d83f12f96d7">https://raw.githubusercontent.com/Psysia/PsyReaSFX/eadff3e27c46b28a83e0194387a8ccb457eaa4e4/neural/package/README_zh-CN.md</source>
       </version>
     </reapack>
     <reapack name="psy_Smart Bounce - Track FX Only_智能合并渲染仅轨道FX.lua" type="script" desc="Psysia Smart Bounce / 智能合并渲染（两种 FX 模式）">

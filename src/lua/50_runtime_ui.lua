@@ -177,6 +177,7 @@ function database_asset_values(asset)
 end
 
 function mark_asset_database_change(asset)
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if not asset or not asset.path or asset.path == "" then
     return false
   end
@@ -199,6 +200,7 @@ function mark_asset_database_change(asset)
 end
 
 function mark_asset_database_delete(asset_or_path)
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   local path = type(asset_or_path) == "table"
     and asset_or_path.path or asset_or_path
   path = tostring(path or "")
@@ -1538,6 +1540,7 @@ function delete_collection(collection)
   end
 
   state.collections = kept
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   state.collection_by_id[collection.id] = nil
 
   if state.active_collection_id
@@ -1555,6 +1558,7 @@ function add_assets_to_collection(
   collection,
   assets
 )
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改集合", true)
     return 0
@@ -1602,6 +1606,7 @@ function remove_assets_from_collection(
   collection,
   assets
 )
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改集合", true)
     return 0
@@ -2061,6 +2066,7 @@ function set_workflow_status(
 end
 
 function record_preview_history(asset)
+  if workspace_tabs_invalidate then workspace_tabs_invalidate(true) end
   if not asset then
     return
   end
@@ -7359,6 +7365,7 @@ function toggle_mark(asset)
 end
 
 function toggle_favorite(asset)
+  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改收藏", true)
     return
@@ -11102,6 +11109,7 @@ function roots_for_library(library_id)
 end
 
 function reset_interface_settings()
+  if workspace_tabs_reset then workspace_tabs_reset() end
   workspace_reset_preferences()
   stop_preview()
   if state.ai_semantic_session then
@@ -11421,6 +11429,7 @@ function factory_reset()
 
   stop_preview()
   cancel_catalog_jobs("factory reset")
+  if workspace_tabs_reset then workspace_tabs_reset() end
   state.roots = {}
   state.libraries = {}
   state.library_by_id = {}
@@ -17816,26 +17825,19 @@ function draw_results()
 
   local child_visible = ImGui.BeginChild(
     ctx,
-    "results_scroll_area",
+    "results_scroll_area##tab_" .. tostring(state.workspace_tab_active or 0),
     width,
     math.max(1, height - HEADER_H),
     0,
     0
   )
 
-  if state.results_scroll_request then
-    ImGui.SetScrollX(
-      ctx,
-      clamp(
-        state.results_scroll_request,
-        0,
-        ImGui.GetScrollMaxX(ctx)
-      )
-    )
-    state.results_scroll_request = nil
-  end
-
   if child_visible then
+    if state.results_scroll_request then
+      ImGui.SetScrollX(ctx, clamp(state.results_scroll_request, 0, ImGui.GetScrollMaxX(ctx)))
+      AppState.set("results_scroll_request", nil)
+    end
+    if workspace_tabs_apply_scroll then workspace_tabs_apply_scroll() end
     state.results_scroll_x = ImGui.GetScrollX(ctx)
     state.results_scroll_max_x = ImGui.GetScrollMaxX(ctx)
 
@@ -17962,9 +17964,9 @@ function draw_results()
 
     state.results_scroll_x = ImGui.GetScrollX(ctx)
     state.results_scroll_max_x = ImGui.GetScrollMaxX(ctx)
+    AppState.set("results_scroll_y", ImGui.GetScrollY(ctx))
+    ImGui.EndChild(ctx)
   end
-
-  ImGui.EndChild(ctx)
 
   -- Windows/macOS 文件管理器拖入文件夹。提示层只在拖动期间出现，
   -- 不占用日常结果列表空间。
@@ -24438,6 +24440,8 @@ function keyboard()
   local shift =
     (mods & ImGui.Mod_Shift) ~= 0
 
+  if workspace_tabs_keyboard and workspace_tabs_keyboard(ctrl, shift) then return end
+
   if ctrl
     and shift
     and ImGui.IsKeyPressed(
@@ -24895,6 +24899,7 @@ function draw_main()
     end
 
     draw_toolbar()
+    draw_workspace_tabs()
     draw_sub_toolbar()
     draw_path_condition_bar()
     draw_import_progress()
@@ -25127,6 +25132,7 @@ function draw_main()
     keyboard()
     process_external_drag()
     draw_tooltip_overlay()
+    workspace_tabs_track()
 
     -- ReaImGui automatically ends a Begin() that returns false.
     ImGui.End(ctx)
@@ -25469,6 +25475,7 @@ schedule_legacy_schema_migrations()
 apply_surface_style()
 apply_theme_palette()
 apply_waveform_palette()
+workspace_tabs_initialize()
 state.results_dirty = true
 
 if not state.persistence_read_only
