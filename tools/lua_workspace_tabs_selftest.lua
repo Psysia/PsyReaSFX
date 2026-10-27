@@ -58,10 +58,12 @@ state.selected_set['a.wav']=nil
 assert(workspace_tab_activate(first) and state.selected_set['a.wav'])
 assert(workspace_tab_activate(duplicate) and not state.selected_set['a.wav'])
 
--- Incomplete result jobs are never resumed with another tab's predicates.
+-- Incomplete jobs never resume elsewhere; a completed snapshot survives a
+-- later refresh, so leaving mid-refresh does not erase the page.
 state.results_job={stage="filter"} state.results_dirty=false
 assert(workspace_tab_activate(first))
-assert(workspace_tab_activate(duplicate) and state.results_job==nil and state.results_dirty and #state.results==0)
+assert(workspace_tab_activate(duplicate) and state.results_job==nil and not state.results_dirty and state.results==results)
+assert(workspace_tab_by_id(duplicate).refresh_pending)
 state.results={asset} state.results_dirty=false
 
 -- Shared catalog edits invalidate cached rows, not AI paging or selections.

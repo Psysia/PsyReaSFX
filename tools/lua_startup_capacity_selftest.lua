@@ -48,7 +48,7 @@ local database_start = runtime:find("function startup_checkpoint(phase)", 1, tru
   and "function startup_checkpoint(phase)" or "function load_database()"
 assert(load(region(runtime, database_start, "function database_asset_values(asset)")))()
 assert(load(region(runtime, "function replace_database_asset(asset, probe_file)", "function write_database_asset_line(file, asset)")))()
-assert(load(region(runtime, "function database_asset_values(asset)", "function mark_asset_database_change(asset)")))()
+assert(load(region(runtime, "function database_asset_values(asset)", "function mark_asset_database_change(asset, result_change)")))()
 function mark_database_snapshot_dirty() state.db_dirty = true end
 
 -- Match the legacy values decoder byte-for-byte, including old headers,

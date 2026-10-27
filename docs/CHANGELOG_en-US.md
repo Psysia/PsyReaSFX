@@ -1,5 +1,17 @@
 # PsyReaSFX Changelog
 
+## 0.9.0 Beta 8.4
+
+### Completed tab snapshots and background refresh
+
+- Capture completed result snapshots immediately. Switching during a refresh restores the last completed rows, selection and scroll.
+- Stop clearing all tab caches on every database write. Artwork is display-only; missing/duplicate/project/favorite/collection changes update dependent pages. Background metadata/wave completion is scoped and coalesced without restarting an in-flight build per asset.
+- Retain up to 12 tabs / one million row references, counting shared arrays once. No audio copies; snapshots remain session-only. Eviction and catalog removal/replacement still invalidate safely.
+- Keep Watch Folder enabled by default with a 60-second check of imported sources and subfolders. Unchanged checks no longer refresh results; new files still load automatically. Directories outside imported sources require adding a source.
+- Distinguish unfinished metadata/waveform completion from loading newly found assets. Existing lists show “Updating in background · current results retained,” with an explanatory tooltip.
+- Add integrated result-build, repeated-event, snapshot-switch, dependency, shared-cache, unchanged-scan and periodic-watch regressions. Relevant checks pass; REAPER UI testing remains necessary.
+- Update the main script and reopen; no neural-package update or library rebuild is required. Unfinished asset recovery remains enabled.
+
 ## 0.9.0 Beta 8.3
 
 ### Tab numbering and selection stability
@@ -1540,5 +1552,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.3/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_3_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.4/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_4_win_x64.zip
 

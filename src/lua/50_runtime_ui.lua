@@ -176,11 +176,11 @@ function database_asset_values(asset)
   return values
 end
 
-function mark_asset_database_change(asset)
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
+function mark_asset_database_change(asset, result_change)
   if not asset or not asset.path or asset.path == "" then
     return false
   end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate(result_change or "background", asset) end
   if state.root_removal_session then
     local pending = state.root_removal_session.concurrent_asset_changes
     if not pending then
@@ -955,9 +955,11 @@ function record_project_usage(asset, action)
       collection.order[#collection.order + 1] = asset.path
       collection.count = (collection.count or 0) + 1
       state.collections_dirty = true
+      if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
     end
   end
 
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("project") end
   if state.view == "project_used" then
     state.results_dirty = true
   end
@@ -1540,7 +1542,7 @@ function delete_collection(collection)
   end
 
   state.collections = kept
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
   state.collection_by_id[collection.id] = nil
 
   if state.active_collection_id
@@ -1558,7 +1560,6 @@ function add_assets_to_collection(
   collection,
   assets
 )
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改集合", true)
     return 0
@@ -1583,6 +1584,7 @@ function add_assets_to_collection(
   end
 
   if added > 0 then
+    if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
     state.collections_dirty = true
 
     if state.active_collection_id
@@ -1606,7 +1608,6 @@ function remove_assets_from_collection(
   collection,
   assets
 )
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改集合", true)
     return 0
@@ -1632,6 +1633,7 @@ function remove_assets_from_collection(
   end
 
   if removed > 0 then
+    if workspace_tabs_invalidate then workspace_tabs_invalidate("collection", collection.id) end
     local order = {}
 
     for _, path in ipairs(collection.order) do
@@ -1642,7 +1644,7 @@ function remove_assets_from_collection(
 
     collection.order = order
     state.collections_dirty = true
-    state.results_dirty = true
+    if state.active_collection_id == collection.id then AppState.mark_dirty("results_dirty") end
 
     set_status(
       string.format(
@@ -2914,7 +2916,7 @@ function process_artwork_queue()
 
       if found ~= "" then
         asset.artwork_path = shared and "" or found
-        mark_asset_database_change(asset)
+        mark_asset_database_change(asset, "display")
       elseif current ~= "-" then
         asset.artwork_path = ""
       end
@@ -3488,7 +3490,6 @@ function index_asset(asset)
   reaper.PCM_Source_Destroy(source)
 
   mark_asset_database_change(asset)
-  state.results_dirty = true
   return true
 end
 
@@ -3930,7 +3931,7 @@ function process_import_recovery_audit()
         label = "接续未完成素材", roots = {}, assets = audit.pending,
         total = #audit.pending, done = 0, failed = 0,
         started = reaper.time_precise(), phase = "prepare",
-        silent = true, compact_status = true, job_token = token,
+        silent = true, compact_status = true, recovery = true, job_token = token,
       })
       AppState.set("import_cancel_requested", false)
     else
@@ -4126,7 +4127,7 @@ function complete_scan_finalize(scan)
     end
   end
 
-  state.results_dirty = true
+  if removed > 0 or #pending > 0 then AppState.mark_dirty("results_dirty") end
 end
 
 function process_scan_finalize(scan)
@@ -4720,6 +4721,7 @@ local function result_sort_comparator()
 end
 
 function start_results_rebuild()
+  if workspace_tabs_results_started then workspace_tabs_results_started() end
   AppState.set("results_dirty", false)
   AppState.set("results_job", begin_incremental_result_job(
     state.assets,
@@ -4749,6 +4751,7 @@ function process_results_rebuild()
     state.results = results
     state.selected_index = selected_index
     state.results_job = nil
+    if workspace_tabs_results_completed then workspace_tabs_results_completed() end
   end
 end
 
@@ -6240,7 +6243,8 @@ function finish_import_session()
   state.import_session = nil
   state.next_watch = reaper.time_precise() + state.watch_interval
   state.import_cancel_requested = false
-  state.results_dirty = true
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("background")
+  else AppState.mark_dirty("results_dirty") end
   mark_database_snapshot_dirty()
   state.clear_scan_checkpoint_after_database_save = true
 
@@ -6248,7 +6252,9 @@ function finish_import_session()
   save_database_changes()
   start_failed_tasks_save()
 
-  if session.silent then
+  if session.recovery then
+    set_status(string.format("后台补全完成：%d 个素材，失败 %d 个", session.done, session.failed), session.failed > 0)
+  elseif session.silent then
     set_status(
       string.format(
         "后台更新：新增 %d 个，移除 %d 个，失败 %d 个",
@@ -7371,7 +7377,6 @@ function toggle_mark(asset)
 end
 
 function toggle_favorite(asset)
-  if workspace_tabs_invalidate then workspace_tabs_invalidate() end
   if state.root_removal_session then
     set_status("请等待来源移除完成后再修改收藏", true)
     return
@@ -7379,6 +7384,7 @@ function toggle_favorite(asset)
   if not asset then
     return
   end
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("favorites") end
 
   local key = path_key(asset.path)
 
@@ -7417,7 +7423,7 @@ function push_recent(asset, project_action)
   asset.last_used = os.time()
 
   state.config_dirty = true
-  mark_asset_database_change(asset)
+  mark_asset_database_change(asset, "usage")
 
   if project_action then
     record_project_usage(asset, project_action)
@@ -10694,7 +10700,8 @@ function process_missing_audit()
     state.missing_asset_count = session.missing
     state.missing_audit = nil
     Jobs.finish(session.job_token, true)
-    state.results_dirty = true
+    if workspace_tabs_invalidate then workspace_tabs_invalidate("missing")
+    else AppState.mark_dirty("results_dirty") end
     set_status(string.format("缺失检查完成：%d 个离线来源，%d 个缺失素材", #state.offline_roots, state.missing_asset_count), state.missing_asset_count > 0)
   end
 end
@@ -10784,7 +10791,8 @@ function finish_duplicate_confirmation(session)
   state.duplicate_confirmation_failure_count = session.failure_count
   state.duplicate_confirmation = nil
   Jobs.finish(session.job_token, true)
-  state.results_dirty = true
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("duplicates")
+  else AppState.mark_dirty("results_dirty") end
   set_status(string.format(
     "完整确认完成：%d 组，%d 个素材，读取失败 %d",
     #session.confirmed_groups,
@@ -10954,7 +10962,8 @@ function finish_duplicate_scan(session)
   state.duplicate_asset_count = asset_count
   state.duplicate_scan = nil
   Jobs.finish(session.job_token, true)
-  state.results_dirty = true
+  if workspace_tabs_invalidate then workspace_tabs_invalidate("duplicates")
+  else AppState.mark_dirty("results_dirty") end
   mark_database_snapshot_dirty()
   set_status(string.format("候选检查完成：%d 组，%d 个素材", #duplicates, asset_count))
 end
@@ -16032,7 +16041,7 @@ function draw_sub_toolbar()
 
   ImGui.SameLine(ctx)
 
-  ImGui.TextDisabled(ctx, results_pending() and "正在更新结果…"
+  ImGui.TextDisabled(ctx, results_pending() and (#state.results>0 and "后台更新中 · 保留当前结果" or "正在更新结果…")
     or string.format("　%d 个结果", #state.results))
 
   local sort_clicked = false
@@ -16125,7 +16134,9 @@ function draw_import_progress()
   if recovery then
     ImGui.TextDisabled(ctx, state.scan
       and string.format("后台恢复扫描：%d 个音频 / %d 个目录", recovery.files, recovery.directories)
-      or string.format("后台接续素材：%d / %d，失败 %d", recovery.done, recovery.total, recovery.failed))
+      or string.format(recovery.recovery and "后台补全元数据/波形：%d / %d，失败 %d"
+        or "后台加载新增素材：%d / %d，失败 %d", recovery.done, recovery.total, recovery.failed))
+    tooltip("补处理索引中未完成的元数据和波形；不会复制音频。新增文件由 Watch Folder 定期发现。")
     ImGui.SameLine(ctx)
     if dark_button("取消", 64) then Jobs.cancel(recovery.job_token) end
   end
@@ -20533,8 +20544,7 @@ function choose_artwork_for_asset(asset)
     asset.artwork_path =
       normalize_slashes(filename)
     asset.artwork_checked = true
-    mark_asset_database_change(asset)
-    state.results_dirty = true
+    mark_asset_database_change(asset, "display")
     set_status("已设置 Artwork")
   end
 end
@@ -20607,15 +20617,14 @@ function draw_inspector_artwork_header(asset)
     state.artwork_folder_cache = {}
     state.artwork_dimension_cache = {}
     queue_artwork(asset, true)
-    mark_asset_database_change(asset)
+    mark_asset_database_change(asset, "display")
   end
 
   if tostring(asset.artwork_path or "") ~= "" then
     if dark_button("清除封面", -1) then
       asset.artwork_path = "-"
       asset.artwork_checked = true
-      mark_asset_database_change(asset)
-      state.results_dirty = true
+      mark_asset_database_change(asset, "display")
     end
   end
 end
@@ -25597,6 +25606,7 @@ function loop()
   watch_folders()
   autosave()
 
+  if workspace_tabs_process_refresh then workspace_tabs_process_refresh() end
   if state.results_dirty or state.results_job then
     process_results_rebuild()
   end
