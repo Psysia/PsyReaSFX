@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.4
+-- @version 0.9.0-beta8.5
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -98,6 +98,7 @@
 --   - Beta 8.2：独立浏览标签页、共享结果缓存、复制/重命名/关闭与轻量会话恢复
 --   - Beta 8.3：复用标签显示编号、延迟选中确认、结果更新提示与分帧构建提速
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
+--   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -204,7 +205,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.4"
+local VERSION = "0.9.0 Beta 8.5"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2235,6 +2236,27 @@ I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
 I18N_EN["标签页"] = "Tab"
 I18N_EN["正在更新结果…"] = "Updating results…"
 I18N_EN["后台更新中 · 保留当前结果"] = "Updating in background · current results retained"
+I18N_EN["Watch Folder 已开启；点击关闭"] = "Watch Folder enabled; click to disable"
+I18N_EN["Watch Folder 已关闭；点击开启"] = "Watch Folder disabled; click to enable"
+I18N_EN["Watch Folder 已开启：自动发现新增音频"] = "Watch Folder enabled: automatically discovers new audio"
+I18N_EN["Watch Folder 已关闭；当前导入任务继续，之后不再自动检查"] =
+  "Watch Folder disabled; the current import continues and future automatic checks stop"
+I18N_EN["浏览此素材所在音效库的全部声音"] = "Browse all sounds in this asset's library"
+I18N_EN["浏览此素材所在文件夹的全部声音"] = "Browse all sounds in this asset's folder"
+I18N_EN["素材来源##inspector_navigation"] = "Asset location##inspector_navigation"
+I18N_EN["此素材的音效库来源已失效，请检查来源路径"] = "This asset's library is unavailable; check its source path"
+I18N_EN["已显示素材所在音效库的全部声音"] = "Showing all sounds in the asset's library"
+I18N_EN["已显示素材所在文件夹的全部声音"] = "Showing all sounds in the asset's folder"
+I18N_EN["正在准备神经相似度范围"] = "Preparing neural search scope"
+I18N_EN["正在写入神经相似度清单"] = "Writing neural asset manifest"
+I18N_EN["正在重排神经相似度候选"] = "Reranking neural candidates"
+I18N_EN["正在加载神经模型"] = "Loading neural model"
+I18N_EN["正在解码音频"] = "Decoding audio"
+I18N_EN["正在分析音频窗口"] = "Analyzing audio windows"
+I18N_EN["正在建立神经相似度缓存"] = "Building neural embedding cache"
+I18N_EN["正在建立神经近邻索引"] = "Building neural nearest-neighbor index"
+I18N_EN["正在查询神经相似度"] = "Querying neural similarity"
+I18N_EN["正在启动神经检索组件"] = "Starting neural component"
 I18N_EN["新建标签页"] = "New tab"
 I18N_EN["复制标签页"] = "Duplicate tab"
 I18N_EN["重命名标签页"] = "Rename tab"
@@ -2612,6 +2634,8 @@ I18N_PATTERNS_EN = {
     "Background update: %1 offline files removed",
   },
   { "^后台补全完成：(%d+) 个素材，失败 (%d+) 个$", "Background completion: %1 assets, %2 failed" },
+  { "^每 ([%d%.]+) 秒检查已导入来源和子目录$", "Checks imported sources and subfolders every %1 seconds" },
+  { "^ · 当前音频窗口 (%d+) / (%d+)$", " · Current audio window %1 / %2" },
   { "^失败任务：(%d+)$", "Failed tasks: %1" },
   { "^正在重试 (%d+) 个失败任务$", "Retrying %1 failed tasks" },
   { "^开始检查 (%d+) 个波形缓存$", "Verifying %1 waveform cache files" },

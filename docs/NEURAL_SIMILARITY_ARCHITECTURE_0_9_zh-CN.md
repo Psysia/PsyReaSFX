@@ -203,4 +203,4 @@ HNSW 索引使用 `PSYHNSW1` magic，并保存格式版本、profile、模型哈
 - EfficientAT 论文：<https://arxiv.org/abs/2211.04772>
 - Low-complexity Audio Embedding Extractors：<https://arxiv.org/abs/2303.01879>
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.4/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_4_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.5/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_5_win_x64.zip

@@ -219,6 +219,7 @@ internal static partial class NeuralJobs
         var embedded = 0;
         var failed = 0;
         var failures = new List<object>();
+        var nextStatus = DateTimeOffset.MinValue;
         InferenceSession? session = null;
         try
         {
@@ -242,15 +243,34 @@ internal static partial class NeuralJobs
                     try
                     {
                         ValidateAssetFile(asset);
-                        session ??= Program.CreateSession(model.ModelPath);
+                        if (session is null)
+                        {
+                            WriteStatus(request, "running", "loading-model", index, assets.Count, false, null, asset.Path);
+                            session = Program.CreateSession(model.ModelPath);
+                        }
+                        WriteStatus(request, "running", "decoding", index, assets.Count, false, null, asset.Path);
                         var audio = AudioDecoder.DecodeMono32k(asset.Path);
                         Program.Require(audio.Samples.Length >= Program.MinimumSamples,
                             $"Audio is too short; at least {Program.MinimumSamples} samples are required after resampling.");
                         ValidateAssetFile(asset);
-                        var vector = Program.RunSceneEmbedding(session, audio.Samples, model.Dimensions);
+                        var vector = Program.RunSceneEmbedding(session, audio.Samples, model.Dimensions,
+                            (window, windows) =>
+                            {
+                                var now = DateTimeOffset.UtcNow;
+                                if (window == 0 || window == windows || now >= nextStatus)
+                                {
+                                    WriteStatus(request, "running", "embedding", index, assets.Count, false, null,
+                                        asset.Path, window, windows);
+                                    nextStatus = now.AddMilliseconds(500);
+                                }
+                            }, () => IsCancelled(request));
                         ValidateAssetFile(asset);
                         output.Add(new CacheRecord(asset.Signature, asset.Size, asset.MtimeUtcTicks, ToHalf(vector)));
                         embedded++;
+                    }
+                    catch (OperationCanceledException) when (IsCancelled(request))
+                    {
+                        return FinishCancelledBuild(request, assets.Count, index, reused, embedded, failed);
                     }
                     catch (Exception error)
                     {
@@ -263,9 +283,10 @@ internal static partial class NeuralJobs
                 }
 
                 var completed = index + 1;
-                if (completed == assets.Count || completed % 32 == 0)
+                if (completed == assets.Count || completed % 32 == 0 || DateTimeOffset.UtcNow >= nextStatus)
                 {
                     WriteStatus(request, "running", "building-cache", completed, assets.Count, false, null);
+                    nextStatus = DateTimeOffset.UtcNow.AddMilliseconds(500);
                 }
                 if (IsCancelled(request))
                 {
@@ -770,7 +791,10 @@ internal static partial class NeuralJobs
         int completed,
         int total,
         bool cancelled,
-        string? error)
+        string? error,
+        string? currentFile = null,
+        int windowCompleted = 0,
+        int windowTotal = 0)
     {
         Program.AtomicWrite(request.StatusPath, JsonSerializer.Serialize(new
         {
@@ -784,6 +808,9 @@ internal static partial class NeuralJobs
             total,
             cancelled,
             error,
+            currentFile,
+            windowCompleted,
+            windowTotal,
             updatedUtc = DateTimeOffset.UtcNow,
         }, JsonOptions) + Environment.NewLine);
     }
