@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.1
+-- @version 0.9.0-beta8.2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -95,6 +95,7 @@
 --   - Beta 7.17：兼容 gpt-6-luna 网关，修复推理额度与空响应诊断
 --   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
 --   - Beta 8.1：字号拖动仅预览，松手应用布局，支持整数与 ±1 精调
+--   - Beta 8.2：独立浏览标签页、共享结果缓存、复制/重命名/关闭与轻量会话恢复
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -201,7 +202,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.1"
+local VERSION = "0.9.0 Beta 8.2"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -810,6 +811,9 @@ local state = {
   sort_desc = false,
   results_dirty = true,
   results_job = nil,
+  workspace_tabs = nil,
+  workspace_tab_active = nil,
+  workspace_tabs_revision = 0,
   asset_binding_refresh = nil,
 
   selected_index = 0,
@@ -964,6 +968,7 @@ local state = {
 
   -- 结果表只使用 Shift + 滚轮横向移动，不绘制常驻或浮动滚动条。
   results_scroll_x = 0,
+  results_scroll_y = 0,
   results_scroll_max_x = 0,
   results_scroll_request = nil,
 
@@ -2221,6 +2226,21 @@ I18N_EN["无法撤销 UCS 确认"] = "Unable to undo UCS confirmation"
 I18N_EN["只读保护下不能修改 UCS 分类"] =
   "UCS classification cannot be changed in read-only mode"
 I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
+I18N_EN["标签页"] = "Tab"
+I18N_EN["新建标签页"] = "New tab"
+I18N_EN["复制标签页"] = "Duplicate tab"
+I18N_EN["重命名标签页"] = "Rename tab"
+I18N_EN["关闭标签页"] = "Close tab"
+I18N_EN["关闭其他标签页"] = "Close other tabs"
+I18N_EN["关闭右侧标签页"] = "Close tabs to the right"
+I18N_EN["向左移动标签页"] = "Move tab left"
+I18N_EN["向右移动标签页"] = "Move tab right"
+I18N_EN["留空恢复自动名称"] = "Leave blank to restore the automatic name"
+I18N_EN["新建标签页（Ctrl+N）；复制当前页 Ctrl+Shift+N；关闭 Ctrl+W；切换 Ctrl+Tab"] = "New tab: Ctrl+N; duplicate: Ctrl+Shift+N; close: Ctrl+W; switch: Ctrl+Tab"
+I18N_EN["切换标签不重新调用 API；进行中的任务需先结束或取消。"] = "Switching tabs does not call the API again; finish or cancel running requests first."
+I18N_EN["请等待或取消当前 AI / 相似声音任务后再切换标签页"] = "Finish or cancel the current AI / similar-sound task before switching tabs"
+I18N_EN["最多打开 24 个标签页，请先关闭不需要的标签页"] = "Up to 24 tabs can be open; close unused tabs first"
+I18N_EN["标签页已恢复；AI / 相似声音结果仅在本次会话保留，需要时重新搜索。"] = "Tabs restored; AI / similar-sound results are session-only. Run a new search when needed."
 I18N_EN["查找相似声音"] = "Find similar sounds"
 I18N_EN["在当前结果中分析"] = "Analyze current results"
 I18N_EN["在全部音效库中分析"] = "Analyze all libraries"

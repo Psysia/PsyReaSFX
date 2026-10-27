@@ -602,6 +602,8 @@ function load_config()
         state.auto_collect_project_usage = value ~= "0"
       elseif name == "auto_preview" then
         state.auto_preview = value == "1"
+      elseif workspace_tabs_load_setting and workspace_tabs_load_setting(name, value) then
+        -- Restored after the catalog and collection indexes are available.
       elseif workspace_load_setting(name, value) then
         -- Workspace-only preferences do not affect catalog persistence.
       elseif name == "enter_insert_shortcuts" then
@@ -944,6 +946,7 @@ function save_config()
   write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
   workspace_write_settings(file)
+  if workspace_tabs_write_settings then workspace_tabs_write_settings(file) end
 
   for path in pairs(state.favorites) do
     file:write(
