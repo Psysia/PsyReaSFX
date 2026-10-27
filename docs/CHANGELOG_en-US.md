@@ -1,5 +1,16 @@
 # PsyReaSFX Changelog
 
+## 0.9.0 Beta 8.5
+
+### Source navigation and neural progress
+
+- Toggle Watch Folder directly with the toolbar clock or the scan context menu. Disabling it stops future automatic checks; an existing import or background completion task continues.
+- Right-click the metadata inspector to browse all sounds in the selected asset's library or folder (including subfolders), or reveal the file. Navigation clears old search/filter conditions in the current tab and preserves the asset selection.
+- Replace the incorrect zero-count acoustic label during neural tasks with actual model, decoding, cache, index, query and reranking stages.
+- Sidecar 0.5.1 reports long-audio window progress and checks cancellation between windows. Jobs that emit no initial status within 30 seconds fall back to acoustic search. Model, full-window analysis and cache formats remain compatible.
+- Update both the main script and the separate neural package to Beta 8.5 and restart. Existing caches are reused without rebuilding or transcoding; first global analysis still computes every uncached file.
+- Lua actions/progress regressions, neural window cancellation/golden vectors, job and installer checks pass. REAPER hardware testing remains outstanding.
+
 ## 0.9.0 Beta 8.4
 
 ### Completed tab snapshots and background refresh
@@ -1552,5 +1563,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.4/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_4_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.5/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_5_win_x64.zip
 

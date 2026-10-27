@@ -215,4 +215,37 @@ assert(ordered_file:read("*a") == "a\nb\n")
 ordered_file:close()
 os.remove(ordered_path)
 
+-- Real status files feed the UI progress and heartbeat. A launch that never
+-- produces a status exits to fallback promptly instead of waiting 10 minutes.
+local status_path=os.tmpname()
+local result_path=os.tmpname() os.remove(result_path)
+local cancel_path=os.tmpname() os.remove(cancel_path)
+local test_paths={status=status_path,result=result_path,cancel=cancel_path,
+  request=status_path..".request",assets=status_path..".assets",candidates=status_path..".candidates"}
+local job_clock=200
+local original_clock=Host.time_precise
+Host.time_precise=function() return job_clock end
+local waiting={phase="neural_wait",neural_job={operation="build-cache",request_id="test-cache",
+  started=200,last_change=200,last_status="",paths=test_paths}}
+local status_file=assert(io.open(status_path,"wb"))
+status_file:write(neural_json_encode({schema="PsyReaSFX-Neural-Job-Status-v1",requestId="test-cache",
+  operation="build-cache",state="running",phase="embedding",completed=0,total=76530,
+  windowCompleted=2,windowTotal=34,updatedUtc="2026-10-27T10:00:00Z"})) status_file:close()
+process_neural_similarity_search(waiting)
+assert(waiting.phase=="neural_wait" and waiting.neural_progress.windowCompleted==2 and waiting.neural_job.status_seen)
+job_clock=201 status_file=assert(io.open(status_path,"wb"))
+status_file:write(neural_json_encode({schema="PsyReaSFX-Neural-Job-Status-v1",requestId="test-cache",
+  operation="build-cache",state="running",phase="embedding",completed=0,total=76530,
+  windowCompleted=3,windowTotal=34,updatedUtc="2026-10-27T10:00:01Z"})) status_file:close()
+process_neural_similarity_search(waiting)
+assert(waiting.neural_progress.windowCompleted==3 and waiting.neural_job.last_change==201)
+os.remove(status_path)
+job_clock=240
+local never_started={phase="neural_wait",neural_job={operation="query",request_id="test-query",started=200,
+  last_change=200,paths=test_paths}}
+process_neural_similarity_search(never_started)
+assert(never_started.phase=="reference" and never_started.neural_failure=="job_start_timeout")
+os.remove(cancel_path)
+Host.time_precise=original_clock
+
 print("lua neural similarity self-test passed")

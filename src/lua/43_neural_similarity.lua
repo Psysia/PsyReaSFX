@@ -16,6 +16,7 @@ NeuralSimilarity = {
   neural_weight = 0.75,
   poll_interval = 0.10,
   capability_timeout = 30,
+  job_start_timeout = 30,
   job_stall_timeout = 600,
 }
 
@@ -505,6 +506,7 @@ local function neural_start_job(session, operation, extra)
     last_status = "",
     next_poll = 0,
   }
+  session.neural_progress = nil
   session.phase = "neural_wait"
   return true
 end
@@ -789,6 +791,8 @@ local function neural_process_wait(session)
       neural_fallback(session, "invalid_status")
       return
     end
+    job.status_seen = true
+    session.neural_progress = status
     if status.state == "failed" then
       if job.operation == "build-index" then
         neural_cleanup_job(job, true)
@@ -826,6 +830,10 @@ local function neural_process_wait(session)
       set_status(string.format("神经相似度 %s：%d / %d",
         phase, completed, total))
     end
+  end
+  if not job.status_seen and now - job.started > NeuralSimilarity.job_start_timeout then
+    neural_fallback(session, "job_start_timeout")
+    return
   end
   if now - (job.last_change or job.started) > NeuralSimilarity.job_stall_timeout then
     neural_similarity_cancel(session)

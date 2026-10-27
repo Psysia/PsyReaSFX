@@ -10,7 +10,7 @@ computer and is never uploaded.
 **Neural retrieval requires this package; built-in acoustic search and AI semantic
 search do not. Updating the main script does not install it.**
 
-**[Complete neural ZIP download · Beta 8.4 · Windows x64 · about 42.4 MB][neural-download]**
+**[Complete neural ZIP download · Beta 8.5 · Windows x64 · about 42.4 MB][neural-download]**
 includes the model and installers, unlike the standalone EXE.
 
 1. Import and synchronize the [PsyReaSFX repository](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml).
@@ -18,7 +18,7 @@ includes the model and installers, unlike the standalone EXE.
 3. Open `Extensions → ReaPack → Browse packages`, search for the separate
    [PsyReaSFX Neural Similarity][neural-download] data package, enable
    **Enable pre-releases (bleeding-edge)**, select the latest Beta under **Versions**
-   (currently `0.9.0-beta8.4`), uncheck **Pin current version**, then click **Apply / OK**.
+   (currently `0.9.0-beta8.5`), uncheck **Pin current version**, then click **Apply / OK**.
 4. Restart PsyReaSFX.
 
 ReaPack installs the component under REAPER's `Data` directory and handles
@@ -63,6 +63,15 @@ visible, cancelable progress. Later searches reuse data under:
 <REAPER Resource Path>\Scripts\PsyReaSFX\neural_similarity\
 ```
 
+## Beta 8.5 progress update
+
+Update **both PsyReaSFX.lua and this component** to Beta 8.5, then restart.
+Sidecar 0.5.1 reports model loading, decoding and audio-window progress and checks
+cancellation between windows. Decoding or one inference can still take time.
+The first global search computes every uncached file; later searches reuse the
+existing compatible cache. The model and full-window embedding algorithm are
+unchanged, and no cache rebuild or audio conversion is required.
+
 ## Uninstall
 
 Double-click `Uninstall-NeuralSimilarity.cmd`. It preserves the rebuildable
@@ -75,4 +84,4 @@ cache by default so a later reinstall can reuse it. To remove the cache too:
 Removing or breaking this optional component does not disable PsyReaSFX;
 similarity search transparently returns to the baseline algorithm.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.4/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_4_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.5/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_5_win_x64.zip

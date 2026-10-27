@@ -9,7 +9,7 @@ namespace PsyReaSFX.NeuralSidecar;
 
 internal static class Program
 {
-    internal const string SidecarVersion = "0.5.0";
+    internal const string SidecarVersion = "0.5.1";
     internal const string ExpectedSchema = "PsyReaSFX-Neural-Model-v1";
     internal const string ExpectedProfile = "mn04_as_scene_320_v1";
     internal const string ExpectedModelSha256 = "5efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054";
@@ -142,7 +142,27 @@ internal static class Program
             var audioPath = Path.Combine(modelDirectory, audioFile);
             Require(HashFile(audioPath) == testCase.GetProperty("audio_sha256").GetString(), $"Golden audio hash mismatch: {name}");
             var audio = AudioDecoder.DecodeMono32k(audioPath);
-            var actual = RunSceneEmbedding(session, audio.Samples, model.Dimensions);
+            var lastWindow = -1;
+            var expectedWindows = audio.Samples.Length <= MaximumSamples ? 1 : audio.Samples.Length / SceneHopSamples + 1;
+            var actual = RunSceneEmbedding(session, audio.Samples, model.Dimensions, (current, total) =>
+            {
+                Require(total == expectedWindows && current >= lastWindow && current <= total,
+                    "Window progress must be monotonic and cover the original full audio.");
+                lastWindow = current;
+            });
+            Require(lastWindow == expectedWindows, "Window progress did not complete.");
+            if (audio.Samples.Length > MaximumSamples)
+            {
+                var stopped = false;
+                var windowCount = 0;
+                try
+                {
+                    RunSceneEmbedding(session, audio.Samples, model.Dimensions,
+                        (current, _) => windowCount = current, () => windowCount >= 1);
+                }
+                catch (OperationCanceledException) { stopped = true; }
+                Require(stopped && windowCount == 1, "Cancellation must stop between audio windows.");
+            }
             var expected = testCase.GetProperty("embedding").EnumerateArray().Select(value => value.GetSingle()).ToArray();
             var metrics = Compare(expected, actual);
             Require(metrics.MaxAbsolute <= maxAbsLimit, $"Golden max-absolute mismatch for {name}: {metrics.MaxAbsolute}");
@@ -237,17 +257,26 @@ internal static class Program
         return new InferenceSession(modelPath, options);
     }
 
-    internal static float[] RunSceneEmbedding(InferenceSession session, float[] samples, int dimensions)
+    internal static float[] RunSceneEmbedding(InferenceSession session, float[] samples, int dimensions,
+        Action<int, int>? progress = null, Func<bool>? cancelled = null)
     {
+        if (cancelled?.Invoke() == true) throw new OperationCanceledException();
         if (samples.Length <= MaximumSamples)
         {
-            return Normalize(RunRawEmbedding(session, samples, dimensions));
+            progress?.Invoke(0, 1);
+            var vector = Normalize(RunRawEmbedding(session, samples, dimensions));
+            progress?.Invoke(1, 1);
+            if (cancelled?.Invoke() == true) throw new OperationCanceledException();
+            return vector;
         }
 
         var sum = new float[dimensions];
         var windows = 0;
+        var totalWindows = samples.Length / SceneHopSamples + 1;
         for (var start = 0; start <= samples.Length; start += SceneHopSamples)
         {
+            if (cancelled?.Invoke() == true) throw new OperationCanceledException();
+            progress?.Invoke(windows, totalWindows);
             var window = new float[MaximumSamples];
             for (var index = 0; index < window.Length; index++)
             {
@@ -269,7 +298,9 @@ internal static class Program
                 sum[index] += current[index];
             }
             windows++;
+            progress?.Invoke(windows, totalWindows);
         }
+        if (cancelled?.Invoke() == true) throw new OperationCanceledException();
 
         for (var index = 0; index < dimensions; index++)
         {

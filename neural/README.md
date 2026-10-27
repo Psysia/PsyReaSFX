@@ -3,7 +3,7 @@
 This directory contains the [local neural-audio component][neural-download]. It is a
 separate optional ReaPack data package and does not upload audio.
 
-**[Download the complete Windows x64 neural ZIP · Beta 8.4 · about 42.4 MB][neural-download]**
+**[Download the complete Windows x64 neural ZIP · Beta 8.5 · about 42.4 MB][neural-download]**
 includes executable, model and installers; the standalone EXE alone is insufficient.
 Neural retrieval requires this component; built-in acoustic search and AI semantic
 search do not.
@@ -11,7 +11,7 @@ search do not.
 Synchronize the [ReaPack repository](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml),
 open `Extensions → ReaPack → Browse packages`, and search for
 [PsyReaSFX Neural Similarity][neural-download]. Enable pre-releases for this separate
-data package, choose the latest Beta under Versions (currently `0.9.0-beta8.4`),
+data package, choose the latest Beta under Versions (currently `0.9.0-beta8.5`),
 unpin if needed, click Apply / OK, and restart PsyReaSFX.
 Alternatively, download the complete ZIP above, extract everything, and run
 `Install-NeuralSimilarity.cmd`; see the [installer guide](package/README.md).
@@ -40,7 +40,7 @@ PsyReaSFX.NeuralSidecar embed <model-directory> <input-audio> [output.json]
 PsyReaSFX.NeuralSidecar run-job <model-directory> <request.json>
 ```
 
-Sidecar `0.5.0` decodes common WAV sample rates and PCM16/PCM24/PCM32/float
+Sidecar `0.5.1` decodes common WAV sample rates and PCM16/PCM24/PCM32/float
 depths, AIFF, FLAC, MP3, and M4A through NAudio and Windows Media Foundation.
 When FFmpeg is found through `PSYREASFX_FFMPEG`, beside the executable, or on
 `PATH`, it also enables OGG, Opus, WavPack, and CAF. Decoded audio is downmixed
@@ -65,8 +65,11 @@ requests:
 Build inputs use UTF-8 TSV rows in the form
 `signature<TAB>size<TAB>mtimeUtcTicks<TAB>JSON-string-path`. Unchanged records
 are reusable while their source drive is offline. Changed or new records are
-validated before and after reading. A cancellation file stops after the current
-asset and leaves the previous cache generation untouched. Cache, status, and
+validated before and after reading. A cancellation file is checked between audio
+windows and assets and leaves the previous cache generation untouched. Model
+loading, decoding and window counts are reported in atomic status files. Update
+both the main script and the neural component to Beta 8.5 and restart; caches
+remain compatible. First global computation still requires time. Cache, status, and
 result files are all replaced atomically.
 
 Sidecar `0.4.0` added the Lua integration contract: capability discovery may
@@ -114,4 +117,4 @@ It uses the extensions advertised by the installed sidecar rather than imposing
 a fixed sample-rate or bit-depth rule. Older sidecars without decoder capability
 metadata keep the Beta 5 restriction for safety.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.4/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_4_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.5/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_5_win_x64.zip

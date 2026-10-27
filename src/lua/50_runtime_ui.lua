@@ -15744,7 +15744,7 @@ function draw_toolbar()
   local search_x, search_y = ImGui.GetCursorScreenPos(ctx)
   local search_width = math.max(
     ui_px(100),
-    select(1, ImGui.GetContentRegionAvail(ctx)) - ui_px(267)
+    select(1, ImGui.GetContentRegionAvail(ctx)) - ui_px(305)
   )
   ImGui.SetNextItemWidth(ctx, search_width)
 
@@ -15893,6 +15893,20 @@ function draw_toolbar()
     if not state.scan and not state.import_session then
       start_scan("增量扫描")
     end
+  end
+
+  if ImGui.BeginPopupContextItem(ctx, "##scan_watch_options") then
+    if ImGui.MenuItem(ctx, "启用 Watch Folder", nil, state.watch_enabled) then
+      set_watch_folder_enabled(not state.watch_enabled)
+    end
+    ImGui.TextDisabled(ctx, string.format("每 %.0f 秒检查已导入来源和子目录", state.watch_interval))
+    ImGui.EndPopup(ctx)
+  end
+
+  ui_flow_next(control_size)
+  if icon_button("watch_folder", "clock", state.watch_enabled and "Watch Folder 已开启；点击关闭"
+      or "Watch Folder 已关闭；点击开启", state.watch_enabled, control_size) then
+    set_watch_folder_enabled(not state.watch_enabled)
   end
 
   ui_flow_next(control_size)
@@ -16127,6 +16141,34 @@ function draw_sub_toolbar()
   end
 end
 
+function neural_progress_display(session)
+  local progress = session.neural_progress or {}
+  local operation = session.neural_job and session.neural_job.operation
+  local phase = progress.phase or "starting"
+  local completed = tonumber(progress.completed) or 0
+  local total = tonumber(progress.total) or session.neural_asset_count or session.total or 0
+  if total<=0 then total=session.neural_asset_count or session.total or 0 end
+  local window_done, window_total = tonumber(progress.windowCompleted) or 0, tonumber(progress.windowTotal) or 0
+  local label
+  if session.phase == "neural_prepare" then
+    label = "正在准备神经相似度范围" completed = (session.neural_prepare_index or 1)-1
+  elseif session.phase == "neural_manifest" then
+    label = "正在写入神经相似度清单" completed = session.neural_manifest and session.neural_manifest.index-1 or 0
+  elseif session.phase == "neural_rerank" then
+    label = "正在重排神经相似度候选" completed = (session.neural_match_index or 1)-1 total = #(session.neural_matches or {})
+    window_done,window_total=0,0
+  else
+    label = ({["loading-model"]="正在加载神经模型",decoding="正在解码音频",embedding="正在分析音频窗口",
+      ["building-cache"]="正在建立神经相似度缓存",["building-index"]="正在建立神经近邻索引"})[phase]
+      or (operation == "query" and "正在查询神经相似度" or "正在启动神经检索组件")
+  end
+  local partial = window_total>0 and clamp(window_done/window_total,0,1) or 0
+  local fraction = total>0 and clamp((completed+partial)/total,0,1) or 0
+  label = translate_ui_text(label)..string.format("  %d / %d",completed,total)
+  if window_total>0 then label=label..translate_ui_text(string.format(" · 当前音频窗口 %d / %d",window_done,window_total)) end
+  return label,fraction
+end
+
 function draw_import_progress()
   local recovery = state.import_session and state.import_session.compact_status
       and state.import_session
@@ -16347,6 +16389,9 @@ function draw_import_progress()
             session.analyzed or 0,
             session.failed or 0
           )
+      if session.phase:match("^neural_") then
+        label,fraction = neural_progress_display(session)
+      end
       ImGui.Text(ctx, label)
       ImGui.ProgressBar(
         ctx,
@@ -16360,7 +16405,8 @@ function draw_import_progress()
       ImGui.TextDisabled(
         ctx,
         compact(
-          session.current and session.current.name
+          session.phase == "neural_wait" and session.neural_progress and session.neural_progress.currentFile and basename(session.neural_progress.currentFile)
+            or session.current and session.current.name
             or session.reference and session.reference.name
             or "准备下一项",
           80
@@ -20673,8 +20719,62 @@ function draw_ucs_candidate_actions(asset)
   ImGui.Spacing(ctx)
 end
 
+function browse_asset_location(asset, folder)
+  if not asset then return false end
+  if workspace_tabs_busy() then
+    set_status("请等待或取消当前 AI / 相似声音任务后再切换标签页", true)
+    return false
+  end
+  local library = (state.library_by_id or {})[asset.library_id]
+  if not library and type(root_for_path) == "function" then
+    local _, root = root_for_path(asset.path)
+    library = root and (state.library_by_id or {})[root.library_id]
+  end
+  if not folder and not library then
+    set_status("此素材的音效库来源已失效，请检查来源路径", true)
+    return false
+  end
+  stop_preview()
+  AppState.apply({search="", view="all", sort_mode="name", sort_desc=false, results_dirty=true,
+    config_dirty=true, results_scroll_y=0})
+  for _, key in ipairs({"active_collection_id","status_filter","ucs_filter_category","ucs_filter_subcategory",
+    "ucs_filter_catid","root_filter","library_filter_id","results_job","results_scroll_y_request"}) do
+    AppState.set(key,nil)
+  end
+  if library then AppState.set("library_filter_id",library.id or asset.library_id) end
+  if folder then AppState.set("root_filter",asset.folder or dirname(asset.path)) end
+  AppState.set("selected_path",asset.path)
+  AppState.set("selected_set",{[path_key(asset.path)]=true})
+  AppState.set("selected_index",0)
+  AppState.set("selection_anchor",0)
+  AppState.set("workspace_tab_scroll_restore",{x=state.results_scroll_x or 0,y=0,frames=2})
+  workspace_tabs_track()
+  set_status(folder and "已显示素材所在文件夹的全部声音" or "已显示素材所在音效库的全部声音")
+  return true
+end
+
+function draw_inspector_navigation_menu(asset)
+  if not asset then return end
+  if ImGui.BeginPopup(ctx,"素材来源##inspector_navigation") then
+    if ImGui.MenuItem(ctx,"浏览此素材所在音效库的全部声音") then browse_asset_location(asset,false) end
+    if ImGui.MenuItem(ctx,"浏览此素材所在文件夹的全部声音") then browse_asset_location(asset,true) end
+    ImGui.Separator(ctx)
+    if ImGui.MenuItem(ctx,"在资源管理器中显示") then reveal_file(asset.path) end
+    ImGui.EndPopup(ctx)
+  end
+end
+
+function open_inspector_navigation_menu()
+  if ImGui.IsWindowHovered(ctx, ImGui.HoveredFlags_ChildWindows)
+    and ImGui.IsMouseClicked(ctx,1) and not ImGui.IsAnyItemActive(ctx) then
+    ImGui.OpenPopup(ctx,"素材来源##inspector_navigation")
+  end
+end
+
 function draw_metadata_inspector()
   local assets = selected_assets_fast()
+  open_inspector_navigation_menu()
+  draw_inspector_navigation_menu(assets[1])
 
   if dark_button("隐藏元数据 >", -1) then
     state.inspector_visible = false
@@ -21266,9 +21366,7 @@ function draw_settings_general()
     )
 
   if watch_changed then
-    state.next_watch =
-      reaper.time_precise() + state.watch_interval
-    state.config_dirty = true
+    set_watch_folder_enabled(state.watch_enabled)
   end
 
   ImGui.SetNextItemWidth(ctx, 220)
@@ -25196,6 +25294,14 @@ function autosave()
   schedule_auxiliary_save()
 
   state.last_save = now
+end
+
+function set_watch_folder_enabled(enabled)
+  AppState.set("watch_enabled", enabled == true)
+  AppState.set("next_watch", reaper.time_precise() + state.watch_interval)
+  AppState.mark_dirty("config_dirty")
+  set_status(enabled and "Watch Folder 已开启：自动发现新增音频"
+    or "Watch Folder 已关闭；当前导入任务继续，之后不再自动检查")
 end
 
 function watch_folders()
