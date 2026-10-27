@@ -1,4 +1,15 @@
-﻿# PsyReaSFX Changelog
+# PsyReaSFX Changelog
+
+## 0.9.0 Beta 8.3
+
+### Tab numbering and selection stability
+
+- Reuse the lowest free display number: closing Tab 2 and creating a new tab produces Tab 2 again. Internal IDs stay unique; open tabs, custom names and browsing state remain intact. Numbers persist, and older settings migrate automatically.
+- Wait for ImGui to confirm the requested visible tab before clearing selection. The previous visible tab can no longer bounce new/close/keyboard actions back; clipped tab bars preserve pending requests.
+- New tabs reuse completed results with identical default scopes, without inheriting selection or scrolling. Invalidated catalog results are never reused.
+- Ordinary search, filters, sorting and AI/similarity result refreshes show “Updating results…” rather than a misleading zero-results/empty-collection message.
+- Run several bounded result stages in each frame, checking an approximately 8 ms budget between stages. A synthetic 66k-row test reduced 62 defer steps to about 12–14 frames with identical ordering; this is not a host frame-rate or hard real-time guarantee.
+- Add regression coverage for numbering, persistence/migration, delayed selection, clipped tabs, pending messages and ordering. Update the main script and reopen; no neural-package update or library rebuild required. REAPER UI behavior still needs user testing.
 
 ## 0.9.0 Beta 8.2
 
@@ -1529,5 +1540,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_2_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.3/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_3_win_x64.zip
 

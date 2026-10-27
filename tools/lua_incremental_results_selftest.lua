@@ -109,6 +109,23 @@ repeat
 until empty_status == "complete"
 assert(#empty_results == 0, "empty result job returned rows")
 
+local framed = begin_incremental_result_job(assets,function() return true end,less_name,
+  function(asset) return asset.path end,selected_path)
+local frames=0
+local frame_status,frame_results,frame_selected
+repeat
+  frame_status,frame_results,frame_selected=step_incremental_result_frame(framed,budget,os.clock,0.008)
+  frames=frames+1 assert(frames<count*2+1000)
+until frame_status=="complete"
+assert(#frame_results==#results and frame_selected==selected_index)
+for i=1,#results do assert(frame_results[i]==results[i],"frame grouping must not change ordering") end
+assert(frames<=steps,"multiple bounded stages must not add defer frames")
+local advancing_clock=0
+local limited=begin_incremental_result_job(assets,function() return true end,less_name)
+step_incremental_result_frame(limited,1,function() advancing_clock=advancing_clock+0.01 return advancing_clock end,0.008)
+assert(limited.index==2,"expired frame budget must stop after one bounded stage")
+print(string.format("Result frame grouping: %d defer steps -> %d frames; exact order preserved",steps,frames))
+
 print(string.format(
   "Lua incremental results self-test OK: count=%d steps=%d elapsed=%.3fs max_step=%.4fs stage=%s memory=%.1fMiB",
   count,
