@@ -1,5 +1,12 @@
 # PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 8.6
+
+- 删除右侧来源菜单弹窗，右键直接在当前标签显示素材所在音效库全部声音。清除原搜索、UCS、目录、集合与状态筛选，保留当前素材选择。
+- 元数据输入框处于编辑状态不再阻止右键跳转；未选中素材、鼠标不在右侧或 AI/相似任务进行中不跳转。
+- 本次只需更新主脚本并重开；神经程序与模型和 Beta 8.5 相同，旧附加包及缓存继续兼容。
+- 直接右键、筛选清理、选择保留回归及相关 Lua 检查通过；REAPER 实机效果仍需确认。
+
 ## 0.9.0 Beta 8.5
 
 ### 来源浏览与神经检索进度
@@ -1439,5 +1446,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.5/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_5_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.6/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip
 

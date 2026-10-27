@@ -26,26 +26,33 @@ set_watch_folder_enabled(false)
 assert(not state.watch_enabled and state.config_dirty and state.next_watch==160 and state.import_session.done==5)
 set_watch_folder_enabled(true) assert(state.watch_enabled and state.next_watch==160)
 state.import_session=nil
-assert(load(region("function browse_asset_location(asset, folder)","function draw_metadata_inspector()")))()
+assert(load(region("function browse_asset_library(asset)","function draw_metadata_inspector()")))()
 local asset={path="C:/audio/sub/effect.wav",folder="C:/audio/sub",library_id="lib"}
-busy=true assert(not browse_asset_location(asset,false) and state.search=="impact") busy=false
-assert(browse_asset_location(asset,false))
+busy=true assert(not browse_asset_library(asset) and state.search=="impact") busy=false
+assert(browse_asset_library(asset))
 assert(state.search=="" and state.view=="all" and state.library_filter_id=="lib")
 assert(not state.root_filter and not state.active_collection_id and not state.status_filter and not state.ucs_filter_category)
 assert(not state.results_job and state.results_dirty and state.sort_mode=="name" and not state.sort_desc)
 assert(state.selected_path==asset.path and state.selected_set[path_key(asset.path)] and state.selected_index==0)
 assert(state.workspace_tab_scroll_restore.y==0 and stopped==1 and tracked==1)
-assert(browse_asset_location(asset,true) and state.root_filter==asset.folder)
--- Menu draws in its root context, including when the scrolling child is hovered.
-local opened,ended=0,0
-ImGui={HoveredFlags_ChildWindows=1,IsWindowHovered=function(_,flags) return flags==1 end,
-  IsMouseClicked=function(_,button) return button==1 end,IsAnyItemActive=function() return false end,
-  OpenPopup=function(_,id) assert(id=="素材来源##inspector_navigation") opened=opened+1 end,
-  BeginPopup=function() return true end,MenuItem=function(_,label) return label=="浏览此素材所在音效库的全部声音" end,
-  Separator=function() end,EndPopup=function() ended=ended+1 end}
-open_inspector_navigation_menu() draw_inspector_navigation_menu(asset)
-assert(opened==1 and ended==1 and not state.root_filter)
-ImGui.IsAnyItemActive=function() return true end open_inspector_navigation_menu() assert(opened==1)
+-- A right click navigates directly from the parent or its scrolling child,
+-- without popup APIs or a focused metadata field blocking the action.
+local hovered, clicked = true, true
+ImGui={HoveredFlags_ChildWindows=1,IsWindowHovered=function(_,flags) return hovered and flags==1 end,
+  IsMouseClicked=function(_,button) return clicked and button==1 end,
+  IsAnyItemActive=function() return true end,
+  OpenPopup=function() error("Inspector navigation must not open a popup") end,
+  BeginPopup=function() error("Inspector navigation must not draw a popup") end}
+state.search="category:arcade" state.root_filter="C:/other" state.view="ucs_category"
+local draft={values={description="unsaved edit"}} state.metadata_editor=draft
+assert(handle_inspector_library_navigation(asset))
+assert(state.search=="" and state.view=="all" and not state.root_filter and state.library_filter_id=="lib")
+assert(state.metadata_editor==draft and draft.values.description=="unsaved edit" and tracked==2)
+hovered=false assert(not handle_inspector_library_navigation(asset) and tracked==2)
+hovered=true clicked=false assert(not handle_inspector_library_navigation(asset) and tracked==2)
+clicked=true assert(not handle_inspector_library_navigation(nil) and tracked==2)
+busy=true assert(not handle_inspector_library_navigation(asset) and tracked==2) busy=false
+assert(not source:find("inspector_navigation",1,true))
 assert(load(region("function neural_progress_display(session)","function draw_import_progress()")))()
 local label,fraction=neural_progress_display({phase="neural_wait",total=76530,neural_asset_count=76530,
   neural_job={operation="build-cache"},neural_progress={phase="embedding",completed=0,total=76530,

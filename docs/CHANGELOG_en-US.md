@@ -1,5 +1,12 @@
 # PsyReaSFX Changelog
 
+## 0.9.0 Beta 8.6
+
+- Remove the misplaced/noninteractive inspector navigation popup. Right-click now directly shows every sound in the selected asset's library in the current tab, clearing old search/UCS/folder/collection/status filters and preserving the asset selection.
+- A focused metadata field no longer blocks right-click navigation. No asset, clicks outside the inspector and running AI/similarity tasks do not navigate.
+- Update the main script and restart. The neural executable and model are unchanged from Beta 8.5; existing components and caches remain compatible.
+- Direct-click/filter/selection regressions and relevant Lua checks pass; REAPER hardware testing remains outstanding.
+
 ## 0.9.0 Beta 8.5
 
 ### Source navigation and neural progress
@@ -1563,5 +1570,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.5/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_5_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.6/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip
 

@@ -20719,7 +20719,7 @@ function draw_ucs_candidate_actions(asset)
   ImGui.Spacing(ctx)
 end
 
-function browse_asset_location(asset, folder)
+function browse_asset_library(asset)
   if not asset then return false end
   if workspace_tabs_busy() then
     set_status("请等待或取消当前 AI / 相似声音任务后再切换标签页", true)
@@ -20730,7 +20730,7 @@ function browse_asset_location(asset, folder)
     local _, root = root_for_path(asset.path)
     library = root and (state.library_by_id or {})[root.library_id]
   end
-  if not folder and not library then
+  if not library then
     set_status("此素材的音效库来源已失效，请检查来源路径", true)
     return false
   end
@@ -20741,40 +20741,30 @@ function browse_asset_location(asset, folder)
     "ucs_filter_catid","root_filter","library_filter_id","results_job","results_scroll_y_request"}) do
     AppState.set(key,nil)
   end
-  if library then AppState.set("library_filter_id",library.id or asset.library_id) end
-  if folder then AppState.set("root_filter",asset.folder or dirname(asset.path)) end
+  AppState.set("library_filter_id",library.id or asset.library_id)
   AppState.set("selected_path",asset.path)
   AppState.set("selected_set",{[path_key(asset.path)]=true})
   AppState.set("selected_index",0)
   AppState.set("selection_anchor",0)
   AppState.set("workspace_tab_scroll_restore",{x=state.results_scroll_x or 0,y=0,frames=2})
   workspace_tabs_track()
-  set_status(folder and "已显示素材所在文件夹的全部声音" or "已显示素材所在音效库的全部声音")
+  set_status("已显示素材所在音效库的全部声音")
   return true
 end
 
-function draw_inspector_navigation_menu(asset)
-  if not asset then return end
-  if ImGui.BeginPopup(ctx,"素材来源##inspector_navigation") then
-    if ImGui.MenuItem(ctx,"浏览此素材所在音效库的全部声音") then browse_asset_location(asset,false) end
-    if ImGui.MenuItem(ctx,"浏览此素材所在文件夹的全部声音") then browse_asset_location(asset,true) end
-    ImGui.Separator(ctx)
-    if ImGui.MenuItem(ctx,"在资源管理器中显示") then reveal_file(asset.path) end
-    ImGui.EndPopup(ctx)
+function handle_inspector_library_navigation(asset)
+  if asset and ImGui.IsWindowHovered(ctx, ImGui.HoveredFlags_ChildWindows)
+    and ImGui.IsMouseClicked(ctx, 1) then
+    return browse_asset_library(asset)
   end
-end
-
-function open_inspector_navigation_menu()
-  if ImGui.IsWindowHovered(ctx, ImGui.HoveredFlags_ChildWindows)
-    and ImGui.IsMouseClicked(ctx,1) and not ImGui.IsAnyItemActive(ctx) then
-    ImGui.OpenPopup(ctx,"素材来源##inspector_navigation")
-  end
+  return false
 end
 
 function draw_metadata_inspector()
   local assets = selected_assets_fast()
-  open_inspector_navigation_menu()
-  draw_inspector_navigation_menu(assets[1])
+  if handle_inspector_library_navigation(assets[1]) then
+    assets = selected_assets_fast()
+  end
 
   if dark_button("隐藏元数据 >", -1) then
     state.inspector_visible = false
