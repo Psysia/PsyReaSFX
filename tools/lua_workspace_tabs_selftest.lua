@@ -107,6 +107,45 @@ assert(workspace_tab_close(copied,"others") and #state.workspace_tabs==1 and sta
 assert(workspace_tab_close(copied) and #state.workspace_tabs==1 and state.workspace_tab_active~=copied)
 assert(state.view=="all" and state.search=="" and state.ai_semantic_paging==nil)
 
+-- Reuse display slots without reusing widget IDs or renumbering open tabs.
+local numbered_first=state.workspace_tab_active
+assert(workspace_tab_title(workspace_tab_by_id(numbered_first))=="标签页 1")
+local numbered_second=workspace_tab_new()
+assert(workspace_tab_title(workspace_tab_by_id(numbered_second))=="标签页 2")
+local numbered_third=workspace_tab_new()
+assert(workspace_tab_title(workspace_tab_by_id(numbered_third))=="标签页 3")
+assert(workspace_tab_close(numbered_second))
+local reused=workspace_tab_new()
+assert(reused>numbered_third and workspace_tab_title(workspace_tab_by_id(reused))=="标签页 2")
+assert(workspace_tab_title(workspace_tab_by_id(numbered_third))=="标签页 3")
+for _=1,20 do
+  assert(workspace_tab_close(reused))
+  local old_id=reused reused=workspace_tab_new()
+  assert(reused>old_id and workspace_tab_title(workspace_tab_by_id(reused))=="标签页 2")
+end
+assert(workspace_tab_move(reused,-1) and workspace_tab_by_id(reused).number==2)
+workspace_tab_by_id(reused).name="Custom"
+assert(workspace_tab_title(workspace_tab_by_id(reused))=="Custom")
+workspace_tab_by_id(reused).name=nil
+assert(workspace_tab_title(workspace_tab_by_id(reused))=="标签页 2")
+assert(workspace_tab_close(reused,"others"))
+assert(workspace_tab_close(reused) and workspace_tab_by_id(state.workspace_tab_active).number==1)
+
+-- Same-context new pages share completed rows, but no selection or filters.
+local unfiltered_rows={asset}
+state.results=unfiltered_rows state.results_dirty=false state.results_job=nil
+state.selected_set={['a.wav']=true} state.selected_path='a.wav' state.selected_index=1
+local cached_first=state.workspace_tab_active
+local fresh=workspace_tab_new()
+assert(state.results==unfiltered_rows and not state.results_dirty)
+assert(state.selected_path==nil and state.selected_index==0 and next(state.selected_set)==nil)
+assert(state.region_start==0 and state.region_end==1 and state.results_scroll_y==0)
+assert(workspace_tab_activate(cached_first) and state.selected_path=='a.wav')
+workspace_tabs_invalidate()
+local stale_fresh=workspace_tab_new()
+assert(state.results~=unfiltered_rows and #state.results==0 and state.results_dirty)
+assert(workspace_tab_close(stale_fresh,"others"))
+
 -- Bound result-reference memory; no large array copies on switching.
 local original_limit, original_rows=WorkspaceTabs.cache_tabs,WorkspaceTabs.cache_rows
 WorkspaceTabs.cache_tabs=2 WorkspaceTabs.cache_rows=4
@@ -148,7 +187,19 @@ workspace_tabs_load_setting("workspace_tabs_json",neural_json_encode({schema=1,a
 assert(#state.workspace_tabs==1 and state.workspace_tabs[1].context.view=="all")
 assert(state.workspace_tabs[1].context.sort_mode=="name" and state.workspace_tabs[1].context.sort_desc==false)
 assert(state.workspace_tabs[1].context.root_filter==nil)
+-- Legacy descriptors migrate display IDs; malformed or duplicate numbers are
+-- repaired while valid numbers, custom names and stable IDs are preserved.
+workspace_tabs_load_setting("workspace_tabs_json",neural_json_encode({schema=1,active=87,tabs={
+  {id=87,context={}}, {id=203,name="Named",context={}}, {id=900,context={}}}}))
+assert(state.workspace_tabs[1].id==87 and state.workspace_tabs[1].number==1)
+assert(state.workspace_tabs[2].name=="Named" and state.workspace_tabs[2].number==2)
+workspace_tabs_load_setting("workspace_tabs_json",neural_json_encode({schema=1,active=87,tabs={
+  {id=87,number=3,context={}}, {id=203,number=3,context={}},
+  {id=900,number="bad",context={}}, {id=901,number=1.5,context={}}}}))
+assert(state.workspace_tabs[1].number==3 and state.workspace_tabs[2].number==1)
+assert(state.workspace_tabs[3].number==2 and state.workspace_tabs[4].number==4)
 workspace_tabs_load_setting(fields[2],fields[3]) workspace_tabs_initialize()
+assert(workspace_tab_by_id(state.workspace_tab_active).number==neural_json_decode(fields[3]).tabs[3].number)
 
 -- 100k references switch without cloning asset arrays or rebuilding results.
 local large={}
@@ -184,13 +235,20 @@ ImGui={TabBarFlags_FittingPolicyScroll=1,TabBarFlags_TabListPopupButton=2,
   WindowFlags_AlwaysAutoResize=64,Key_N=10,Key_W=11,Key_Tab=12,Key_Enter=13}
 local bar_balance,item_balance,popup_balance=0,0,0
 local visible=true local click_id,close_id,menu_action,plus,modal=nil,nil,nil,false,false
+local deferred_selection, queued_selection = false, nil
 local ui_selected=state.workspace_tab_active
-ImGui.BeginTabBar=function() if not visible then return false end bar_balance=bar_balance+1 return true end
+ImGui.BeginTabBar=function()
+  if not visible then return false end
+  if queued_selection then ui_selected=queued_selection queued_selection=nil end
+  bar_balance=bar_balance+1 return true
+end
 ImGui.EndTabBar=function() bar_balance=bar_balance-1 end
 ImGui.TabItemButton=function() return plus end
 ImGui.BeginTabItem=function(_,label,open,flags)
   local id=tonumber(label:match("workspace_tab_(%d+)$"))
-  if (flags & 32)~=0 then ui_selected=id elseif click_id==id then ui_selected=id end
+  if (flags & 32)~=0 then
+    if deferred_selection then queued_selection=id else ui_selected=id end
+  elseif click_id==id then ui_selected=id end
   local selected=ui_selected==id if selected then item_balance=item_balance+1 end
   return selected,close_id~=id
 end
@@ -231,6 +289,34 @@ plus=true draw_workspace_tabs() plus=false
 assert(state.workspace_tab_active~=other)
 draw_workspace_tabs() close_id=state.workspace_tab_active draw_workspace_tabs() close_id=nil
 assert(bar_balance==0 and item_balance==0 and popup_balance==0)
+-- Model real Dear ImGui's one-frame SetSelected delay (not the instantaneous
+-- mock used previously). New/close/keyboard selection must never bounce back.
+deferred_selection=true
+local prior_tab=state.workspace_tab_active
+plus=true draw_workspace_tabs() plus=false
+local delayed_new=state.workspace_tab_active
+assert(delayed_new~=prior_tab and state.workspace_tab_select==delayed_new)
+draw_workspace_tabs()
+assert(state.workspace_tab_active==delayed_new and state.workspace_tab_select==delayed_new,
+  "old visible tab must not cancel the queued new-tab request")
+draw_workspace_tabs()
+assert(ui_selected==delayed_new and state.workspace_tab_active==delayed_new and not state.workspace_tab_select)
+close_id=delayed_new draw_workspace_tabs() close_id=nil
+local after_close=state.workspace_tab_active
+draw_workspace_tabs() draw_workspace_tabs()
+assert(ui_selected==after_close and state.workspace_tab_active==after_close and not state.workspace_tab_select)
+for _=1,10 do
+  plus=true draw_workspace_tabs() plus=false
+  local requested=state.workspace_tab_active
+  visible=false draw_workspace_tabs() visible=true
+  assert(state.workspace_tab_select==requested,"clipping must preserve selection requests")
+  draw_workspace_tabs() draw_workspace_tabs()
+  assert(state.workspace_tab_active==requested and ui_selected==requested)
+  close_id=requested draw_workspace_tabs() close_id=nil
+  draw_workspace_tabs() draw_workspace_tabs()
+  assert(ui_selected==state.workspace_tab_active)
+end
+deferred_selection=false
 visible=false draw_workspace_tabs() assert(bar_balance==0 and item_balance==0)
 
 -- Run the real clipped results widget. ReaImGui ends a false BeginChild;
@@ -259,6 +345,30 @@ assert(child_balance==0 and state.results_scroll_request==10)
 local scrolls=0
 ImGui.SetScrollX=function(_,n) assert(n>=0) scrolls=scrolls+1 end
 ImGui.SetScrollY=function(_,n) assert(n>=0) scrolls=scrolls+1 end
+-- Every empty view uses the same pending state, rather than claiming an empty
+-- library/collection/AI batch while a result job is still working.
+assert(load(region(runtime,"function results_pending()","function rebuild_results()")))()
+ImGui.BeginChild=function() child_balance=child_balance+1 return true end
+ImGui.GetScrollX=function() return 0 end ImGui.GetScrollMaxX=function() return 0 end
+ImGui.GetScrollY=function() return 0 end ImGui.GetMousePos=function() return -1,-1 end
+ImGui.GetMouseWheel=function() return 0 end ImGui.GetKeyMods=function() return 0 end
+ImGui.Spacing=function() end
+local messages={}
+ImGui.TextDisabled=function(_,text) messages[#messages+1]=text end
+function draw_column_splitters() end
+function clamp(n,lo,hi) return math.max(lo,math.min(n,hi)) end
+state.results={} state.results_scroll_request=nil state.workspace_tab_scroll_restore=nil
+for _,view in ipairs({"all","similar","ai_semantic"}) do
+  state.view=view state.results_dirty=true state.results_job=nil messages={}
+  draw_results()
+  assert(#messages==1 and messages[1]=="正在更新结果…" and child_balance==0)
+  state.results_dirty=false state.results_job={stage="filter"} messages={}
+  draw_results()
+  assert(#messages==1 and messages[1]=="正在更新结果…" and child_balance==0)
+end
+state.view="all" state.results_job=nil state.results_dirty=false messages={}
+draw_results()
+assert(#messages==1 and messages[1]:find("没有结果",1,true))
 state.results_dirty=true state.workspace_tab_scroll_restore={x=123,y=456,frames=2}
 workspace_tabs_apply_scroll() assert(scrolls==0)
 state.results_dirty=false workspace_tabs_apply_scroll() assert(scrolls==2 and state.workspace_tab_scroll_restore)
@@ -270,6 +380,20 @@ assert(workspace_tabs_keyboard(true,false) and state.workspace_tab_active~=old)
 assert(workspace_tabs_keyboard(true,true) and state.workspace_tab_active==old)
 pressed=ImGui.Key_N assert(workspace_tabs_keyboard(true,false))
 pressed=ImGui.Key_W assert(workspace_tabs_keyboard(true,false))
+deferred_selection=true visible=true
+draw_workspace_tabs() draw_workspace_tabs()
+pressed=ImGui.Key_Tab assert(workspace_tabs_keyboard(true,false))
+local keyboard_target=state.workspace_tab_active
+draw_workspace_tabs() draw_workspace_tabs()
+assert(ui_selected==keyboard_target and state.workspace_tab_active==keyboard_target)
+pressed=ImGui.Key_N assert(workspace_tabs_keyboard(true,true))
+local keyboard_copy=state.workspace_tab_active
+draw_workspace_tabs() draw_workspace_tabs()
+assert(ui_selected==keyboard_copy and state.workspace_tab_active==keyboard_copy)
+pressed=ImGui.Key_W assert(workspace_tabs_keyboard(true,false))
+local keyboard_closed=state.workspace_tab_active
+draw_workspace_tabs() draw_workspace_tabs()
+assert(ui_selected==keyboard_closed and state.workspace_tab_active==keyboard_closed)
 pressed=nil assert(not workspace_tabs_keyboard(true,false) and not workspace_tabs_keyboard(false,false))
 
 print("Lua workspace tabs self-test passed: isolated context, bounded shared results, paging, persistence and UI stacks")

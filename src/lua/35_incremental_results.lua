@@ -201,3 +201,15 @@ function step_incremental_result_job(job, budget)
 
   return "pending"
 end
+
+function step_incremental_result_frame(job, budget, now, seconds)
+  -- Several bounded stages can share one defer frame. The deadline is checked
+  -- between stages; no unbounded synchronous catalog sort is introduced.
+  local deadline = now() + (seconds or 0.008)
+  local status, results, selected_index
+  for _=1,64 do
+    status, results, selected_index = step_incremental_result_job(job,budget)
+    if status == "complete" or now() >= deadline then break end
+  end
+  return status, results, selected_index
+end

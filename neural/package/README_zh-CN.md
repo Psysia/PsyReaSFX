@@ -9,7 +9,7 @@ EfficientAT `mn04_as` 模型生成音频 embedding，并通过 HNSW 加速全库
 **神经检索必须安装此包；基础声学检索和 AI 语义搜索不需要。
 更新主脚本不会自动安装它。**
 
-**[完整神经包 ZIP 精确下载 · Beta 8.2 · Windows x64 · 约 42.4 MB][neural-download]**
+**[完整神经包 ZIP 精确下载 · Beta 8.3 · Windows x64 · 约 42.4 MB][neural-download]**
 包含模型和安装脚本，不要只下载裸 EXE。
 
 1. 导入并同步 [PsyReaSFX 仓库](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml)。
@@ -17,7 +17,7 @@ EfficientAT `mn04_as` 模型生成音频 embedding，并通过 HNSW 加速全库
 3. 打开 `扩展 → ReaPack → 浏览软件包 / Browse packages`，搜索独立数据包
    [PsyReaSFX Neural Similarity][neural-download]，启用
    **Enable pre-releases (bleeding-edge)**，在 **Versions** 选最新 Beta
-   （当前 `0.9.0-beta8.2`），取消 **Pin current version**，点击 **Apply / OK**。
+   （当前 `0.9.0-beta8.3`），取消 **Pin current version**，点击 **Apply / OK**。
 4. 重新启动 PsyReaSFX。
 
 ReaPack 会把组件安装到 REAPER 的 `Data` 目录，并负责后续更新与卸载。可重建的
@@ -68,4 +68,4 @@ FLAC、MP3、M4A。安装 FFmpeg 后还会启用 OGG、Opus、WavPack 与 CAF；
 
 卸载或组件故障不会影响 PsyReaSFX；相似搜索会透明回退到基础算法。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.2/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_2_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.3/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_3_win_x64.zip

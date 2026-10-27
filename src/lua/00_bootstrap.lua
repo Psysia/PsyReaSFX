@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.2
+-- @version 0.9.0-beta8.3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -96,6 +96,7 @@
 --   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
 --   - Beta 8.1：字号拖动仅预览，松手应用布局，支持整数与 ±1 精调
 --   - Beta 8.2：独立浏览标签页、共享结果缓存、复制/重命名/关闭与轻量会话恢复
+--   - Beta 8.3：复用标签显示编号、延迟选中确认、结果更新提示与分帧构建提速
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -202,7 +203,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.2"
+local VERSION = "0.9.0 Beta 8.3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2227,6 +2228,7 @@ I18N_EN["只读保护下不能修改 UCS 分类"] =
   "UCS classification cannot be changed in read-only mode"
 I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
 I18N_EN["标签页"] = "Tab"
+I18N_EN["正在更新结果…"] = "Updating results…"
 I18N_EN["新建标签页"] = "New tab"
 I18N_EN["复制标签页"] = "Duplicate tab"
 I18N_EN["重命名标签页"] = "Rename tab"

@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.2
+-- @version 0.9.0-beta8.3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -96,6 +96,7 @@
 --   - Beta 8：字号联动缩放、文件夹导航、模块开关与可见目录缓存
 --   - Beta 8.1：字号拖动仅预览，松手应用布局，支持整数与 ±1 精调
 --   - Beta 8.2：独立浏览标签页、共享结果缓存、复制/重命名/关闭与轻量会话恢复
+--   - Beta 8.3：复用标签显示编号、延迟选中确认、结果更新提示与分帧构建提速
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -202,7 +203,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.2"
+local VERSION = "0.9.0 Beta 8.3"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2227,6 +2228,7 @@ I18N_EN["只读保护下不能修改 UCS 分类"] =
   "UCS classification cannot be changed in read-only mode"
 I18N_EN["UCS 搜索提示"] = "UCS search suggestions"
 I18N_EN["标签页"] = "Tab"
+I18N_EN["正在更新结果…"] = "Updating results…"
 I18N_EN["新建标签页"] = "New tab"
 I18N_EN["复制标签页"] = "Duplicate tab"
 I18N_EN["重命名标签页"] = "Rename tab"
@@ -5098,6 +5100,32 @@ local function default_context()
   return { search="", view="all", sort_mode="name", sort_desc=false }
 end
 
+local function assign_tab_numbers(tabs)
+  local used = {}
+  for _, tab in ipairs(tabs) do
+    local number = tab.number
+    if type(number) == "number" and number == math.floor(number)
+      and number >= 1 and number <= WorkspaceTabs.limit and not used[number] then
+      used[number] = true
+    else tab.number = nil end
+  end
+  for _, tab in ipairs(tabs) do
+    if not tab.number then
+      local number = 1
+      while used[number] do number = number + 1 end
+      tab.number, used[number] = number, true
+    end
+  end
+end
+
+local function next_tab_number()
+  local used = {}
+  for _, tab in ipairs(state.workspace_tabs) do used[tab.number] = true end
+  local number = 1
+  while used[number] do number = number + 1 end
+  return number
+end
+
 function workspace_tab_by_id(id)
   for index, tab in ipairs(state.workspace_tabs or {}) do
     if tab.id == id then return tab, index end
@@ -5122,8 +5150,11 @@ function workspace_tabs_invalidate(history_only)
 end
 
 function workspace_tabs_ensure()
-  if state.workspace_tabs and #state.workspace_tabs > 0 then return end
-  AppState.set("workspace_tabs", { { id=1, context=copy_fields(state, context_keys) } })
+  if state.workspace_tabs and #state.workspace_tabs > 0 then
+    assign_tab_numbers(state.workspace_tabs)
+    return
+  end
+  AppState.set("workspace_tabs", { { id=1, number=1, context=copy_fields(state, context_keys) } })
   AppState.set("workspace_tab_active", 1)
   AppState.set("workspace_tab_sequence", 1)
   AppState.set("workspace_tab_select", 1)
@@ -5285,7 +5316,20 @@ function workspace_tab_new(duplicate_id)
   local current = workspace_tab_capture()
   local source = duplicate_id and workspace_tab_by_id(duplicate_id)
   local id = (state.workspace_tab_sequence or 0) + 1
-  local tab = { id=id, context=source and copy_fields(source.context, context_keys) or default_context() }
+  -- Display numbers reuse free slots; internal IDs remain unique for ImGui,
+  -- caches and pending selection requests, including immediately after close.
+  local tab = { id=id, number=next_tab_number(),
+    context=source and copy_fields(source.context, context_keys) or default_context() }
+  if not source then
+    for _, cached in ipairs(state.workspace_tabs) do
+      if cached.runtime_valid and cached.revision == (state.workspace_tabs_revision or 0)
+        and cached.runtime and cached.runtime.results and context_equal(cached.context, tab.context) then
+        tab.runtime = {results=cached.runtime.results}
+        tab.runtime_valid, tab.revision = true, cached.revision
+        break
+      end
+    end
+  end
   if source then
     tab.name = source.name
     tab.runtime = source.runtime and copy_fields(source.runtime, runtime_keys)
@@ -5320,7 +5364,7 @@ function workspace_tab_close(id, mode)
     if #kept == 0 then
       -- Closing the final tab resets it to a fresh browser, never exits REAPER.
       local next_id = (state.workspace_tab_sequence or 0) + 1
-      kept[1] = { id=next_id, context=default_context() }
+      kept[1] = { id=next_id, number=1, context=default_context() }
       AppState.set("workspace_tab_sequence", next_id)
     end
     local target = mode == "others" and tab or kept[math.min(position, #kept)]
@@ -5354,7 +5398,7 @@ function workspace_tab_title(tab)
   if collection then return collection.name end
   local titles = {favorites="收藏",recent="最近插入",previewed="试听历史",project_used="工程已用"}
   if titles[context.view] then return translate_ui_text(titles[context.view]) end
-  return translate_ui_text("标签页") .. " " .. tab.id
+  return translate_ui_text("标签页") .. " " .. tab.number
 end
 
 function workspace_tab_label(tab)
@@ -5380,7 +5424,7 @@ function workspace_tabs_write_settings(file)
   workspace_tabs_track()
   local tabs = {}
   for _, tab in ipairs(state.workspace_tabs) do
-    tabs[#tabs+1] = { id=tab.id, name=tab.name, context=copy_fields(tab.context, context_keys) }
+    tabs[#tabs+1] = { id=tab.id, number=tab.number, name=tab.name, context=copy_fields(tab.context, context_keys) }
   end
   file:write("setting\tworkspace_tabs_json\t", escape_tsv(neural_json_encode({schema=1,
     active=state.workspace_tab_active, sequence=state.workspace_tab_sequence, tabs=tabs})), "\n")
@@ -5416,11 +5460,14 @@ function workspace_tabs_load_setting(name, value)
       context.sort_mode = allowed_sorts[context.sort_mode] and context.sort_mode or "name"
       context.sort_desc = input.context.sort_desc == true
       local name = type(input.name) == "string" and compact(trim(input.name),64) or ""
-      tabs[#tabs+1] = {id=id, name=name ~= "" and name or nil, context=context}
+      tabs[#tabs+1] = {id=id, number=input.number, name=name ~= "" and name or nil, context=context}
       ids[id], sequence = true, math.max(sequence,id)
     end
   end
   if #tabs > 0 then
+    -- Older settings have only monotonically increasing IDs. Migrate their
+    -- visible numbers without changing IDs, names, ordering or search scopes.
+    assign_tab_numbers(tabs)
     AppState.set("workspace_tabs", tabs)
     AppState.set("workspace_tab_sequence", sequence)
     AppState.set("workspace_tab_active", ids[data.active] and data.active or tabs[1].id)
@@ -5491,7 +5538,8 @@ end
 
 function draw_workspace_tabs()
   workspace_tabs_track()
-  local action, id
+  local action, id, confirmed_selection
+  local requested_selection = state.workspace_tab_select
   if ImGui.BeginTabBar(ctx, "##workspace_tabs", ImGui.TabBarFlags_FittingPolicyScroll | ImGui.TabBarFlags_TabListPopupButton) then
     if ImGui.TabItemButton(ctx, "+##workspace_new_tab", ImGui.TabItemFlags_Trailing) then action="new" end
     tooltip("新建标签页（Ctrl+N）；复制当前页 Ctrl+Shift+N；关闭 Ctrl+W；切换 Ctrl+Tab")
@@ -5500,7 +5548,8 @@ function draw_workspace_tabs()
       if tab.id == state.workspace_tab_select then flags = flags | ImGui.TabItemFlags_SetSelected end
       local selected, open = ImGui.BeginTabItem(ctx, workspace_tab_label(tab), true, flags)
       if selected then
-        if not action and not state.workspace_tab_select and tab.id ~= state.workspace_tab_active then
+        if tab.id == requested_selection then confirmed_selection = true end
+        if not action and not requested_selection and tab.id ~= state.workspace_tab_active then
           action, id="activate",tab.id
         end
         ImGui.EndTabItem(ctx)
@@ -5525,13 +5574,18 @@ function draw_workspace_tabs()
       end
     end
     ImGui.EndTabBar(ctx)
-    AppState.set("workspace_tab_select", nil)
+    -- Dear ImGui queues SetSelected for the following frame. An old visible
+    -- tab is not a user selection until the requested target is confirmed.
+    if confirmed_selection then AppState.set("workspace_tab_select", nil) end
   end
   -- Mutate only after all tab items/popups have been balanced.
   if action == "new" then workspace_tab_new()
   elseif action == "duplicate" then workspace_tab_new(id)
   elseif action == "activate" then
-    if not workspace_tab_activate(id) then AppState.set("workspace_tab_select", state.workspace_tab_active) end
+    if workspace_tab_activate(id) then
+      -- Native selection is already visible; do not send a redundant request.
+      AppState.set("workspace_tab_select", nil)
+    else AppState.set("workspace_tab_select", state.workspace_tab_active) end
   elseif action == "close" or action == "others" or action == "right" then
     if not workspace_tab_close(id, action ~= "close" and action or nil) then
       AppState.set("workspace_tab_select", state.workspace_tab_active)
@@ -9929,6 +9983,18 @@ function step_incremental_result_job(job, budget)
   end
 
   return "pending"
+end
+
+function step_incremental_result_frame(job, budget, now, seconds)
+  -- Several bounded stages can share one defer frame. The deadline is checked
+  -- between stages; no unbounded synchronous catalog sort is introduced.
+  local deadline = now() + (seconds or 0.008)
+  local status, results, selected_index
+  for _=1,64 do
+    status, results, selected_index = step_incremental_result_job(job,budget)
+    if status == "complete" or now() >= deadline then break end
+  end
+  return status, results, selected_index
 end
 
 -- Generation-bound asset journal codec. Decoding validates the complete
@@ -20866,8 +20932,8 @@ local function result_sort_comparator()
 end
 
 function start_results_rebuild()
-  state.results_dirty = false
-  state.results_job = begin_incremental_result_job(
+  AppState.set("results_dirty", false)
+  AppState.set("results_job", begin_incremental_result_job(
     state.assets,
     function(asset)
       return asset_in_view(asset) and matches_search(asset)
@@ -20875,7 +20941,7 @@ function start_results_rebuild()
     result_sort_comparator(),
     cached_sort_path,
     state.selected_path and path_key(state.selected_path) or nil
-  )
+  ))
 end
 
 function process_results_rebuild()
@@ -20884,9 +20950,11 @@ function process_results_rebuild()
   end
 
   local status, results, selected_index =
-    step_incremental_result_job(
+    step_incremental_result_frame(
       state.results_job,
-      RESULT_BUILD_DEFAULT_BUDGET
+      RESULT_BUILD_DEFAULT_BUDGET,
+      HostApi.time_precise,
+      0.008
     )
 
   if status == "complete" then
@@ -20894,6 +20962,10 @@ function process_results_rebuild()
     state.selected_index = selected_index
     state.results_job = nil
   end
+end
+
+function results_pending()
+  return state.results_dirty or state.results_job ~= nil
 end
 
 function rebuild_results()
@@ -32172,13 +32244,8 @@ function draw_sub_toolbar()
 
   ImGui.SameLine(ctx)
 
-  ImGui.TextDisabled(
-    ctx,
-    string.format(
-      "　%d 个结果",
-      #state.results
-    )
-  )
+  ImGui.TextDisabled(ctx, results_pending() and "正在更新结果…"
+    or string.format("　%d 个结果", #state.results))
 
   local sort_clicked = false
   if "ai_semantic" ~= state.view then
@@ -34016,7 +34083,9 @@ function draw_results()
         ]
         or nil
 
-      if "similar" == state.view then
+      if results_pending() then
+        ImGui.TextDisabled(ctx, "正在更新结果…")
+      elseif "similar" == state.view then
         ImGui.TextDisabled(
           ctx,
           "没有可显示的相似声音结果。"

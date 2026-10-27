@@ -4720,8 +4720,8 @@ local function result_sort_comparator()
 end
 
 function start_results_rebuild()
-  state.results_dirty = false
-  state.results_job = begin_incremental_result_job(
+  AppState.set("results_dirty", false)
+  AppState.set("results_job", begin_incremental_result_job(
     state.assets,
     function(asset)
       return asset_in_view(asset) and matches_search(asset)
@@ -4729,7 +4729,7 @@ function start_results_rebuild()
     result_sort_comparator(),
     cached_sort_path,
     state.selected_path and path_key(state.selected_path) or nil
-  )
+  ))
 end
 
 function process_results_rebuild()
@@ -4738,9 +4738,11 @@ function process_results_rebuild()
   end
 
   local status, results, selected_index =
-    step_incremental_result_job(
+    step_incremental_result_frame(
       state.results_job,
-      RESULT_BUILD_DEFAULT_BUDGET
+      RESULT_BUILD_DEFAULT_BUDGET,
+      HostApi.time_precise,
+      0.008
     )
 
   if status == "complete" then
@@ -4748,6 +4750,10 @@ function process_results_rebuild()
     state.selected_index = selected_index
     state.results_job = nil
   end
+end
+
+function results_pending()
+  return state.results_dirty or state.results_job ~= nil
 end
 
 function rebuild_results()
@@ -16026,13 +16032,8 @@ function draw_sub_toolbar()
 
   ImGui.SameLine(ctx)
 
-  ImGui.TextDisabled(
-    ctx,
-    string.format(
-      "　%d 个结果",
-      #state.results
-    )
-  )
+  ImGui.TextDisabled(ctx, results_pending() and "正在更新结果…"
+    or string.format("　%d 个结果", #state.results))
 
   local sort_clicked = false
   if "ai_semantic" ~= state.view then
@@ -17870,7 +17871,9 @@ function draw_results()
         ]
         or nil
 
-      if "similar" == state.view then
+      if results_pending() then
+        ImGui.TextDisabled(ctx, "正在更新结果…")
+      elseif "similar" == state.view then
         ImGui.TextDisabled(
           ctx,
           "没有可显示的相似声音结果。"
