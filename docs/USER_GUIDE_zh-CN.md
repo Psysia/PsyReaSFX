@@ -1,6 +1,6 @@
 # PsyReaSFX 用户使用说明书
 
-**适用版本：** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 8.7
+**适用版本：** PsyReaSFX 0.9.0 Stable
 **作者：** Psysia  
 **宿主：** REAPER 7.x
 
@@ -42,17 +42,13 @@ SWS 用于波形点击精确定位、选区试听、高级 Preview 参数、声�
    ```
 
 3. 同步软件包，打开 `浏览软件包 / Browse packages`，搜索 `PsyReaSFX`。
-4. 普通安装默认使用稳定版。要体验最新版 Beta，右键主程序包
-   `PsyReaSFX`（脚本 `PsyReaSFX.lua`），勾选
-   **Enable pre-releases (bleeding-edge)**，再在 **Versions** 中选择最新 Beta
-   （当前 `0.9.0-beta8.7`）。**Pin current version** 应保持未勾选；已固定时先取消。
+4. 安装／更新 `PsyReaSFX.lua` 至 **0.9.0 正式版**。普通同步即可，无需启用预发布；已固定旧版本时先取消 **Pin current version**。
 5. 点击 **Apply**，或 **OK** 确认应用安装。下载结束后关闭旧 PsyReaSFX 窗口，
    从 REAPER 动作列表重新运行；需要时给它绑定快捷键。
 
-普通同步不会自动加入 Beta。下图演示菜单位置；截图拍摄时仍有旧 Beta，
-同步后 Versions 仅保留最新 Beta、0.8.5 Stable 和 0.7.23 Stable。
+保留的历史 Beta 截图用于说明菜单位置。Versions 现在列出 0.9.0、0.8.5 与 0.7.23 正式版；预发布开关仅用于将来的测试版本。
 
-<p><a href="../website/assets/screenshots/reapack-enable-beta.jpg"><img src="../website/assets/screenshots/reapack-enable-beta.jpg" alt="ReaPack：启用预发布，在 Versions 选择最新 Beta，再点击 Apply 或 OK" width="800"></a></p>
+<p><a href="../website/assets/screenshots/reapack-enable-beta.jpg"><img src="../website/assets/screenshots/reapack-enable-beta.jpg" alt="历史 ReaPack 菜单位置：Versions、Pin current version 与 Apply / OK" width="800"></a></p>
 
 新增功能见 [README 版本功能对比](../README_zh-CN.md#版本功能对比)。
 更新主脚本无需重建音效库。AI 语义搜索无需[神经组件][neural-download]，但需要在设置中填写自己的
@@ -60,17 +56,16 @@ API Key 和模型；神经相似检索则需要下面的独立可选包。
 
 ReaPack 会安装主脚本、应用图标和 Orbitron 品牌字体，以后也通过同一个仓库更新。
 
-### 可选神经相似度组件（Beta 8.7）
+### 可选神经相似度组件（0.9.0）
 
 **神经检索必须单独安装附加包；只更新 PsyReaSFX.lua 不会自动安装。
 基础 15 维声学检索与 AI 语义搜索都不需要此包。**
 
-**[完整神经包 ZIP 精确下载 · Beta 8.7 · Windows x64 · 约 42.4 MB][neural-download]**
+**[完整神经包 ZIP 精确下载 · 0.9.0 · Windows x64 · 约 42.4 MB][neural-download]**
 包含程序、模型和安装脚本；不要只下载裸 EXE。
 
 推荐方式：同步仓库，打开 `扩展 → ReaPack → 浏览软件包 / Browse packages`，
-搜索独立数据包 [PsyReaSFX Neural Similarity][neural-download]。右键启用
-**Enable pre-releases (bleeding-edge)**，在 **Versions** 选择 `0.9.0-beta8.7`，
+搜索独立数据包 [PsyReaSFX Neural Similarity][neural-download]。选择 **Install**，或在 **Versions** 选择 `0.9.0`，
 取消 **Pin current version**，点击 **Apply / OK**。下载结束后关闭旧窗口，
 重新运行 PsyReaSFX。ReaPack 会把程序和模型安装到
 `<REAPER 资源目录>\Data\PsyReaSFX\neural_similarity\`，独立负责后续更新与卸载。
@@ -111,13 +106,13 @@ PsyReaSFX_vX_X_X/
 
 Watch Folder 默认开启，每 60 秒在后台检查已导入来源及其子目录，自动发现并加载新音频；可在 `设置 → 常规` 调整为 15–600 秒。它是周期检查，不是实时系统监听。放在来源之外的新音效库需要先添加来源；程序关闭时不运行。
 
-Beta 8.7 可直接点击顶部时钟按钮开关 Watch Folder（高亮为开启），也可右键扫描按钮切换。关闭停止后续自动检查，当前导入或后台补全继续完成。
+0.9.0 可直接点击顶部时钟按钮开关 Watch Folder（高亮为开启），也可右键扫描按钮切换。关闭停止后续自动检查，当前导入或后台补全继续完成。
 
 右侧元数据面板右键定位**厂商具体产品包**，而非导入时设置的逻辑大库或厂商全集。例如同一 BOOM 合集中的 Cinematic Hits 与 Cinematic Trailers 分别定位各自目录。优先匹配原始音频 Library／Album／Product metadata 与目录名称，再结合素材封面位置、相同内容封面和明显的产品包命名；最多检查当前目录及向上 6 级。`WAV`、`Stereo`、`Footsteps`、日期和厂商合集等泛化名称不足以认定产品。识别到具体产品目录后停止向上扩展；无法可靠识别则显示当前文件夹。
 
 封面匹配使用同一个文件或最多 2 MB 的字节相同副本，不进行 AI 图像识别。只读取当前素材 metadata 和少量附近文件，不扫描全部库；旧库无需重建。结果显示目标目录及子目录内**已导入的素材**，保留当前素材并清除原搜索/UCS/集合/状态筛选，不修改目录或音频。
 
-**本次直接跳转修复只需更新主脚本至 Beta 8.7 并重开；独立 [PsyReaSFX Neural Similarity][neural-download] 已是 Beta 8.5 的用户无需更新组件。** 更早组件需更新才能显示音频窗口进度与窗口间取消。首次全局搜索仍逐条计算未缓存音频，后续复用兼容缓存，无需重建或生成转码副本。
+**本次直接跳转修复只需更新主脚本至 0.9.0 并重开；独立 [PsyReaSFX Neural Similarity][neural-download] 已是 Beta 8.5 的用户无需更新组件。** 更早组件需更新才能显示音频窗口进度与窗口间取消。首次全局搜索仍逐条计算未缓存音频，后续复用兼容缓存，无需重建或生成转码副本。
 
 Watch Folder 默认在后台静默检查来源变化。检查期间只会让顶部扫描图标产生
 轻微动态提示；没有变化时不会显示完成消息。发现新增、移除或失败素材后，
@@ -137,7 +132,7 @@ Watch Folder 默认在后台静默检查来源变化。检查期间只会让顶�
 
 左上角 PsyReaSFX 标记由程序直接绘制为矢量图形，因此在紧凑尺寸和高 DPI 下仍然清晰。产品字标会优先使用随包附带的 Orbitron 字体。
 
-### 独立浏览标签页（Beta 8.7）
+### 独立浏览标签页（0.9.0）
 
 搜索框下方点 `+` 或按 `Ctrl+N` 新建空页。右键标签可复制、重命名、关闭其他/右侧及左右移动；中键或标签关闭按钮关闭。`Ctrl+Shift+N` 复制当前页，`Ctrl+W` 关闭，`Ctrl+Tab / Ctrl+Shift+Tab` 前后切换。原 `Ctrl+T` 仍是 Transfer。
 
@@ -278,7 +273,7 @@ whoosh category:movement -long
 
 保存搜索可以记录查询文字、库、集合、工作流筛选和排序方向。适合建立重复使用的审核视图，不需要为了不同查看方式复制素材文件。
 
-### AI 语义搜索（Beta 8.7）
+### AI 语义搜索（0.9.0）
 
 顶部搜索框是普通搜索和 AI 语义搜索的统一入口。输入普通关键词后按 `Enter`，继续执行本地普通搜索；输入自然语言描述后点击金色 `AI` 按钮，或按 `Ctrl+Shift+F`，会直接开始 AI 语义搜索并在完成后显示对应结果，不再打开额外搜索窗口。它不属于“查找相似声音”：相似声音以某个音频为参考，AI 语义搜索则直接接受自然语言描述，例如：
 
@@ -312,9 +307,9 @@ API 请求可能产生服务商费用，配额和数据保留规则以用户选�
 
 本地召回优先级为文件名、Keywords、Description、UCS Category、SubCategory、CatID、音效库和路径；匹配正向扩展词会加分，命中排除词会扣分。AI 不再对候选逐条评分，因此结果列表不显示“AI 相关度”列，也不会出现后台重排状态。
 
-Beta 8.7 中，AI 搜索只显示“理解描述”和“本地召回”两种阶段状态。本地召回复用文本粗筛与预编译扩展词，完成后立即结束任务，后续每页 120 条直接从内存追加，不联网。正常搜索一次 API 请求；空答案、截断或 JSON 异常最多重试一次，可能额外计费。DeepSeek 关闭思考；`gpt-6-luna` 在自定义网关同样关闭推理，使用 `max_completion_tokens` 与 JSON mode。连接测试上限 256、计划 1200 tokens，重试上限 1024/2400（不是固定消耗）。其他未知兼容模型不强加专有参数；具体网关需要测试确认。
+0.9.0 中，AI 搜索只显示“理解描述”和“本地召回”两种阶段状态。本地召回复用文本粗筛与预编译扩展词，完成后立即结束任务，后续每页 120 条直接从内存追加，不联网。正常搜索一次 API 请求；空答案、截断或 JSON 异常最多重试一次，可能额外计费。DeepSeek 关闭思考；`gpt-6-luna` 在自定义网关同样关闭推理，使用 `max_completion_tokens` 与 JSON mode。连接测试上限 256、计划 1200 tokens，重试上限 1024/2400（不是固定消耗）。其他未知兼容模型不强加专有参数；具体网关需要测试确认。
 
-自定义地址需填完整 Chat Completions URL（例如 `https://ai-gateway.kurogames.com/v1/chat/completions`），模型名称按服务商填写。Beta 8.7 会区分截断、仅返回推理、过滤/拒绝与缺少 `choices/message`；它们不等于密钥未保存。若更新后仍报错，请提供模型名和错误提示，不要发送 API Key 或原始响应正文。
+自定义地址需填完整 Chat Completions URL（例如 `https://ai-gateway.kurogames.com/v1/chat/completions`），模型名称按服务商填写。0.9.0 会区分截断、仅返回推理、过滤/拒绝与缺少 `choices/message`；它们不等于密钥未保存。若更新后仍报错，请提供模型名和错误提示，不要发送 API Key 或原始响应正文。
 
 第一版依赖素材已有的文件名和文本元数据。对于名称无意义、没有 Description/Keywords/UCS 信息的素材，语义效果会受限；后续本地音频—文本 embedding 将解决这类素材的内容理解问题。
 
@@ -328,7 +323,7 @@ Beta 8.7 中，AI 搜索只显示“理解描述”和“本地召回”两种�
 不使用文件名、UCS 分类或关键词。没有频谱数据的格式仍可使用时间域特征比较。
 设置 → 波形中可以清空相似特征缓存，源音频不会被修改。
 
-安装 Beta 8.7 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
+安装 0.9.0 可选组件后，PsyReaSFX 会优先使用 EfficientAT embedding 召回，再与
 现有时长、起音、瞬态和包络特征混合重排。内建 Windows 解码路径支持常见采样率
 与 PCM16/PCM24/PCM32/float WAV，以及 AIFF、FLAC、MP3、M4A；检测到 FFmpeg 后还
 支持 OGG、Opus、WavPack 与 CAF。音频只在内存中下混并重采样到 32 kHz，不会生成
@@ -573,7 +568,7 @@ FX、发送、文件夹路由或 Master FX 新产生的尾音。执行 Transfer 
 
 ## 16. 外观与易用性
 
-### Beta 8.7：字体与导航
+### 0.9.0：字体与导航
 
 **字号拖动优化：** 拖动滑块时只改变下方预览，滑块和设置页保持原位置；松手后一次性应用全局字体与布局。可用 `− / +` 每次调整 1 px，或 Ctrl+单击滑块输入整数。预览不写入配置；保存并关闭保存已应用字号。
 
@@ -716,7 +711,7 @@ PsyReaSFX 会记录插入当前已保存 `.rpp` 工程的素材。项目素材�
 - 索引中的未完成素材会直接接续分析，不再重新扫描全库；真正中断的目录扫描仍从来源恢复，显示单行状态及取消按钮。
 - 已记录的失败素材通过“重试全部失败任务”处理，自动恢复不会反复重试这些文件；关闭启动恢复设置会同时关闭未完成素材自动接续。
 - 个别文件失败时，使用维护页的“重试全部失败任务”，不需要重建整库。
-- Beta 8.7 会对 Windows 260 字符及以上路径的 PCM/float WAV 直接读取波形；更新后可在 `设置 → 可靠性与恢复 → 重试全部失败任务` 重新处理旧失败记录。此过程不会复制、转码或修改源文件。
+- 0.9.0 会对 Windows 260 字符及以上路径的 PCM/float WAV 直接读取波形；更新后可在 `设置 → 可靠性与恢复 → 重试全部失败任务` 重新处理旧失败记录。此过程不会复制、转码或修改源文件。
 
 ### 没有波形，也无法试听
 
@@ -727,7 +722,7 @@ PsyReaSFX 会记录插入当前已保存 `.rpp` 工程的素材。项目素材�
 
 ### 第一次显示较慢
 
-Beta 8.7 显示居中品牌启动画面、青色波形动效、真实加载阶段、素材数量和已用时间。动效表示程序正在工作，不代表完成百分比；没有固定播放时长，校验完成立即进入素材库。小窗口或加载失败时使用简洁文字。矢量绘制无需图片、视频或附加包，不读取音频也不遍历素材库。保留 Beta 7.12 的索引加速及空闲 24 ms / 播放 12 ms 启动预算；完整校验后开放搜索、试听和编辑，加载中关闭不会保存部分数据。已有音频、索引与波形缓存保持不变，无需重建或转码。
+0.9.0 显示居中品牌启动画面、青色波形动效、真实加载阶段、素材数量和已用时间。动效表示程序正在工作，不代表完成百分比；没有固定播放时长，校验完成立即进入素材库。小窗口或加载失败时使用简洁文字。矢量绘制无需图片、视频或附加包，不读取音频也不遍历素材库。保留 Beta 7.12 的索引加速及空闲 24 ms / 播放 12 ms 启动预算；完整校验后开放搜索、试听和编辑，加载中关闭不会保存部分数据。已有音频、索引与波形缓存保持不变，无需重建或转码。
 
 ### 神经相似度没有启用
 
@@ -750,10 +745,7 @@ PsyReaSFX 内部统一使用 UTF-8。个别源文件元数据可能采用旧编�
 
 ## 21. 稳定版支持与问题反馈
 
-PsyReaSFX 0.8.5 是当前稳定版本。ReaPack 会把它与 0.9.0 Beta 8.7
-作为同一个包的不同版本发布。普通同步默认留在 Stable；需要测试新版时，
-右键 PsyReaSFX，启用单包预发布版本，然后从“Versions”选择目标版本。
-GitHub Release 仍永久保留 0.7.23 Stable ZIP。
+PsyReaSFX 0.9.0 是当前正式版，普通 ReaPack 同步即可更新同一个包；已固定旧版时先取消固定。ReaPack 保留 0.8.5 和 0.7.23 历史稳定版，历史 Beta 仍可从 GitHub Releases 下载。
 
 项目主页：[github.com/Psysia/PsyReaSFX](https://github.com/Psysia/PsyReaSFX)
 
@@ -765,4 +757,4 @@ GitHub Release 仍永久保留 0.7.23 Stable ZIP。
 4. 完整 ReaScript 报错文字；
 5. 如果属于视觉问题，提供截图或短录屏。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip

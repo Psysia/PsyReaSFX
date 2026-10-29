@@ -3,22 +3,22 @@
 This directory contains the [local neural-audio component][neural-download]. It is a
 separate optional ReaPack data package and does not upload audio.
 
-**[Download the complete Windows x64 neural ZIP · Beta 8.7 · about 42.4 MB][neural-download]**
+**[Download the complete Windows x64 neural ZIP · 0.9.0 · about 42.4 MB][neural-download]**
 includes executable, model and installers; the standalone EXE alone is insufficient.
 Neural retrieval requires this component; built-in acoustic search and AI semantic
 search do not.
 
 Synchronize the [ReaPack repository](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml),
 open `Extensions → ReaPack → Browse packages`, and search for
-[PsyReaSFX Neural Similarity][neural-download]. Enable pre-releases for this separate
-data package, choose the latest Beta under Versions (currently `0.9.0-beta8.7`),
+[PsyReaSFX Neural Similarity][neural-download]. Install this separate stable
+data package (Versions → `0.9.0`);
 unpin if needed, click Apply / OK, and restart PsyReaSFX.
 Alternatively, download the complete ZIP above, extract everything, and run
 `Install-NeuralSimilarity.cmd`; see the [installer guide](package/README.md).
 No separate Python or .NET runtime is required.
 
 Package and layout smoke tests are implemented by
-`tools/Build-BetaRelease.ps1`, `tools/Test-NeuralPackage.ps1`, and
+`tools/Build-Release.ps1`, `tools/Test-NeuralPackage.ps1`, and
 `tools/Test-ReaPackNeuralPackage.ps1`.
 
 The first frozen profile is `mn04_as_scene_320_v1`:
@@ -68,7 +68,7 @@ are reusable while their source drive is offline. Changed or new records are
 validated before and after reading. A cancellation file is checked between audio
 windows and assets and leaves the previous cache generation untouched. Model
 loading, decoding and window counts are reported in atomic status files. Update
-the main script to Beta 8.7 and restart for direct inspector navigation; a Beta
+the main script to 0.9.0 and restart for direct inspector navigation; a Beta
 8.5 neural component remains compatible and needs no update. Existing caches
 remain compatible. First global computation still requires time. Cache, status, and
 result files are all replaced atomically.
@@ -118,4 +118,4 @@ It uses the extensions advertised by the installed sidecar rather than imposing
 a fixed sample-rate or bit-depth rule. Older sidecars without decoder capability
 metadata keep the Beta 5 restriction for safety.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip

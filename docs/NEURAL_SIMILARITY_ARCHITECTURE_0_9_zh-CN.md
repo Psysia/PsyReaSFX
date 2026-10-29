@@ -1,14 +1,14 @@
 # PsyReaSFX 0.9 神经音频相似度架构
 
 **使用神经检索必须安装 [PsyReaSFX Neural Similarity 完整神经包 ZIP][neural-download]**
-（当前 Beta 8.4，Windows x64，约 42.4 MB，含程序、模型与安装脚本）。
-推荐在 ReaPack 浏览软件包中搜索同名独立数据包，启用预发布、选择最新 Beta，
+（当前 0.9.0 正式版，Windows x64，约 42.4 MB，含程序、模型与安装脚本）。
+推荐在 ReaPack 浏览软件包中搜索同名独立数据包，安装 0.9.0 正式版，
 点击 Apply / OK 后重启；手动方式为完整解压 ZIP 并运行
 `Install-NeuralSimilarity.cmd`。[完整安装步骤](https://psysia.github.io/PsyReaSFX/#neural-install)。
 基础声学相似检索与独立 AI 语义搜索不依赖此包。
 
-更新日期：2026-09-15
-状态：Beta 7；Lua 可选接入、进度、取消、混合重排、故障回退、通用媒体解码/重采样及 ReaPack 可选组件安装已实现
+更新日期：2026-10-29
+状态：0.9.0 正式版；Lua 可选接入、进度、取消、混合重排、故障回退、通用媒体解码/重采样及 ReaPack 可选组件安装已实现
 
 ## 1. 目标与边界
 
@@ -16,7 +16,7 @@ Beta 4.5 已交付基于 RWF4 的 15 维手工声学特征、精确分桶剪枝�
 结果堆。该实现继续作为无需额外组件的基础模式，并承担神经检索后的声学重排与
 故障回退，不删除、不替换其缓存格式。
 
-下一阶段增加可选的 AudioSet embedding，用于表达事件、材质、场景和复杂纹理；
+当前实现采用可选的 AudioSet embedding，用于表达事件、材质、场景和复杂纹理；
 HNSW 只负责从大库中快速召回候选，最终排序仍结合现有时长、起音、瞬态、包络与
 频谱统计。首版不做文本搜声音、不联网推理、不上传音频，也不根据文件名、UCS 或
 用户标签修正 embedding 分数。
@@ -203,4 +203,4 @@ HNSW 索引使用 `PSYHNSW1` magic，并保存格式版本、profile、模型哈
 - EfficientAT 论文：<https://arxiv.org/abs/2211.04772>
 - Low-complexity Audio Embedding Extractors：<https://arxiv.org/abs/2303.01879>
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip

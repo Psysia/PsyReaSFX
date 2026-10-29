@@ -1,19 +1,42 @@
-PsyReaSFX Personal Use License 1.0
+PsyReaSFX Free Use and No Redistribution License 1.1
 
 Copyright (c) 2026 Psysia. All rights reserved.
 
-Permission is granted to any individual to download, view, and use this
-software for personal, non-commercial purposes only.
+Permission is granted to individuals and organizations to download, view,
+install, and use this software free of charge for personal and commercial
+projects, including professional sound design and commercial game production.
 
-Private modification for personal, non-commercial use is permitted. You may
-not publish, redistribute, sublicense, sell, rent, host, mirror, or otherwise
-make available the original software, modified versions, derivative works, or
-substantial portions of the software to any third party.
+Private modification for your own internal use is permitted. Without prior
+written permission from the copyright holder, you may not publish modified
+versions, redistribute, sublicense, sell, rent, host, mirror, bundle, or
+otherwise make available the original software, modified versions, derivative
+software, or substantial portions of the software to any third party, whether
+free of charge or for payment. Linking to official project downloads is allowed.
 
-Commercial use is prohibited without prior written permission from the
-copyright holder. Permissions automatically required for hosting, displaying, or
-forking the repository within GitHub are governed by GitHub's platform terms and
-do not grant additional rights outside that service.
+These restrictions apply to the software itself, not to audio, game projects,
+renders, or other creative outputs you produce using it. You may deliver,
+distribute, and sell your own outputs without permission or royalties under
+this license, subject to the licenses of any source media you use.
+
+You may not use the source code or other protected project materials to train,
+fine-tune, or distill AI models without prior written permission. Except for
+the private modifications permitted above, you may not use those materials as
+inputs to generate copies, ports, or derivative software without prior written
+permission. AI-assisted copying does not grant
+an exception to the restrictions on copying, republishing, or redistribution.
+This clause does not restrict the software's intended AI search feature or
+your use of AI tools with your own audio, queries, or creative outputs.
+
+Official distribution by the copyright holder through GitHub, ReaPack, or
+other designated channels is authorized. Permissions automatically required
+for hosting, displaying, or forking this repository within GitHub are governed
+by GitHub's platform terms and do not grant additional rights outside that
+service. This is a source-available license, not an open-source license.
+
+Third-party components and assets identified by their own license notices,
+including EfficientAT models and implementations, remain governed by those
+licenses. This license does not revoke or restrict rights granted by their
+respective copyright holders.
 
 The name PsyReaSFX and the name Psysia may not be used to endorse or promote
 products derived from this software without prior written permission.

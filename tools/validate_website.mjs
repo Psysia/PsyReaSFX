@@ -92,7 +92,6 @@ for (const required of [
   'name="twitter:card"',
   'rel="manifest"',
   'data-stable-download',
-  'data-preview-download',
   'data-neural-download',
   'id="beta-install"',
   'id="version-comparison"',
@@ -102,7 +101,7 @@ for (const required of [
   if (!html.includes(required)) fail(`Missing required homepage marker: ${required}`);
 }
 
-const neuralZipPattern = /^https:\/\/github\.com\/Psysia\/PsyReaSFX\/releases\/download\/v[\d.]+-beta[\d.]+\/PsyReaSFX_Neural_Similarity_v[\d_]+_beta[\d_]+_win_x64\.zip$/;
+const neuralZipPattern = /^https:\/\/github\.com\/Psysia\/PsyReaSFX\/releases\/download\/v[\d.]+(?:-beta[\d.]+)?\/PsyReaSFX_Neural_Similarity_v[\d_]+(?:_beta[\d_]+)?_win_x64\.zip$/;
 const fallbackNeuralUrl = vm.runInNewContext("NEURAL_FALLBACK_URL", sandbox);
 if (!neuralZipPattern.test(fallbackNeuralUrl)) fail("Neural fallback must be a complete release ZIP");
 for (const source of [html, ...Object.values(messages.en), ...Object.values(messages.zh)]) {
@@ -132,8 +131,7 @@ try {
       { name: "PsyReaSFX.NeuralSidecar_v0_9_0_beta99_1_win_x64.exe", browser_download_url: "https://example.com/bare.exe" },
       {
         name: "PsyReaSFX_Neural_Similarity_v0_9_0_beta99_1_win_x64.zip",
-        browser_download_url: fallbackNeuralUrl.replace(/-beta[\d.]+\//, "-beta99.1/")
-          .replace(/_beta[\d_]+_win_x64/, "_beta99_1_win_x64"),
+        browser_download_url: "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta99.1/PsyReaSFX_Neural_Similarity_v0_9_0_beta99_1_win_x64.zip",
       },
     ],
   };
@@ -149,8 +147,42 @@ try {
   if (links[0].href !== sandbox.__neuralFixture.assets[2].browser_download_url) {
     throw new Error("Language switching or Lua-only release lost the complete neural ZIP");
   }
+  sandbox.__stableNeural = {
+    assets: [{ name: "PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip", browser_download_url: fallbackNeuralUrl }],
+  };
+  vm.runInNewContext("updateNeuralDownload(__stableNeural); applyLanguage('zh');", sandbox);
+  if (links[0].href !== fallbackNeuralUrl) throw new Error("Stable neural ZIP is not recognized");
 } catch (error) {
   fail(`Neural download runtime regression failed: ${error.message}`);
+}
+
+try {
+  const stableLabels = [{ textContent: "" }];
+  const stableLinks = [{ href: "" }];
+  const neuralLinks = [{ href: "" }];
+  sandbox.document.querySelectorAll = (selector) =>
+    selector === "[data-stable-version]" ? stableLabels
+      : selector === "[data-stable-download]" ? stableLinks
+        : selector === "[data-neural-download]" ? neuralLinks : [];
+  sandbox.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { tag_name: "v0.9.1-beta1", prerelease: true, assets: [{ name: "PsyReaSFX_Neural_Similarity_v0_9_1_beta1_win_x64.zip", browser_download_url: "https://example.com/beta.zip" }] },
+      { tag_name: "v0.9.0", prerelease: false, assets: [
+        { name: "PsyReaSFX_v0_9_0.zip", browser_download_url: "https://example.com/stable-lua.zip" },
+        { name: "PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip", browser_download_url: fallbackNeuralUrl },
+      ] },
+      { tag_name: "v0.8.5", prerelease: false, assets: [] },
+    ],
+  });
+  await vm.runInNewContext("updateReleaseChannels()", sandbox);
+  if (stableLabels[0].textContent !== "0.9.0"
+    || stableLinks[0].href !== "https://example.com/stable-lua.zip"
+    || neuralLinks[0].href !== fallbackNeuralUrl) {
+    throw new Error("A newer Beta must not override Stable labels, Lua or neural downloads");
+  }
+} catch (error) {
+  fail(`Stable channel runtime regression failed: ${error.message}`);
 }
 
 for (const relative of [
@@ -201,9 +233,17 @@ for (const match of html.matchAll(/\bhref="#([^"]+)"/g)) {
 // Archive versions may be documented in installation notes, but must not
 // become the default stable download again.
 if (/Alpha_1_win_x64/.test(html + script)
-  || /const STABLE_FALLBACK\s*=\s*\{[^}]*version:\s*"0\.7\.23"/.test(script)
-  || /data-stable-version[^>]*>\s*0\.7\.23/.test(html)) {
+  || /const STABLE_FALLBACK\s*=\s*\{[^}]*version:\s*"0\.(?:7\.23|8\.5)"/.test(script)
+  || /data-stable-version[^>]*>\s*0\.(?:7\.23|8\.5)/.test(html)
+  || /data-preview-(?:version|download)/.test(html)) {
   fail("Website contains a stale release fallback");
+}
+for (const lang of ["en", "zh"]) {
+  if (!messages[lang].neuralOrigin?.includes("EfficientAT_HEAR")
+    || !messages[lang].neuralOrigin?.includes("AudioSet")
+    || !messages[lang].licenseSummary?.includes("/LICENSE")) {
+    fail(`Missing neural origin or licensing information: ${lang}`);
+  }
 }
 
 for (const file of ["robots.txt", "sitemap.xml", "site.webmanifest"]) {

@@ -1,5 +1,15 @@
 # PsyReaSFX Changelog
 
+## 0.9.0 Stable — 2026-10-29
+
+- Promotes the complete Beta 8.7 feature set to the default stable ReaPack channel.
+- Includes UCS classification, acoustic/neural similarity, independent AI semantic search with saved API presets, scalable fonts, folder navigation, browsing-tab snapshots, Watch Folder controls and specific publisher-product browsing.
+- Normal ReaPack synchronization now installs 0.9.0; no pre-release opt-in is required. Unpin an older version before updating and restart PsyReaSFX.
+- Neural retrieval still requires the separate [Windows x64 component][neural-download]. Beta 8.5 or newer components and existing caches remain compatible; no mandatory library rebuild or audio conversion.
+
+- Clarifies free personal/commercial production use and restrictions on redistribution, software resale and AI training/distillation from protected project materials; third-party licenses are preserved.
+- Adds reproducible release fingerprints, package provenance manifests and local verification, with no tracking; documents EfficientAT / AudioSet origins and credits.
+
 ## 0.9.0 Beta 8.7
 
 - Resolve the specific publisher-product directory from source Library/Album/Product metadata, artwork ownership/identical copies and product naming, considering at most six parent levels. Fall back to the asset's current folder without reliable evidence.
@@ -1578,5 +1588,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip
 

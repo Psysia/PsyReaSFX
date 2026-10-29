@@ -22064,6 +22064,10 @@ function build_diagnostics_text()
     {
       SCRIPT_NAME .. " " .. VERSION,
       "Author: Psysia",
+      "Official project: " .. RELEASE_PROVENANCE.official_url,
+      "Release ID: " .. RELEASE_PROVENANCE.release_id,
+      "Source SHA-256: " .. RELEASE_PROVENANCE.source_sha256,
+      "License: " .. RELEASE_PROVENANCE.license,
       "REAPER: " .. tostring(reaper.GetAppVersion()),
       "OS: " .. tostring(reaper.GetOS()),
       "ReaImGui: " .. get_reaimgui_runtime_version(),
