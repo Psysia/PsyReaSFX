@@ -16,6 +16,13 @@ function stop_preview() stopped=stopped+1 end
 function workspace_tabs_track() tracked=tracked+1 end
 function path_key(value) return value:lower() end
 function dirname(path) return path:match("^(.*)/[^/]+$") end
+function basename(path) return path:match("([^/]+)$") or path end
+function path_is_inside(path,root) return path_key(path):find(path_key(root).."/",1,true)==1 end
+function root_record_for_asset() return {path="C:/audio"} end
+function product_navigation_source_names() return {} end
+function product_navigation_folder_cover() return "" end
+function product_navigation_same_artwork() return false end
+assert(loadfile("src/lua/46_product_navigation.lua"))()
 function root_for_path() return "C:/audio",{library_id="lib"} end
 function set_status(message) last_status=message end
 function clamp(n,lo,hi) return math.max(lo,math.min(n,hi)) end
@@ -30,8 +37,8 @@ assert(load(region("function browse_asset_library(asset)","function draw_metadat
 local asset={path="C:/audio/sub/effect.wav",folder="C:/audio/sub",library_id="lib"}
 busy=true assert(not browse_asset_library(asset) and state.search=="impact") busy=false
 assert(browse_asset_library(asset))
-assert(state.search=="" and state.view=="all" and state.library_filter_id=="lib")
-assert(not state.root_filter and not state.active_collection_id and not state.status_filter and not state.ucs_filter_category)
+assert(state.search=="" and state.view=="all" and not state.library_filter_id)
+assert(state.root_filter==asset.folder and not state.active_collection_id and not state.status_filter and not state.ucs_filter_category)
 assert(not state.results_job and state.results_dirty and state.sort_mode=="name" and not state.sort_desc)
 assert(state.selected_path==asset.path and state.selected_set[path_key(asset.path)] and state.selected_index==0)
 assert(state.workspace_tab_scroll_restore.y==0 and stopped==1 and tracked==1)
@@ -46,7 +53,7 @@ ImGui={HoveredFlags_ChildWindows=1,IsWindowHovered=function(_,flags) return hove
 state.search="category:arcade" state.root_filter="C:/other" state.view="ucs_category"
 local draft={values={description="unsaved edit"}} state.metadata_editor=draft
 assert(handle_inspector_library_navigation(asset))
-assert(state.search=="" and state.view=="all" and not state.root_filter and state.library_filter_id=="lib")
+assert(state.search=="" and state.view=="all" and state.root_filter==asset.folder and not state.library_filter_id)
 assert(state.metadata_editor==draft and draft.values.description=="unsaved edit" and tracked==2)
 hovered=false assert(not handle_inspector_library_navigation(asset) and tracked==2)
 hovered=true clicked=false assert(not handle_inspector_library_navigation(asset) and tracked==2)

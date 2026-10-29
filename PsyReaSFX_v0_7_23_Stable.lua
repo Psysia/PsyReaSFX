@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.6
+-- @version 0.9.0-beta8.7
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,7 @@
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 8.6：右侧面板右键直接跳转素材所在音效库，移除失效的弹窗交互
+--   - Beta 8.7：按原始产品 metadata、封面和目录命名识别具体厂商产品包，缺少依据时回退当前文件夹
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -206,7 +207,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.6"
+local VERSION = "0.9.0 Beta 8.7"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2243,7 +2244,7 @@ I18N_EN["Watch Folder 已开启：自动发现新增音频"] = "Watch Folder ena
 I18N_EN["Watch Folder 已关闭；当前导入任务继续，之后不再自动检查"] =
   "Watch Folder disabled; the current import continues and future automatic checks stop"
 I18N_EN["此素材的音效库来源已失效，请检查来源路径"] = "This asset's library is unavailable; check its source path"
-I18N_EN["已显示素材所在音效库的全部声音"] = "Showing all sounds in the asset's library"
+I18N_EN["素材所在文件夹不可用"] = "The asset's folder is unavailable"
 I18N_EN["正在准备神经相似度范围"] = "Preparing neural search scope"
 I18N_EN["正在写入神经相似度清单"] = "Writing neural asset manifest"
 I18N_EN["正在重排神经相似度候选"] = "Reranking neural candidates"
@@ -2412,6 +2413,8 @@ I18N_EN["当前批次没有可显示的 AI 语义结果。"] =
   "The current batch has no AI semantic results to display."
 
 I18N_PATTERNS_EN = {
+  { "^未识别到产品包，已显示素材所在文件夹：(.*)$", "Product package not identified; showing the asset's folder: %1" },
+  { "^已显示音效库产品包：(.*)$", "Showing sound-library product package: %1" },
   { "^已读取 (%d+) 条素材$", "Loaded %1 assets" },
   { "^已用 ([%d%.]+) 秒$", "Elapsed %1 s" },
   {
@@ -16336,6 +16339,217 @@ function step_duplicate_comparison(comparison, chunk_size)
 
   close_duplicate_comparison(comparison)
   return comparison.result
+end
+
+-- Resolve a publisher's product folder, rather than a logical imported library.
+-- Only the selected asset and a bounded ancestor chain are considered. All I/O
+-- is supplied by the runtime; no catalog walks, audio analysis or DB mutations.
+ProductNavigation = { max_parents = 6, artwork_max_bytes = 2 * 1024 * 1024,
+  metadata_cache = {}, metadata_order = {}, metadata_cache_limit = 256 }
+
+local function normalized(value)
+  return tostring(value or ""):gsub("([a-z])([A-Z])", "%1 %2"):lower()
+    :gsub("[%c%p]", " "):gsub("%s+", " "):match("^%s*(.-)%s*$")
+end
+
+local function compact_name(value) return normalized(value):gsub("%s", "") end
+
+local generic = {}
+for word in ("audio wav wave waves wavs aiff flac mp3 stereo mono multichannel "
+  .. "samples sounds sound sfx effects assets library libraries collections packs "
+  .. "artwork art cover covers images pictures documentation docs manuals "
+  .. "ambience ambiences ambient backgrounds loops oneshots hits impacts whooshes "
+  .. "weapons footsteps foley vehicles water fire explosions ui games music "
+  .. "short long small large dry wet processed unprocessed raw edited") :gmatch("%S+") do
+  generic[word] = true
+end
+for _, word in ipairs({"sound effects", "sound effect library", "sound libraries", "sample library",
+  "sound packs", "audio files", "one shots", "sound effect libraries", "音效", "音效库", "素材库",
+  "音频", "封面", "图片", "文档", "脚步", "武器", "环境", "音效素材"}) do
+  generic[compact_name(word)] = true
+end
+
+local vendors = { "boom library", "ghosthack", "artlist", "cinetools", "lens distortions",
+  "pro sound effects", "soundmorph", "sound ideas", "sonniss", "epic stock media",
+  "soundly", "hiss and a roar", "hiss and roar", "asoundeffect" }
+
+local umbrella = { all=true, complete=true, collection=true, collections=true,
+  alllibraries=true, allproducts=true, allpacks=true, completecollection=true,
+  ultimatecollection=true, fullcollection=true, bundle=true, fullbundle=true,
+  completebundle=true, archive=true, ["合集"]=true, ["全集"]=true, ["全部音效库"]=true }
+
+local function product_title(value)
+  local name = compact_name(value)
+  for _, vendor in ipairs(vendors) do
+    local prefix = compact_name(vendor)
+    if name:sub(1,#prefix) == prefix then return name:sub(#prefix+1) end
+  end
+  -- BOOM is also commonly used without the word "Library".
+  if name:sub(1,4) == "boom" then return name:sub(5) end
+  return name
+end
+
+local structural = { audio=true, wav=true, wavs=true, waves=true, stereo=true, mono=true,
+  artwork=true, art=true, cover=true, covers=true, images=true, pictures=true,
+  documentation=true, docs=true, manuals=true, ["音频"]=true, ["封面"]=true, ["图片"]=true, ["文档"]=true }
+
+local function role_name(value)
+  return compact_name(value):gsub("^%d+", "")
+end
+
+local function is_generic(value)
+  local name = role_name(value)
+  if name == "" or generic[name] or name:match("^%d+$")
+    or name:match("^%d+k?hz") or name:match("^%d+bit")
+    or name:match("^vol[ume]*%d+$") then return true end
+  if name:find("soundeffectlibrary", 1, true) == 1
+    or name:find("soundeffectlibraries", 1, true) == 1 then return true end
+  for _, vendor in ipairs(vendors) do
+    if name == compact_name(vendor) then return true end
+  end
+  local title = product_title(value)
+  if title == "" or (title ~= compact_name(value) and umbrella[title]) then return true end
+  if title ~= compact_name(value) then
+    local rest = title:gsub("soundeffects", ""):gsub("sounds", ""):gsub("sound", "")
+    if rest == "" or umbrella[rest] or rest:match("^%d+$") then return true end
+  end
+  return false
+end
+
+local filler = { sound=true, sounds=true, sfx=true, library=true, libraries=true,
+  pack=true, packs=true, bundle=true, collection=true, collections=true,
+  audio=true, wav=true, volume=true, vol=true, edition=true }
+
+local function words(value)
+  local out = {}
+  for word in normalized(value):gmatch("%S+") do
+    if not filler[word] and not word:match("^%d+$") then out[#out+1] = word end
+  end
+  return out
+end
+
+local function matches_product_name(folder, name)
+  if is_generic(folder) or is_generic(name) then return false end
+  local a, b = product_title(folder), product_title(name)
+  if a == b and #a >= 4 then return true end
+  local wanted, supplied = words(folder), {}
+  for _, word in ipairs(words(name)) do supplied[word] = true end
+  if #wanted < 2 then return false end
+  for _, word in ipairs(wanted) do if not supplied[word] then return false end end
+  return true
+end
+
+local function naming_score(folder, filename)
+  if is_generic(folder) then return 0 end
+  local name, meaningful = normalized(folder), words(folder)
+  local compact = compact_name(folder)
+  local vendor_match = name:match("^boom%s") ~= nil
+  for _, vendor in ipairs(vendors) do
+    if compact:find(compact_name(vendor), 1, true) then vendor_match = true break end
+  end
+  local cue = vendor_match or name:match("%f[%a]sfx%f[%A]")
+    or name:match("%f[%a]sounds?%f[%A]") or name:match("%f[%a]pack%f[%A]")
+    or name:match("%f[%a]bundle%f[%A]") or name:find("音效", 1, true)
+    or name:find("套装", 1, true)
+  if cue and #meaningful >= 2 then return 50 end
+  -- A product title carried by the filename is useful even without a known
+  -- vendor. Generic categories such as Footsteps/WAV have already been excluded.
+  if #meaningful >= 2 and matches_product_name(folder, filename) then return 40 end
+  return 0
+end
+
+function product_navigation_metadata_names(map)
+  local fields = { productname=1, product=1, libraryname=2, library=2, soundlibrary=2,
+    album=3, talb=3, iprd=3, pack=4, soundbank=4, collection=5 }
+  local entries = {}
+  for key, value in pairs(map or {}) do
+    local field = compact_name(tostring(key):match("([^:]+)$") or key)
+    local rank = fields[field]
+    value = tostring(value or "")
+    if rank and value ~= "" and #value <= 256 and not value:find("%c") then
+      entries[#entries+1] = { rank=rank, key=tostring(key), value=value }
+    end
+  end
+  table.sort(entries, function(a,b) return a.rank < b.rank or (a.rank == b.rank and a.key < b.key) end)
+  local names = {}
+  for _, entry in ipairs(entries) do names[#names+1] = entry.value end
+  return names
+end
+
+function product_navigation_remember_metadata(asset, fingerprint, names)
+  local cache, order = ProductNavigation.metadata_cache, ProductNavigation.metadata_order
+  if not cache[asset] then order[#order+1] = asset end
+  cache[asset] = { fingerprint=fingerprint, names=names }
+  while #order > ProductNavigation.metadata_cache_limit do cache[table.remove(order,1)] = nil end
+end
+
+function resolve_asset_product_folder(asset, hints)
+  hints = hints or {}
+  local folder = tostring(asset and asset.folder or "")
+  if folder == "" then folder = dirname(asset and asset.path or "") end
+  if folder == "" then return nil, "missing_folder" end
+  local candidates, current = {}, folder
+  for depth=0,ProductNavigation.max_parents do
+    if current == "" or not path_is_inside(asset.path, current) then break end
+    candidates[#candidates+1] = current
+    if current:match("^[/\\][/\\][^/\\]+[/\\][^/\\]+$") then break end
+    local parent = dirname(current)
+    if parent == current or parent == "" or parent:match("^%a:$") then break end
+    current = parent
+  end
+
+  local best, best_score, reason = folder, 0, "folder"
+  -- Prefer an exact full product title before containment matches such as a
+  -- parent "Urban Streets" above a category "Urban Streets Interior".
+  for pass=1,2 do
+    for _, candidate in ipairs(candidates) do
+      local name = basename(candidate)
+      for _, product in ipairs(hints.metadata_names or {}) do
+        local exact = product_title(name) == product_title(product)
+        if (pass == 2 or exact) and matches_product_name(name, product) then
+          return candidate, "metadata"
+        end
+      end
+    end
+  end
+  for _, candidate in ipairs(candidates) do
+    local name = basename(candidate)
+    local score = naming_score(name, asset.name or basename(asset.path))
+    if score > best_score then best, best_score, reason = candidate, score, "name" end
+  end
+
+  local cover = tostring(hints.cover_path or "")
+  if cover == "" or cover == "-" then return best, reason end
+  local named_boundary = reason == "name" and best or nil
+  local owner = dirname(cover)
+  -- Covers often live in "2. Artwork" beside "1. Audio". Structural folders
+  -- are skipped, but sound categories and arbitrary siblings are not merged.
+  for _=1,3 do
+    if not structural[role_name(basename(owner))] then break end
+    local parent = dirname(owner)
+    if parent == owner or parent == "" then break end
+    owner = parent
+  end
+  for _, candidate in ipairs(candidates) do
+    if named_boundary and not path_is_inside(candidate, named_boundary) then break end
+    local name = basename(candidate)
+    local ambiguous_root = hints.root and path_key(candidate) == path_key(hints.root)
+      and naming_score(name, asset.name or basename(asset.path)) == 0
+    if not is_generic(name) and not ambiguous_root then
+      local name_score = naming_score(name, asset.name or basename(asset.path))
+      local same = path_key(candidate) == path_key(owner)
+        or (name_score > 0 and path_is_inside(owner, candidate))
+      if not same and hints.cover_at and hints.same_artwork then
+        local other = hints.cover_at(candidate)
+        same = other and other ~= "" and hints.same_artwork(cover, other)
+      end
+      local score = 80 + name_score
+      if same and (score > best_score or (score == 80 and best_score == 80)) then
+        best, best_score, reason = candidate, score, "cover"
+      end
+    end
+  end
+  return best, reason
 end
 
 -- Startup runs in a coroutine while the loading window remains responsive.
@@ -37059,21 +37273,82 @@ function draw_ucs_candidate_actions(asset)
   ImGui.Spacing(ctx)
 end
 
+function product_navigation_source_names(asset)
+  local fingerprint = table.concat({tostring(asset.signature or ""), tostring(asset.size or 0),
+    tostring(asset.indexed), tostring(asset.library or "")}, "|")
+  local cached = ProductNavigation.metadata_cache[asset]
+  if cached and cached.fingerprint == fingerprint then return cached.names end
+  local names = {}
+  local metadata_ok = false
+  local opened, source = pcall(reaper.PCM_Source_CreateFromFile, asset.path)
+  if not opened then source = nil end
+  if source then
+    local ok, metadata = pcall(metadata_map, source)
+    reaper.PCM_Source_Destroy(source)
+    if ok then names = product_navigation_metadata_names(metadata) metadata_ok = true end
+  end
+  -- The editable Library field may contain a real product title, but its
+  -- default is the logical imported-library name (e.g. "Aki").
+  local library = (state.library_by_id or {})[asset.library_id]
+  if asset.library and asset.library ~= "" and (not library or asset.library ~= library.name) then
+    names[#names+1] = asset.library
+  end
+  if metadata_ok then product_navigation_remember_metadata(asset, fingerprint, names) end
+  return names
+end
+
+function product_navigation_folder_cover(folder, reference)
+  local exact = join_path(folder, basename(reference))
+  if reaper.file_exists(exact) then return exact end
+  local cached = state.artwork_folder_cache[path_key(folder)]
+  if type(cached) == "string" then return cached end
+  for index=0,31 do
+    local name = reaper.EnumerateFiles(folder, index)
+    if not name then break end
+    if is_artwork_file(name) then return join_path(folder, name) end
+  end
+  return ""
+end
+
+function product_navigation_same_artwork(left, right, cache)
+  if path_key(left) == path_key(right) then return true end
+  cache = cache or {}
+  local function read(path)
+    local key = path_key(path)
+    if cache[key] ~= nil then return cache[key] or nil end
+    local file = io.open(path, "rb")
+    if not file then cache[key] = false return nil end
+    local size = file:seek("end")
+    if not size or size == 0 or size > ProductNavigation.artwork_max_bytes then
+      file:close() cache[key] = false return nil
+    end
+    file:seek("set", 0)
+    local data = file:read("*a") file:close()
+    cache[key] = data or false
+    return data
+  end
+  local a = read(left)
+  return a and a == read(right) or false
+end
+
 function browse_asset_library(asset)
   if not asset then return false end
   if workspace_tabs_busy() then
     set_status("请等待或取消当前 AI / 相似声音任务后再切换标签页", true)
     return false
   end
-  local library = (state.library_by_id or {})[asset.library_id]
-  if not library and type(root_for_path) == "function" then
-    local _, root = root_for_path(asset.path)
-    library = root and (state.library_by_id or {})[root.library_id]
-  end
-  if not library then
-    set_status("此素材的音效库来源已失效，请检查来源路径", true)
-    return false
-  end
+  local record = root_record_for_asset(asset)
+  local cover = tostring(asset.artwork_path or "")
+  if cover == "" and record then cover = tostring(record.artwork_path or "") end
+  if cover ~= "" and cover ~= "-" and not reaper.file_exists(cover) then cover = "" end
+  local cover_data = {}
+  local target, reason = resolve_asset_product_folder(asset, {
+    metadata_names = product_navigation_source_names(asset),
+    cover_path = cover, root = record and record.path or asset.root,
+    cover_at = function(folder) return product_navigation_folder_cover(folder, cover) end,
+    same_artwork = function(a,b) return product_navigation_same_artwork(a,b,cover_data) end,
+  })
+  if not target then set_status("素材所在文件夹不可用", true) return false end
   stop_preview()
   AppState.apply({search="", view="all", sort_mode="name", sort_desc=false, results_dirty=true,
     config_dirty=true, results_scroll_y=0})
@@ -37081,14 +37356,15 @@ function browse_asset_library(asset)
     "ucs_filter_catid","root_filter","library_filter_id","results_job","results_scroll_y_request"}) do
     AppState.set(key,nil)
   end
-  AppState.set("library_filter_id",library.id or asset.library_id)
+  AppState.set("root_filter", target)
   AppState.set("selected_path",asset.path)
   AppState.set("selected_set",{[path_key(asset.path)]=true})
   AppState.set("selected_index",0)
   AppState.set("selection_anchor",0)
   AppState.set("workspace_tab_scroll_restore",{x=state.results_scroll_x or 0,y=0,frames=2})
   workspace_tabs_track()
-  set_status("已显示素材所在音效库的全部声音")
+  set_status(string.format(reason == "folder" and "未识别到产品包，已显示素材所在文件夹：%s"
+    or "已显示音效库产品包：%s", basename(target)))
   return true
 end
 

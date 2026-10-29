@@ -1,5 +1,13 @@
 # PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Beta 8.7
+
+- 右侧右键改为厂商的具体产品包目录：原始 Library／Album／Product metadata 优先，结合封面归属/相同内容与产品命名，最多当前目录及向上 6 级；没有可靠证据则回退当前文件夹。
+- 区分 BOOM Cinematic Hits 与 Cinematic Trailers 等产品，不将厂商合集、“Aki”逻辑大库、日期、WAV 或 Footsteps 分类误当产品包。识别到具体产品后不因厂商共用封面继续向上合并。
+- 原始 metadata 仅按需读取当前素材，最多缓存 256 条；附近封面枚举与文件读取有上限，不做全库遍历或音频/AI 分析。无需重建已有库，结果只包含已导入素材。
+- 保留无弹窗直接跳转、原筛选清理和素材选择；只需更新主脚本并重开，Beta 8.5 神经组件继续兼容。
+- 新增 metadata、BOOM 多产品隔离、封面位置/副本、目录深度、泛化名称、失败回退与读取缓存回归。
+
 ## 0.9.0 Beta 8.6
 
 - 删除右侧来源菜单弹窗，右键直接在当前标签显示素材所在音效库全部声音。清除原搜索、UCS、目录、集合与状态筛选，保留当前素材选择。
@@ -1446,5 +1454,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.6/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
 

@@ -1,5 +1,13 @@
 # PsyReaSFX Changelog
 
+## 0.9.0 Beta 8.7
+
+- Resolve the specific publisher-product directory from source Library/Album/Product metadata, artwork ownership/identical copies and product naming, considering at most six parent levels. Fall back to the asset's current folder without reliable evidence.
+- Keep BOOM Cinematic Hits and Cinematic Trailers separate. Logical Aki libraries, vendor collections, dates, WAV and Footsteps categories are not product identities; shared vendor artwork cannot expand a recognized product boundary.
+- Read only selected-asset metadata on demand (256-entry cache) and bounded nearby cover candidates. No full-catalog walk, audio/AI analysis or mandatory library rebuild; results include already imported assets only.
+- Preserve direct popup-free navigation, filter clearing and selection. Update the main script and restart; Beta 8.5 neural components remain compatible.
+- Add product metadata, BOOM isolation, cover ownership/copies, depth limits, generic fallback and runtime-cache regression cases.
+
 ## 0.9.0 Beta 8.6
 
 - Remove the misplaced/noninteractive inspector navigation popup. Right-click now directly shows every sound in the selected asset's library in the current tab, clearing old search/UCS/folder/collection/status filters and preserving the asset selection.
@@ -1570,5 +1578,5 @@ This release does not expand the user-facing feature scope. It completes the 49-
 
 - First runnable prototype with multi-library scanning, search, favorites, preview parameters, and basic insertion.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.6/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
 

@@ -1,6 +1,6 @@
 # PsyReaSFX User Guide
 
-**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 8.6
+**Applies to:** PsyReaSFX 0.8.5 Stable / 0.9.0 Beta 8.7
 **Author:** Psysia  
 **Host:** REAPER 7.x
 
@@ -45,7 +45,7 @@ SWS enables precise seek-from-waveform audition, selection preview, advanced Pre
 4. Normal installation uses Stable. For the latest Beta, right-click the main
    `PsyReaSFX` package (script `PsyReaSFX.lua`), check
    **Enable pre-releases (bleeding-edge)**, and select the newest Beta under
-   **Versions** (currently `0.9.0-beta8.6`). Leave **Pin current version**
+   **Versions** (currently `0.9.0-beta8.7`). Leave **Pin current version**
    unchecked; unpin first if needed.
 5. Click **Apply**, or **OK** to confirm installation. Once downloads finish,
    close the old PsyReaSFX window and rerun it from REAPER's Action List.
@@ -64,19 +64,19 @@ Local neural similarity requires the separate optional package below.
 
 ReaPack installs the script, application icon and Orbitron brand font. Updates are delivered through the same repository.
 
-### Optional neural similarity component (Beta 8.6)
+### Optional neural similarity component (Beta 8.7)
 
 **Neural retrieval requires this separate component; updating PsyReaSFX.lua
 does not install it. Built-in 15-feature acoustic search and AI semantic search
 do not require it.**
 
-**[Download the complete neural ZIP · Beta 8.6 · Windows x64 · about 42.4 MB][neural-download]**
+**[Download the complete neural ZIP · Beta 8.7 · Windows x64 · about 42.4 MB][neural-download]**
 Includes executable, model and installers; do not download only the standalone EXE.
 
 Recommended: synchronize, open `Extensions → ReaPack → Browse packages`, and search for
 the separate [PsyReaSFX Neural Similarity][neural-download] data package.
 Right-click → **Enable pre-releases (bleeding-edge)** → **Versions** →
-`0.9.0-beta8.6`; uncheck **Pin current version**, click **Apply / OK**,
+`0.9.0-beta8.7`; uncheck **Pin current version**, click **Apply / OK**,
 wait for downloads, then close the old window and rerun PsyReaSFX.
 ReaPack places the executable and model under
 `<REAPER Resource Path>\Data\PsyReaSFX\neural_similarity\` and handles updates/uninstallation.
@@ -118,9 +118,13 @@ The first visit to a folder may require waveform and metadata work. Later visits
 
 Watch Folder is enabled by default and checks imported sources and subfolders every 60 seconds, discovering and loading new audio automatically. Settings → General allows 15–600 seconds. This is periodic polling while the app is open; directories outside imported sources must be added separately. Unchanged checks do not rebuild results.
 
-Beta 8.6 offers a toolbar clock toggle (highlighted when enabled) and a scan-button context-menu switch. Disabling Watch Folder stops future automatic checks while current import/completion tasks finish. Right-click the metadata inspector to jump directly to all sounds in the asset's logical library, including every imported source, without a popup. Navigation clears search, UCS, folder, collection and status filters in the current tab and retains the selected asset.
+Beta 8.7 offers a toolbar clock toggle and scan-button switch. Disabling Watch Folder stops future automatic checks while current import/completion tasks finish.
 
-**For this navigation fix, update the main script to Beta 8.6 and restart; a Beta 8.5 [PsyReaSFX Neural Similarity][neural-download] component does not require updating.** Older components need an update for window progress and cancellation between windows. First global retrieval remains costly for uncached audio; later searches reuse compatible caches without a mandatory rebuild or transcoded copies.
+Right-click the metadata inspector to locate the **specific publisher product**, not the logical imported library or entire vendor collection. BOOM Cinematic Hits and Cinematic Trailers resolve to their respective directories. Source Library/Album/Product metadata takes priority, followed by artwork ownership/identical copies and clear product-folder names. Inspect the current folder and at most six parents. Generic audio/category/date/vendor collection names are insufficient; a recognized product boundary stops expansion. Without reliable evidence, browse the current folder.
+
+Cover comparison uses the same file or byte-identical copies up to 2 MB, without AI image recognition. Only the selected asset's metadata and a bounded nearby file set are read; no full-library scan or rebuild is required. Results contain already imported assets in the resolved folder and descendants, preserving selection and clearing prior filters without modifying files.
+
+**For this navigation fix, update the main script to Beta 8.7 and restart; a Beta 8.5 [PsyReaSFX Neural Similarity][neural-download] component does not require updating.** Older components need an update for window progress and cancellation between windows. First global retrieval remains costly for uncached audio; later searches reuse compatible caches without a mandatory rebuild or transcoded copies.
 
 Watch Folder checks run quietly in the background by default. Only the toolbar
 scan icon animates while work is active, and unchanged checks do not replace the
@@ -143,7 +147,7 @@ Toolbar icons are borderless at rest. Hovering reveals the hit area and accent c
 
 The small PsyReaSFX mark is drawn as a vector symbol so it remains crisp at compact sizes and high DPI. The product wordmark uses the bundled Orbitron typeface when available.
 
-### Independent browsing tabs (Beta 8.6)
+### Independent browsing tabs (Beta 8.7)
 
 Click **+** under search or press `Ctrl+N` for a blank tab. Right-click to duplicate, rename, close others/right or move left/right; middle-click or the close button closes. `Ctrl+Shift+N` duplicates, `Ctrl+W` closes, and `Ctrl+Tab / Ctrl+Shift+Tab` switches. `Ctrl+T` remains Transfer.
 
@@ -288,7 +292,7 @@ whoosh category:movement -long
 
 A saved search can retain the query, library, collection, workflow filter and sort direction. Use it for repeatable review views rather than duplicating assets into extra folders.
 
-### AI semantic search (Beta 8.6)
+### AI semantic search (Beta 8.7)
 
 The top search field is shared by normal and AI semantic search. Enter ordinary keywords and press `Enter` for the normal local search. Enter a natural-language description and click the gold `AI` button, or press `Ctrl+Shift+F`, to start AI semantic search immediately and display its results when complete; no extra search window is opened. This is not part of Find Similar Sounds: similar-sound search starts from a reference recording, while AI semantic search starts from a natural-language request, for example:
 
@@ -304,7 +308,7 @@ Usage guidance, service state, privacy scope, and API configuration are collecte
 
 The API key is encrypted for the current Windows user with DPAPI and kept separately from `config.tsv`, backups, and logs. Factory Reset removes the saved key.
 
-Starting with Beta 8.6, `Settings → AI Search` supports up to 32 named API presets:
+Starting with Beta 8.7, `Settings → AI Search` supports up to 32 named API presets:
 
 1. Your current endpoint, model and encrypted key are migrated into one preset. Historical settings already overwritten by older versions cannot be reconstructed.
 2. One toolbar contains **New preset, Switch preset, Save preset, Delete preset**. Create an independent setup, enter its name, complete Chat Completions endpoint (e.g. `https://api.example.com/v1/chat/completions`), model and key, then click **Save preset**. This also encrypts and saves a newly entered key.
@@ -322,7 +326,7 @@ Each search has two stages. The AI converts the request into bilingual sound con
 
 Local recall prioritizes filename, Keywords, Description, UCS Category, SubCategory, CatID, library and path. Positive expanded-term matches add weight, while excluded-term matches subtract it. The model no longer scores individual candidates, so AI results have no AI-relevance column or background reranking stage.
 
-In Beta 8.6, AI search shows query-understanding and local-recall stages. Recall reuses compiled terms and text prefiltering; task status ends immediately on completion and later 120-result pages append from memory. Normal searches make one API request; empty, truncated or malformed answers retry once at most and may incur an extra charge. DeepSeek disables thinking. Custom gateways using `gpt-6-luna` disable reasoning and use `max_completion_tokens` with JSON mode. Probe/planner limits are 256/1200 tokens, or 1024/2400 on retry (caps, not fixed usage). Unknown compatible models do not receive proprietary options; test your gateway.
+In Beta 8.7, AI search shows query-understanding and local-recall stages. Recall reuses compiled terms and text prefiltering; task status ends immediately on completion and later 120-result pages append from memory. Normal searches make one API request; empty, truncated or malformed answers retry once at most and may incur an extra charge. DeepSeek disables thinking. Custom gateways using `gpt-6-luna` disable reasoning and use `max_completion_tokens` with JSON mode. Probe/planner limits are 256/1200 tokens, or 1024/2400 on retry (caps, not fixed usage). Unknown compatible models do not receive proprietary options; test your gateway.
 
 Enter the complete Chat Completions URL (for example `https://ai-gateway.kurogames.com/v1/chat/completions`) and the provider's model name. Errors distinguish truncation, reasoning-only answers, filtering/refusal and missing `choices/message`; these do not imply an unsaved key. If the updated version still fails, share the model name and error text, never the API key or raw response body.
 
@@ -340,7 +344,7 @@ Scoring uses audio content only, never filenames, UCS categories or keywords. Fo
 without spectral data can still use time-domain features. Clear the rebuildable feature
 cache under Settings → Waveforms; source audio is never modified.
 
-With the optional Beta 8.6 component installed, PsyReaSFX uses EfficientAT
+With the optional Beta 8.7 component installed, PsyReaSFX uses EfficientAT
 embedding recall followed by the existing duration, onset, transient and
 envelope features. Common WAV sample rates and PCM16/PCM24/PCM32/float depths,
 AIFF, FLAC, MP3 and M4A use the built-in Windows decoder; an available FFmpeg
@@ -599,7 +603,7 @@ Embedded artwork inside audio containers is not extracted in this version.
 
 ## 16. Appearance and accessibility
 
-### Beta 8.6: font and navigation
+### Beta 8.7: font and navigation
 
 **Stable font adjustment:** dragging changes only the preview, leaving the slider and page in place. Release to apply the font/layout once. Use `− / +` for 1 px steps or Ctrl-click the slider to type an integer. Preview drafts are not persisted; Save and close saves the applied size.
 
@@ -757,7 +761,7 @@ current project` view expose that history. Unsaved projects are not bound.
   also disables automatic unfinished-asset recovery.
 - If individual files failed, use `Retry all failed tasks` in Maintenance
   instead of rebuilding the whole library.
-- Beta 8.6 reads PCM/float WAV waveforms directly when a Windows path is 260
+- Beta 8.7 reads PCM/float WAV waveforms directly when a Windows path is 260
   characters or longer. After updating, use `Settings → Reliability & recovery
   → Retry all failed tasks` to process old failures again. This does not copy,
   transcode or modify source files.
@@ -771,7 +775,7 @@ current project` view expose that history. Unsaved projects are not bound.
 
 ### First display is slow
 
-Beta 8.6 shows a centered branded startup splash with cyan waveform motion, real loading stages, asset counts and elapsed time. Motion indicates activity, not percentage completion. There is no fixed intro duration: the library opens as soon as validation finishes. Tiny windows and loading errors use readable text instead. The vector animation needs no image/video package and never reads audio or iterates the catalog. Beta 7.12 fast snapshot decoding and 24 ms idle / 12 ms playback startup budgets remain in place. Search, audition and edits unlock after full validation; closing during loading never saves partial data. Existing audio, indexes and waveform caches are retained, with no mandatory rescan or transcoding.
+Beta 8.7 shows a centered branded startup splash with cyan waveform motion, real loading stages, asset counts and elapsed time. Motion indicates activity, not percentage completion. There is no fixed intro duration: the library opens as soon as validation finishes. Tiny windows and loading errors use readable text instead. The vector animation needs no image/video package and never reads audio or iterates the catalog. Beta 7.12 fast snapshot decoding and 24 ms idle / 12 ms playback startup budgets remain in place. Search, audition and edits unlock after full validation; closing during loading never saves partial data. Existing audio, indexes and waveform caches are retained, with no mandatory rescan or transcoding.
 
 ### Neural similarity does not activate
 
@@ -795,7 +799,7 @@ Increase the window size, use focus mode, reduce visible columns, or reset inter
 ## 21. Stable support
 
 PsyReaSFX 0.8.5 remains the current stable release. ReaPack publishes it and
-PsyReaSFX 0.9.0 Beta 8.6 as versions of the same package. Normal synchronization
+PsyReaSFX 0.9.0 Beta 8.7 as versions of the same package. Normal synchronization
 stays on Stable. To test previews, right-click PsyReaSFX, enable per-package
 pre-releases, then select the desired build from **Versions**. The permanently
 retained 0.7.23 Stable ZIP remains available from GitHub Releases.
@@ -810,4 +814,4 @@ When reporting an issue, include:
 4. complete ReaScript error text;
 5. a screenshot or short recording when the issue is visual.
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.6/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
