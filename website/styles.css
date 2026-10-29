@@ -480,6 +480,22 @@ h1 span {
   padding-right: 28px;
 }
 
+.release-context {
+  padding-block: 20px 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.release-context-note { margin: 0 0 12px; }
+.release-context a, .license-summary a { color: var(--cyan); }
+.license-summary {
+  padding-bottom: 24px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.75;
+}
+
 .release-heading .kicker {
   margin-bottom: 9px;
 }

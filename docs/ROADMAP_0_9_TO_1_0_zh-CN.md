@@ -1,15 +1,19 @@
 # PsyReaSFX 0.9 → 1.0 开发路线
 
-更新日期：2026-10-21
+更新日期：2026-10-29
 
-## 当前阶段：0.9.x Beta 功能开发
+## 当前阶段：0.9.0 正式发布
+
+0.9.0 将 Beta 8.7 全部功能晋级至默认稳定通道。普通 ReaPack 同步即可更新；神经检索需独立安装[可选组件][neural-download]，Beta 8.5 及更新组件与现有缓存兼容。后续开发面向 1.0 验收与尚未实现的 DSP／完整时频图。
+
+### 0.9 开发历程
 
 `beta/0.9.x` 已从 0.8.5 稳定基线建立，先实施高级检索中的 UCS 分类底座。
-0.8.x 主分支仍只接收线上稳定性修复。Lua 每个公开版本继续提供独立的 GitHub
+当时 0.8.x 主分支只接收线上稳定性修复。Lua 每个公开版本继续提供独立的 GitHub
 Release、完整更新日志和 ReaPack 历史版本；内部开发快照不强行拆成公开版本。
 
 0.9.0 Beta 1 已完成 UCS 官方目录、自动分类、现有库安全重分类、虚拟目录、
-候选确认/撤销和 UCS 搜索提示，并保持 0.8.5 为默认 Stable。
+候选确认/撤销和 UCS 搜索提示，当时保持 0.8.5 为默认 Stable。
 
 0.9.0 Beta 2 已完成侧栏双语、启动索引快路和波形峰值容错恢复。Beta 3 已按
 `SPECTRAL_ANALYSIS_ARCHITECTURE_0_9_zh-CN.md` 完成当前素材的按需频谱峰值分析。
@@ -120,4 +124,4 @@ embedding，使缺少有效文件名和描述的素材也能参与语义检索�
 4. 冻结并验收完整 0.9 功能范围，再发布公开版本。
 5. 同步 Desktop，并完成 1.0 Stable 发布门槛。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip

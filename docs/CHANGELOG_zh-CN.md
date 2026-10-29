@@ -1,5 +1,15 @@
 # PsyReaSFX 更新日志（简体中文）
 
+## 0.9.0 Stable — 2026-10-29
+
+- 将 Beta 8.7 的完整功能发布为默认 ReaPack 正式版。
+- 包含 UCS 分类、声学／神经相似检索、独立 AI 语义搜索与 API 预设、自定义字体、文件夹导航、浏览标签快照、Watch Folder 开关及具体厂商产品包定位。
+- 普通 ReaPack 同步即可更新至 0.9.0，无需启用预发布；已固定旧版时先取消固定，更新后重开 PsyReaSFX。
+- 神经检索仍需独立安装 [Windows x64 组件][neural-download]。Beta 8.5 及更新组件、现有缓存继续兼容，无需强制重建音效库或转码。
+
+- 许可明确允许个人／商业制作免费使用，限制软件二次分发、出售及用受保护项目材料训练／蒸馏 AI；第三方各自许可继续有效。
+- 加入可复现发布指纹、安装包来源清单及本地校验，无联网追踪；补充 EfficientAT／AudioSet 原理与来源致谢。
+
 ## 0.9.0 Beta 8.7
 
 - 右侧右键改为厂商的具体产品包目录：原始 Library／Album／Product metadata 优先，结合封面归属/相同内容与产品命名，最多当前目录及向上 6 级；没有可靠证据则回退当前文件夹。
@@ -1454,5 +1464,5 @@
 
 - 首个可运行原型：多库扫描、搜索、收藏、试听参数和基础插入。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip
 

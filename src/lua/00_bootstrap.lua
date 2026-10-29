@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.7
+-- @version 0.9.0
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,7 @@
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 8.6：右侧面板右键直接跳转素材所在音效库，移除失效的弹窗交互
+--   - 0.9.0 Stable：将 Beta 8.7 全部功能发布至默认稳定通道，保留现有数据库与兼容缓存
 --   - Beta 8.7：按原始产品 metadata、封面和目录命名识别具体厂商产品包，缺少依据时回退当前文件夹
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
@@ -207,7 +208,15 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.7"
+local VERSION = "0.9.0 Stable"
+-- Official release provenance. This carries no user identifier and never phones home.
+local RELEASE_PROVENANCE = {
+  project = "Psysia/PsyReaSFX",
+  release_id = "PsyReaSFX/0.9.0",
+  source_sha256 = "development",
+  license = "PsyReaSFX Free Use and No Redistribution License 1.1",
+  official_url = "https://github.com/Psysia/PsyReaSFX"
+}
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."

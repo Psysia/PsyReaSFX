@@ -6,15 +6,15 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $bootstrap = [IO.File]::ReadAllText((Join-Path $repoRoot "src/lua/00_bootstrap.lua"))
 $match = [regex]::Match($bootstrap, '(?m)^-- @version (\S+)')
 if (-not $match.Success) { throw "Missing current Lua version" }
-$latestBeta = $match.Groups[1].Value
-if ($latestBeta -notmatch '^0\.9\.0-beta\d+(?:\.\d+)?$') {
-    throw "Unexpected beta version: $latestBeta"
+$currentVersion = $match.Groups[1].Value
+if ($currentVersion -notmatch '^0\.9\.0(?:-beta\d+(?:\.\d+)?)?$') {
+    throw "Unexpected current version: $currentVersion"
 }
 
 $packages = @($document.index.category.reapack)
 foreach ($policy in @(
-    @{ Name = "PsyReaSFX.lua"; Versions = @($latestBeta, "0.8.5", "0.7.23") },
-    @{ Name = "PsyReaSFX Neural Similarity"; Versions = @($latestBeta) }
+    @{ Name = "PsyReaSFX.lua"; Versions = @($currentVersion, "0.8.5", "0.7.23") },
+    @{ Name = "PsyReaSFX Neural Similarity"; Versions = @($currentVersion) }
 )) {
     $package = @($packages | Where-Object { $_.name -eq $policy.Name })
     if ($package.Count -ne 1) { throw "Expected one package: $($policy.Name)" }
@@ -26,4 +26,4 @@ foreach ($policy in @(
         if (@($version.source).Count -eq 0) { throw "Version has no download sources: $($version.name)" }
     }
 }
-Write-Host "ReaPack version policy passed: latest Beta + 0.8.5 + 0.7.23; optional neural package latest Beta only."
+Write-Host "ReaPack version policy passed: $currentVersion + 0.8.5 + 0.7.23; optional neural package $currentVersion only."

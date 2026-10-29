@@ -1,18 +1,16 @@
 const REPOSITORY = "Psysia/PsyReaSFX";
 const REAPACK_URL = "https://github.com/Psysia/PsyReaSFX/raw/main/index.xml";
 const STABLE_FALLBACK = {
-  version: "0.8.5",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.8.5"
+  version: "0.9.0",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0"
 };
-const PREVIEW_FALLBACK = {
-  version: "0.9.0 Beta 8.7",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0-beta8.7"
-};
-const NEURAL_FALLBACK_URL = "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip";
+const NEURAL_FALLBACK_URL = "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip";
 let neuralDownloadUrl = NEURAL_FALLBACK_URL;
 
 const messages = {
   en: {
+    licenseSummary: "Free for personal and commercial audio/game production. Republishing, redistribution, software resale and using protected project materials to train/distill AI or generate copies require permission. Your creative outputs are unaffected; third-party licenses remain in force. <a href=\"https://github.com/Psysia/PsyReaSFX/blob/main/LICENSE\">Read the license ↗</a>",
+    neuralOrigin: "EfficientAT’s AudioSet-trained mn04_as model converts audio into learned features; HNSW finds nearby sounds and acoustic features refine the results. Everything runs locally. Thanks to <a href=\"https://github.com/fschmid56/EfficientAT\">EfficientAT</a> / <a href=\"https://github.com/fschmid56/EfficientAT_HEAR\">EfficientAT_HEAR</a> (MIT license) and Google’s <a href=\"https://research.google.com/audioset/\">AudioSet</a> project. This audio-similarity engine is separate from AI text search.",
     skip: "Skip to content",
     homeLabel: "PsyReaSFX home",
     primaryNavLabel: "Primary navigation",
@@ -34,7 +32,7 @@ const messages = {
     heroLead: "Browse, organize, audition and deliver large sound libraries without leaving REAPER.",
     installReapack: "Install with ReaPack",
     downloadStable: "Download Stable",
-    viewPreview: "View Beta 8.7",
+    viewPreview: "What’s new in 0.9 ↓",
     freeUpdate: "One repository · Automatic updates",
     inlineWaveforms: "Inline waveforms",
     visibleFirst: "Visible-first caching",
@@ -51,16 +49,16 @@ const messages = {
     desktopPreviewLabel: "DESKTOP COMPANION · ALPHA 8",
     desktopPreviewTitle: "Browse before you open the project.",
     desktopPreviewText: "A standalone Windows x64 companion for logical libraries, fast search, waveforms, preview, Artwork, favorites and file drag into REAPER.",
-    releaseKicker: "CHOOSE YOUR RELEASE TRACK",
-    releaseHeading: "Stable for production. Preview what is next.",
+    releaseKicker: "0.9 IS NOW STABLE",
+    releaseHeading: "The complete 0.9 workspace, now Stable.",
     stableChannel: "Stable channel",
     stableSummary: "The default ReaPack release for everyday production work.",
     getStable: "Get Stable ↗",
-    previewChannel: "Preview channel",
-    previewSummary: "Beta 8.7 locates the specific publisher product using source metadata, artwork and nearby folder names. BOOM Cinematic Hits and Cinematic Trailers stay separate; without reliable evidence, right-click browses the asset's current folder. Update the main script and restart; no library rebuild or Beta 8.5 neural-component update is required.",
-    getPreview: "View preview ↗",
+    previewChannel: "New in 0.9",
+    previewSummary: "UCS classification, acoustic/neural similarity, independent AI semantic search and named API presets, scalable fonts, folder navigation, browsing tabs with snapshots, Watch Folder controls and precise publisher-product browsing. All Beta 8.7 features are included in Stable.",
+    getPreview: "Read 0.9 release notes ↗",
     neuralAddon: "Download complete neural ZIP · Windows x64 ↗",
-    neuralInstallNote: "Enable pre-releases for PsyReaSFX.lua Beta 8.7. Neural retrieval also requires the separate <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">PsyReaSFX Neural Similarity package</a>. ReaPack lists the latest Beta, 0.8.5 and 0.7.23; older releases stay on GitHub.",
+    neuralInstallNote: "Normal ReaPack synchronization now updates PsyReaSFX.lua to 0.9.0 Stable. Neural retrieval requires the separate <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">PsyReaSFX Neural Similarity package</a>; neither package requires pre-release opt-in. Versions retains 0.9.0, 0.8.5 and 0.7.23 Stable.",
     downloadDesktop: "Download Desktop Alpha 8",
     desktopGuide: "Desktop guide ↗",
     completeLoop: "THE COMPLETE SOUND-LIBRARY LOOP",
@@ -91,7 +89,7 @@ const messages = {
     findText: "Use separate tabs for different libraries and queries. Ctrl+N creates, Ctrl+Shift+N duplicates, Ctrl+W closes and Ctrl+Tab switches. Completed AI/similarity results stay in the session; switching does not call the API again.",
     ucsNavigation: "Browse Category, SubCategory and CatID without moving source files",
     aiSemanticSearch: "Use DeepSeek or an OpenAI-compatible API once to expand a natural-language request, then rank matching metadata locally",
-    similarSearch: "Local neural recall across common sample rates, bit depths and formats; <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">neural package required</a>, with safe acoustic fallback",
+    similarSearch: "Local neural recall across common sample rates, bit depths and formats; <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">neural package required</a>, with safe acoustic fallback",
     spectralPeaks: "Inspect on-demand spectral peaks in the detailed waveform",
     similarityDetails: "Read the similarity architecture ↗",
     aiSemanticDetails: "Read the AI semantic-search architecture ↗",
@@ -114,26 +112,26 @@ const messages = {
     reaperTitle: "REAPER delivery",
     reaperText: "Insert on the current track, a new track, the BWF position or drag the selected range.",
     comparisonKicker: "WHAT CHANGED",
-    comparisonHeading: "What does the latest Beta add?",
-    comparisonLead: "REAPER / Lua editions only, not the Desktop companion. Beta includes the Stable feature set; “—” means unavailable in that version.",
+    comparisonHeading: "What does 0.9 Stable add?",
+    comparisonLead: "REAPER / Lua editions only, not the Desktop companion. 0.9 includes the earlier Stable feature set; “—” means unavailable in that version.",
     comparisonScroll: "On small screens, swipe the table horizontally to compare all versions.",
-    comparisonCaption: "Feature overview · 0.7.23 Stable / 0.8.5 Stable / 0.9 Beta 8.7",
+    comparisonCaption: "Feature overview · 0.7.23 / 0.8.5 / 0.9.0 Stable",
     comparisonFeature: "Feature",
-    comparisonLatest: "Latest Beta",
+    comparisonLatest: "Current Stable",
     comparisonDetails: "Detailed version history ↗",
-    betaGuideLink: "Install the latest Beta: illustrated guide ↓",
-    betaGuideKicker: "GET THE NEWEST FEATURES",
-    betaGuideHeading: "Enable Beta in ReaPack.",
-    betaGuideLead: "Normal synchronization does not opt you into Beta. Enable pre-releases for the main PsyReaSFX script package first.",
+    betaGuideLink: "Update to 0.9 Stable: illustrated guide ↓",
+    betaGuideKicker: "UPDATE TO STABLE",
+    betaGuideHeading: "Get 0.9.0 through normal ReaPack sync.",
+    betaGuideLead: "0.9.0 is now the default Stable release. No pre-release opt-in is required. If an older version is pinned, unpin it first.",
     betaStepOne: "Run Extensions → ReaPack → Synchronize packages, then open Browse packages and search for PsyReaSFX.",
-    betaStepTwo: "Right-click the main PsyReaSFX package (PsyReaSFX.lua) and check <strong>Enable pre-releases (bleeding-edge)</strong>.",
-    betaStepThree: "Right-click again → <strong>Versions</strong> → choose the newest 0.9.0-beta… (currently beta8.7). Leave <strong>Pin current version</strong> unchecked; unpin first if needed.",
+    betaStepTwo: "Right-click the main PsyReaSFX.lua package and uncheck <strong>Pin current version</strong> if an older version is pinned.",
+    betaStepThree: "Choose <strong>Install</strong>, or <strong>Versions → 0.9.0</strong> (Stable). The pre-release checkbox is only for future test builds.",
     betaStepFour: "Click <strong>Apply</strong>, or <strong>OK</strong> to confirm installation. Once downloads finish, close the old PsyReaSFX window and rerun it from REAPER's Action List.",
-    betaNeuralNote: "<strong>Local neural similarity requires a separate package:</strong> Windows x64 only. <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">Download the complete PsyReaSFX Neural Similarity ZIP</a> (about 42.4 MB, includes model and installers), or install the separate data package through ReaPack. Updating the main script does not install it. <a href=\"#neural-install\">Exact installation steps ↓</a>. Without it, similar-sound search uses the built-in 15-feature acoustic method.",
-    betaAiNote: "<strong>AI semantic search:</strong> no <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">neural package</a> required. In Settings, create, save and switch named DeepSeek / OpenAI / compatible API presets, each with an independent key and model. Enter runs normal search; the gold AI button runs semantic search. Audio is not uploaded.",
-    betaDataNote: "Updating the main script does not require rebuilding your libraries. Beta is a testing channel; use Stable for production work when reliability is the priority.",
-    betaScreenshotLabel: "View the ReaPack Beta installation screenshot at full resolution",
-    betaScreenshotCaption: "Menu-location example; click to view full resolution. This screenshot predates the pruning of older Betas. After synchronization, Versions lists only the newest Beta, 0.8.5 Stable and 0.7.23 Stable. Older releases remain on GitHub Releases.",
+    betaNeuralNote: "<strong>Local neural similarity requires a separate package:</strong> Windows x64 only. <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">Download the complete PsyReaSFX Neural Similarity ZIP</a> (about 42.4 MB, includes model and installers), or install the separate data package through ReaPack. Updating the main script does not install it. <a href=\"#neural-install\">Exact installation steps ↓</a>. Without it, similar-sound search uses the built-in 15-feature acoustic method.",
+    betaAiNote: "<strong>AI semantic search:</strong> no <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">neural package</a> required. In Settings, create, save and switch named DeepSeek / OpenAI / compatible API presets, each with an independent key and model. Enter runs normal search; the gold AI button runs semantic search. Audio is not uploaded.",
+    betaDataNote: "No mandatory library rebuild. Beta 8.5 or newer neural components and existing caches remain compatible with 0.9.0.",
+    betaScreenshotLabel: "View the historical ReaPack menu example at full resolution",
+    betaScreenshotCaption: "Historical Beta screenshot showing menu locations. Versions now lists 0.9.0, 0.8.5 and 0.7.23 Stable; older Betas remain on GitHub Releases. Enable pre-releases is not required for 0.9.0.",
     compareIncluded: "Included",
     compareRetained: "Retained",
     compareNone: "—",
@@ -145,8 +143,8 @@ const messages = {
     compareUcsFields: "Basic UCS fields only",
     compareOptIn: "Added; opt-in",
     compare15Features: "Built-in 15-feature acoustic retrieval",
-    compareAddon: "<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">Required neural package · Windows x64 ZIP ↗</a>",
-    compareApi: "Your API key/model; no <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">neural package</a> needed",
+    compareAddon: "<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">Required neural package · Windows x64 ZIP ↗</a>",
+    compareApi: "Your API key/model; no <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">neural package</a> needed",
     compareNoDelay: "Added; no fixed intro delay",
     compareFont: "10–24 px font scaling and adaptive waveform columns",
     compareFolders: "Sidebar hierarchy / roots-only and module visibility",
@@ -166,17 +164,17 @@ const messages = {
     neuralGuideLink: "Neural package: ReaPack / ZIP instructions ↓",
     neuralInstallKicker: "REQUIRED FOR NEURAL RETRIEVAL",
     neuralInstallHeading: "Get the model, not just the main script.",
-    neuralInstallLead: "One Find Similar Sounds entry, two automatic engines: built-in 15-feature acoustic search needs no download; EfficientAT neural retrieval requires <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">PsyReaSFX Neural Similarity</a>. AI semantic search is separate and needs your API settings, not this package.",
+    neuralInstallLead: "One Find Similar Sounds entry, two automatic engines: built-in 15-feature acoustic search needs no download; EfficientAT neural retrieval requires <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">PsyReaSFX Neural Similarity</a>. AI semantic search is separate and needs your API settings, not this package.",
     neuralZipDownload: "Download complete neural ZIP ↗",
-    neuralDownloadNote: "Windows x64 · Beta 8.7 · about 42.4 MB. Includes executable, model and installers. The standalone Release EXE does not include the model. Choose one installation method below.",
+    neuralDownloadNote: "Windows x64 · 0.9.0 · about 42.4 MB. Includes executable, model and installers. The standalone Release EXE does not include the model. Choose one installation method below.",
     neuralReapackHeading: "Recommended: install inside REAPER",
     neuralReapackOne: "Import the repository URL above, synchronize, then open <strong>Extensions → ReaPack → Browse packages</strong>.",
-    neuralReapackTwo: "Search for <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">PsyReaSFX Neural Similarity</a> and select the separate <strong>data package</strong>, not PsyReaSFX.lua.",
-    neuralReapackThree: "Right-click → <strong>Enable pre-releases (bleeding-edge)</strong> → <strong>Versions</strong> → latest Beta (currently 0.9.0-beta8.7). Uncheck <strong>Pin current version</strong>.",
+    neuralReapackTwo: "Search for <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">PsyReaSFX Neural Similarity</a> and select the separate <strong>data package</strong>, not PsyReaSFX.lua.",
+    neuralReapackThree: "Choose <strong>Install</strong> or <strong>Versions → 0.9.0</strong> (Stable). Uncheck <strong>Pin current version</strong> if needed; no pre-release opt-in is required.",
     neuralReapackFour: "Click <strong>Apply / OK</strong>, wait for downloads, close the old PsyReaSFX window and rerun it. ReaPack installs and updates the model and executable together.",
     neuralReapackPath: "Installed under <code>&lt;REAPER Resource Path&gt;\\Data\\PsyReaSFX\\neural_similarity\\</code>.",
     neuralManualHeading: "Alternative: install the complete ZIP",
-    neuralManualOne: "<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">Download the complete neural ZIP</a> and extract <strong>all files</strong>. Do not run the installer inside the archive.",
+    neuralManualOne: "<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">Download the complete neural ZIP</a> and extract <strong>all files</strong>. Do not run the installer inside the archive.",
     neuralManualTwo: "Double-click <code>Install-NeuralSimilarity.cmd</code>, wait for success, then restart PsyReaSFX.",
     neuralManualThree: "For portable REAPER, open <strong>Options → Show REAPER resource path</strong> to locate its folder, then use the resource-path command in the installer guide.",
     neuralManualPath: "Default manual destination: <code>%APPDATA%\\REAPER\\Scripts\\PsyReaSFX\\neural_similarity\\</code>.",
@@ -184,10 +182,10 @@ const messages = {
     neuralAfterInstall: "No separate Python or .NET runtime is required. Audio stays local, with no converted copies. First use builds a cancelable embedding cache and HNSW index; a missing or failed component automatically falls back to acoustic search.",
     quickStart: "QUICK START",
     installOnce: "Install once.<br>Update inside REAPER.",
-    installLead: "Import and synchronize the repository, then install PsyReaSFX. Stable updates use the same URL. To access 0.9 Beta features, follow the illustrated pre-release guide below.",
+    installLead: "Import and synchronize the repository, then install PsyReaSFX 0.9.0 Stable. All Beta 8.7 features are now in the default channel.",
     stepOne: "Open Extensions → ReaPack → Import repositories…",
     stepTwo: "Paste the repository URL below.",
-    stepThree: "Synchronize packages, search for PsyReaSFX and install. For Beta, enable pre-releases as shown below.",
+    stepThree: "Synchronize packages, search for PsyReaSFX and install 0.9.0 Stable.",
     copy: "Copy",
     copied: "Copied",
     host: "Host",
@@ -210,6 +208,8 @@ const messages = {
     releases: "Releases"
   },
   zh: {
+    licenseSummary: "个人与商业音频／游戏制作均可免费使用。重新发布、二次分发、出售软件，以及用受保护项目材料训练／蒸馏 AI 或生成复制软件，均须获得授权。用户创作成果不受此限制，第三方组件保留各自许可。<a href=\"https://github.com/Psysia/PsyReaSFX/blob/main/LICENSE\">查看完整协议 ↗</a>",
+    neuralOrigin: "神经组件用 AudioSet 训练的 mn04_as 模型把声音转换为学习特征，HNSW 查找特征接近的素材，再结合声学特征细化结果；全部在本机运行。感谢 <a href=\"https://github.com/fschmid56/EfficientAT\">EfficientAT</a> / <a href=\"https://github.com/fschmid56/EfficientAT_HEAR\">EfficientAT_HEAR</a>（MIT 许可）及 Google <a href=\"https://research.google.com/audioset/\">AudioSet</a> 项目。这是声音相似检索，与 AI 文本搜索分开。",
     skip: "跳到主要内容",
     homeLabel: "PsyReaSFX 首页",
     primaryNavLabel: "主导航",
@@ -231,7 +231,7 @@ const messages = {
     heroLead: "无需离开 REAPER，即可浏览、整理、试听并交付大型音效素材库。",
     installReapack: "通过 ReaPack 安装",
     downloadStable: "下载稳定版",
-    viewPreview: "查看 Beta 8.7",
+    viewPreview: "查看 0.9 新功能 ↓",
     freeUpdate: "一个仓库 · 自动更新",
     inlineWaveforms: "列表内联波形",
     visibleFirst: "可见内容优先缓存",
@@ -248,16 +248,16 @@ const messages = {
     desktopPreviewLabel: "桌面伴侣 · ALPHA 8",
     desktopPreviewTitle: "打开工程前，先进入你的音效库。",
     desktopPreviewText: "Windows x64 独立伴侣：逻辑库、快速搜索、波形、试听、Artwork、收藏和把文件拖入 REAPER。",
-    releaseKicker: "选择适合你的发布通道",
-    releaseHeading: "稳定版用于生产，预发布体验下一阶段。",
+    releaseKicker: "0.9 正式版已发布",
+    releaseHeading: "完整的 0.9 工作区，现已正式发布。",
     stableChannel: "稳定通道",
     stableSummary: "默认 ReaPack 版本，适合日常生产使用。",
     getStable: "获取稳定版 ↗",
-    previewChannel: "预发布通道",
-    previewSummary: "Beta 8.7 按原始 metadata、封面和附近目录命名定位厂商具体产品包，区分 BOOM Cinematic Hits、Cinematic Trailers 等库；证据不足时右键显示素材当前文件夹。更新主脚本后重开，无需重建；Beta 8.5 神经附加包继续兼容。",
-    getPreview: "查看预发布版 ↗",
+    previewChannel: "0.9 新功能",
+    previewSummary: "UCS 分类、声学／神经相似检索、独立 AI 语义搜索与 API 预设、自定义字体、文件夹导航、浏览标签快照、Watch Folder 开关及具体厂商产品包定位。正式版包含 Beta 8.7 全部功能。",
+    getPreview: "查看 0.9 发布说明 ↗",
     neuralAddon: "直接下载完整神经包 ZIP · Windows x64 ↗",
-    neuralInstallNote: "为 PsyReaSFX.lua 启用预发布并安装 Beta 8.7；神经检索还必须单独安装<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">PsyReaSFX Neural Similarity 附加包</a>。ReaPack 保留最新 Beta、0.8.5 和 0.7.23，历史版本仍在 GitHub。",
+    neuralInstallNote: "普通 ReaPack 同步即可更新 PsyReaSFX.lua 至 0.9.0 正式版。神经检索需另装<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">PsyReaSFX Neural Similarity 附加包</a>；两者均无需启用预发布。Versions 保留 0.9.0、0.8.5 和 0.7.23 正式版。",
     downloadDesktop: "下载桌面 Alpha 8",
     desktopGuide: "桌面版说明 ↗",
     completeLoop: "完整的音效素材库工作闭环",
@@ -288,7 +288,7 @@ const messages = {
     findText: "不同音效库与搜索可分标签浏览。Ctrl+N 新建，Ctrl+Shift+N 复制，Ctrl+W 关闭，Ctrl+Tab 切换；已完成 AI/相似结果在本会话保留，切换不再次调用 API。",
     ucsNavigation: "按 Category、SubCategory 和 CatID 浏览，不移动源文件",
     aiSemanticSearch: "用 DeepSeek 或 OpenAI-compatible API 理解一次自然语言描述，再在本地排序匹配的素材元数据",
-    similarSearch: "常见采样率、位深与格式均可本地神经召回；<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">必须另装神经包</a>，不可用时回退声学检索",
+    similarSearch: "常见采样率、位深与格式均可本地神经召回；<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">必须另装神经包</a>，不可用时回退声学检索",
     spectralPeaks: "在详细波形中按需查看频谱峰值",
     similarityDetails: "阅读相似声音架构 ↗",
     aiSemanticDetails: "阅读 AI 语义搜索架构 ↗",
@@ -311,26 +311,26 @@ const messages = {
     reaperTitle: "REAPER 交付",
     reaperText: "插入当前轨、新轨、BWF 原始位置，或拖入当前波形选区。",
     comparisonKicker: "版本差异",
-    comparisonHeading: "最新版 Beta 多了哪些功能？",
-    comparisonLead: "仅比较 REAPER / Lua 版，不含桌面伴侣。Beta 包含稳定版功能；“—”表示该版本没有此功能。",
+    comparisonHeading: "0.9 正式版多了哪些功能？",
+    comparisonLead: "仅比较 REAPER / Lua 版，不含桌面伴侣。0.9 包含历史稳定版功能；“—”表示该版本没有此功能。",
     comparisonScroll: "小屏幕可左右滑动表格，查看所有版本。",
-    comparisonCaption: "功能概览 · 0.7.23 Stable / 0.8.5 Stable / 0.9 Beta 8.7",
+    comparisonCaption: "功能概览 · 0.7.23 / 0.8.5 / 0.9.0 Stable",
     comparisonFeature: "功能",
-    comparisonLatest: "最新 Beta",
+    comparisonLatest: "当前正式版",
     comparisonDetails: "查看完整更新日志 ↗",
-    betaGuideLink: "安装最新版 Beta：图解步骤 ↓",
-    betaGuideKicker: "启用最新功能",
-    betaGuideHeading: "在 ReaPack 中启用 Beta。",
-    betaGuideLead: "普通同步不会自动加入 Beta。需要先为 PsyReaSFX 主脚本包启用预发布版本。",
+    betaGuideLink: "更新 0.9 正式版：图解步骤 ↓",
+    betaGuideKicker: "更新正式版",
+    betaGuideHeading: "普通 ReaPack 同步即可更新 0.9.0。",
+    betaGuideLead: "0.9.0 已成为默认正式版，无需启用预发布。如果固定了旧版本，先取消固定。",
     betaStepOne: "执行 扩展 → ReaPack → 同步软件包，再打开 浏览软件包 / Browse packages，搜索 PsyReaSFX。",
-    betaStepTwo: "右键主程序 PsyReaSFX（脚本包 PsyReaSFX.lua），勾选 <strong>Enable pre-releases (bleeding-edge)</strong>。",
-    betaStepThree: "再次右键 → <strong>Versions</strong> → 选择最新 0.9.0-beta…（当前 beta8.7）。不要勾选 <strong>Pin current version</strong>；已固定时先取消固定。",
+    betaStepTwo: "右键主程序 PsyReaSFX.lua；若固定了旧版，取消 <strong>Pin current version</strong>。",
+    betaStepThree: "选择 <strong>Install</strong>，或 <strong>Versions → 0.9.0</strong> 正式版。预发布开关仅用于将来的测试版本。",
     betaStepFour: "点击 <strong>Apply</strong>，或 <strong>OK</strong> 确认应用安装。下载完成后关闭旧 PsyReaSFX 窗口，从 REAPER 动作列表重新运行。",
-    betaNeuralNote: "<strong>本地神经相似检索必须另装包：</strong>仅支持 Windows x64。<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">直接下载完整 PsyReaSFX Neural Similarity ZIP</a>（约 42.4 MB，含模型与安装脚本），或在 ReaPack 安装独立数据包；更新主脚本不会自动安装。<a href=\"#neural-install\">具体安装步骤 ↓</a>。未安装时使用内置 15 维声学检索。",
-    betaAiNote: "<strong>AI 语义搜索：</strong>无需<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">神经包</a>。在设置中创建、保存并切换 DeepSeek / OpenAI / 兼容 API 预设，每组 Key 与模型独立。回车执行普通搜索，金色 AI 按钮执行语义搜索，不上传音频。",
-    betaDataNote: "更新主程序无需重建音效库。Beta 属于测试通道；重视生产稳定性时请使用 Stable。",
-    betaScreenshotLabel: "查看 ReaPack Beta 安装截图原尺寸",
-    betaScreenshotCaption: "右键菜单位置示意，点击可查看原图。截图拍摄于旧 Beta 精简之前；同步后 Versions 仅显示最新 Beta、0.8.5 Stable 与 0.7.23 Stable。历史版本仍在 GitHub Releases。",
+    betaNeuralNote: "<strong>本地神经相似检索必须另装包：</strong>仅支持 Windows x64。<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">直接下载完整 PsyReaSFX Neural Similarity ZIP</a>（约 42.4 MB，含模型与安装脚本），或在 ReaPack 安装独立数据包；更新主脚本不会自动安装。<a href=\"#neural-install\">具体安装步骤 ↓</a>。未安装时使用内置 15 维声学检索。",
+    betaAiNote: "<strong>AI 语义搜索：</strong>无需<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">神经包</a>。在设置中创建、保存并切换 DeepSeek / OpenAI / 兼容 API 预设，每组 Key 与模型独立。回车执行普通搜索，金色 AI 按钮执行语义搜索，不上传音频。",
+    betaDataNote: "无需强制重建音效库；Beta 8.5 及更新神经组件、现有缓存继续兼容 0.9.0。",
+    betaScreenshotLabel: "查看历史 ReaPack 菜单示例原图",
+    betaScreenshotCaption: "保留历史 Beta 截图说明菜单位置。Versions 现在列出 0.9.0、0.8.5 和 0.7.23 正式版，旧 Beta 仍在 GitHub Releases；安装 0.9.0 无需启用预发布。",
     compareIncluded: "有",
     compareRetained: "保留",
     compareNone: "—",
@@ -342,8 +342,8 @@ const messages = {
     compareUcsFields: "仅基础 UCS 字段",
     compareOptIn: "新增；按需启用",
     compare15Features: "主程序内置 15 维声学检索",
-    compareAddon: "<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">神经检索必装包 · Windows x64 ZIP ↗</a>",
-    compareApi: "自备 API Key / 模型；无需<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">神经包</a>",
+    compareAddon: "<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">神经检索必装包 · Windows x64 ZIP ↗</a>",
+    compareApi: "自备 API Key / 模型；无需<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">神经包</a>",
     compareNoDelay: "新增；无固定动画等待",
     compareFont: "10–24 px 字号联动缩放与波形列适配",
     compareFolders: "侧栏目录层级/根目录与模块开关",
@@ -363,17 +363,17 @@ const messages = {
     neuralGuideLink: "神经包安装：ReaPack / ZIP 步骤 ↓",
     neuralInstallKicker: "神经相似声音检索必装",
     neuralInstallHeading: "下载附加包，不是只更新主脚本。",
-    neuralInstallLead: "同一个“相似声音”入口自动选择两种引擎：基础 15 维声学检索无需下载；EfficientAT 神经检索必须安装 <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">PsyReaSFX Neural Similarity</a>。AI 语义搜索是独立功能，需要自行配置 API，不需要这个包。",
+    neuralInstallLead: "同一个“相似声音”入口自动选择两种引擎：基础 15 维声学检索无需下载；EfficientAT 神经检索必须安装 <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">PsyReaSFX Neural Similarity</a>。AI 语义搜索是独立功能，需要自行配置 API，不需要这个包。",
     neuralZipDownload: "直接下载完整神经包 ZIP ↗",
-    neuralDownloadNote: "Windows x64 · Beta 8.7 · 约 42.4 MB。包含程序、模型与安装脚本；Release 裸 EXE 不含模型。下方两种安装方式任选一种即可。",
+    neuralDownloadNote: "Windows x64 · 0.9.0 · 约 42.4 MB。包含程序、模型与安装脚本；Release 裸 EXE 不含模型。下方两种安装方式任选一种即可。",
     neuralReapackHeading: "推荐：在 REAPER 内安装",
     neuralReapackOne: "导入上方仓库地址并同步，再打开 <strong>扩展 → ReaPack → 浏览软件包 / Browse packages</strong>。",
-    neuralReapackTwo: "搜索 <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">PsyReaSFX Neural Similarity</a>，选中独立<strong>数据包</strong>，不是 PsyReaSFX.lua 主脚本。",
-    neuralReapackThree: "右键 → <strong>Enable pre-releases (bleeding-edge)</strong> → <strong>Versions</strong> → 最新 Beta（当前 0.9.0-beta8.7）；取消 <strong>Pin current version</strong>。",
+    neuralReapackTwo: "搜索 <a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">PsyReaSFX Neural Similarity</a>，选中独立<strong>数据包</strong>，不是 PsyReaSFX.lua 主脚本。",
+    neuralReapackThree: "选择 <strong>Install</strong> 或 <strong>Versions → 0.9.0</strong> 正式版；需要时取消 <strong>Pin current version</strong>，无需启用预发布。",
     neuralReapackFour: "点击 <strong>Apply / OK</strong>，等待下载结束，关闭旧 PsyReaSFX 窗口并重新运行。ReaPack 会一起安装、更新程序和模型。",
     neuralReapackPath: "安装到 <code>&lt;REAPER 资源目录&gt;\\Data\\PsyReaSFX\\neural_similarity\\</code>。",
     neuralManualHeading: "备用：完整 ZIP 手动安装",
-    neuralManualOne: "点击<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip\">完整神经包 ZIP 精确下载</a>，<strong>全部解压</strong>，不要在压缩包内直接运行安装脚本。",
+    neuralManualOne: "点击<a data-neural-download href=\"https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip\">完整神经包 ZIP 精确下载</a>，<strong>全部解压</strong>，不要在压缩包内直接运行安装脚本。",
     neuralManualTwo: "双击 <code>Install-NeuralSimilarity.cmd</code>，提示成功后重新启动 PsyReaSFX。",
     neuralManualThree: "便携版 REAPER 请通过 <strong>Options → Show REAPER resource path / 显示 REAPER 资源路径</strong> 确认目录，再按安装说明指定该目录。",
     neuralManualPath: "手动安装默认目录：<code>%APPDATA%\\REAPER\\Scripts\\PsyReaSFX\\neural_similarity\\</code>。",
@@ -381,10 +381,10 @@ const messages = {
     neuralAfterInstall: "无需另装 Python 或 .NET，不上传音频，不生成转码副本。首次使用会建立可取消的特征缓存与 HNSW 索引；组件缺失或异常时自动回退基础声学检索。",
     quickStart: "快速开始",
     installOnce: "安装一次，<br>以后在 REAPER 内更新。",
-    installLead: "在 ReaPack 中导入并同步仓库，再安装 PsyReaSFX。稳定版更新使用同一地址；如需 0.9 Beta 新功能，请按下方图解启用预发布版本。",
+    installLead: "在 ReaPack 中导入并同步仓库，再安装 PsyReaSFX 0.9.0 正式版。Beta 8.7 全部功能现已进入默认更新通道。",
     stepOne: "打开 Extensions → ReaPack → Import repositories…",
     stepTwo: "粘贴下方仓库地址。",
-    stepThree: "同步软件包，搜索 PsyReaSFX 并安装。如需 Beta，请按下方步骤启用预发布。",
+    stepThree: "同步软件包，搜索 PsyReaSFX，安装 0.9.0 正式版。",
     copy: "复制",
     copied: "已复制",
     host: "宿主",
@@ -488,7 +488,7 @@ function updateReleaseLink(selector, release, fallback) {
 
 function findNeuralArchive(release) {
   return (release?.assets || []).find((item) =>
-    /^PsyReaSFX_Neural_Similarity_v[\d_]+_beta[\d_]+_win_x64\.zip$/i.test(item.name)
+    /^PsyReaSFX_Neural_Similarity_v[\d_]+(?:_beta[\d_]+)?_win_x64\.zip$/i.test(item.name)
   );
 }
 
@@ -516,21 +516,14 @@ async function updateReleaseChannels() {
     const stable = releases.find((release) =>
       !release.draft && !release.prerelease && /^v\d/i.test(release.tag_name)
     );
-    const preview = releases.find((release) =>
-      !release.draft && release.prerelease && /^v\d/i.test(release.tag_name)
-    );
     const desktopAsset = releases.flatMap((release) => release.assets || [])
       .find((item) => /PsyReaSFX_Desktop_.*win_x64\.zip$/i.test(item.name));
 
     document.querySelectorAll("[data-stable-version]").forEach((element) => {
       element.textContent = formatReleaseVersion(stable?.tag_name) || STABLE_FALLBACK.version;
     });
-    document.querySelectorAll("[data-preview-version]").forEach((element) => {
-      element.textContent = formatReleaseVersion(preview?.tag_name) || PREVIEW_FALLBACK.version;
-    });
     updateReleaseLink("[data-stable-download]", stable, STABLE_FALLBACK);
-    updateReleaseLink("[data-preview-download]", preview, PREVIEW_FALLBACK);
-    updateNeuralDownload(preview);
+    updateNeuralDownload(stable);
     document.querySelectorAll("[data-desktop-download]").forEach((link) => {
       if (desktopAsset) link.href = desktopAsset.browser_download_url;
     });

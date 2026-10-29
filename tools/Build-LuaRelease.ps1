@@ -48,6 +48,22 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
     $release = [regex]::Replace($release, '(?m)^-- @version\s+[^\r\n]+$', "-- @version $Version", 1)
 }
 
+$release = [regex]::Replace($release, 'release_id = "PsyReaSFX/[^"\r\n]+"',
+    'release_id = "PsyReaSFX/' + ([regex]::Match($release, '(?m)^-- @version\s+(\S+)').Groups[1].Value) + '"')
+$provenancePattern = 'source_sha256 = "development"'
+if ([regex]::Matches($release, $provenancePattern).Count -ne 1) {
+    throw "Expected exactly one release provenance template."
+}
+# Hash the normalized assembled source before replacing its fingerprint placeholder.
+# No timestamp, workstation path, user identifier or Git checkout state enters the digest.
+$sourceHasher = [Security.Cryptography.SHA256]::Create()
+try {
+    $sourceDigest = [BitConverter]::ToString(
+        $sourceHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($release))
+    ).Replace('-', '').ToLowerInvariant()
+} finally { $sourceHasher.Dispose() }
+$release = $release.Replace($provenancePattern, 'source_sha256 = "' + $sourceDigest + '"')
+
 $parent = Split-Path -Parent $OutputPath
 if (-not [string]::IsNullOrWhiteSpace($parent)) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
 $temporary = "$OutputPath.tmp"
