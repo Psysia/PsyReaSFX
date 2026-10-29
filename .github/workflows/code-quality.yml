@@ -55,7 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta8.6 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.9.0-beta8.7 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -155,6 +155,12 @@ jobs:
         run: |
           lua tools/lua_browser_actions_selftest.lua
           if ($LASTEXITCODE -ne 0) { throw 'Browser actions test failed' }
+
+      - name: Run publisher product-folder navigation self-test
+        shell: pwsh
+        run: |
+          lua tools/lua_product_navigation_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Product navigation test failed' }
 
       - name: Run Lua startup fast-path self-test
         shell: pwsh
@@ -280,14 +286,14 @@ jobs:
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-release-assets'
-          ./tools/Build-BetaRelease.ps1 -Version 0.9.0-beta8.6 -OutputDirectory $output
+          ./tools/Build-BetaRelease.ps1 -Version 0.9.0-beta8.7 -OutputDirectory $output
           ./tools/Test-NeuralPackage.ps1 `
-            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip') `
+            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip') `
             -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-package')
           ./tools/Test-ReaPackNeuralPackage.ps1 `
             -IndexPath 'index.xml' `
-            -Version '0.9.0-beta8.6' `
-            -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_0_beta8_6_win_x64.exe')
+            -Version '0.9.0-beta8.7' `
+            -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_0_beta8_7_win_x64.exe')
 
       - name: Run Desktop self-test
         shell: pwsh

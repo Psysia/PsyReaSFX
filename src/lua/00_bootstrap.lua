@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0-beta8.6
+-- @version 0.9.0-beta8.7
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,7 @@
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 8.6：右侧面板右键直接跳转素材所在音效库，移除失效的弹窗交互
+--   - Beta 8.7：按原始产品 metadata、封面和目录命名识别具体厂商产品包，缺少依据时回退当前文件夹
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
 --   - Beta 6 热修复：补齐主题强调色，避免左栏箭头中断 ImGui Child 栈
 --   - 0.7.5：应用 PsyReaSFX 品牌色与 About 图标，README 使用正式品牌横幅
@@ -206,7 +207,7 @@
 --   <REAPER Resource Path>/Scripts/PsyReaSFX/
 
 local SCRIPT_NAME = "PsyReaSFX"
-local VERSION = "0.9.0 Beta 8.6"
+local VERSION = "0.9.0 Beta 8.7"
 local AUTHOR_NAME = "Psysia"
 local COPYRIGHT_TEXT =
   "Copyright © 2026 Psysia. All rights reserved."
@@ -2243,7 +2244,7 @@ I18N_EN["Watch Folder 已开启：自动发现新增音频"] = "Watch Folder ena
 I18N_EN["Watch Folder 已关闭；当前导入任务继续，之后不再自动检查"] =
   "Watch Folder disabled; the current import continues and future automatic checks stop"
 I18N_EN["此素材的音效库来源已失效，请检查来源路径"] = "This asset's library is unavailable; check its source path"
-I18N_EN["已显示素材所在音效库的全部声音"] = "Showing all sounds in the asset's library"
+I18N_EN["素材所在文件夹不可用"] = "The asset's folder is unavailable"
 I18N_EN["正在准备神经相似度范围"] = "Preparing neural search scope"
 I18N_EN["正在写入神经相似度清单"] = "Writing neural asset manifest"
 I18N_EN["正在重排神经相似度候选"] = "Reranking neural candidates"
@@ -2412,6 +2413,8 @@ I18N_EN["当前批次没有可显示的 AI 语义结果。"] =
   "The current batch has no AI semantic results to display."
 
 I18N_PATTERNS_EN = {
+  { "^未识别到产品包，已显示素材所在文件夹：(.*)$", "Product package not identified; showing the asset's folder: %1" },
+  { "^已显示音效库产品包：(.*)$", "Showing sound-library product package: %1" },
   { "^已读取 (%d+) 条素材$", "Loaded %1 assets" },
   { "^已用 ([%d%.]+) 秒$", "Elapsed %1 s" },
   {

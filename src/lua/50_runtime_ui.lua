@@ -20719,21 +20719,82 @@ function draw_ucs_candidate_actions(asset)
   ImGui.Spacing(ctx)
 end
 
+function product_navigation_source_names(asset)
+  local fingerprint = table.concat({tostring(asset.signature or ""), tostring(asset.size or 0),
+    tostring(asset.indexed), tostring(asset.library or "")}, "|")
+  local cached = ProductNavigation.metadata_cache[asset]
+  if cached and cached.fingerprint == fingerprint then return cached.names end
+  local names = {}
+  local metadata_ok = false
+  local opened, source = pcall(reaper.PCM_Source_CreateFromFile, asset.path)
+  if not opened then source = nil end
+  if source then
+    local ok, metadata = pcall(metadata_map, source)
+    reaper.PCM_Source_Destroy(source)
+    if ok then names = product_navigation_metadata_names(metadata) metadata_ok = true end
+  end
+  -- The editable Library field may contain a real product title, but its
+  -- default is the logical imported-library name (e.g. "Aki").
+  local library = (state.library_by_id or {})[asset.library_id]
+  if asset.library and asset.library ~= "" and (not library or asset.library ~= library.name) then
+    names[#names+1] = asset.library
+  end
+  if metadata_ok then product_navigation_remember_metadata(asset, fingerprint, names) end
+  return names
+end
+
+function product_navigation_folder_cover(folder, reference)
+  local exact = join_path(folder, basename(reference))
+  if reaper.file_exists(exact) then return exact end
+  local cached = state.artwork_folder_cache[path_key(folder)]
+  if type(cached) == "string" then return cached end
+  for index=0,31 do
+    local name = reaper.EnumerateFiles(folder, index)
+    if not name then break end
+    if is_artwork_file(name) then return join_path(folder, name) end
+  end
+  return ""
+end
+
+function product_navigation_same_artwork(left, right, cache)
+  if path_key(left) == path_key(right) then return true end
+  cache = cache or {}
+  local function read(path)
+    local key = path_key(path)
+    if cache[key] ~= nil then return cache[key] or nil end
+    local file = io.open(path, "rb")
+    if not file then cache[key] = false return nil end
+    local size = file:seek("end")
+    if not size or size == 0 or size > ProductNavigation.artwork_max_bytes then
+      file:close() cache[key] = false return nil
+    end
+    file:seek("set", 0)
+    local data = file:read("*a") file:close()
+    cache[key] = data or false
+    return data
+  end
+  local a = read(left)
+  return a and a == read(right) or false
+end
+
 function browse_asset_library(asset)
   if not asset then return false end
   if workspace_tabs_busy() then
     set_status("请等待或取消当前 AI / 相似声音任务后再切换标签页", true)
     return false
   end
-  local library = (state.library_by_id or {})[asset.library_id]
-  if not library and type(root_for_path) == "function" then
-    local _, root = root_for_path(asset.path)
-    library = root and (state.library_by_id or {})[root.library_id]
-  end
-  if not library then
-    set_status("此素材的音效库来源已失效，请检查来源路径", true)
-    return false
-  end
+  local record = root_record_for_asset(asset)
+  local cover = tostring(asset.artwork_path or "")
+  if cover == "" and record then cover = tostring(record.artwork_path or "") end
+  if cover ~= "" and cover ~= "-" and not reaper.file_exists(cover) then cover = "" end
+  local cover_data = {}
+  local target, reason = resolve_asset_product_folder(asset, {
+    metadata_names = product_navigation_source_names(asset),
+    cover_path = cover, root = record and record.path or asset.root,
+    cover_at = function(folder) return product_navigation_folder_cover(folder, cover) end,
+    same_artwork = function(a,b) return product_navigation_same_artwork(a,b,cover_data) end,
+  })
+  if not target then set_status("素材所在文件夹不可用", true) return false end
   stop_preview()
   AppState.apply({search="", view="all", sort_mode="name", sort_desc=false, results_dirty=true,
     config_dirty=true, results_scroll_y=0})
@@ -20741,14 +20802,15 @@ function browse_asset_library(asset)
     "ucs_filter_catid","root_filter","library_filter_id","results_job","results_scroll_y_request"}) do
     AppState.set(key,nil)
   end
-  AppState.set("library_filter_id",library.id or asset.library_id)
+  AppState.set("root_filter", target)
   AppState.set("selected_path",asset.path)
   AppState.set("selected_set",{[path_key(asset.path)]=true})
   AppState.set("selected_index",0)
   AppState.set("selection_anchor",0)
   AppState.set("workspace_tab_scroll_restore",{x=state.results_scroll_x or 0,y=0,frames=2})
   workspace_tabs_track()
-  set_status("已显示素材所在音效库的全部声音")
+  set_status(string.format(reason == "folder" and "未识别到产品包，已显示素材所在文件夹：%s"
+    or "已显示音效库产品包：%s", basename(target)))
   return true
 end
 

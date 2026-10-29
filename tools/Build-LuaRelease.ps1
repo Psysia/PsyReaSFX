@@ -29,6 +29,7 @@ $modules = @(
     "43_neural_similarity.lua",
     "44_ai_semantic_search.lua",
     "45_duplicate_confirmation.lua",
+    "46_product_navigation.lua",
     "50_runtime_ui.lua"
 )
 $parts = foreach ($module in $modules) {

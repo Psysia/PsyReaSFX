@@ -9,7 +9,7 @@ EfficientAT `mn04_as` 模型生成音频 embedding，并通过 HNSW 加速全库
 **神经检索必须安装此包；基础声学检索和 AI 语义搜索不需要。
 更新主脚本不会自动安装它。**
 
-**[完整神经包 ZIP 精确下载 · Beta 8.6 · Windows x64 · 约 42.4 MB][neural-download]**
+**[完整神经包 ZIP 精确下载 · Beta 8.7 · Windows x64 · 约 42.4 MB][neural-download]**
 包含模型和安装脚本，不要只下载裸 EXE。
 
 1. 导入并同步 [PsyReaSFX 仓库](https://github.com/Psysia/PsyReaSFX/raw/main/index.xml)。
@@ -17,7 +17,7 @@ EfficientAT `mn04_as` 模型生成音频 embedding，并通过 HNSW 加速全库
 3. 打开 `扩展 → ReaPack → 浏览软件包 / Browse packages`，搜索独立数据包
    [PsyReaSFX Neural Similarity][neural-download]，启用
    **Enable pre-releases (bleeding-edge)**，在 **Versions** 选最新 Beta
-   （当前 `0.9.0-beta8.6`），取消 **Pin current version**，点击 **Apply / OK**。
+   （当前 `0.9.0-beta8.7`），取消 **Pin current version**，点击 **Apply / OK**。
 4. 重新启动 PsyReaSFX。
 
 ReaPack 会把组件安装到 REAPER 的 `Data` 目录，并负责后续更新与卸载。可重建的
@@ -57,9 +57,9 @@ FLAC、MP3、M4A。安装 FFmpeg 后还会启用 OGG、Opus、WavPack 与 CAF；
 <REAPER 资源目录>\Scripts\PsyReaSFX\neural_similarity\
 ```
 
-## Beta 8.6 兼容说明
+## Beta 8.7 兼容说明
 
-Beta 8.6 直接跳转修复仅需更新主脚本并重开；已安装 Beta 8.5 组件无需更新。
+Beta 8.7 直接跳转修复仅需更新主脚本并重开；已安装 Beta 8.5 组件无需更新。
 更早组件需更新，才能使用 Beta 8.5 引入的音频窗口进度与窗口间取消。
 组件 0.5.1 显示模型加载、解码和当前音频窗口进度，在窗口之间检查取消；
 解码或单次模型计算仍可能需要等待。首次全库检索逐条计算未缓存音频，
@@ -76,4 +76,4 @@ Beta 8.6 直接跳转修复仅需更新主脚本并重开；已安装 Beta 8.5 �
 
 卸载或组件故障不会影响 PsyReaSFX；相似搜索会透明回退到基础算法。
 
-[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.6/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_6_win_x64.zip
+[neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0-beta8.7/PsyReaSFX_Neural_Similarity_v0_9_0_beta8_7_win_x64.zip
