@@ -261,8 +261,6 @@ Copyright © 2026 Psysia. All rights reserved.
 
 **免费使用，包含商业项目：** 个人与团队均可用于付费声音设计、游戏及其他商业制作，用户创作成果可交付和出售。未经授权，禁止发布修改版、二次分发或出售软件本身；也禁止将受保护项目材料用于训练、微调、蒸馏 AI 模型或生成复制／移植软件。保留私人内部修改、GitHub 平台规定的权利与第三方各自许可。这是源码可见许可，并非开源许可。
 
-正式构建在 Lua 与诊断信息中记录项目标识及可复现源码指纹，ZIP 内附 `RELEASE-PROVENANCE.json`。可疑副本可与官方文件及 SHA-256 校验值比对；标记仅辅助溯源，无法阻止删除或复制，不进行联网追踪。
-
 仓库许可详情见 [LICENSE](LICENSE)，第三方资源继续遵循各自许可。
 
 [neural-download]: https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip
