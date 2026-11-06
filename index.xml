@@ -13,6 +13,22 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
+      <version name="0.9.1" author="Psysia" time="2026-11-06T04:45:55Z">
+        <changelog><![CDATA[
+- Revisited list rows reload their saved waveform cache instead of re-decoding the source audio.
+- Searching by workflow status reflects status changes immediately.
+- Metadata descriptions follow a fixed field priority (DESCRIPTION, COMMENT, TITLE, INAM) and skip blank values.
+- A rejected background job no longer cancels the job it would have replaced.
+- The sidebar shortcut to classify existing assets opens Settings again; Transfer reports no longer contain a stray seventh column.
+- Lower per-frame cost in the English interface, UCS search suggestions and catalog saves.
+- Update the main script and restart. The 0.9.0 neural component and existing caches remain compatible.
+        ]]></changelog>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.1/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.1/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.1/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.1/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.1/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.0" author="Psysia" time="2026-10-29T06:48:32Z">
         <changelog><![CDATA[
 - Publish the complete Beta 8.7 feature set as 0.9.0 Stable, the default ReaPack update.

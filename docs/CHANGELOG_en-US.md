@@ -1,5 +1,16 @@
 # PsyReaSFX Changelog
 
+## 0.9.1 Stable — 2026-11-06
+
+- Revisited list rows reload their saved `.rwf` waveform cache instead of re-decoding the source audio after leaving the in-memory cache.
+- Free-text searches for a workflow status reflect status changes immediately.
+- Imported descriptions and keywords follow the documented field priority (DESCRIPTION, COMMENT, TITLE, INAM) and skip blank values, instead of depending on hash order.
+- A background job that is rejected because its resource is busy no longer cancels the job it would have replaced.
+- The sidebar "Classify existing assets in Maintenance" button opens Settings again.
+- Transfer reports (`transfer_report_latest.tsv`) no longer contain a stray seventh column.
+- Lower per-frame cost: English-interface translation of table cells is memoized, UCS search suggestions are computed only while visible, and TSV escaping skips fields that need none.
+- Update the main script and restart. The 0.9.0 neural component, existing databases and caches remain compatible; no library rebuild.
+
 ## 0.9.0 Stable — 2026-10-29
 
 - Promotes the complete Beta 8.7 feature set to the default stable ReaPack channel.
