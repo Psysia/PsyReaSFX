@@ -213,7 +213,7 @@ local VERSION = "0.9.0 Stable"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.0",
-  source_sha256 = "c760b33305cf0810659e88f3a30e73827022b20e329a848d87bf8105be1be3b2",
+  source_sha256 = "08dd7b77288a1ebe007728c6a25a4de4c72e9392d1a8b94635821636693e2865",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -2821,6 +2821,40 @@ function translate_ui_text(value)
     return exact
   end
 
+  -- Table cells pass user data (file names, descriptions, paths) through
+  -- this wrapper on every frame. The prefix and pattern scans below are pure
+  -- for a given text, so remember their outcome in a bounded memo.
+  local memo = I18N_TRANSLATION_MEMO
+  if memo then
+    local cached = memo[text]
+    if cached then
+      if cached == text and I18N_MISSING[text] then
+        I18N_MISSING[text] = I18N_MISSING[text] + 1
+      end
+      return cached
+    end
+  end
+
+  local translated = translate_ui_text_uncached(text)
+
+  if memo then
+    if I18N_TRANSLATION_MEMO_SIZE >= I18N_TRANSLATION_MEMO_LIMIT then
+      memo = {}
+      I18N_TRANSLATION_MEMO = memo
+      I18N_TRANSLATION_MEMO_SIZE = 0
+    end
+    memo[text] = translated
+    I18N_TRANSLATION_MEMO_SIZE = I18N_TRANSLATION_MEMO_SIZE + 1
+  end
+
+  return translated
+end
+
+I18N_TRANSLATION_MEMO = {}
+I18N_TRANSLATION_MEMO_SIZE = 0
+I18N_TRANSLATION_MEMO_LIMIT = 4096
+
+function translate_ui_text_uncached(text)
   for prefix, replacement in pairs(I18N_PREFIX_EN) do
     if text:sub(1, #prefix) == prefix then
       return replacement .. text:sub(#prefix + 1)
@@ -4528,17 +4562,25 @@ function fit_text_to_width(text, maximum_width)
   return fitted
 end
 
+-- Called for every field of every saved row (about 17M calls for a 500k
+-- catalog), so avoid the per-call closure and skip gsub when nothing needs
+-- escaping. Exactly one value is returned; the old gsub form also leaked its
+-- replacement count into multi-value positions such as table constructors.
 function escape_tsv(value)
-  return tostring(value or ""):gsub(
-    "[%%\t\r\n]",
-    function(char)
-      return string.format(
-        "%%%02X",
-        string.byte(char)
-      )
-    end
-  )
+  local text = tostring(value or "")
+  if not text:find("[%%\t\r\n]") then
+    return text
+  end
+  return (text:gsub("[%%\t\r\n]", TSV_ESCAPE_MAP))
 end
+
+-- Defined after escape_tsv so tools that load that region alone get it too.
+TSV_ESCAPE_MAP = {
+  ["%"] = "%25",
+  ["\t"] = "%09",
+  ["\r"] = "%0D",
+  ["\n"] = "%0A",
+}
 
 function unescape_tsv(value)
   if not (value or ""):find("%", 1, true) then return value or "" end
@@ -5775,15 +5817,12 @@ function Jobs.begin(
 
   local previous = Jobs.active[kind]
 
-  if previous then
-    if not replace_same_kind then
-      return nil, "already_running"
-    end
-
-    previous.cancel_requested = true
-    previous.state = "canceling"
+  if previous and not replace_same_kind then
+    return nil, "already_running"
   end
 
+  -- Check the resource before touching the previous job: a rejected start
+  -- must not leave the job it would have replaced cancelled and orphaned.
   for active_kind, token in pairs(Jobs.active) do
     if active_kind ~= kind
       and token.state ~= "completed"
@@ -5791,6 +5830,11 @@ function Jobs.begin(
       and token.resource == resource then
       return nil, "resource_busy"
     end
+  end
+
+  if previous then
+    previous.cancel_requested = true
+    previous.state = "canceling"
   end
 
   Jobs.generation = Jobs.generation + 1
@@ -18613,6 +18657,8 @@ function set_workflow_status(
   for _, asset in ipairs(assets or {}) do
     if asset.workflow_status ~= status then
       asset.workflow_status = status
+      -- The free-text search blob embeds the workflow label.
+      asset._search_blob = nil
       mark_asset_database_change(asset)
       count = count + 1
     end
@@ -19903,13 +19949,29 @@ function metadata_map(source)
 end
 
 function metadata_pick(map, names)
-  for key, value in pairs(map) do
-    local upper = key:upper()
+  -- Honour the caller's name priority. Iterating the map first would let
+  -- Lua's randomised hash order decide (e.g. TITLE beating DESCRIPTION),
+  -- and the winner could change between REAPER sessions. Among keys that
+  -- match the same name, pick the lexically smallest for determinism; blank
+  -- values fall through to the next name.
+  for _, name in ipairs(names) do
+    local best_key = nil
+    local best_value = nil
 
-    for _, name in ipairs(names) do
-      if upper:find(name, 1, true) then
-        return value
+    for key, value in pairs(map) do
+      local upper = key:upper()
+
+      if upper:find(name, 1, true)
+        and value ~= nil
+        and tostring(value):match("%S")
+        and (best_key == nil or upper < best_key) then
+        best_key = upper
+        best_value = value
       end
+    end
+
+    if best_key ~= nil then
+      return best_value
     end
   end
 
@@ -21489,9 +21551,16 @@ function save_wave_to_disk(
 )
   ensure_dirs()
 
+  local cache_key =
+    wave_cache_key(asset, points, preserve_channels, spectral)
+  -- A new disk file makes any earlier "not on disk" probe stale.
+  if state and state.wave_checked then
+    state.wave_checked[cache_key] = nil
+  end
+
   local file =
     io.open(
-      wave_cache_path(asset, points, preserve_channels, spectral),
+      join_path(WAVE_CACHE_DIR, cache_key .. ".rwf"),
       "wb"
     )
 
@@ -22200,6 +22269,9 @@ function store_wave_memory(key, waveform)
     end
 
     state.wave_cache[oldest_key] = nil
+    -- An evicted waveform must be reloaded from its .rwf file, not rebuilt
+    -- from the source audio, so forget that its disk cache was probed.
+    state.wave_checked[oldest_key] = nil
     state.wave_cache_count =
       state.wave_cache_count - 1
   end
@@ -30600,7 +30672,9 @@ function draw_ucs_sidebar_tree()
     end
     if dark_button("前往维护页分类现有素材", -1) then
       AppState.set("settings_tab", "maintenance")
-      ImGui.OpenPopup(ctx, "设置##reasfx")
+      -- OpenPopup here would use the sidebar child's ID stack, which never
+      -- matches the main-window settings modal; request it instead.
+      AppState.set("settings_popup_requested", 1)
     end
     return
   end
@@ -32119,12 +32193,25 @@ function draw_sidebar()
 end
 
 function draw_ucs_search_suggestion_popup(active, x, y, width)
-  local suggestions = ucs_search_suggestions(
-    state.search,
-    state.language,
-    7
-  )
+  -- Check visibility first: building suggestions scans the whole UCS
+  -- catalog and would otherwise run every frame while the popup is hidden.
   if not state.ucs_search_popup_visible then return end
+  local memo_key = tostring(state.language) .. "\0" .. tostring(state.search)
+  local memo = UCS_SEARCH_SUGGESTION_MEMO
+  local suggestions
+  if memo and memo.key == memo_key then
+    suggestions = memo.suggestions
+  else
+    suggestions = ucs_search_suggestions(
+      state.search,
+      state.language,
+      7
+    )
+    UCS_SEARCH_SUGGESTION_MEMO = {
+      key = memo_key,
+      suggestions = suggestions,
+    }
+  end
   if #suggestions == 0 then
     AppState.set("ucs_search_popup_visible", false)
     return

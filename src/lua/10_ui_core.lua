@@ -11,6 +11,40 @@ function translate_ui_text(value)
     return exact
   end
 
+  -- Table cells pass user data (file names, descriptions, paths) through
+  -- this wrapper on every frame. The prefix and pattern scans below are pure
+  -- for a given text, so remember their outcome in a bounded memo.
+  local memo = I18N_TRANSLATION_MEMO
+  if memo then
+    local cached = memo[text]
+    if cached then
+      if cached == text and I18N_MISSING[text] then
+        I18N_MISSING[text] = I18N_MISSING[text] + 1
+      end
+      return cached
+    end
+  end
+
+  local translated = translate_ui_text_uncached(text)
+
+  if memo then
+    if I18N_TRANSLATION_MEMO_SIZE >= I18N_TRANSLATION_MEMO_LIMIT then
+      memo = {}
+      I18N_TRANSLATION_MEMO = memo
+      I18N_TRANSLATION_MEMO_SIZE = 0
+    end
+    memo[text] = translated
+    I18N_TRANSLATION_MEMO_SIZE = I18N_TRANSLATION_MEMO_SIZE + 1
+  end
+
+  return translated
+end
+
+I18N_TRANSLATION_MEMO = {}
+I18N_TRANSLATION_MEMO_SIZE = 0
+I18N_TRANSLATION_MEMO_LIMIT = 4096
+
+function translate_ui_text_uncached(text)
   for prefix, replacement in pairs(I18N_PREFIX_EN) do
     if text:sub(1, #prefix) == prefix then
       return replacement .. text:sub(#prefix + 1)
@@ -1718,17 +1752,25 @@ function fit_text_to_width(text, maximum_width)
   return fitted
 end
 
+-- Called for every field of every saved row (about 17M calls for a 500k
+-- catalog), so avoid the per-call closure and skip gsub when nothing needs
+-- escaping. Exactly one value is returned; the old gsub form also leaked its
+-- replacement count into multi-value positions such as table constructors.
 function escape_tsv(value)
-  return tostring(value or ""):gsub(
-    "[%%\t\r\n]",
-    function(char)
-      return string.format(
-        "%%%02X",
-        string.byte(char)
-      )
-    end
-  )
+  local text = tostring(value or "")
+  if not text:find("[%%\t\r\n]") then
+    return text
+  end
+  return (text:gsub("[%%\t\r\n]", TSV_ESCAPE_MAP))
 end
+
+-- Defined after escape_tsv so tools that load that region alone get it too.
+TSV_ESCAPE_MAP = {
+  ["%"] = "%25",
+  ["\t"] = "%09",
+  ["\r"] = "%0D",
+  ["\n"] = "%0A",
+}
 
 function unescape_tsv(value)
   if not (value or ""):find("%", 1, true) then return value or "" end

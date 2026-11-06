@@ -2050,6 +2050,8 @@ function set_workflow_status(
   for _, asset in ipairs(assets or {}) do
     if asset.workflow_status ~= status then
       asset.workflow_status = status
+      -- The free-text search blob embeds the workflow label.
+      asset._search_blob = nil
       mark_asset_database_change(asset)
       count = count + 1
     end
@@ -3340,13 +3342,29 @@ function metadata_map(source)
 end
 
 function metadata_pick(map, names)
-  for key, value in pairs(map) do
-    local upper = key:upper()
+  -- Honour the caller's name priority. Iterating the map first would let
+  -- Lua's randomised hash order decide (e.g. TITLE beating DESCRIPTION),
+  -- and the winner could change between REAPER sessions. Among keys that
+  -- match the same name, pick the lexically smallest for determinism; blank
+  -- values fall through to the next name.
+  for _, name in ipairs(names) do
+    local best_key = nil
+    local best_value = nil
 
-    for _, name in ipairs(names) do
-      if upper:find(name, 1, true) then
-        return value
+    for key, value in pairs(map) do
+      local upper = key:upper()
+
+      if upper:find(name, 1, true)
+        and value ~= nil
+        and tostring(value):match("%S")
+        and (best_key == nil or upper < best_key) then
+        best_key = upper
+        best_value = value
       end
+    end
+
+    if best_key ~= nil then
+      return best_value
     end
   end
 
@@ -4926,9 +4944,16 @@ function save_wave_to_disk(
 )
   ensure_dirs()
 
+  local cache_key =
+    wave_cache_key(asset, points, preserve_channels, spectral)
+  -- A new disk file makes any earlier "not on disk" probe stale.
+  if state and state.wave_checked then
+    state.wave_checked[cache_key] = nil
+  end
+
   local file =
     io.open(
-      wave_cache_path(asset, points, preserve_channels, spectral),
+      join_path(WAVE_CACHE_DIR, cache_key .. ".rwf"),
       "wb"
     )
 
@@ -5637,6 +5662,9 @@ function store_wave_memory(key, waveform)
     end
 
     state.wave_cache[oldest_key] = nil
+    -- An evicted waveform must be reloaded from its .rwf file, not rebuilt
+    -- from the source audio, so forget that its disk cache was probed.
+    state.wave_checked[oldest_key] = nil
     state.wave_cache_count =
       state.wave_cache_count - 1
   end
@@ -14037,7 +14065,9 @@ function draw_ucs_sidebar_tree()
     end
     if dark_button("前往维护页分类现有素材", -1) then
       AppState.set("settings_tab", "maintenance")
-      ImGui.OpenPopup(ctx, "设置##reasfx")
+      -- OpenPopup here would use the sidebar child's ID stack, which never
+      -- matches the main-window settings modal; request it instead.
+      AppState.set("settings_popup_requested", 1)
     end
     return
   end
@@ -15556,12 +15586,25 @@ function draw_sidebar()
 end
 
 function draw_ucs_search_suggestion_popup(active, x, y, width)
-  local suggestions = ucs_search_suggestions(
-    state.search,
-    state.language,
-    7
-  )
+  -- Check visibility first: building suggestions scans the whole UCS
+  -- catalog and would otherwise run every frame while the popup is hidden.
   if not state.ucs_search_popup_visible then return end
+  local memo_key = tostring(state.language) .. "\0" .. tostring(state.search)
+  local memo = UCS_SEARCH_SUGGESTION_MEMO
+  local suggestions
+  if memo and memo.key == memo_key then
+    suggestions = memo.suggestions
+  else
+    suggestions = ucs_search_suggestions(
+      state.search,
+      state.language,
+      7
+    )
+    UCS_SEARCH_SUGGESTION_MEMO = {
+      key = memo_key,
+      suggestions = suggestions,
+    }
+  end
   if #suggestions == 0 then
     AppState.set("ucs_search_popup_visible", false)
     return

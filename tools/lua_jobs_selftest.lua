@@ -37,6 +37,20 @@ Jobs.finish(replacement, true, "ignored success after cancel")
 assert(replacement.state == "canceled")
 assert(#Jobs.history == 1 and not Jobs.active.scan)
 
+-- A replacement that is rejected for a busy resource must leave the job it
+-- would have replaced running, not cancelled and orphaned.
+local preview = assert(Jobs.begin("preview", "audio", false, 30))
+local holder = assert(Jobs.begin("render", "audio_out", false, 30))
+local blocked_replacement, blocked_replacement_reason =
+  Jobs.begin("render", "audio", true, 70)
+assert(blocked_replacement == nil
+  and blocked_replacement_reason == "resource_busy")
+assert(not holder.cancel_requested and holder.state ~= "canceling",
+  "rejected replacement must not cancel the existing job")
+assert(Jobs.is_current(holder))
+Jobs.finish(holder, true, "done")
+Jobs.finish(preview, true, "done")
+
 local wave = assert(Jobs.begin("wave", "cache", false, 20))
 Jobs.stop_accepting()
 assert(wave.cancel_requested)

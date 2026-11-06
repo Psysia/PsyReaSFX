@@ -16,6 +16,18 @@ assert(translate_ui_text("尚未翻译") == "尚未翻译")
 assert(missing_translation_count() == 1)
 translate_ui_text("尚未翻译")
 assert(missing_translation_count() == 1 and I18N_MISSING["尚未翻译"] == 2)
+-- Memoised lookups must keep translating and keep counting misses.
+assert(translate_ui_text("文件不存在：fixture.wav") == "File not found: fixture.wav")
+assert(translate_ui_text("素材 12") == "Asset 12")
+translate_ui_text("尚未翻译")
+assert(missing_translation_count() == 1 and I18N_MISSING["尚未翻译"] == 3)
+assert(translate_ui_text("plain-name.wav") == "plain-name.wav")
+for index = 1, (I18N_TRANSLATION_MEMO_LIMIT or 4096) + 8 do
+  translate_ui_text("bounded-" .. index)
+end
+assert(I18N_TRANSLATION_MEMO_SIZE <= I18N_TRANSLATION_MEMO_LIMIT,
+  "translation memo must stay bounded")
+assert(translate_ui_text("素材 7") == "Asset 7")
 
 local visible_session = { silent = false, current = { progress = 0.5 } }
 assert(visible_progress_session(visible_session) == visible_session)

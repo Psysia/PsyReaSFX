@@ -13,15 +13,12 @@ function Jobs.begin(
 
   local previous = Jobs.active[kind]
 
-  if previous then
-    if not replace_same_kind then
-      return nil, "already_running"
-    end
-
-    previous.cancel_requested = true
-    previous.state = "canceling"
+  if previous and not replace_same_kind then
+    return nil, "already_running"
   end
 
+  -- Check the resource before touching the previous job: a rejected start
+  -- must not leave the job it would have replaced cancelled and orphaned.
   for active_kind, token in pairs(Jobs.active) do
     if active_kind ~= kind
       and token.state ~= "completed"
@@ -29,6 +26,11 @@ function Jobs.begin(
       and token.resource == resource then
       return nil, "resource_busy"
     end
+  end
+
+  if previous then
+    previous.cancel_requested = true
+    previous.state = "canceling"
   end
 
   Jobs.generation = Jobs.generation + 1
