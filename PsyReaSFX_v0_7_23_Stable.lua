@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.0
+-- @version 0.9.1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,7 @@
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 8.6：右侧面板右键直接跳转素材所在音效库，移除失效的弹窗交互
+--   - 0.9.1 Stable：修复波形缓存重复解码、状态搜索过期与任务误取消，降低英文界面每帧开销
 --   - 0.9.0 Stable：将 Beta 8.7 全部功能发布至默认稳定通道，保留现有数据库与兼容缓存
 --   - Beta 8.7：按原始产品 metadata、封面和目录命名识别具体厂商产品包，缺少依据时回退当前文件夹
 --   - Beta 7.16：删除预设确认改用设置层级模态框，补齐关闭和失败重试
@@ -212,8 +213,8 @@ local VERSION = "0.9.0 Stable"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.0",
-  source_sha256 = "08dd7b77288a1ebe007728c6a25a4de4c72e9392d1a8b94635821636693e2865",
+  release_id = "PsyReaSFX/0.9.1",
+  source_sha256 = "5bb6ffa8ad90aef5e615be0d4f42905b358f5141ceef7e2c3ac8605d67a60e48",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }

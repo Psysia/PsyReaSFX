@@ -43,7 +43,7 @@
 https://raw.githubusercontent.com/Psysia/PsyReaSFX/main/index.xml
 ```
 
-随后执行 `扩展 → ReaPack → 同步软件包`，安装或更新 `PsyReaSFX.lua` 至 0.9.0 正式版即可，无需启用预发布。Windows x64 神经检索需另装同仓库的 [PsyReaSFX Neural Similarity][neural-download] 数据包。
+随后执行 `扩展 → ReaPack → 同步软件包`，安装或更新 `PsyReaSFX.lua` 至 0.9.1 正式版即可，无需启用预发布。Windows x64 神经检索需另装同仓库的 [PsyReaSFX Neural Similarity][neural-download] 数据包。
 
 ### 神经相似声音检索：附加包下载与安装
 
@@ -72,18 +72,18 @@ AI 语义搜索是另一个功能，不依赖此包。
 无需另装 Python 或 .NET，不上传音频，也不生成转码音频副本。
 首次使用会建立可取消的特征缓存与索引；组件缺失或异常时自动回退基础声学检索。
 
-### 更新至 0.9.0 正式版
+### 更新至 0.9.1 正式版
 
-0.9.0 已成为默认稳定版，包含 Beta 8.7 全部功能。**普通 ReaPack 同步即可更新，无需启用预发布。**
+0.9.1 是默认稳定版：包含 0.9.0 全部功能，并修复可靠性与性能问题。**普通 ReaPack 同步即可更新，无需启用预发布。**
 
 1. 执行 `扩展 → ReaPack → 同步软件包`，打开 `浏览软件包 / Browse packages`，搜索 `PsyReaSFX`。
 2. 若固定了旧版本，右键主程序 `PsyReaSFX.lua`，取消 **Pin current version**。
-3. 在 **Versions** 安装／更新 `0.9.0`，点击 **Apply / OK**。
+3. 在 **Versions** 安装／更新 `0.9.1`，点击 **Apply / OK**。
 4. 下载完成后关闭旧窗口，从 REAPER 动作列表重新运行。
 
 <p><a href="website/assets/screenshots/reapack-enable-beta.jpg"><img src="website/assets/screenshots/reapack-enable-beta.jpg" alt="历史 ReaPack 菜单示例：Versions、Pin current version 与 Apply / OK" width="800"></a></p>
 
-保留此历史 Beta 截图用于说明菜单位置；预发布开关仅用于将来的测试版本。Versions 现在保留 0.9.0、0.8.5 和 0.7.23 正式版，历史 Beta 仍可从 GitHub Releases 下载。
+保留此历史 Beta 截图用于说明菜单位置；预发布开关仅用于将来的测试版本。Versions 现在保留 0.9.1、0.9.0、0.8.5 和 0.7.23 正式版，历史 Beta 仍可从 GitHub Releases 下载。
 
 **神经检索需另装 [PsyReaSFX Neural Similarity][neural-download] 数据包**：可通过 ReaPack 安装 0.9.0 正式组件，或使用上面的完整 ZIP。Beta 8.5 及更新组件继续兼容。**AI 搜索需自行配置 API**：在设置中填写服务商、API Key 与模型；普通回车执行普通搜索，金色 AI 按钮执行 AI 搜索。更新主脚本不需要重建音效库。
 
@@ -157,8 +157,8 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 | 通道 | 版本 | 说明 |
 |---|---|---|
-| 正式版 | **0.9.0** | 默认更新版本，包含 Beta 8.7 全部功能。 |
-| 历史稳定版 | **0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
+| 正式版 | **0.9.1** | 默认更新版本，包含 0.9.0 全部功能及可靠性与性能修复。 |
+| 历史稳定版 | **0.9.0 / 0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
 | 可选组件 | [PsyReaSFX Neural Similarity][neural-download] | Windows x64 本地神经相似声音检索组件。 |
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
@@ -188,9 +188,9 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 ### 当前开发状态
 
-ReaPack 的 Versions 菜单保留 0.9.0、0.8.5 和 0.7.23 Stable；[可选神经组件][neural-download]保留 0.9.0 正式版。历史预发布仍可从 GitHub Releases 下载，不会删除已有安装或素材数据。
+ReaPack 的 Versions 菜单保留 0.9.1、0.9.0、0.8.5 和 0.7.23 Stable；[可选神经组件][neural-download]保留 0.9.0 正式版，0.9.1 直接沿用。历史预发布仍可从 GitHub Releases 下载，不会删除已有安装或素材数据。
 
-- **稳定通道：0.9.0** — 面向日常使用的默认 ReaPack 版本。
+- **稳定通道：0.9.1** — 面向日常使用的默认 ReaPack 版本。修复波形缓存被重新从音频解码、按工作流状态搜索结果过期、后台任务被误取消等问题，并降低英文界面每帧开销。只需更新主脚本后重开，0.9.0 神经组件无需更新。
 - **0.9.0 已包含** — 右侧元数据面板右键定位厂商的具体音效库产品包（如 BOOM Cinematic Hits），依据原始 Library／Album／产品 metadata、封面和目录命名寻找对应目录；没有可靠匹配就显示素材当前文件夹。不会按“Aki”或“BOOM”厂商合集整组筛选，无需弹窗。
 
 **本次导航修复只需更新 `PsyReaSFX.lua` 至 0.9.0 后重开；[PsyReaSFX Neural Similarity][neural-download] 已是 Beta 8.5 的用户无需再更新附加包。** 神经程序、模型和缓存继续兼容。首次全库分析仍需计算未缓存音频，后续复用缓存。关闭 Watch Folder 停止后续自动检查，当前导入/补全继续完成。
@@ -219,6 +219,7 @@ ReaPack 的 Versions 菜单保留 0.9.0、0.8.5 和 0.7.23 Stable；[可选神�
 ### PsyReaSFX 下载
 
 - [PsyReaSFX 最新稳定版](https://github.com/Psysia/PsyReaSFX/releases/latest)
+- [PsyReaSFX 0.9.1 正式版](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.1)
 - [PsyReaSFX 0.9.0 正式版](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0)
 - [0.9.0 完整神经组件 ZIP 精确下载][neural-download]
 - [PsyReaSFX 0.7.23 Stable 历史版本](https://github.com/Psysia/PsyReaSFX/releases/tag/v0.7.23)
