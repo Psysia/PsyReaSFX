@@ -99,6 +99,7 @@ function translate_ui_label(value)
 end
 
 function install_i18n_wrappers()
+  if WEBVIEW_MODE then return end
   if I18N_WRAPPERS_INSTALLED then
     return
   end
@@ -1961,8 +1962,10 @@ end
 function can_run_heavy_job()
   return reaper.time_precise()
       >= state.interaction_until
-    and not ImGui.IsMouseDown(ctx, 0)
-    and not ImGui.IsMouseDown(ctx, 1)
+    and (WEBVIEW_MODE or (
+      not ImGui.IsMouseDown(ctx, 0)
+      and not ImGui.IsMouseDown(ctx, 1)
+    ))
 end
 
 function normalized_cache_directory(path)

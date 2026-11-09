@@ -1,0 +1,221 @@
+local entry = assert(arg[1], "generated WebView Lua entry is required")
+local fixture = assert(arg[2], "isolated fixture directory is required")
+local messages, deferred, exits, extstate = {}, nil, {}, {}
+reaper = {
+  GetResourcePath = function()
+    return fixture
+  end,
+  GetOS = function()
+    return "Win64"
+  end,
+  time_precise = os.clock,
+  GetPlayState = function()
+    return 0
+  end,
+  GetPlayStateEx = function()
+    return 0
+  end,
+  file_exists = function(path)
+    local file = io.open(path, "rb")
+    if not file then
+      return false
+    end
+    file:close()
+    return true
+  end,
+  RecursiveCreateDirectory = function(path)
+    assert(not path:find('["&|<>]'), "invalid fixture directory")
+    os.execute('mkdir "' .. path .. '" >NUL 2>NUL')
+    return 1
+  end,
+  EnumerateFiles = function()
+    return nil
+  end,
+  EnumerateSubdirectories = function()
+    return nil
+  end,
+  EnumProjects = function()
+    return nil, ""
+  end,
+  GetExtState = function(section, key)
+    return extstate[section .. key] or ""
+  end,
+  SetExtState = function(section, key, value)
+    extstate[section .. key] = value
+  end,
+  DeleteExtState = function(section, key)
+    extstate[section .. key] = nil
+  end,
+  ReaWeb_Open = function()
+    return 77
+  end,
+  ReaWeb_IsOpen = function()
+    return true
+  end,
+  ReaWeb_IsReady = function()
+    return true
+  end,
+  ReaWeb_Send = function(_, message)
+    messages[#messages + 1] = message
+    return true
+  end,
+  ReaWeb_Receive = function()
+    return ""
+  end,
+  ReaWeb_Close = function() end,
+  defer = function(callback)
+    deferred = callback
+  end,
+  atexit = function(callback)
+    exits[#exits + 1] = callback
+  end,
+  MB = function(message)
+    error(message)
+  end,
+}
+assert(loadfile(entry))()
+assert(WebUI and deferred, "WebView entry must register its native loop")
+local original_open, original_message_box = io.open, reaper.MB
+for _, broken_lock in ipairs({ "", "{bad", string.rep("x", 32769) }) do
+  local reported = false
+  io.open = function(path, mode)
+    if path:match("runtime%-lock%.json$") then
+      return {
+        read = function()
+          return broken_lock
+        end,
+        close = function() end,
+      }
+    end
+    return original_open(path, mode)
+  end
+  reaper.MB = function()
+    reported = true
+  end
+  assert(
+    webview_open() == false and reported,
+    "invalid runtime locks must fail with a repair message"
+  )
+end
+io.open, reaper.MB = original_open, original_message_box
+local session = WebUI.handlers["session.ready"]()
+assert(
+  session.runtimePolicy.protocol == 1,
+  "runtime policy must come from the packaged dependency lock"
+)
+assert(session.runtimePolicy.baseline_versions[1], "handshake must expose the pinned baseline")
+for _ = 1, 50 do
+  deferred()
+  local message = neural_json_decode(messages[#messages])
+  if message.event == "state" and message.data.startup == nil then
+    break
+  end
+end
+local latest = neural_json_decode(messages[#messages])
+assert(latest.event == "state", "WebView must publish state")
+assert(
+  not (latest.data.startup and latest.data.startup.failure),
+  latest.data.startup and latest.data.startup.failure
+)
+
+local runtime
+for index = 1, 30 do
+  local name, value = debug.getupvalue(webview_publish, index)
+  if name == "state" then
+    runtime = value
+    break
+  end
+end
+assert(runtime, "test must access the actual runtime state")
+assert(runtime.startup_session == nil, "headless startup must complete without ReaImGui")
+local asset = {
+  path = fixture .. "\\test.wav",
+  name = "测试声音.wav",
+  duration = 8,
+  channels = 2,
+  sample_rate = 96000,
+  bit_depth = 24,
+  description = "original",
+  keywords = "metal",
+}
+runtime.assets, runtime.results = { asset }, { asset }
+runtime.by_path[path_key(asset.path)] = asset
+local first = WebUI.handlers["catalog.page"]({ offset = 0, limit = 20, waveforms = false })
+assert(#first.items == 1 and first.items[1].name == asset.name)
+assert(first.items[1].waveform == nil, "hidden waveform column must not queue audio work")
+asset.description = string.rep("测试", 900)
+local clipped = WebUI.handlers["catalog.page"]({ offset = 0, limit = 1, waveforms = false })
+assert(utf8.len(clipped.items[1].description), "bounded fields must keep valid UTF-8")
+assert(clipped.items[1].truncated.description, "oversized fields must declare truncation")
+assert(not pcall(WebUI.handlers["metadata.save"], {
+  path = asset.path,
+  original = { description = clipped.items[1].description },
+  values = { description = "new" },
+}), "truncated fields must not be silently overwritten")
+asset.description = "original"
+assert(not pcall(WebUI.handlers["catalog.page"], { limit = 100000 }), "page size must be bounded")
+assert(
+  not pcall(WebUI.handlers["selection.set"], { revision = -1, index = 1, path = asset.path }),
+  "stale selections must fail"
+)
+assert(
+  not pcall(WebUI.handlers["preview.parameters"], { pitch = 100 }),
+  "invalid DSP range must fail"
+)
+WebUI.handlers["preview.parameters"]({ pitch = 2, rate = 0.8, gain_db = -3 })
+assert(runtime.pitch == 2 and runtime.rate == 0.8 and runtime.gain_db == -3)
+assert(not pcall(WebUI.handlers["preview.parameters"], { pitch = 10, rate = 100 }))
+assert(
+  runtime.pitch == 2 and runtime.rate == 0.8,
+  "invalid parameter batch must not partially apply"
+)
+WebUI.handlers["preview.region"]({ start = 0.25, finish = 0.75 })
+assert(runtime.region_start == 0.25 and runtime.region_end == 0.75)
+assert(not pcall(WebUI.handlers["preview.region"], { start = 0.8, finish = 0.2 }))
+runtime.persistence_read_only = true
+assert(
+  not pcall(WebUI.handlers["favorite.toggle"], { path = asset.path }),
+  "read-only catalogs must reject writes"
+)
+runtime.persistence_read_only = false
+WebUI.handlers["favorite.toggle"]({ path = asset.path })
+assert(runtime.favorites[path_key(asset.path)])
+assert(
+  not pcall(
+    WebUI.handlers["metadata.save"],
+    { path = asset.path, original = { description = "stale" }, values = { description = "new" } }
+  ),
+  "metadata conflicts must fail"
+)
+WebUI.handlers["metadata.save"]({
+  path = asset.path,
+  original = { description = "original" },
+  values = { description = "new" },
+})
+assert(
+  asset.description == "new" and asset.keywords == "metal",
+  "partial metadata edit must preserve other fields"
+)
+WebUI.handlers["catalog.query"]({ search = "metal", libraryId = "", view = "all" })
+assert(runtime.search == "metal" and runtime.results_dirty)
+local input = {
+  neural_json_encode({ protocol = 1, id = "invalid-method", method = "unknown", params = {} }),
+  "{bad",
+}
+reaper.ReaWeb_Receive = function()
+  return table.remove(input, 1) or ""
+end
+webview_receive()
+local response = neural_json_decode(messages[#messages])
+assert(
+  response.id == "invalid-method" and response.ok == false,
+  "unsupported RPC must return a correlated error"
+)
+local settings = WebUI.handlers["settings.get"]()
+assert(
+  settings.ai_key == nil and settings.secret == nil,
+  "settings snapshots must not expose credentials"
+)
+print(
+  "WebView headless startup, bounded paging, stale selection, DSP validation, read-only and metadata regressions passed"
+)

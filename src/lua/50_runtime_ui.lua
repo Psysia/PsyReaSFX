@@ -20502,6 +20502,10 @@ local METADATA_EDIT_FIELDS = {
   },
 }
 
+function metadata_edit_fields()
+  return METADATA_EDIT_FIELDS
+end
+
 -- The inspector asks for this every frame. The list is cached against the
 -- selection revision; a small selection also re-checks object identity because
 -- a rescan may replace an asset table without touching the selection. The
@@ -25856,6 +25860,7 @@ function watch_folders()
 end
 
 function cleanup()
+  if WEBVIEW_MODE then webview_close() end
   if state.startup_session then
     if state.startup_session.reader then
       pcall(function() state.startup_session.reader:close() end)
@@ -26046,6 +26051,7 @@ function cleanup()
 
 end
 
+if WEBVIEW_MODE and not webview_open() then return end
 reaper.atexit(cleanup)
 
 function initialize_runtime()
@@ -26169,12 +26175,19 @@ function process_startup()
 end
 
 function loop()
+  if WEBVIEW_MODE then
+    if not reaper.ReaWeb_IsOpen(WebUI.window) then
+      AppState.apply({ open = false, clean_shutdown_requested = true })
+    else
+      webview_receive()
+    end
+  end
   if not state.open then
     return
   end
   if state.startup_session then
     -- Draw before resuming disk work so the first frame appears immediately.
-    draw_main()
+    if WEBVIEW_MODE then webview_publish() else draw_main() end
     if state.open then
       if state.startup_session.visible_once then
         process_startup()
@@ -26272,7 +26285,7 @@ function loop()
   bg_mark(nil)
 
   local background_done = reaper.time_precise()
-  draw_main()
+  if WEBVIEW_MODE then webview_publish() else draw_main() end
   frame_stats_record(frame_started, background_done, reaper.time_precise())
 
   if state.open then

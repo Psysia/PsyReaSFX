@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "2f7a650502c199cdc3a645d19b9eccac9b4bd64b3928ad37e2b31ed0ecae10c3",
+  source_sha256 = "7f29527cf3e87a2dc553b7fb09971a448e34a8424e073050a22ff87b0302199d",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -234,44 +234,49 @@ local COPYRIGHT_TEXT =
 local PROJECT_URL = "https://github.com/Psysia/PsyReaSFX"
 
 local PROJ = 0
+local WEBVIEW_MODE = false
+local ImGui, ctx
 
 ----------------------------------------------------------------
 -- Bootstrap
 ----------------------------------------------------------------
 
-if type(reaper.ImGui_GetBuiltinPath) ~= "function" then
-  reaper.MB(
-    "PsyReaSFX 需要 ReaImGui。\n\n"
-      .. "请在 ReaPack 中搜索并安装 ReaImGui，然后重启 REAPER。",
-    SCRIPT_NAME,
-    0
-  )
-  return
+if not WEBVIEW_MODE then
+  if type(reaper.ImGui_GetBuiltinPath) ~= "function" then
+    reaper.MB(
+      "PsyReaSFX 需要 ReaImGui。\n\n"
+        .. "请在 ReaPack 中搜索并安装 ReaImGui，然后重启 REAPER。",
+      SCRIPT_NAME,
+      0
+    )
+    return
+  end
+
+  package.path =
+    reaper.ImGui_GetBuiltinPath()
+    .. "/?.lua;"
+    .. package.path
+
+  local ok_imgui
+  ok_imgui, ImGui = pcall(require, "imgui")
+
+  if not ok_imgui then
+    reaper.MB(
+      "无法加载 ReaImGui：\n\n"
+        .. tostring(ImGui),
+      SCRIPT_NAME,
+      0
+    )
+    return
+  end
+
+  ImGui = ImGui("0.10")
+
+  ctx =
+    ImGui.CreateContext(
+      SCRIPT_NAME .. "##" .. VERSION
+    )
 end
-
-package.path =
-  reaper.ImGui_GetBuiltinPath()
-  .. "/?.lua;"
-  .. package.path
-
-local ok_imgui, ImGui = pcall(require, "imgui")
-
-if not ok_imgui then
-  reaper.MB(
-    "无法加载 ReaImGui：\n\n"
-      .. tostring(ImGui),
-    SCRIPT_NAME,
-    0
-  )
-  return
-end
-
-ImGui = ImGui("0.10")
-
-local ctx =
-  ImGui.CreateContext(
-    SCRIPT_NAME .. "##" .. VERSION
-  )
 
 ----------------------------------------------------------------
 -- Paths and constants
@@ -317,7 +322,7 @@ local UCS_CATALOG_PATH =
 
 local brand_font = nil
 
-if reaper.file_exists(BRAND_FONT_PATH) then
+if not WEBVIEW_MODE and reaper.file_exists(BRAND_FONT_PATH) then
   local font_ok, font =
     pcall(ImGui.CreateFontFromFile, BRAND_FONT_PATH)
 
@@ -2919,6 +2924,7 @@ function translate_ui_label(value)
 end
 
 function install_i18n_wrappers()
+  if WEBVIEW_MODE then return end
   if I18N_WRAPPERS_INSTALLED then
     return
   end
@@ -4781,8 +4787,10 @@ end
 function can_run_heavy_job()
   return reaper.time_precise()
       >= state.interaction_until
-    and not ImGui.IsMouseDown(ctx, 0)
-    and not ImGui.IsMouseDown(ctx, 1)
+    and (WEBVIEW_MODE or (
+      not ImGui.IsMouseDown(ctx, 0)
+      and not ImGui.IsMouseDown(ctx, 1)
+    ))
 end
 
 function normalized_cache_directory(path)
@@ -37588,6 +37596,10 @@ local METADATA_EDIT_FIELDS = {
   },
 }
 
+function metadata_edit_fields()
+  return METADATA_EDIT_FIELDS
+end
+
 -- The inspector asks for this every frame. The list is cached against the
 -- selection revision; a small selection also re-checks object identity because
 -- a rescan may replace an asset table without touching the selection. The
@@ -42942,6 +42954,7 @@ function watch_folders()
 end
 
 function cleanup()
+  if WEBVIEW_MODE then webview_close() end
   if state.startup_session then
     if state.startup_session.reader then
       pcall(function() state.startup_session.reader:close() end)
@@ -43132,6 +43145,7 @@ function cleanup()
 
 end
 
+if WEBVIEW_MODE and not webview_open() then return end
 reaper.atexit(cleanup)
 
 function initialize_runtime()
@@ -43255,12 +43269,19 @@ function process_startup()
 end
 
 function loop()
+  if WEBVIEW_MODE then
+    if not reaper.ReaWeb_IsOpen(WebUI.window) then
+      AppState.apply({ open = false, clean_shutdown_requested = true })
+    else
+      webview_receive()
+    end
+  end
   if not state.open then
     return
   end
   if state.startup_session then
     -- Draw before resuming disk work so the first frame appears immediately.
-    draw_main()
+    if WEBVIEW_MODE then webview_publish() else draw_main() end
     if state.open then
       if state.startup_session.visible_once then
         process_startup()
@@ -43358,7 +43379,7 @@ function loop()
   bg_mark(nil)
 
   local background_done = reaper.time_precise()
-  draw_main()
+  if WEBVIEW_MODE then webview_publish() else draw_main() end
   frame_stats_record(frame_started, background_done, reaper.time_precise())
 
   if state.open then

@@ -234,44 +234,49 @@ local COPYRIGHT_TEXT =
 local PROJECT_URL = "https://github.com/Psysia/PsyReaSFX"
 
 local PROJ = 0
+local WEBVIEW_MODE = false
+local ImGui, ctx
 
 ----------------------------------------------------------------
 -- Bootstrap
 ----------------------------------------------------------------
 
-if type(reaper.ImGui_GetBuiltinPath) ~= "function" then
-  reaper.MB(
-    "PsyReaSFX 需要 ReaImGui。\n\n"
-      .. "请在 ReaPack 中搜索并安装 ReaImGui，然后重启 REAPER。",
-    SCRIPT_NAME,
-    0
-  )
-  return
+if not WEBVIEW_MODE then
+  if type(reaper.ImGui_GetBuiltinPath) ~= "function" then
+    reaper.MB(
+      "PsyReaSFX 需要 ReaImGui。\n\n"
+        .. "请在 ReaPack 中搜索并安装 ReaImGui，然后重启 REAPER。",
+      SCRIPT_NAME,
+      0
+    )
+    return
+  end
+
+  package.path =
+    reaper.ImGui_GetBuiltinPath()
+    .. "/?.lua;"
+    .. package.path
+
+  local ok_imgui
+  ok_imgui, ImGui = pcall(require, "imgui")
+
+  if not ok_imgui then
+    reaper.MB(
+      "无法加载 ReaImGui：\n\n"
+        .. tostring(ImGui),
+      SCRIPT_NAME,
+      0
+    )
+    return
+  end
+
+  ImGui = ImGui("0.10")
+
+  ctx =
+    ImGui.CreateContext(
+      SCRIPT_NAME .. "##" .. VERSION
+    )
 end
-
-package.path =
-  reaper.ImGui_GetBuiltinPath()
-  .. "/?.lua;"
-  .. package.path
-
-local ok_imgui, ImGui = pcall(require, "imgui")
-
-if not ok_imgui then
-  reaper.MB(
-    "无法加载 ReaImGui：\n\n"
-      .. tostring(ImGui),
-    SCRIPT_NAME,
-    0
-  )
-  return
-end
-
-ImGui = ImGui("0.10")
-
-local ctx =
-  ImGui.CreateContext(
-    SCRIPT_NAME .. "##" .. VERSION
-  )
 
 ----------------------------------------------------------------
 -- Paths and constants
@@ -317,7 +322,7 @@ local UCS_CATALOG_PATH =
 
 local brand_font = nil
 
-if reaper.file_exists(BRAND_FONT_PATH) then
+if not WEBVIEW_MODE and reaper.file_exists(BRAND_FONT_PATH) then
   local font_ok, font =
     pcall(ImGui.CreateFontFromFile, BRAND_FONT_PATH)
 

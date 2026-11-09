@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>PsyReaSFX 0.9.a</title>
+    <link rel="icon" href="../assets/brand/psyreasfx-icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <div class="topbar">
+          <div class="brand">
+            <svg viewBox="0 0 26 26" aria-hidden="true">
+              <path d="M3 11v4m4-8v12m4-16v20m4-17v14m4-11v8m4-5v2" /></svg
+            ><strong>PsyReaSFX</strong><small id="app-version">0.9.a</small>
+          </div>
+          <label class="scope-control"
+            ><span class="sr-only">搜索范围</span
+            ><select id="scope">
+              <option value="">全部音效库</option>
+            </select></label
+          >
+          <form id="search-form" class="search">
+            <span aria-hidden="true">⌕</span
+            ><input
+              id="search"
+              type="search"
+              placeholder="搜索文件名、描述、关键词…"
+              autocomplete="off"
+              aria-label="搜索声音"
+            /><button id="ai-search" type="button" title="AI 语义搜索">
+              AI
+            </button>
+          </form>
+          <button
+            id="collection-menu"
+            class="bin-button"
+            title="将选择加入集合"
+          >
+            ▱ <span>素材箱</span>
+            <span id="selection-count" class="count">0</span>⌄
+          </button>
+          <button
+            id="layout-menu"
+            title="布局、主题与显示列"
+            aria-label="布局设置"
+          >
+            ▦
+          </button>
+          <button id="settings-open" title="设置与维护" aria-label="设置与维护">
+            ⚙
+          </button>
+        </div>
+        <div class="workspace-bar">
+          <button
+            id="left-toggle"
+            title="展开或收起来源侧栏"
+            aria-label="切换来源侧栏"
+          >
+            ☰
+          </button>
+          <nav id="tabs" aria-label="浏览标签页"></nav>
+          <button id="new-tab" title="新建标签页" aria-label="新建标签页">
+            ＋</button
+          ><span class="workspace-spacer"></span
+          ><span id="host-label">正在连接…</span
+          ><button
+            id="right-toggle"
+            title="展开或收起检查器"
+            aria-label="切换检查器"
+          >
+            ▥
+          </button>
+        </div>
+      </header>
+      <main id="browser">
+        <aside id="sources" aria-label="来源与集合">
+          <div class="section-label">浏览</div>
+          <div id="views"></div>
+          <div class="section-label">
+            音效库
+            <button id="add-library" title="添加音效库" aria-label="添加音效库">
+              ＋
+            </button>
+          </div>
+          <div id="libraries"></div>
+          <details id="ucs-directory">
+            <summary class="section-label">UCS 分类</summary>
+            <div id="ucs-categories"></div>
+          </details>
+          <div class="section-label">
+            集合
+            <button id="new-collection" title="新建集合" aria-label="新建集合">
+              ＋
+            </button>
+          </div>
+          <div id="collections"></div>
+        </aside>
+        <div
+          class="vertical-splitter"
+          data-resize="left"
+          role="separator"
+          aria-label="调整来源侧栏宽度"
+          aria-orientation="vertical"
+          tabindex="0"
+        ></div>
+        <section id="results" aria-label="声音列表">
+          <div class="results-toolbar">
+            <span id="result-count">正在读取素材库…</span
+            ><span id="scope-label"></span><span class="workspace-spacer"></span
+            ><select id="sort" aria-label="排序">
+              <option value="name">名称</option>
+              <option value="duration">时长</option>
+              <option value="library">音效库</option>
+              <option value="used">最近插入</option>
+              <option value="previewed">最近试听</option></select
+            ><button
+              id="sort-direction"
+              title="切换升降序"
+              aria-label="切换排序方向"
+            >
+              ↑</button
+            ><button id="columns-open" title="显示列" aria-label="显示列">
+              ☷
+            </button>
+          </div>
+          <div id="column-head" class="column-head" role="row"></div>
+          <div
+            id="result-scroll"
+            role="grid"
+            aria-label="声音检索结果"
+            tabindex="0"
+          >
+            <div id="result-space"></div>
+            <div id="visible-rows"></div>
+          </div>
+          <div id="empty-state" hidden>
+            <h2>建立你的声音工作区</h2>
+            <p>添加来源文件夹，开始浏览、试听与整理。</p>
+            <button id="empty-add">添加音效库</button>
+          </div>
+          <button id="ai-more" hidden>加载下一批 AI 结果</button>
+        </section>
+        <div
+          class="vertical-splitter"
+          data-resize="right"
+          role="separator"
+          aria-label="调整检查器宽度"
+          aria-orientation="vertical"
+          tabindex="0"
+        ></div>
+        <aside id="inspector" aria-label="检查器">
+          <nav class="inspector-tabs">
+            <button data-inspector="metadata" class="active">元数据</button
+            ><button data-inspector="regions">Region</button
+            ><button data-inspector="transfer">交付</button>
+          </nav>
+          <div id="inspector-body"></div>
+        </aside>
+      </main>
+      <div
+        id="audition-splitter"
+        role="separator"
+        aria-label="调整试听区域高度"
+        aria-orientation="horizontal"
+        tabindex="0"
+      ></div>
+      <section id="audition" aria-label="详细波形与试听">
+        <div class="audition-heading">
+          <strong id="asset-name">选择一个声音</strong
+          ><span id="asset-info"></span><span class="workspace-spacer"></span
+          ><button id="similar-search" title="查找相似声音">相似声音</button
+          ><button id="save-region" title="保存当前波形选区为 Region">
+            ＋ Region</button
+          ><span id="range-label"></span>
+        </div>
+        <div id="wave-area">
+          <div id="wave-readouts">
+            <label>当前位置 <output id="current-time">00:00.000</output></label
+            ><label>入点 <output id="in-time">00:00.000</output></label
+            ><label>出点 <output id="out-time">00:00.000</output></label
+            ><label>选区时长 <output id="range-time">00:00.000</output></label>
+          </div>
+          <div id="detail-wave-wrap">
+            <canvas
+              id="detail-wave"
+              aria-label="详细波形，拖动选择区间，双击试听，滚轮缩放"
+              tabindex="0"
+            ></canvas
+            ><span id="wave-status">等待选择素材</span>
+          </div>
+        </div>
+        <details id="fx-panel">
+          <summary>FX <span>变调 · 变速 · 增益</span></summary>
+          <div class="fx-controls">
+            <label
+              >Pitch
+              <input
+                id="fx-pitch"
+                type="range"
+                min="-24"
+                max="24"
+                step="0.1"
+                value="0"
+              /><input
+                id="fx-pitch-value"
+                type="number"
+                min="-24"
+                max="24"
+                step="0.1"
+                value="0"
+              />st</label
+            ><label
+              >Rate
+              <input
+                id="fx-rate"
+                type="range"
+                min="0.25"
+                max="4"
+                step="0.01"
+                value="1"
+              /><input
+                id="fx-rate-value"
+                type="number"
+                min="0.25"
+                max="4"
+                step="0.01"
+                value="1"
+              />×</label
+            ><label
+              >Gain
+              <input
+                id="fx-gain"
+                type="range"
+                min="-36"
+                max="18"
+                step="0.1"
+                value="0"
+              /><input
+                id="fx-gain-value"
+                type="number"
+                min="-36"
+                max="18"
+                step="0.1"
+                value="0"
+              />dB</label
+            ><label
+              ><input
+                id="preserve-pitch"
+                type="checkbox"
+                checked
+              />保持音高</label
+            ><label><input id="reverse" type="checkbox" />反向</label
+            ><button id="fx-reset">复位</button>
+          </div>
+        </details>
+        <div class="transport">
+          <button id="stop" title="停止" aria-label="停止">■</button
+          ><button
+            id="play"
+            class="play-button"
+            title="播放 / 空格"
+            aria-label="播放"
+          >
+            ▶</button
+          ><button
+            id="loop"
+            title="循环"
+            aria-label="循环"
+            aria-pressed="false"
+          >
+            ↻</button
+          ><output id="transport-time">00:00.000 / 00:00.000</output
+          ><label class="auto-preview"
+            ><input
+              id="auto-preview"
+              type="checkbox"
+              checked
+            />选择即试听</label
+          ><span class="workspace-spacer"></span
+          ><button id="zoom-reset" title="复位缩放">适应</button
+          ><button id="fx-toggle" aria-expanded="false">FX⌄</button
+          ><button id="insert">↥ 插入 REAPER</button
+          ><button id="transfer-open">⇥ Transfer</button>
+        </div>
+      </section>
+      <footer>
+        <span id="status" role="status">正在连接宿主…</span
+        ><span class="workspace-spacer"></span
+        ><button id="cancel-tasks" hidden>取消任务</button
+        ><span id="tasks-label"></span>
+      </footer>
+    </div>
+    <div id="popover" popover="auto"></div>
+    <dialog id="settings-dialog">
+      <form method="dialog">
+        <header>
+          <h2>设置与维护</h2>
+          <button aria-label="关闭设置">×</button>
+        </header>
+        <div id="settings-body"></div>
+      </form>
+    </dialog>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
