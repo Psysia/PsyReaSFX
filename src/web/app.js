@@ -1,9 +1,11 @@
 import { connectHost } from "./host.js";
+import { createLocalizer } from "./locale.js";
 
 const $ = (id) => document.getElementById(id);
 const defaults = {
   version: 1,
   theme: "dark",
+  language: "zh",
   left: false,
   right: true,
   leftWidth: 206,
@@ -53,6 +55,8 @@ try {
   prefs = structuredClone(defaults);
 }
 
+const localizer = createLocalizer();
+localizer.setLanguage(prefs.language);
 let host;
 let snapshot;
 let page;
@@ -84,6 +88,17 @@ const columnDefinitions = [
   ["channels", "声道"],
   ["library", "音效库"],
   ["catid", "CatID"],
+  ["workflowLabel", "工作流状态"],
+  ["category", "Category"],
+  ["subcategory", "Subcategory"],
+  ["sampleRate", "采样率"],
+  ["bitDepth", "位深"],
+  ["format", "格式"],
+  ["path", "完整路径"],
+  ["previewCount", "试听次数"],
+  ["usedCount", "使用次数"],
+  ["similarity", "相似度"],
+  ["artwork_path", "封面"],
 ];
 
 function node(tag, className, content) {
@@ -160,6 +175,7 @@ function applyPreferences() {
   style.setProperty("--audition-height", `${prefs.auditionHeight}px`);
   style.setProperty("--row-height", `${prefs.rowHeight}px`);
   style.setProperty("--font-size", `${prefs.fontSize}px`);
+  if (prefs.fontFamily) document.body.style.fontFamily = prefs.fontFamily;
   $("fx-panel").open = prefs.fx;
   $("fx-toggle").setAttribute("aria-expanded", String(prefs.fx));
   $("left-toggle").setAttribute("aria-expanded", String(prefs.left));
@@ -169,13 +185,21 @@ function applyPreferences() {
   requestAnimationFrame(drawDetail);
 }
 
+function orderedColumns() {
+  const order = prefs.columnOrder || columnDefinitions.map(([key]) => key);
+  return [...columnDefinitions].sort((a, b) => {
+    const rank = (key) =>
+      order.includes(key) ? order.indexOf(key) : order.length;
+    return rank(a[0]) - rank(b[0]);
+  });
+}
 function visibleColumns() {
-  return columnDefinitions.filter(([key]) => prefs.columns[key]);
+  return orderedColumns().filter(([key]) => prefs.columns[key]);
 }
 
 function width(key) {
   return clamp(
-    prefs.widths[key] ?? defaults.widths[key],
+    prefs.widths[key] ?? defaults.widths[key] ?? 140,
     key === "star" ? 28 : 45,
     1200,
   );
@@ -245,6 +269,39 @@ function resizeColumn(event, key) {
   grip.addEventListener("pointercancel", finish, { once: true });
 }
 
+function spectralColor(wave, index, fallback) {
+  if (!wave?.spectralFrequency?.length) return fallback;
+  const frequency = clamp(wave.spectralFrequency[index] || 20, 20, 20000);
+  const t = Math.log(frequency / 20) / Math.log(1000);
+  const stops = [
+    [89, 100, 239],
+    [32, 185, 214],
+    [99, 211, 110],
+    [242, 180, 92],
+  ];
+  const segment = t < 0.34 ? 0 : t < 0.68 ? 1 : 2;
+  const fraction =
+    (t - [0, 0.34, 0.68][segment]) / (segment === 2 ? 0.32 : 0.34);
+  const fallbackParts = fallback.startsWith("#")
+    ? fallback
+        .slice(1)
+        .match(/.{2}/g)
+        ?.slice(0, 3)
+        .map((value) => parseInt(value, 16))
+    : fallback
+        .match(/[\d.]+/g)
+        ?.slice(0, 3)
+        .map(Number);
+  const mix = 0.34 + clamp(wave.spectralTonality?.[index] || 0, 0, 1) * 0.66;
+  const color = stops[segment].map((value, channel) =>
+    Math.round(
+      (fallbackParts?.[channel] ?? value) * (1 - mix) +
+        (value + (stops[segment + 1][channel] - value) * fraction) * mix,
+    ),
+  );
+  return `rgb(${color.join(",")})`;
+}
+
 function drawPeaks(canvas, waveform, color, selected = false) {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
@@ -274,11 +331,75 @@ function drawPeaks(canvas, waveform, color, selected = false) {
     let peak = 0;
     for (let i = start; i < end; i++)
       peak = Math.max(peak, Math.abs(values[i] || 0));
+    if (waveform.spectralFrequency?.length) {
+      context.stroke();
+      context.beginPath();
+      context.strokeStyle = spectralColor(waveform, start, color);
+    }
     const height = Math.max(0.5, Math.min(1, peak) * (rect.height / 2 - 1));
     context.moveTo(x + 0.5, rect.height / 2 - height);
     context.lineTo(x + 0.5, rect.height / 2 + height);
   }
   context.stroke();
+}
+
+function attachArrangeDrag(element, assetPath, selection) {
+  let gesture;
+  element.addEventListener("pointerdown", (event) => {
+    if (
+      event.button !== 0 ||
+      event.altKey ||
+      event.target.closest(".waveform,.star")
+    )
+      return;
+    gesture = { x: event.clientX, y: event.clientY, active: false };
+  });
+  element.addEventListener("pointermove", (event) => {
+    if (!gesture || !(event.buttons & 1)) return;
+    if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 6) {
+      gesture.active = true;
+      element.setPointerCapture(event.pointerId);
+      element.style.cursor = "grabbing";
+    }
+  });
+  element.addEventListener(
+    "pointerup",
+    action(async (event) => {
+      const active = gesture?.active;
+      gesture = null;
+      element.style.cursor = "";
+      if (!active) return;
+      element.dataset.dragged = "true";
+      if (
+        event.clientX >= 0 &&
+        event.clientX < innerWidth &&
+        event.clientY >= 0 &&
+        event.clientY < innerHeight
+      )
+        return;
+      await command("drag.drop", { path: assetPath(), selection });
+    }),
+  );
+  element.addEventListener("pointercancel", () => {
+    gesture = null;
+    element.style.cursor = "";
+  });
+}
+
+const thumbnailCache = new Map();
+function thumbnail(path) {
+  if (!thumbnailCache.has(path)) {
+    const pending = host.artworkUrl(path).catch(() => null);
+    thumbnailCache.set(path, pending);
+    if (thumbnailCache.size > 64) {
+      const oldest = thumbnailCache.keys().next().value;
+      thumbnailCache.get(oldest).then((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+      thumbnailCache.delete(oldest);
+    }
+  }
+  return thumbnailCache.get(path);
 }
 
 function renderRows() {
@@ -289,10 +410,24 @@ function renderRows() {
     const selected = asset.selected || snapshot?.selected?.path === asset.path;
     const row = node("div", `result-row${selected ? " selected" : ""}`);
     row.dataset.path = asset.path;
+    const appearance = snapshot?.rowAppearance;
+    row.classList.toggle(
+      "played",
+      Boolean(asset.played && appearance?.textEnabled),
+    );
+    row.style.setProperty("--played-text", appearance?.text || "#F0C85A");
+    row.classList.toggle("marked", Boolean(asset.marked));
     row.setAttribute("role", "row");
     row.setAttribute("aria-selected", String(Boolean(selected)));
     row.title = `${asset.name}\n${asset.description || asset.path}`;
-    row.onclick = action((event) => selectAsset(asset, event));
+    attachArrangeDrag(row, () => asset.path, false);
+    row.onclick = action((event) => {
+      if (row.dataset.dragged) {
+        delete row.dataset.dragged;
+        return;
+      }
+      return selectAsset(asset, event);
+    });
     row.ondblclick = action(() =>
       command("preview.play", {
         path: asset.path,
@@ -316,7 +451,10 @@ function renderRows() {
       if (key === "waveform") {
         const canvas = node("canvas");
         cell.append(canvas);
-        waveCanvases.push([canvas, asset.waveform, selected]);
+        const playhead = node("span", "mini-playhead");
+        playhead.setAttribute("aria-hidden", "true");
+        cell.append(playhead);
+        waveCanvases.push([canvas, asset.waveform, selected, asset]);
         cell.onclick = action(async (event) => {
           event.stopPropagation();
           await selectAsset(asset, event, false);
@@ -327,6 +465,19 @@ function renderRows() {
             selection: false,
           });
         });
+      } else if (key === "artwork_path") {
+        if (
+          snapshot?.artworkEnabled !== false &&
+          asset.artwork_path &&
+          asset.artwork_path !== "-"
+        ) {
+          const cover = node("img", "row-artwork");
+          cover.alt = asset.library || "封面";
+          cell.append(cover);
+          thumbnail(asset.artwork_path).then((url) => {
+            if (url && cover.isConnected) cover.src = url;
+          });
+        }
       } else if (key === "star") {
         cell.textContent = asset.favorite ? "★" : "☆";
         cell.classList.toggle("favorite", asset.favorite);
@@ -341,7 +492,9 @@ function renderRows() {
             ? asset.index
             : key === "duration"
               ? time(asset.duration)
-              : asset[key];
+              : key === "description"
+                ? asset.description || asset.keywords || asset.path
+                : asset[key];
         cell.append(node("span", null, value ?? ""));
         if (["description", "library", "channels"].includes(key))
           cell.classList.add("dim");
@@ -353,13 +506,32 @@ function renderRows() {
   $("visible-rows").style.transform =
     `translateY(${page.offset * prefs.rowHeight}px)`;
   $("visible-rows").replaceChildren(fragment);
+  updateMiniPlayheads();
   requestAnimationFrame(() => {
     const color = getComputedStyle(document.body)
       .getPropertyValue("--text")
       .trim();
-    for (const [canvas, wave, selected] of waveCanvases)
-      drawPeaks(canvas, wave, color, selected);
+    for (const [canvas, wave, selected, asset] of waveCanvases) {
+      const appearance = snapshot?.rowAppearance;
+      let waveColor = appearance?.waveform || color;
+      if (asset.played && appearance?.waveformEnabled)
+        waveColor = appearance.played;
+      if (asset.marked) waveColor = appearance?.marked || "#F0C85A";
+      if (selected) waveColor = appearance?.selected || color;
+      drawPeaks(canvas, wave, waveColor, selected);
+    }
   });
+}
+
+function updateMiniPlayheads() {
+  for (const row of $("visible-rows").children) {
+    const playhead = row.querySelector(".mini-playhead");
+    if (!playhead) continue;
+    playhead.hidden =
+      !snapshot?.playing || snapshot.previewPath !== row.dataset.path;
+    playhead.style.left = `${clamp(snapshot?.position || 0, 0, 1) * 100}%`;
+    playhead.style.background = snapshot?.rowAppearance?.playhead || "#cabb8a";
+  }
 }
 
 async function selectAsset(asset, event = {}, autoPlay) {
@@ -371,8 +543,7 @@ async function selectAsset(asset, event = {}, autoPlay) {
     shift: event.shiftKey || false,
     autoPlay,
   });
-  for (const item of page.items) item.selected = item.path === asset.path;
-  renderRows();
+  await requestPage();
 }
 
 async function requestPage() {
@@ -435,6 +606,53 @@ function query(params) {
   });
 }
 
+function folderBranch(root, folder = root) {
+  const branch = node("details", "folder-branch");
+  const summary = node("summary");
+  const label = node(
+    "button",
+    "nav-item",
+    folder.name || folder.path.split(/[\\/]/).filter(Boolean).pop(),
+  );
+  label.onclick = action((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    return query({ libraryId: root.libraryId, root: folder.path });
+  });
+  label.dataset.literal = "true";
+  summary.append(label);
+  branch.append(summary);
+  let loaded = false;
+  const load = async (offset = 0) => {
+    const result = await command("catalog.folders", {
+      rootId: root.id,
+      path: folder.path,
+      offset,
+    });
+    if (!branch.isConnected || !branch.open) return;
+    if (result.pending) {
+      setTimeout(() => {
+        if (branch.isConnected && branch.open) load(offset).catch(report);
+      }, 650);
+      return;
+    }
+    loaded = true;
+    for (const child of result.items) branch.append(folderBranch(root, child));
+    if (offset + result.items.length < result.total) {
+      const more = node("button", "nav-item", "更多文件夹…");
+      more.onclick = action(async () => {
+        more.remove();
+        await load(offset + result.items.length);
+      });
+      branch.append(more);
+    }
+  };
+  branch.ontoggle = action(() => {
+    if (branch.open && !loaded) return load();
+  });
+  return branch;
+}
+
 function renderSidebar() {
   const views = [
     ["all", "全部声音"],
@@ -464,17 +682,12 @@ function renderSidebar() {
         snapshot.libraryId === library.id,
       ),
     );
+    libraries[libraries.length - 1].dataset.libraryId = library.id;
+    libraries[libraries.length - 1].dataset.literal = "true";
     for (const root of snapshot.roots.filter(
       (root) => root.libraryId === library.id,
     )) {
-      const item = navItem(
-        root.path.split(/[\\/]/).filter(Boolean).pop() || root.path,
-        () => query({ libraryId: library.id, root: root.path }),
-        false,
-        "root",
-      );
-      item.title = root.path;
-      libraries.push(item);
+      libraries.push(folderBranch(root));
     }
   }
   $("libraries").replaceChildren(...libraries);
@@ -489,14 +702,39 @@ function renderSidebar() {
       return item;
     }),
   );
-  const selectedScope = $("scope").value;
+  $("saved-searches").replaceChildren(
+    ...(snapshot.savedSearches || []).map((saved) =>
+      navItem(
+        saved.name,
+        () =>
+          command("management.action", {
+            kind: "search",
+            id: saved.id,
+            action: "activate",
+          }),
+        false,
+      ),
+    ),
+  );
+  $("workflow-filters").replaceChildren(
+    ...[
+      { id: "", label: "全部状态" },
+      ...(snapshot.workflowStatuses || []),
+    ].map((status) =>
+      navItem(
+        status.label,
+        () => command("catalog.query", { keepScope: true, status: status.id }),
+        (snapshot.statusFilter || "") === status.id,
+      ),
+    ),
+  );
   $("scope").replaceChildren(
     new Option("全部音效库", ""),
     ...snapshot.libraries.map(
       (library) => new Option(library.name, library.id),
     ),
   );
-  $("scope").value = snapshot.libraryId || selectedScope || "";
+  $("scope").value = snapshot.libraryId || "";
 }
 
 function renderTabs() {
@@ -510,6 +748,26 @@ function renderTabs() {
       button.onclick = action(() =>
         command("tab.action", { action: "activate", id: tab.id }),
       );
+      button.oncontextmenu = (event) => {
+        event.preventDefault();
+        const items = [];
+        for (const [label, params] of [
+          ["复制标签", { action: "new", duplicateId: tab.id }],
+          ["重命名", { action: "rename", id: tab.id }],
+          ["左移", { action: "move", id: tab.id, direction: -1 }],
+          ["右移", { action: "move", id: tab.id, direction: 1 }],
+          ["关闭其他标签", { action: "close", id: tab.id, mode: "others" }],
+          ["关闭右侧标签", { action: "close", id: tab.id, mode: "right" }],
+        ]) {
+          const item = node("button", "menu-item", label);
+          item.onclick = action(async () => {
+            $("popover").hidePopover();
+            await command("tab.action", params);
+          });
+          items.push(item);
+        }
+        popover(button, items);
+      };
       if (snapshot.tabs.length > 1) {
         const close = node("span", "tab-close", "×");
         close.onclick = action((event) => {
@@ -526,7 +784,20 @@ function renderTabs() {
 function applySnapshot(next) {
   const previous = snapshot;
   snapshot = next;
+  if (next.language && next.language !== prefs.language) {
+    prefs.language = next.language;
+    localizer.setLanguage(next.language);
+    persist();
+    $("ucs-categories").replaceChildren();
+    if ($("ucs-directory").open)
+      $("ucs-directory").dispatchEvent(new Event("toggle"));
+  }
   const ready = !next.startup;
+  if (next.sortMode) $("sort").value = next.sortMode;
+  if (next.sortDescending !== undefined) {
+    sortDescending = next.sortDescending;
+    $("sort-direction").textContent = sortDescending ? "↓" : "↑";
+  }
   $("result-count").textContent = next.startup
     ? next.startup.phase
     : `${next.count.toLocaleString()} 个结果${next.pending ? " · 更新中" : ""}`;
@@ -548,9 +819,22 @@ function applySnapshot(next) {
           transfer: "交付",
           similar: "相似检索",
           ai: "AI 搜索",
+          precache: "波形预生成",
+          classify: "分类",
+          relink: "重新链接",
+          remove: "移除来源",
+          verify: "缓存校验",
+          missing: "缺失检查",
+          duplicates: "重复检查",
+          transients: "瞬态检测",
+          loudness: "响度分析",
         })[name],
     );
   $("tasks-label").textContent = tasks.join(" · ");
+  $("tasks-label").title = next.aiSummary || "";
+  if (next.transferProgress)
+    $("tasks-label").textContent +=
+      ` ${next.transferProgress.completed}/${next.transferProgress.total}`;
   $("cancel-tasks").hidden = tasks.length === 0;
   $("play").setAttribute("aria-pressed", String(next.playing));
   $("loop").setAttribute("aria-pressed", String(next.fx.loop));
@@ -564,6 +848,8 @@ function applySnapshot(next) {
     next.libraryId,
     next.collectionId,
     next.view,
+    next.savedSearches,
+    next.statusFilter,
   ]);
   if (sideKey !== sidebarSignature) {
     sidebarSignature = sideKey;
@@ -600,7 +886,19 @@ function applySnapshot(next) {
   ) {
     renderInspector();
   }
-  if (previous?.selectedCount !== next.selectedCount) requestPage();
+  if (
+    previous?.spectralPeaks !== next.spectralPeaks ||
+    previous?.detailPoints !== next.detailPoints
+  )
+    requestDetailWave();
+  if (previous?.selectedCount !== next.selectedCount) renderInspector();
+  if (
+    previous?.selectedCount !== next.selectedCount ||
+    previous?.playedCount !== next.playedCount ||
+    JSON.stringify(previous?.rowAppearance) !==
+      JSON.stringify(next.rowAppearance)
+  )
+    requestPage();
   $("asset-name").textContent = next.selected?.name || "选择一个声音";
   $("asset-info").textContent = next.selected
     ? `${next.selected.channels} ch · ${Math.round(next.selected.sampleRate / 1000)} kHz · ${next.selected.bitDepth} bit · ${next.selected.library}`
@@ -618,6 +916,8 @@ function applySnapshot(next) {
   $("preserve-pitch").checked = next.fx.preserve_pitch;
   $("reverse").checked = next.fx.reverse;
   updateReadouts();
+  updateMiniPlayheads();
+  renderClassificationReview();
   drawDetail();
 }
 
@@ -632,7 +932,7 @@ async function requestDetailWave() {
   try {
     const result = await command("waveform.get", {
       path: selected.path,
-      points: 1024,
+      points: snapshot?.detailPoints >= 4096 ? 4096 : 2048,
     });
     if (sequence !== waveSequence || snapshot?.selected?.path !== result.path)
       return;
@@ -675,7 +975,9 @@ function drawDetail() {
   const palette = getComputedStyle(document.body);
   const color = palette.getPropertyValue("--text").trim();
   const muted = palette.getPropertyValue("--muted").trim();
-  const accent = palette.getPropertyValue("--accent").trim();
+  const accent =
+    snapshot?.rowAppearance?.selection ||
+    palette.getPropertyValue("--accent").trim();
   const duration = snapshot?.selected?.duration || 0;
   $("wave-status").hidden = Boolean(detailWave);
   $("wave-status").textContent = snapshot?.selected
@@ -691,6 +993,16 @@ function drawDetail() {
   const end = regionDrag
     ? Math.max(regionDrag.start, regionDrag.current)
     : snapshot.regionEnd;
+  for (const region of snapshot?.selected?.regions || []) {
+    context.fillStyle = snapshot?.rowAppearance?.region || accent;
+    context.globalAlpha = 0.1;
+    context.fillRect(
+      xFor(region.start),
+      top,
+      xFor(region.finish) - xFor(region.start),
+      rect.height - top,
+    );
+  }
   context.fillStyle = accent;
   context.globalAlpha = 0.14;
   context.fillRect(
@@ -719,11 +1031,12 @@ function drawDetail() {
     context.stroke();
     context.globalAlpha = 1;
   }
-  const channels = detailWave?.channels?.length
-    ? detailWave.channels
-    : detailWave
-      ? [detailWave.peaks]
-      : [];
+  const channels =
+    snapshot?.multichannelWaveform !== false && detailWave?.channels?.length
+      ? detailWave.channels
+      : detailWave
+        ? [detailWave.peaks]
+        : [];
   const laneHeight = (rect.height - top) / Math.max(1, channels.length);
   for (let channel = 0; channel < channels.length; channel++) {
     const values = channels[channel];
@@ -744,6 +1057,11 @@ function drawDetail() {
       let peak = 0;
       for (let i = first; i < last; i++)
         peak = Math.max(peak, Math.abs(values[i] || 0));
+      if (detailWave?.spectralFrequency?.length) {
+        context.stroke();
+        context.beginPath();
+        context.strokeStyle = spectralColor(detailWave, first, color);
+      }
       const height = Math.max(0.3, Math.min(1, peak) * (laneHeight / 2 - 9));
       context.moveTo(x + 0.5, center - height);
       context.lineTo(x + 0.5, center + height);
@@ -764,7 +1082,7 @@ function drawDetail() {
     context.lineTo(xFor(point), rect.height);
     context.stroke();
   }
-  context.strokeStyle = "#b8d6c3";
+  context.strokeStyle = snapshot?.rowAppearance?.playhead || "#b8d6c3";
   context.beginPath();
   context.moveTo(xFor(snapshot.position || 0), top);
   context.lineTo(xFor(snapshot.position || 0), rect.height);
@@ -781,6 +1099,56 @@ function field(label, key, value, multiline = false) {
   return [wrapper, input];
 }
 
+async function renderBulkMetadata(container) {
+  const selection = await command("metadata.selection");
+  if (!container.isConnected) return;
+  container.append(node("h3", null, `编辑 ${selection.count} 个素材`));
+  container.append(node("p", "muted", "仅将勾选的字段应用到全部所选素材。"));
+  const inputs = [];
+  for (const definition of selection.fields) {
+    const [wrapper, input] = field(
+      definition.label,
+      definition.key,
+      selection.values[definition.key],
+      true,
+    );
+    const enabled = node("input");
+    enabled.type = "checkbox";
+    enabled.setAttribute("aria-label", `应用 ${definition.label}`);
+    if (selection.truncated?.[definition.key]) {
+      input.readOnly = true;
+      enabled.disabled = true;
+      input.title = "字段过长，当前仅显示摘要。";
+    }
+    if (selection.mixed[definition.key]) input.placeholder = "多个不同值";
+    input.oninput = () => {
+      enabled.checked = true;
+      dirtyFields[definition.key] = input.value;
+    };
+    enabled.onchange = () => {
+      if (enabled.checked) dirtyFields[definition.key] = input.value;
+      else delete dirtyFields[definition.key];
+    };
+    wrapper.prepend(enabled);
+    container.append(wrapper);
+    inputs.push({ key: definition.key, input, enabled });
+  }
+  const save = node("button", null, "应用到所选素材");
+  save.onclick = action(async () => {
+    const values = {};
+    for (const item of inputs)
+      if (item.enabled.checked) values[item.key] = item.input.value;
+    await command("metadata.batch", {
+      token: selection.token,
+      count: selection.count,
+      values,
+    });
+    dirtyFields = {};
+    renderInspector();
+  });
+  container.append(save);
+}
+
 function renderInspector() {
   if (artworkUrl) {
     URL.revokeObjectURL(artworkUrl);
@@ -793,12 +1161,98 @@ function renderInspector() {
     $("inspector-body").replaceChildren(container);
     return;
   }
+  if (inspectorTab === "metadata" && snapshot.selectedCount > 1) {
+    $("inspector-body").replaceChildren(container);
+    renderBulkMetadata(container).catch(report);
+    return;
+  }
   inspectorPath = asset.path;
+  if (asset.loudness?.length) {
+    container.append(
+      node(
+        "p",
+        "muted",
+        asset.loudness.map((item) => `${item.label} ${item.value}`).join(" · "),
+      ),
+    );
+  }
+  for (const candidate of asset.ucsCandidates || []) {
+    const button = node(
+      "button",
+      null,
+      `确认 UCS · ${candidate.catid} ${candidate.label}`,
+    );
+    button.onclick = action(() =>
+      command("asset.action", {
+        path: asset.path,
+        action: "confirmUcs",
+        catid: candidate.catid,
+      }),
+    );
+    container.append(button);
+  }
+
   container.append(node("h2", "selected-name", asset.name));
+  if (asset.channels >= 1) {
+    const channelControls = node("details", "settings-section");
+    channelControls.append(node("summary", null, "试听声道"));
+    if (asset.channels <= 2) {
+      for (const [mode, label] of [
+        ["original", "原声"],
+        ["left", "左声道"],
+        ["right", "右声道"],
+        ["mono", "单声道"],
+      ]) {
+        if (asset.channels === 1 && (mode === "left" || mode === "right"))
+          continue;
+        const button = node("button", null, label);
+        button.setAttribute(
+          "aria-pressed",
+          String((asset.channelMode || "original") === mode),
+        );
+        button.onclick = action(() =>
+          command("asset.action", {
+            path: asset.path,
+            action: "channelMode",
+            mode,
+          }),
+        );
+        channelControls.append(button);
+      }
+    } else {
+      const all = node("button", null, "全部");
+      all.onclick = action(() =>
+        command("asset.action", { action: "channelsAll" }),
+      );
+      channelControls.append(all);
+      for (let channel = 1; channel <= Math.min(8, asset.channels); channel++) {
+        const button = node("button", null, `Ch ${channel}`);
+        button.setAttribute(
+          "aria-pressed",
+          String(asset.channelsSelected?.[channel - 1] === true),
+        );
+        button.onclick = action((event) =>
+          command("asset.action", {
+            action: "channel",
+            channel,
+            ctrl: event.ctrlKey,
+            shift: event.shiftKey,
+          }),
+        );
+        channelControls.append(button);
+      }
+    }
+    container.append(channelControls);
+  }
   if (inspectorTab === "metadata") {
-    if (asset.artwork_path && asset.artwork_path !== "-") {
+    if (
+      snapshot.artworkEnabled !== false &&
+      asset.artwork_path &&
+      asset.artwork_path !== "-"
+    ) {
       const image = node("img", "artwork-cover");
       image.alt = asset.library || "音效库封面";
+      image.classList.toggle("pinned", Boolean(snapshot.artworkPinned));
       image.hidden = true;
       container.append(image);
       host
@@ -839,6 +1293,7 @@ function renderInspector() {
       ["category", "Category"],
       ["subcategory", "Subcategory"],
       ["catid", "CatID"],
+      ["library", "Library"],
       ["artwork_path", "封面路径"],
     ]) {
       originalFields[key] =
@@ -858,6 +1313,19 @@ function renderInspector() {
       input.oninput = () => {
         dirtyFields[key] = input.value;
       };
+      if (!["artwork_path"].includes(key)) {
+        const filter = node("button", "metadata-filter", "按此字段筛选");
+        filter.type = "button";
+        filter.disabled = !asset[key] || Boolean(asset.truncated?.[key]);
+        filter.onclick = action(() =>
+          command("asset.action", {
+            path: asset.path,
+            action: "filter",
+            field: key,
+          }),
+        );
+        wrapper.append(filter);
+      }
       container.append(wrapper);
     }
     const save = node("button", null, "保存元数据");
@@ -874,7 +1342,11 @@ function renderInspector() {
     const reveal = node("button", null, "显示文件");
     reveal.onclick = action(() => host.reveal(asset.path));
     const actions = node("div", "action-row");
-    actions.append(save, reveal);
+    const artwork = node("button", null, "选择封面");
+    artwork.onclick = action(() =>
+      command("asset.action", { path: asset.path, action: "artwork" }),
+    );
+    actions.append(save, reveal, artwork);
     container.append(actions, node("p", "path-label", asset.path));
   } else if (inspectorTab === "regions") {
     for (const [index, region] of (asset.regions || []).entries()) {
@@ -886,6 +1358,13 @@ function renderInspector() {
       );
       activate.onclick = action(() =>
         command("region.action", { action: "activate", index: index + 1 }),
+      );
+      activate.ondblclick = action(() =>
+        command("region.action", {
+          action: "activate",
+          index: index + 1,
+          play: true,
+        }),
       );
       const remove = node("button", null, "×");
       remove.onclick = action(() =>
@@ -930,7 +1409,7 @@ async function renderTransfer(container) {
       [
         ["wav24", "WAV 24 bit"],
         ["wav16", "WAV 16 bit"],
-        ["wav32", "WAV 32 bit float"],
+        ["wav32", "WAV 32 bit PCM"],
         ["flac", "FLAC"],
       ],
     ],
@@ -942,6 +1421,7 @@ async function renderTransfer(container) {
         ["44100", "44.1 kHz"],
         ["48000", "48 kHz"],
         ["96000", "96 kHz"],
+        ["192000", "192 kHz"],
       ],
     ],
     [
@@ -971,6 +1451,17 @@ async function renderTransfer(container) {
     container.append(wrapper);
     controls[key] = select;
   }
+  appendSettings(container, settings, "Transfer");
+  if (snapshot.transferProgress)
+    container.append(
+      node(
+        "p",
+        null,
+        `${snapshot.transferProgress.completed} / ${snapshot.transferProgress.total}`,
+      ),
+    );
+  container.append(node("p", "muted", snapshot.transferSummary || ""));
+  container.append(node("p", "error", snapshot.transferError || ""));
   const submit = node("button", null, "导出所选声音");
   submit.onclick = action(() =>
     command(
@@ -1038,7 +1529,7 @@ function columnsMenu(anchor, layout = false) {
     );
     content.push(node("hr"));
   }
-  for (const [key, label] of columnDefinitions) {
+  for (const [key, label] of orderedColumns()) {
     content.push(
       toggle(label, Boolean(prefs.columns[key]), (value) => {
         prefs.columns[key] = value;
@@ -1049,16 +1540,61 @@ function columnsMenu(anchor, layout = false) {
       }),
     );
   }
+  const order = node("details", "settings-section");
+  order.append(node("summary", null, "调整列顺序"));
+  for (const [key, label] of orderedColumns()) {
+    const button = node("button", "menu-item", `↑ ${label}`);
+    button.onclick = () => {
+      const keys = orderedColumns().map(([name]) => name);
+      const index = keys.indexOf(key);
+      if (index > 0)
+        [keys[index - 1], keys[index]] = [keys[index], keys[index - 1]];
+      prefs.columnOrder = keys;
+      persist();
+      applyPreferences();
+      columnsMenu(anchor, layout);
+    };
+    order.append(button);
+  }
+  content.push(order);
+  for (const [title, reset] of [
+    [
+      "重置默认字段",
+      () => {
+        prefs.columns = structuredClone(defaults.columns);
+        prefs.columnOrder = [];
+      },
+    ],
+    [
+      "重置列宽",
+      () => {
+        prefs.widths = structuredClone(defaults.widths);
+      },
+    ],
+  ]) {
+    const button = node("button", "menu-item", title);
+    button.onclick = () => {
+      reset();
+      applyPreferences();
+      persist();
+      requestPage();
+      columnsMenu(anchor, layout);
+    };
+    content.push(button);
+  }
   popover(anchor, content);
 }
 
 function rowMenu(event, asset) {
   const content = [node("h3", null, asset.name)];
+  const operate = (operation, extra = {}) =>
+    command("asset.action", {
+      path: asset.path,
+      action: operation,
+      ...extra,
+    });
   for (const [label, callback] of [
-    [
-      asset.favorite ? "取消收藏" : "收藏",
-      () => command("favorite.toggle", { path: asset.path }),
-    ],
+    [asset.favorite ? "取消收藏" : "收藏", () => operate("favorite")],
     [
       "查找相似声音",
       async () => {
@@ -1066,6 +1602,31 @@ function rowMenu(event, asset) {
         await command("search.similar", { scope: "all" });
       },
     ],
+    ["试听", () => operate("play")],
+    ["插入当前轨道", () => operate("insert")],
+    ["插入新轨道", () => operate("insert", { newTrack: true })],
+    [
+      "堆叠插入到新轨道",
+      async () => {
+        if (!asset.selected) await selectAsset(asset, {}, false);
+        await operate("stack");
+      },
+    ],
+    ["按 BWF 时间戳插入", () => operate("insert", { bwf: true })],
+    [asset.marked ? "取消标记" : "标记", () => operate("mark")],
+    ["从当前集合移除", () => operate("removeCollection")],
+    ["重新读取元数据", () => operate("metadata")],
+    [
+      "在当前结果中查找相似声音",
+      () => operate("similar", { scope: "current" }),
+    ],
+    ["定位所属产品音效库", () => operate("browseProduct")],
+    ["重新分析响度", () => operate("loudness")],
+    ["检测瞬态", () => operate("transients")],
+    ["撤销瞬态检测", () => operate("undoTransients")],
+    ["撤销 UCS 确认", () => operate("undoUcs")],
+    ["清除瞬态建议", () => operate("clearTransients")],
+    ["复制完整路径", () => navigator.clipboard.writeText(asset.path)],
     ["显示文件", () => host.reveal(asset.path)],
   ]) {
     const item = node("button", "menu-item", label);
@@ -1076,6 +1637,15 @@ function rowMenu(event, asset) {
     });
     content.push(item);
   }
+  for (const status of snapshot?.workflowStatuses || []) {
+    const button = node("button", "menu-item", `状态 · ${status.label}`);
+    button.onclick = action(async () => {
+      $("popover").hidePopover();
+      await operate("workflow", { status: status.id });
+      requestPage();
+    });
+    content.push(button);
+  }
   const anchor = {
     getBoundingClientRect: () => ({
       left: event.clientX,
@@ -1083,6 +1653,143 @@ function rowMenu(event, asset) {
     }),
   };
   popover(anchor, content);
+}
+
+function appendSettings(container, settings, groupFilter) {
+  const groups = new Map();
+  for (const definition of settings.schema || []) {
+    if (groupFilter && definition.group !== groupFilter) continue;
+    let group = groups.get(definition.group);
+    if (!group) {
+      group = node("details", "settings-section");
+      group.append(node("summary", null, definition.group));
+      groups.set(definition.group, group);
+      container.append(group);
+    }
+    const wrapper = node("label", "field");
+    wrapper.append(node("span", null, definition.label));
+    const input = node(definition.kind === "choice" ? "select" : "input");
+    input.dataset.setting = definition.key;
+    if (definition.kind === "choice") {
+      for (const option of definition.options)
+        input.add(
+          new Option(
+            definition.key === "language"
+              ? { zh: "简体中文", en: "English" }[option]
+              : option,
+            option,
+          ),
+        );
+    } else {
+      input.type =
+        { boolean: "checkbox", number: "number", color: "color" }[
+          definition.kind
+        ] || "text";
+    }
+    if (definition.kind === "boolean")
+      input.checked = settings.values[definition.key];
+    else input.value = settings.values[definition.key] ?? "";
+    if (definition.kind === "number") {
+      input.min = definition.minimum;
+      input.max = definition.maximum;
+      input.step = definition.integer ? "1" : "any";
+    }
+    input.onchange = action(async () => {
+      if (!input.reportValidity()) return;
+      const value =
+        definition.kind === "boolean"
+          ? input.checked
+          : definition.kind === "number"
+            ? Number(input.value)
+            : input.value;
+      await command("settings.update", { values: { [definition.key]: value } });
+      requestPage();
+    });
+    wrapper.append(input);
+    group.append(wrapper);
+  }
+}
+
+async function appendManagement(container) {
+  const groups = await command("management.get");
+  if (!container.isConnected) return;
+  const labels = {
+    add: "添加来源",
+    rename: "重命名",
+    scan: "扫描",
+    remove: "移除",
+    relink: "重新链接",
+    artwork: "指定封面",
+    redetectArtwork: "重新发现封面",
+    clearArtwork: "清除封面",
+    addSelection: "加入所选素材",
+    removeSelection: "移除所选素材",
+    bind: "绑定当前工程",
+    overwrite: "用当前条件覆盖",
+    activate: "打开",
+  };
+  for (const group of groups) {
+    const section = node("details", "settings-section");
+    section.append(node("summary", null, group.label));
+    for (const item of group.items) {
+      const row = node("div", "field");
+      const name = node("span", null, item.name);
+      name.dataset.literal = "true";
+      row.append(name);
+      const actions = node("div", "action-row");
+      for (const operation of group.actions) {
+        if (operation === "bind" && item.kind !== "project") continue;
+        const button = node("button", null, labels[operation]);
+        button.type = "button";
+        button.onclick = action(async () => {
+          await command("management.action", {
+            kind: group.kind,
+            id: item.id,
+            action: operation,
+          });
+          await settingsDialog();
+        });
+        actions.append(button);
+      }
+      row.append(actions);
+      section.append(row);
+    }
+    container.append(section);
+  }
+}
+
+function renderClassificationReview() {
+  const container = $("classification-review");
+  if (!container) return;
+  const review = snapshot?.classificationReview;
+  const signature = JSON.stringify(review);
+  if (container.dataset.signature === signature) return;
+  container.dataset.signature = signature;
+  container.replaceChildren();
+  if (!review) return;
+  container.append(node("h3", null, "UCS 分类预览"));
+  const counts = review.counts;
+  container.append(
+    node(
+      "p",
+      null,
+      `检查 ${review.total} · 可更新 ${counts.changed} · 自动 ${counts.auto} · 待确认 ${counts.pending} · 人工保护 ${counts.manual}`,
+    ),
+  );
+  for (const sample of review.samples || [])
+    container.append(
+      node(
+        "p",
+        "muted",
+        `${sample.name}：${sample.before || "未分类"} → ${sample.after || sample.candidates || "未分类"}`,
+      ),
+    );
+  const discard = node("button", null, "丢弃分类预览");
+  discard.type = "button";
+  discard.onclick = action(() =>
+    command("maintenance", { action: "classifyDiscard" }),
+  );
+  container.append(discard);
 }
 
 async function settingsDialog() {
@@ -1132,6 +1839,49 @@ async function settingsDialog() {
     row.append(input, output);
     body.append(row);
   }
+  const [fontRow, fontInput] = field(
+    "字体",
+    "fontFamily",
+    prefs.fontFamily || "Segoe UI",
+  );
+  fontInput.onchange = () => {
+    prefs.fontFamily = fontInput.value;
+    applyPreferences();
+    persist();
+  };
+  body.append(fontRow);
+  appendSettings(body, settings);
+  appendManagement(body).catch(report);
+  const records = node("div", "action-row");
+  for (const [label, operation] of [
+    ["恢复上次试听标记", "restorePlayed"],
+    ["清除本次试听标记", "clearPlayed"],
+    ["清除保存的试听标记", "clearSavedPlayed"],
+    ["保存当前搜索", "saveSearch"],
+    ["确认重复文件", "verifyDuplicates"],
+    ["恢复最近备份", "restoreBackup"],
+    ["清理相似缓存", "clearSimilarity"],
+    ["清理波形缓存", "clearWaveforms"],
+    ["重新发现封面", "clearArtwork"],
+    ["重试失败任务", "retryFailed"],
+    ["绑定当前工程素材箱", "currentProject"],
+    ["打开数据目录", "dataFolder"],
+    ["更改波形缓存目录", "cacheFolder"],
+    ["恢复默认缓存目录", "cacheDefault"],
+    ["预生成波形", "precache"],
+    ["预生成当前范围波形", "precacheCurrent"],
+    ["取消波形预生成", "cancelPrecache"],
+    ["取消分类", "cancelClassify"],
+    ["取消瞬态检测", "cancelTransients"],
+  ]) {
+    const button = node("button", null, label);
+    button.type = "button";
+    button.onclick = action(() =>
+      command("records.action", { action: operation }),
+    );
+    records.append(button);
+  }
+  body.append(node("h3", null, "记录与缓存"), records);
   body.append(node("h3", null, "素材库维护"));
   const actions = node("div", "action-row");
   for (const [label, operation] of [
@@ -1158,6 +1908,10 @@ async function settingsDialog() {
       "Alt + 按住列表行可拖出原文件。处理后的选区使用 Transfer 导出。",
     ),
   );
+  const review = node("div");
+  review.id = "classification-review";
+  body.append(review);
+  renderClassificationReview();
   body.append(
     toggle("监视已导入来源文件夹", settings.watch_enabled, (value) =>
       command("settings.watch", { enabled: value }).catch(report),
@@ -1166,9 +1920,11 @@ async function settingsDialog() {
   body.append(node("h3", null, "AI 语义搜索"));
   const preset = node("select");
   preset.append(
-    ...(settings.ai_presets || []).map(
-      (item) => new Option(item.name, item.id),
-    ),
+    ...(settings.ai_presets || []).map((item) => {
+      const option = new Option(item.name, item.id);
+      option.dataset.literal = "true";
+      return option;
+    }),
   );
   preset.value = settings.ai_active_preset_id || "";
   preset.onchange = action(async () => {
@@ -1228,12 +1984,176 @@ async function settingsDialog() {
     });
     aiActions.append(button);
   }
-  body.append(aiActions);
+  const removePreset = node("button", null, "删除当前预设");
+  removePreset.type = "button";
+  removePreset.onclick = action(async () => {
+    await command("settings.ai", { action: "delete", id: preset.value });
+    await settingsDialog();
+  });
+  aiActions.append(removePreset);
+  body.append(aiActions, node("p", "muted", settings.ai_status || ""));
+  const reset = node("details", "settings-section");
+  reset.append(node("summary", null, "重置"));
+  for (const [label, operation] of [
+    ["重置界面", "resetInterface"],
+    ["重建数据库并保留来源", "resetDatabase"],
+    ["恢复出厂设置", "factoryReset"],
+  ]) {
+    const button = node("button", null, label);
+    button.type = "button";
+    button.onclick = action(async () => {
+      await command("records.action", { action: operation });
+      if (operation === "resetInterface") {
+        prefs = structuredClone(defaults);
+        applyPreferences();
+        persist();
+      }
+      await settingsDialog();
+    });
+    reset.append(button);
+  }
+  body.append(reset);
+  const diagnostics = node("button", null, "复制诊断信息");
+  diagnostics.type = "button";
+  diagnostics.onclick = action(async () =>
+    navigator.clipboard.writeText(await command("diagnostics.get")),
+  );
+  const help = node("details", "settings-section");
+  help.append(node("summary", null, "快捷键与使用说明"));
+  help.append(
+    node(
+      "p",
+      null,
+      "Space 播放/停止，F 收藏，M 标记，L 循环。Ctrl+F 搜索，Ctrl+Shift+F 执行 AI 搜索，Ctrl+R 扫描。Ctrl+N 新标签，Ctrl+Shift+N 复制标签，Ctrl+W 关闭，Ctrl+Tab 切换。F9/F10 切换侧栏，F11 专注模式。Ctrl+T 打开交付。Enter 插入需要在常规设置中启用。",
+    ),
+  );
+  help.append(
+    node(
+      "p",
+      null,
+      "波形单击试听，拖动选择区间，双击复位缩放，滚轮缩放，Shift+滚轮或中键拖动平移，右键按住移动擦播。文件名可拖入 REAPER，底部“拖入选区”保留当前区间。Alt+拖动列表行可拖出原文件。",
+    ),
+  );
+  body.append(help, diagnostics);
 }
+
+let suggestionTimer;
+let suggestionSequence = 0;
+let suggestions = [];
+let activeSuggestion = -1;
+const suggestionBox = $("search-suggestions");
+function hideSearchSuggestions() {
+  ++suggestionSequence;
+  clearTimeout(suggestionTimer);
+  if (suggestionBox.matches(":popover-open")) suggestionBox.hidePopover();
+  $("search").setAttribute("aria-expanded", "false");
+  $("search").removeAttribute("aria-activedescendant");
+  activeSuggestion = -1;
+}
+async function chooseSuggestion(index) {
+  const suggestion = suggestions[index];
+  if (!suggestion) return;
+  hideSearchSuggestions();
+  $("search").value = suggestion.query;
+  $("result-scroll").scrollTop = 0;
+  await command("catalog.query", { search: suggestion.query, keepScope: true });
+  $("search").focus();
+}
+$("search").addEventListener("input", () => {
+  hideSearchSuggestions();
+  const sequence = suggestionSequence;
+  const query = $("search").value;
+  if (query.trim().length < 2) return;
+  suggestionTimer = setTimeout(
+    action(async () => {
+      const result = await command("catalog.suggestions", { query });
+      if (
+        sequence !== suggestionSequence ||
+        document.activeElement !== $("search")
+      )
+        return;
+      suggestions = result;
+      if (!suggestions.length) return;
+      suggestionBox.replaceChildren(
+        ...suggestions.map((suggestion, index) => {
+          const button = node("button", "menu-item", suggestion.label);
+          button.type = "button";
+          button.id = `ucs-suggestion-${index}`;
+          button.setAttribute("role", "option");
+          button.setAttribute("aria-selected", "false");
+          button.tabIndex = -1;
+          button.title = suggestion.detail;
+          button.onpointerdown = (event) => event.preventDefault();
+          button.onclick = action(() => chooseSuggestion(index));
+          return button;
+        }),
+      );
+      const rect = $("search-form").getBoundingClientRect();
+      suggestionBox.style.left = `${rect.left}px`;
+      suggestionBox.style.top = `${rect.bottom + 4}px`;
+      suggestionBox.style.width = `${Math.min(rect.width, innerWidth - rect.left - 8)}px`;
+      suggestionBox.showPopover();
+      $("search").setAttribute("aria-expanded", "true");
+    }),
+    150,
+  );
+});
+$("search").addEventListener(
+  "keydown",
+  action(async (event) => {
+    if (!suggestionBox.matches(":popover-open")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      hideSearchSuggestions();
+      return;
+    }
+    if (event.key === "Enter" && activeSuggestion >= 0) {
+      event.preventDefault();
+      await chooseSuggestion(activeSuggestion);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      activeSuggestion =
+        (activeSuggestion +
+          (event.key === "ArrowDown" ? 1 : -1) +
+          suggestions.length) %
+        suggestions.length;
+      for (const [index, option] of [...suggestionBox.children].entries())
+        option.setAttribute(
+          "aria-selected",
+          String(index === activeSuggestion),
+        );
+      $("search").setAttribute(
+        "aria-activedescendant",
+        `ucs-suggestion-${activeSuggestion}`,
+      );
+      suggestionBox.children[activeSuggestion].scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }),
+);
+suggestionBox.addEventListener("toggle", (event) => {
+  if (event.newState === "closed")
+    $("search").setAttribute("aria-expanded", "false");
+});
+$("search").addEventListener("blur", () =>
+  setTimeout(() => {
+    if (
+      document.activeElement !== $("search") &&
+      !suggestionBox.contains(document.activeElement)
+    )
+      hideSearchSuggestions();
+  }, 0),
+);
 
 $("search-form").onsubmit = action((event) => {
   event.preventDefault();
-  return query({ libraryId: $("scope").value });
+  hideSearchSuggestions();
+  $("result-scroll").scrollTop = 0;
+  return command("catalog.query", {
+    search: $("search").value,
+    keepScope: true,
+  });
 });
 $("scope").onchange = action(() => query({ libraryId: $("scope").value }));
 $("ai-search").onclick = action(() =>
@@ -1330,10 +2250,16 @@ $("ucs-directory").ontoggle = action(async () => {
   for (const category of categories) {
     const details = node("details");
     details.append(
-      node("summary", "section-label", category.label || category.name),
+      node(
+        "summary",
+        "section-label",
+        prefs.language === "en"
+          ? category.name
+          : category.label || category.name,
+      ),
     );
     const all = navItem(
-      `全部 ${category.name}`,
+      `${prefs.language === "en" ? "All" : "全部"} ${category.name}`,
       () => query({ category: category.name }),
       false,
     );
@@ -1341,7 +2267,7 @@ $("ucs-directory").ontoggle = action(async () => {
     for (const entry of category.entries)
       details.append(
         navItem(
-          `${entry.catid} · ${entry.label || entry.name}`,
+          `${entry.catid} · ${prefs.language === "en" ? entry.name : entry.label || entry.name}`,
           () => query({ catid: entry.catid }),
           false,
           "root",
@@ -1372,6 +2298,21 @@ $("collection-menu").onclick = () => {
   content.push(create);
   popover($("collection-menu"), content);
 };
+for (const [label, key, values] of [
+  ["音高预设", "pitch", [-12, -6, -3, 0, 3, 6, 12]],
+  ["速度预设", "rate", [0.5, 0.75, 1, 1.25, 1.5, 2]],
+]) {
+  const presets = node("details", "settings-section");
+  presets.append(node("summary", null, label));
+  for (const value of values) {
+    const button = node("button", null, String(value));
+    button.onclick = action(() =>
+      command("preview.parameters", { [key]: value }),
+    );
+    presets.append(button);
+  }
+  $("fx-panel").append(presets);
+}
 let fxTimer;
 let pendingFx = {};
 for (const [label, key] of [
@@ -1418,6 +2359,7 @@ $("zoom-reset").onclick = () => {
 };
 
 const detailCanvas = $("detail-wave");
+attachArrangeDrag($("drag-selection"), () => snapshot?.selected?.path, true);
 function wavePercent(event) {
   const rect = detailCanvas.getBoundingClientRect();
   return clamp(
@@ -1427,33 +2369,81 @@ function wavePercent(event) {
     1,
   );
 }
+let wavePanX = null;
+let lastScrub = 0;
+detailCanvas.oncontextmenu = (event) => event.preventDefault();
 detailCanvas.onpointerdown = (event) => {
+  if (event.button === 1) {
+    event.preventDefault();
+    wavePanX = event.clientX;
+    detailCanvas.setPointerCapture(event.pointerId);
+    return;
+  }
   if (event.button !== 0 || !snapshot?.selected) return;
   regionDrag = { start: wavePercent(event), current: wavePercent(event) };
   detailCanvas.setPointerCapture(event.pointerId);
 };
 detailCanvas.onpointermove = (event) => {
+  if (wavePanX !== null) {
+    const span = zoomEnd - zoomStart;
+    const delta =
+      ((wavePanX - event.clientX) /
+        detailCanvas.getBoundingClientRect().width) *
+      span;
+    zoomStart = clamp(zoomStart + delta, 0, 1 - span);
+    zoomEnd = zoomStart + span;
+    wavePanX = event.clientX;
+    drawDetail();
+    return;
+  }
+  if (
+    event.buttons & 2 &&
+    snapshot?.waveScrub &&
+    performance.now() - lastScrub >= 90
+  ) {
+    lastScrub = performance.now();
+    command("preview.play", {
+      position: wavePercent(event),
+      selection: false,
+    }).catch(report);
+  }
   if (!regionDrag) return;
   regionDrag.current = wavePercent(event);
   drawDetail();
   updateReadouts();
 };
-detailCanvas.onpointerup = action(async () => {
+detailCanvas.onpointerup = action(async (event) => {
+  wavePanX = null;
   if (!regionDrag) return;
   const start = Math.min(regionDrag.start, regionDrag.current);
   const finish = Math.max(regionDrag.start, regionDrag.current);
   regionDrag = null;
-  await command("preview.region", { start, finish });
+  if (Math.abs(finish - start) < 0.001) {
+    await command("preview.play", { position: start, selection: false });
+  } else {
+    await command("preview.region", { start, finish });
+    await command("preview.play", { position: start, selection: true });
+  }
 });
 detailCanvas.onpointercancel = () => {
+  wavePanX = null;
   regionDrag = null;
   drawDetail();
 };
-detailCanvas.ondblclick = action((event) =>
-  command("preview.play", { position: wavePercent(event), selection: false }),
-);
+detailCanvas.ondblclick = () => $("zoom-reset").click();
 detailCanvas.onwheel = (event) => {
   event.preventDefault();
+  if (event.shiftKey) {
+    const span = zoomEnd - zoomStart;
+    zoomStart = clamp(
+      zoomStart + Math.sign(event.deltaY) * span * 0.1,
+      0,
+      1 - span,
+    );
+    zoomEnd = zoomStart + span;
+    drawDetail();
+    return;
+  }
   const anchor = wavePercent(event);
   const oldSpan = zoomEnd - zoomStart;
   const span = clamp(oldSpan * (event.deltaY > 0 ? 1.25 : 0.8), 0.005, 1);
@@ -1512,7 +2502,55 @@ attachSplitter($("audition-splitter"), "auditionHeight", "clientY", -1);
 document.addEventListener(
   "keydown",
   action(async (event) => {
-    if (event.target.closest("input,textarea,select,dialog") || !host) return;
+    if (!host) return;
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      event.shiftKey &&
+      event.key.toLowerCase() === "f"
+    ) {
+      event.preventDefault();
+      await command("search.ai", { query: $("search").value });
+      return;
+    }
+    if (event.target.closest("input,textarea,select,dialog")) return;
+    const ctrl = event.ctrlKey || event.metaKey;
+    if (ctrl && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      if (event.shiftKey)
+        await command("search.ai", { query: $("search").value });
+      else $("search").focus();
+      return;
+    }
+    if (ctrl && event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      await command("maintenance", { action: "scan" });
+      return;
+    }
+    if (ctrl && event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      $("transfer-open").click();
+      return;
+    }
+    if (["F9", "F10", "F11"].includes(event.key)) {
+      event.preventDefault();
+      if (event.key === "F9") prefs.left = !prefs.left;
+      if (event.key === "F10") prefs.right = !prefs.right;
+      if (event.key === "F11")
+        prefs.left = prefs.right = !(prefs.left || prefs.right);
+      applyPreferences();
+      persist();
+    }
+    if (!ctrl && event.key.toLowerCase() === "l") $("loop").click();
+    if (!ctrl && event.key.toLowerCase() === "f" && snapshot?.selected)
+      await command("asset.action", {
+        action: "favorite",
+        path: snapshot.selected.path,
+      });
+    if (!ctrl && event.key.toLowerCase() === "m" && snapshot?.selected)
+      await command("asset.action", {
+        action: "mark",
+        path: snapshot.selected.path,
+      });
     if (event.code === "Space") {
       event.preventDefault();
       await command(snapshot?.playing ? "preview.stop" : "preview.play");
@@ -1522,19 +2560,53 @@ document.addEventListener(
       await command("selection.all");
       requestPage();
     }
-    if (event.key === "Enter") {
+    if (ctrl && event.key.toLowerCase() === "n") {
       event.preventDefault();
-      await command("insert");
+      await command("tab.action", {
+        action: "new",
+        duplicateId: event.shiftKey ? snapshot.activeTab : undefined,
+      });
+    }
+    if (ctrl && event.key.toLowerCase() === "w") {
+      event.preventDefault();
+      await command("tab.action", { action: "close", id: snapshot.activeTab });
+    }
+    if (ctrl && event.key === "Tab") {
+      event.preventDefault();
+      const index = snapshot.tabs.findIndex(
+        (tab) => tab.id === snapshot.activeTab,
+      );
+      const next =
+        (index + (event.shiftKey ? -1 : 1) + snapshot.tabs.length) %
+        snapshot.tabs.length;
+      await command("tab.action", {
+        action: "activate",
+        id: snapshot.tabs[next].id,
+      });
+    }
+    if (event.key === "Enter" && snapshot?.enterInsertShortcuts) {
+      event.preventDefault();
+      if (snapshot.selectedCount > 1)
+        await command("asset.action", { action: "stack" });
+      else
+        await command("insert", { newTrack: event.ctrlKey || event.metaKey });
     }
     if (["ArrowUp", "ArrowDown"].includes(event.key) && snapshot?.selected) {
       event.preventDefault();
-      const index =
-        (snapshot.selected.index ||
-          page?.items.find((asset) => asset.path === snapshot.selected.path)
-            ?.index ||
-          1) + (event.key === "ArrowDown" ? 1 : -1);
-      const asset = page?.items.find((item) => item.index === index);
-      if (asset) await selectAsset(asset, {}, true);
+      const index = await command("selection.move", {
+        direction: event.key === "ArrowDown" ? 1 : -1,
+        shift: event.shiftKey,
+      });
+      if (index) {
+        const scroll = $("result-scroll");
+        const top = (index - 1) * prefs.rowHeight;
+        if (
+          top < scroll.scrollTop ||
+          top + prefs.rowHeight > scroll.scrollTop + scroll.clientHeight
+        )
+          scroll.scrollTop = Math.max(0, top - scroll.clientHeight / 2);
+        await requestPage();
+      }
     }
   }),
 );
@@ -1549,12 +2621,53 @@ window.addEventListener("resize", () => {
   requestPage();
 });
 window.addEventListener("beforeunload", () => {
+  localizer.close();
+  clearTimeout(suggestionTimer);
   clearTimeout(pageRetry);
   clearTimeout(waveRetry);
   clearTimeout(fxTimer);
   persist();
   host?.close();
+  for (const pending of thumbnailCache.values())
+    pending.then((url) => {
+      if (url) URL.revokeObjectURL(url);
+    });
+  thumbnailCache.clear();
 });
+
+async function receiveFolderDrop(payload) {
+  if (!payload.files?.length) return;
+  const target = document
+    .elementFromPoint(payload.x, payload.y)
+    ?.closest("[data-library-id]");
+  if (target || payload.files.length === 1) {
+    await command("library.drop", {
+      paths: payload.files,
+      libraryId: target?.dataset.libraryId,
+      separate: true,
+    });
+    return;
+  }
+  const dialog = node("dialog");
+  dialog.append(node("h2", null, "导入文件夹"));
+  for (const [label, separate] of [
+    ["各自建立音效库", true],
+    ["合并到一个音效库", false],
+  ]) {
+    const button = node("button", null, label);
+    button.onclick = action(async () => {
+      dialog.close();
+      await command("library.drop", { paths: payload.files, separate });
+    });
+    dialog.append(button);
+  }
+  const cancel = node("button", null, "取消");
+  cancel.onclick = () => dialog.close();
+  dialog.append(cancel);
+  dialog.onclose = () => dialog.remove();
+  document.body.append(dialog);
+  dialog.showModal();
+}
 
 applyPreferences();
 try {
@@ -1570,6 +2683,13 @@ try {
       `ReaWebAPI ${host.runtime.version} · ${host.runtime.status === "external_unverified" ? "外部版本" : "候选基线"}`;
     $("host-label").title = host.runtime.notice;
   }
+  if (host.subscribeDrops)
+    host
+      .subscribeDrops((payload) => receiveFolderDrop(payload).catch(report))
+      .catch((error) => {
+        $("add-library").title =
+          `拖入文件夹暂不可用，可点击添加来源。${error.message}`;
+      });
   host.addEventListener("state", (event) => applySnapshot(event.detail));
   if (host.state) applySnapshot(host.state);
 } catch (error) {

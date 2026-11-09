@@ -24,7 +24,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font:
-    var(--font-size)/1.4 "Segoe UI",
+    var(--font-size) / 1.4 "Segoe UI",
     "Microsoft YaHei UI",
     system-ui,
     sans-serif;
@@ -550,6 +550,15 @@ body.right-hidden #inspector {
   font-weight: 600;
   color: var(--muted);
 }
+.metadata-filter {
+  align-self: flex-end;
+  min-height: 20px;
+  padding: 1px 5px;
+  font-size: 10px;
+  color: var(--muted);
+  border-color: transparent;
+  background: transparent;
+}
 .field textarea {
   resize: vertical;
   min-height: 65px;
@@ -975,4 +984,75 @@ body[data-theme="paper"] #wave-readouts output {
   .fx-controls input[type="range"] {
     width: 60px;
   }
+}
+
+.result-row.played:not(.selected) .result-cell:not(.star) {
+  color: var(--played-text);
+}
+.result-row.marked .result-cell.waveform {
+  border-left: 2px solid var(--accent);
+}
+.settings-section {
+  margin-top: 14px;
+}
+.settings-section summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.settings-section .field {
+  margin: 8px 0;
+}
+
+.folder-branch {
+  margin-left: 12px;
+}
+.folder-branch summary {
+  cursor: pointer;
+}
+.folder-branch summary .nav-item {
+  display: inline-flex;
+  width: calc(100% - 18px);
+}
+
+.row-artwork {
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+.artwork-cover.pinned {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.result-cell.waveform {
+  position: relative;
+}
+.mini-playhead {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  pointer-events: none;
+}
+#search-suggestions {
+  margin: 0;
+  padding: 5px;
+  max-height: 300px;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+#search-suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px;
+  border-color: transparent;
+}
+#search-suggestions [aria-selected="true"],
+#search-suggestions button:hover {
+  background: var(--selected);
 }

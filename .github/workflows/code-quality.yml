@@ -31,6 +31,9 @@ jobs:
         shell: pwsh
         run: ./tools/Test-ReaPackVersionPolicy.ps1
 
+      - name: Verify generated WebView translations
+        run: python tools/generate_web_translations.py --check
+
       - name: Set up pinned Lua test runtime
         shell: pwsh
         run: |

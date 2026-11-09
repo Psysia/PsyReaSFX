@@ -60,6 +60,10 @@ async function main() {
         preserve_pitch: true,
         reverse: false,
       };
+      const played = new Set();
+      let playedText = true;
+      let playingPath = null;
+      let language = "zh";
       const calls = [];
       window.testCalls = calls;
       const peaks = Array.from(
@@ -100,6 +104,7 @@ async function main() {
           subcategory: "GEARS",
           catid: "MECHGear",
           notes: "",
+          played: played.has(index),
           favorite: index % 5 === 0,
           selected: selected?.index === index,
           waveform: {
@@ -115,6 +120,7 @@ async function main() {
       function state() {
         return {
           revision,
+          language,
           count,
           loaded: 500000,
           pending: false,
@@ -142,7 +148,18 @@ async function main() {
           view: "all",
           selected,
           selectedCount: selected ? 1 : 0,
-          playing: false,
+          playing: Boolean(playingPath),
+          previewPath: playingPath,
+          playedCount: played.size,
+          rowAppearance: {
+            textEnabled: playedText,
+            waveformEnabled: true,
+            text: "#f0c85a",
+            waveform: "#d7d8da",
+            played: "#8fb8d8",
+            marked: "#f0c85a",
+            selected: "#eaf3ff",
+          },
           position: 0.24,
           regionStart: 0.12,
           regionEnd: 0.5,
@@ -160,11 +177,32 @@ async function main() {
           postMessage(request) {
             calls.push(request);
             if (request.method === "settings.get" && window.testSettingsError) {
-              queueMicrotask(() => listener({ data: { protocol: 1, id: request.id,
-                ok: false, error: "模拟宿主读取失败" } }));
+              queueMicrotask(() =>
+                listener({
+                  data: {
+                    protocol: 1,
+                    id: request.id,
+                    ok: false,
+                    error: "模拟宿主读取失败",
+                  },
+                }),
+              );
               return;
             }
             let result = true;
+            if (request.method === "catalog.suggestions")
+              result =
+                request.params.query === "mech"
+                  ? [
+                      {
+                        catid: "MECHGear",
+                        label: "MECHGear · MECHANICAL / GEAR",
+                        detail: "Mechanical gears",
+                        query: "catid:MECHGear",
+                      },
+                    ]
+                  : [];
+            if (request.method === "management.get") result = [];
             if (request.method === "session.ready")
               result = {
                 protocol: 1,
@@ -193,6 +231,21 @@ async function main() {
                 ),
               };
             }
+            if (request.method === "preview.play" && selected) {
+              played.add(selected.index);
+              playingPath = selected.path;
+            }
+            if (request.method === "preview.stop") playingPath = null;
+            if (request.method === "settings.update")
+              playedText =
+                request.params.values.played_text_enabled ?? playedText;
+            if (request.method === "settings.update")
+              language = request.params.values.language || language;
+            if (
+              request.method === "asset.action" &&
+              request.params.action === "channelMode"
+            )
+              selected.channelMode = request.params.mode;
             if (request.method === "selection.set") {
               selected = asset(request.params.index);
               result = selected;
@@ -215,6 +268,22 @@ async function main() {
               fx = { ...fx, ...request.params };
             if (request.method === "settings.get")
               result = {
+                schema: [
+                  {
+                    key: "language",
+                    label: "语言",
+                    kind: "choice",
+                    group: "常规",
+                    options: ["zh", "en"],
+                  },
+                  {
+                    key: "played_text_enabled",
+                    label: "已播放文字高亮",
+                    kind: "boolean",
+                    group: "试听颜色",
+                  },
+                ],
+                values: { played_text_enabled: playedText, language },
                 transfer_dir: "D:\\Exports",
                 transfer_template: "{name}",
                 transfer_format: "wav24",
@@ -260,13 +329,89 @@ async function main() {
       (await page.locator(".result-row").count()) < 100,
       "500k catalog must render a bounded viewport",
     );
+    await page.locator(".result-cell.name").first().click();
+    await page.locator("#play").click();
+    await page.waitForSelector(".result-row.played");
+    await page.waitForSelector(".mini-playhead:not([hidden])");
+    await page.locator(".result-cell.name").nth(1).click();
+    assert.equal(
+      await page.locator(".result-row.played:not(.selected)").count(),
+      1,
+    );
     await page.locator("#settings-open").click();
     await page.waitForSelector("#settings-dialog[open]", { timeout: 3000 });
+    await page
+      .locator("#settings-body summary")
+      .filter({ hasText: "试听颜色" })
+      .click();
+    await page.locator('[data-setting="played_text_enabled"]').uncheck();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".result-row.played").length === 0,
+    );
+    await page.locator('[data-setting="played_text_enabled"]').check();
+    await page
+      .locator("#settings-body summary")
+      .filter({ hasText: "常规" })
+      .click();
+    const originalDescription = await page
+      .locator(".result-cell.description")
+      .first()
+      .textContent();
+    await page.locator('[data-setting="language"]').selectOption("en");
+    await page.waitForFunction(() => document.documentElement.lang === "en-US");
+    await page
+      .getByRole("button", { name: "Close settings", exact: true })
+      .waitFor();
+    assert.equal(
+      await page.locator(".result-cell.description").first().textContent(),
+      originalDescription,
+      "localization must preserve catalog text",
+    );
+    fs.mkdirSync(output, { recursive: true });
+    await page.screenshot({ path: path.join(output, "english-settings.png") });
+    await page.locator('[data-setting="language"]').selectOption("zh");
+    await page.waitForFunction(() => document.documentElement.lang === "zh-CN");
     await page.getByRole("button", { name: "关闭设置" }).click();
-    await page.evaluate(() => { window.testSettingsError = true; });
+    await page.locator("#search").fill("mech");
+    await page.waitForSelector(
+      '#search-suggestions:popover-open [role="option"]',
+    );
+    await page.locator("#search").press("ArrowDown");
+    await page.locator("#search").press("Enter");
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "catalog.query" &&
+          call.params.search === "catid:MECHGear" &&
+          call.params.keepScope === true,
+      ),
+    );
+    assert.equal(
+      await page.locator("#search").getAttribute("aria-expanded"),
+      "false",
+    );
+    await page.locator(".result-cell.name").nth(1).click();
+    await page
+      .locator("#inspector-body summary")
+      .filter({ hasText: "试听声道" })
+      .click();
+    await page.getByRole("button", { name: "左声道", exact: true }).click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "asset.action" &&
+          call.params.action === "channelMode" &&
+          call.params.mode === "left",
+      ),
+    );
+    await page.evaluate(() => {
+      window.testSettingsError = true;
+    });
     await page.locator("#settings-open").click();
     await page.getByRole("button", { name: "重新读取设置" }).waitFor();
-    await page.evaluate(() => { window.testSettingsError = false; });
+    await page.evaluate(() => {
+      window.testSettingsError = false;
+    });
     await page.getByRole("button", { name: "重新读取设置" }).click();
     await page.locator('#settings-body input[data-field="url"]').waitFor();
     await page.getByRole("button", { name: "关闭设置" }).click();
@@ -413,8 +558,11 @@ async function main() {
           host: {
             send(message) {
               function validate(value) {
-                if (value === undefined || typeof value === "function" ||
-                    (typeof value === "number" && !Number.isFinite(value)))
+                if (
+                  value === undefined ||
+                  typeof value === "function" ||
+                  (typeof value === "number" && !Number.isFinite(value))
+                )
                   throw new Error("Expected a JSON-serializable value");
                 if (value && typeof value === "object")
                   Object.values(value).forEach(validate);
@@ -426,6 +574,12 @@ async function main() {
           },
           events: {
             on(_name, callback) {
+              if (_name === "native-drop") {
+                window.testNativeDrop = callback;
+                return Promise.resolve(() => {
+                  window.testNativeDrop = null;
+                });
+              }
               window.chrome.webview.addEventListener("message", (event) =>
                 callback(JSON.stringify(event.data)),
               );
@@ -446,20 +600,48 @@ async function main() {
       /ReaWebAPI 0.3.9.30/,
       "ReaWebAPI transport must connect",
     );
+    await page.waitForFunction(
+      () => typeof window.testNativeDrop === "function",
+    );
+    await page.evaluate(() =>
+      window.testNativeDrop({
+        files: ["D:\\Library A", "D:\\Library B"],
+        x: 600,
+        y: 200,
+      }),
+    );
+    await page
+      .getByRole("button", { name: "合并到一个音效库", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "library.drop" &&
+          call.params.paths.length === 2 &&
+          call.params.separate === false,
+      ),
+    );
     await page.locator(".result-cell.name").first().click();
-    await page.waitForFunction(() => window.testCalls.some(call => call.method === "selection.set"));
+    await page.waitForFunction(() =>
+      window.testCalls.some((call) => call.method === "selection.set"),
+    );
     await page.locator("#settings-open").click();
     await page.waitForSelector("#settings-dialog[open]", { timeout: 3000 });
     await page.getByRole("button", { name: "关闭设置" }).click();
     await page.locator('[data-inspector="regions"]').click();
     await page.locator('[data-inspector="transfer"]').click();
-    await page.locator('#inspector-body input[data-field="transfer_dir"]').waitFor();
+    await page
+      .locator('#inspector-body input[data-field="transfer_dir"]')
+      .waitFor();
     await page.locator('[data-inspector="metadata"]').click();
     await page.locator("#loop").click();
     await page.locator("#stop").click();
     await page.locator("#new-tab").click();
-    assert.equal(await page.locator("#status.error").count(), 0,
-      "native transport interactions must not report serialization failures");
+    assert.equal(
+      await page.locator("#status.error").count(),
+      0,
+      "native transport interactions must not report serialization failures",
+    );
     const url = new URL(page.url());
     url.searchParams.set("runtimeVersion", "0.4.0");
     await page.goto(url.toString());

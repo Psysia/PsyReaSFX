@@ -1,3 +1,15 @@
+## 0.9.3 Beta 6 (0.9.a WebView) — 2026-11-09
+
+- Include Beta 5 workflow parity and add Chinese/English switching with generated shared translations and literal catalog content.
+- Restore bounded, debounced UCS suggestions with keyboard selection and preserved search scope.
+
+## 0.9.3 Beta 5 (0.9.a WebView) — 2026-11-09
+
+- Restore session-played text/waveform colors, playheads, marking, workflow status and batch favorites.
+- Expose Lua-backed settings, batch metadata, channel audition, folder trees, saved searches, library/collection management and UCS review.
+- Add spectral/high-resolution waveforms, transient/loudness controls, advanced Transfer options and shortcuts; preserve scope when searching.
+- Pass automated regressions and isolated native audition, metadata, insertion and actual WAV export. Full cross-window mouse-drag acceptance remains pending.
+
 ## 0.9.3-beta4
 
 Fix optional native-message fields and invalidated asset path caches. Show settings immediately with loading, failure and retry states.

@@ -31,6 +31,10 @@
               placeholder="搜索文件名、描述、关键词…"
               autocomplete="off"
               aria-label="搜索声音"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="search-suggestions"
             /><button id="ai-search" type="button" title="AI 语义搜索">
               AI
             </button>
@@ -98,6 +102,14 @@
             </button>
           </div>
           <div id="collections"></div>
+          <details>
+            <summary class="section-label">保存的搜索</summary>
+            <div id="saved-searches"></div>
+          </details>
+          <details>
+            <summary class="section-label">工作流筛选</summary>
+            <div id="workflow-filters"></div>
+          </details>
         </aside>
         <div
           class="vertical-splitter"
@@ -116,7 +128,8 @@
               <option value="duration">时长</option>
               <option value="library">音效库</option>
               <option value="used">最近插入</option>
-              <option value="previewed">最近试听</option></select
+              <option value="previewed">最近试听</option>
+              <option value="similarity">相似度</option></select
             ><button
               id="sort-direction"
               title="切换升降序"
@@ -283,6 +296,8 @@
           ><span class="workspace-spacer"></span
           ><button id="zoom-reset" title="复位缩放">适应</button
           ><button id="fx-toggle" aria-expanded="false">FX⌄</button
+          ><button id="drag-selection" title="按住并拖到 REAPER 编排区">
+            拖入选区</button
           ><button id="insert">↥ 插入 REAPER</button
           ><button id="transfer-open">⇥ Transfer</button>
         </div>
@@ -304,6 +319,12 @@
         <div id="settings-body"></div>
       </form>
     </dialog>
+    <div
+      id="search-suggestions"
+      popover="auto"
+      role="listbox"
+      aria-label="UCS 搜索提示"
+    ></div>
     <script type="module" src="app.js"></script>
   </body>
 </html>
