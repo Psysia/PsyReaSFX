@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.2-beta2
+-- @version 0.9.2-beta3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,7 @@
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 8.6：右侧面板右键直接跳转素材所在音效库，移除失效的弹窗交互
+--   - 0.9.2 Beta 3：移动或缩放窗口时降低绘制与后台负载以提高帧率，新增帧耗时诊断
 --   - 0.9.2 Beta 2：修正标题栏、关于页与启动画面仍显示 0.9.0 Stable 的版本号，改为构建时由 @version 推导
 --   - 0.9.2 Beta 1：选择集/搜索/导入/保存路径的性能与正确性专项，模块独立作用域构建
 --   - 0.9.1 Stable：修复波形缓存重复解码、状态搜索过期与任务误取消，降低英文界面每帧开销
@@ -214,12 +215,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.2 Beta 2"
+local VERSION = "0.9.2 Beta 3"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.2-beta2",
-  source_sha256 = "42d847628ab22abf1fa2d312758448098cd1b8dee9cefd2652a5f114d8c309ac",
+  release_id = "PsyReaSFX/0.9.2-beta3",
+  source_sha256 = "0644f089c847233f0d82acfd2677ad51ef104ff2ddab937bd580f304cde4d107",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1821,6 +1822,7 @@ I18N_EN = {
   ["打开数据目录"] = "Open data directory",
   ["打开文档目录"] = "Open documentation directory",
   ["复制诊断信息"] = "Copy diagnostics",
+  ["在窗口右上角显示帧耗时（仅本次运行，用于诊断卡顿）"] = "Show frame timing in the top-right corner (this session only, for diagnosing stutter)",
   ["诊断信息已复制"] = "Diagnostics copied",
   ["项目与支持"] = "Project and support",
   ["许可"] = "License",
@@ -20151,6 +20153,10 @@ function artwork_image_from_path(path)
   end
   budget.used = budget.used + 1
 
+  if ui_in_motion() then
+    return nil
+  end
+
   local was_ordered = entry ~= nil and not entry.failed
 
   local ok, image =
@@ -29021,6 +29027,11 @@ end
 -- Drawing helpers
 ----------------------------------------------------------------
 
+-- Every mini waveform column is one ReaImGui call, so a screenful of rows is
+-- thousands of calls per frame. While the window is being moved or resized the
+-- frame rate is what the user feels, so draw a coarse envelope for that moment.
+UI_MOTION_WAVE_COLUMNS = 48
+
 function draw_waveform(
   draw_list,
   waveform,
@@ -29063,12 +29074,25 @@ function draw_waveform(
   -- of the points each column covers (cached per width on the waveform).
   local columns = count
   local pixels = math.max(1, math.floor(width))
+  if ui_in_motion() and pixels > UI_MOTION_WAVE_COLUMNS then
+    pixels = UI_MOTION_WAVE_COLUMNS
+  end
   if count > pixels then
     columns = pixels
-    local reduced = waveform.reduced_columns
-    if not reduced or reduced.columns ~= columns
-      or reduced.count ~= count then
-      reduced = { columns = columns, count = count }
+    -- Keep the reductions for the widths in use (full and coarse) so
+    -- switching between them does not recompute every frame.
+    local cache = waveform.reduced_columns
+    if not cache or cache.count ~= count then
+      cache = { count = count, by_columns = {}, size = 0 }
+      waveform.reduced_columns = cache
+    end
+    local reduced = cache.by_columns[columns]
+    if not reduced then
+      if cache.size >= 4 then
+        cache.by_columns = {}
+        cache.size = 0
+      end
+      reduced = {}
       for column = 1, columns do
         local first = math.floor((column - 1) * count / columns) + 1
         local last = math.max(first, math.floor(column * count / columns))
@@ -29079,7 +29103,8 @@ function draw_waveform(
         end
         reduced[column] = peak
       end
-      waveform.reduced_columns = reduced
+      cache.by_columns[columns] = reduced
+      cache.size = cache.size + 1
     end
     peaks = reduced
   end
@@ -29277,13 +29302,18 @@ function draw_waveform_window(
       )
     end
 
-    for pixel = 0, pixels - 1 do
+    -- While the window moves, group three pixels per drawn column (one call
+    -- and one colour lookup instead of three); at rest it is one per pixel.
+    local step = ui_in_motion() and 3 or 1
+
+    for pixel = 0, pixels - 1, step do
+      local span = math.min(step, pixels - pixel)
       local range_start =
         first_index
         + math.floor(pixel / pixels * visible_count)
       local range_end =
         first_index
-        + math.floor((pixel + 1) / pixels * visible_count)
+        + math.floor((pixel + span) / pixels * visible_count)
 
       range_start = clamp(range_start, first_index, last_index)
       range_end = clamp(
@@ -29303,7 +29333,7 @@ function draw_waveform_window(
         end
       end
 
-      local px = x + pixel
+      local px = x + pixel + (span - 1) / 2
       local pixel_color = lane_wave_color
 
       if state.spectral_peaks_enabled
@@ -29328,7 +29358,7 @@ function draw_waveform_window(
         px,
         center + amplitude * half,
         pixel_color,
-        1
+        span
       )
     end
 
@@ -29426,6 +29456,10 @@ end
 
 function tooltip(text, max_chars)
   if not ImGui.IsItemHovered(ctx) then
+    return
+  end
+
+  if ui_in_motion() then
     return
   end
 
@@ -39376,6 +39410,7 @@ function build_diagnostics_text()
         .. tostring(last_session_played_count()),
       "Missing English translations seen: "
         .. tostring(missing_translation_count()),
+      frame_stats_text(),
       "Data directory: " .. DATA_DIR,
       "Wave cache directory: "
         .. tostring(
@@ -41090,6 +41125,15 @@ function draw_settings_maintenance()
     set_status("诊断信息已复制")
   end
 
+  local overlay_changed, overlay_value = ImGui.Checkbox(
+    ctx,
+    "在窗口右上角显示帧耗时（仅本次运行，用于诊断卡顿）",
+    FrameStats.overlay
+  )
+  if overlay_changed then
+    FrameStats.overlay = overlay_value
+  end
+
   ImGui.Separator(ctx)
 
   settings_section_title(
@@ -42333,6 +42377,138 @@ function draw_startup_splash(session)
   centered("完整校验后自动进入素材库", top + 254, COLOR.dim)
 end
 
+-- A moved or resized window is the moment the frame rate matters most and the
+-- moment nothing else needs doing, so remember "the window moved recently".
+-- Drawing gets cheaper (coarse waveforms, no tooltips, no cover decoding) and
+-- background work waits; everything returns 0.3 s after the last change.
+UiMotion = UiMotion or { until_time = 0 }
+UI_MOTION_HOLD = 0.3
+
+function ui_in_motion()
+  return reaper.time_precise() < UiMotion.until_time
+end
+
+function ui_track_window_motion()
+  local x, y = ImGui.GetWindowPos(ctx)
+  local width, height = ImGui.GetWindowSize(ctx)
+  local motion = UiMotion
+  if motion.x ~= nil
+    and (motion.x ~= x or motion.y ~= y
+      or motion.width ~= width or motion.height ~= height) then
+    motion.until_time = reaper.time_precise() + UI_MOTION_HOLD
+    mark_interaction()
+  end
+  motion.x, motion.y = x, y
+  motion.width, motion.height = width, height
+end
+
+-- Rolling frame statistics (exponential average), shown in the diagnostics
+-- text and, when enabled in Settings, as a small overlay.
+FrameStats = FrameStats or {
+  overlay = false,
+  motion_frames = 0,
+  sections = {},
+  current = {},
+}
+
+-- Splits the drawing time of one frame into named sections: frame_mark("x")
+-- charges the time since the previous mark to the previous section.
+function frame_mark(name)
+  local stats = FrameStats
+  local now = reaper.time_precise()
+  local previous = stats.mark_name
+  if previous then
+    stats.current[previous] =
+      (stats.current[previous] or 0) + (now - stats.mark_time)
+  end
+  stats.mark_name = name
+  stats.mark_time = now
+end
+
+function frame_stats_record(started, background_done, draw_done)
+  local stats = FrameStats
+  local alpha = 0.1
+  local function blend(previous, value)
+    if not previous then return value end
+    return previous + (value - previous) * alpha
+  end
+  if stats.last_started then
+    stats.interval = blend(stats.interval, started - stats.last_started)
+  end
+  stats.last_started = started
+  stats.background = blend(stats.background, background_done - started)
+  stats.draw = blend(stats.draw, draw_done - background_done)
+  stats.frames = (stats.frames or 0) + 1
+  if ui_in_motion() then
+    stats.motion_frames = stats.motion_frames + 1
+  end
+  for name, seconds in pairs(stats.current) do
+    stats.sections[name] = blend(stats.sections[name], seconds)
+    stats.current[name] = nil
+  end
+  stats.mark_name = nil
+end
+
+-- "results 14.5 · preview 5.2 · sidebar 3.1 ..." (largest first, in ms).
+function frame_sections_text()
+  local names = {}
+  for name in pairs(FrameStats.sections) do names[#names + 1] = name end
+  table.sort(names, function(left, right)
+    local a, b = FrameStats.sections[left], FrameStats.sections[right]
+    if a == b then return left < right end
+    return a > b
+  end)
+  local parts = {}
+  for _, name in ipairs(names) do
+    parts[#parts + 1] = string.format("%s %.1f", name, FrameStats.sections[name] * 1000)
+  end
+  return table.concat(parts, " · ")
+end
+
+function frame_stats_text()
+  local stats = FrameStats
+  if not stats.interval then
+    return "Frame timing: not measured yet"
+  end
+  return string.format(
+    "Frame timing (avg): %.0f fps, %.1f ms between frames, %.1f ms background work, %.1f ms drawing; %d of %d frames in window-move mode",
+    1 / math.max(stats.interval, 0.001),
+    stats.interval * 1000,
+    (stats.background or 0) * 1000,
+    (stats.draw or 0) * 1000,
+    stats.motion_frames or 0,
+    stats.frames or 0
+  ) .. "\nDrawing sections (ms): " .. frame_sections_text()
+end
+
+function draw_frame_stats_overlay()
+  local stats = FrameStats
+  if not stats.overlay or not stats.interval then return end
+  local x, y = ImGui.GetWindowPos(ctx)
+  local width = select(1, ImGui.GetWindowSize(ctx))
+  local label = string.format(
+    "%.0f fps  ·  %.1f ms  ·  bg %.1f  ·  draw %.1f%s",
+    1 / math.max(stats.interval, 0.001),
+    stats.interval * 1000,
+    (stats.background or 0) * 1000,
+    (stats.draw or 0) * 1000,
+    ui_in_motion() and "  ·  moving" or ""
+  )
+  local text_width = select(1, ImGui.CalcTextSize(ctx, label))
+  local draw_list = type(ImGui.GetForegroundDrawList) == "function"
+    and ImGui.GetForegroundDrawList(ctx)
+    or ImGui.GetWindowDrawList(ctx)
+  local sections = frame_sections_text()
+  local sections_width = select(1, ImGui.CalcTextSize(ctx, sections))
+  local box_width = math.max(text_width, sections_width)
+  local left = x + width - box_width - 18
+  ImGui.DrawList_AddRectFilled(
+    draw_list, left - 6, y + 4, left + box_width + 6, y + 42, 0x000000C0, 4
+  )
+  ImGui.DrawList_AddText(draw_list, left, y + 7, 0xF2D675FF, label)
+  ImGui.DrawList_AddText(draw_list, left, y + 24, 0xBFD8EFFF, sections)
+end
+
 function draw_main()
   -- 每帧重置，只有当前真正悬停的控件可以登记一个提示。
   state.tooltip_pending_text = nil
@@ -42387,8 +42563,12 @@ function draw_main()
       )
     end
 
+    ui_track_window_motion()
+    frame_mark("toolbar")
     draw_toolbar()
+    frame_mark("tabs")
     draw_workspace_tabs()
+    frame_mark("bars")
     draw_sub_toolbar()
     draw_path_condition_bar()
     draw_import_progress()
@@ -42499,6 +42679,7 @@ function draw_main()
 
     center_width = math.max(1, center_width)
 
+    frame_mark("sidebar")
     if render_sidebar then
       if begin_module(
         "aether_sidebar",
@@ -42566,6 +42747,7 @@ function draw_main()
       local list_height =
         math.max(1, panel_space - bottom_height)
 
+      frame_mark("results")
       if begin_module(
         "results_module",
         center_available_w,
@@ -42582,6 +42764,7 @@ function draw_main()
         center_available_h
       )
 
+      frame_mark("preview")
       if begin_module(
         "bottom_module",
         center_available_w,
@@ -42596,6 +42779,7 @@ function draw_main()
       ImGui.EndChild(ctx)
     end
 
+    frame_mark("inspector")
     if render_inspector then
       ImGui.SameLine(ctx)
       draw_inspector_splitter(content_height)
@@ -42613,6 +42797,7 @@ function draw_main()
 
     end
 
+    frame_mark("popups")
     draw_help_popup()
     draw_transient_detection_popup()
     draw_transfer_popup()
@@ -42622,6 +42807,8 @@ function draw_main()
     process_external_drag()
     draw_tooltip_overlay()
     workspace_tabs_track()
+    frame_mark(nil)
+    draw_frame_stats_overlay()
 
     -- ReaImGui automatically ends a Begin() that returns false.
     ImGui.End(ctx)
@@ -43045,6 +43232,9 @@ function loop()
     return
   end
 
+  local frame_started = reaper.time_precise()
+  local moving = ui_in_motion()
+
   process_asset_library_binding_refresh()
   process_neural_similarity_probe()
   process_ai_semantic_search()
@@ -43065,6 +43255,8 @@ function loop()
     process_ucs_reclassification()
   elseif state.database_snapshot_session then
     process_database_snapshot()
+  elseif moving then
+    -- The window is being moved or resized: leave the frame to drawing.
   else
     process_scan()
     process_import_session()
@@ -43088,16 +43280,20 @@ function loop()
   cleanup_retired_preview_sources(false)
   poll_preview()
   poll_current_project_binding()
-  directory_online_pump()
-  watch_folders()
-  autosave()
+  if not moving then
+    directory_online_pump()
+    watch_folders()
+    autosave()
+  end
 
-  if workspace_tabs_process_refresh then workspace_tabs_process_refresh() end
-  if state.results_dirty or state.results_job then
+  if workspace_tabs_process_refresh and not moving then workspace_tabs_process_refresh() end
+  if (state.results_dirty or state.results_job) and not moving then
     process_results_rebuild()
   end
 
+  local background_done = reaper.time_precise()
   draw_main()
+  frame_stats_record(frame_started, background_done, reaper.time_precise())
 
   if state.open then
     reaper.defer(loop)

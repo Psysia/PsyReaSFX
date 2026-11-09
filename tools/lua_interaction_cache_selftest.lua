@@ -237,6 +237,126 @@ assert(other_key ~= first_key and wave_cache_key(missing_asset, 256, true, false
 missing_asset.path = "C:/Gone/renamed.wav"
 assert(wave_cache_key(missing_asset, 256, false, false) ~= first_key, "a changed path changes the key")
 
+-- ------------------------------------------------ window motion and its LOD
+do
+  local clock = 100
+  reaper = { time_precise = function() return clock end, file_exists = function() return true end }
+  local interactions = 0
+  function mark_interaction() interactions = interactions + 1 end
+  local window = { x = 10, y = 20, w = 800, h = 600 }
+  ImGui = {
+    GetWindowPos = function() return window.x, window.y end,
+    GetWindowSize = function() return window.w, window.h end,
+  }
+  assert(load(region(runtime, "UiMotion = UiMotion or", "function draw_main()")))()
+
+  ui_track_window_motion()
+  assert(not ui_in_motion(), "the first frame only records the geometry")
+  ui_track_window_motion()
+  assert(not ui_in_motion() and interactions == 0, "an unchanged window is not moving")
+  window.x = 14
+  ui_track_window_motion()
+  assert(ui_in_motion() and interactions == 1, "a moved window enters motion mode and pauses background work")
+  clock = clock + UI_MOTION_HOLD * 0.5
+  assert(ui_in_motion(), "motion mode lasts a moment after the last change")
+  clock = clock + UI_MOTION_HOLD
+  assert(not ui_in_motion(), "and ends once the window has been still")
+  window.h = 640
+  ui_track_window_motion()
+  assert(ui_in_motion(), "resizing counts as motion")
+
+  -- Mini waveforms: full detail at rest, a coarse envelope that keeps every
+  -- peak while the window moves.
+  COLOR = { waveform_bg = 1, grid = 2 }
+  local lines, rects = 0, 0
+  ImGui.DrawList_AddRectFilled = function() rects = rects + 1 end
+  ImGui.DrawList_AddLine = function() lines = lines + 1 end
+  assert(load(region(runtime, "UI_MOTION_WAVE_COLUMNS = 48", "function reset_wave_view()")))()
+  local peaks, loudest = {}, 0
+  for index = 1, 256 do
+    peaks[index] = ((index * 37) % 101) / 100
+    if peaks[index] > loudest then loudest = peaks[index] end
+  end
+  local wave = { count = 256, peaks = peaks }
+  clock = clock + 10                                    -- at rest
+  lines = 0
+  draw_waveform({}, wave, 0, 0, 300, 20, 3)
+  assert(lines == 1 + 256 or lines == 1 + 255 or lines == 1 + 256, "at rest every stored point is drawn: " .. lines)
+  window.x = window.x + 1
+  ui_track_window_motion()                              -- motion
+  lines = 0
+  draw_waveform({}, wave, 0, 0, 300, 20, 3)
+  assert(lines == 1 + UI_MOTION_WAVE_COLUMNS, "motion draws a coarse envelope: " .. lines)
+  local coarse = wave.reduced_columns.by_columns[UI_MOTION_WAVE_COLUMNS]
+  local coarse_peak = 0
+  for _, value in ipairs(coarse) do if value > coarse_peak then coarse_peak = value end end
+  assert(coarse_peak == loudest, "the coarse envelope keeps the loudest peak")
+  lines = 0
+  draw_waveform({}, wave, 0, 0, 30, 20, 3)             -- narrow column: no extra reduction needed
+  assert(lines <= 1 + 30)
+  clock = clock + 10
+  lines = 0
+  draw_waveform({}, wave, 0, 0, 300, 20, 3)
+  assert(lines >= 1 + 255, "full detail returns when the window is still")
+
+  -- The detail waveform groups three pixels per drawn column while moving.
+  do
+    function preview_channel_is_selected() return true end
+    function rgba_with_alpha(color) return color end
+    COLOR.border, COLOR.accent, COLOR.dim, COLOR.window = 5, 6, 7, 8
+    function preview_channel_label() return "L" end
+    state.spectral_peaks_enabled = false
+    ImGui.DrawList_AddText = function() end
+    assert(load(region(runtime, "function draw_waveform_window(", "function draw_wave_time_ruler(")))()
+    local detail_peaks = {}
+    for index = 1, 2048 do detail_peaks[index] = ((index * 53) % 97) / 100 end
+    local detail = { count = 2048, peaks = detail_peaks }
+    local widths, tallest = {}, {}
+    ImGui.DrawList_AddLine = function(_, _, y1, _, y2, _, thickness)
+      widths[#widths + 1] = thickness
+      tallest[#tallest + 1] = math.abs(y2 - y1)
+    end
+    clock = clock + 10
+    widths, tallest = {}, {}
+    draw_waveform_window({}, detail, {}, 0, 0, 900, 120, 3, 0, 1)
+    local at_rest = #widths
+    assert(at_rest >= 900, "one column per pixel at rest: " .. at_rest)
+    window.w = window.w + 7
+    ui_track_window_motion()
+    assert(ui_in_motion())
+    widths, tallest = {}, {}
+    draw_waveform_window({}, detail, {}, 0, 0, 900, 120, 3, 0, 1)
+    assert(#widths < at_rest / 2 and #widths >= 300, "three pixels per column while moving: " .. #widths)
+    local covered = 0
+    for _, thickness in ipairs(widths) do covered = covered + thickness end
+    assert(covered >= 900, "grouped columns still cover the full width")
+    clock = clock + 10
+  end
+
+  -- Frame statistics feed the diagnostics text.
+  assert(frame_stats_text():find("not measured", 1, true))
+  frame_stats_record(1.000, 1.004, 1.020)
+  frame_stats_record(1.033, 1.037, 1.053)
+  local text = frame_stats_text()
+  assert(text:find("fps", 1, true) and text:find("drawing", 1, true), text)
+  assert(FrameStats.frames == 2)
+
+  -- Section timing: each mark charges the time since the previous one.
+  clock = 200
+  frame_mark("toolbar")
+  clock = clock + 0.002
+  frame_mark("results")
+  clock = clock + 0.010
+  frame_mark(nil)
+  frame_stats_record(200, 200.001, 200.013)
+  local sections = frame_sections_text()
+  assert(sections:find("^results 10%.0") and sections:find("toolbar 2%.0"), sections)
+  assert(next(FrameStats.current) == nil and FrameStats.mark_name == nil)
+  assert(frame_stats_text():find("Drawing sections", 1, true))
+end
+
+-- ----------------------------------------------------------------------------
+
 -- Source guard: every change to the selection must go through the helpers, or
 -- the cached views above would silently go stale.
 do

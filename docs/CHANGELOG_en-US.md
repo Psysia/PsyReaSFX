@@ -1,5 +1,12 @@
 # PsyReaSFX Changelog
 
+## 0.9.2 Beta 3 — 2026-11-09 (pre-release)
+
+Replaces Beta 2; everything listed under Beta 1 and Beta 2 below still applies.
+
+- Moving or resizing the window is smoother. While the window moves, mini and detail waveforms draw a coarser envelope (the mini waveforms keep every peak), tooltips and cover decoding wait, and background work, saving and folder checks pause. Full detail returns 0.3 s after the window stops.
+- New diagnostics: Settings → Maintenance can show a small frame-timing overlay (frames per second and how much of each frame goes to the toolbar, tabs, sidebar, results list, preview, inspector and popups). Copy diagnostics includes the same numbers. If the window still feels slow, please send them.
+
 ## 0.9.2 Beta 2 — 2026-11-09 (pre-release)
 
 Replaces Beta 1; everything listed under Beta 1 below still applies.
