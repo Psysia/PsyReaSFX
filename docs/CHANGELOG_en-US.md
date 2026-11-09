@@ -1,3 +1,8 @@
+## 0.9.3 Beta 6 (0.9.a WebView) — 2026-11-09
+
+- Include Beta 5 workflow parity and add Chinese/English switching with generated shared translations and literal catalog content.
+- Restore bounded, debounced UCS suggestions with keyboard selection and preserved search scope.
+
 ## 0.9.3 Beta 5 (0.9.a WebView) — 2026-11-09
 
 - Restore session-played text/waveform colors, playheads, marking, workflow status and batch favorites.

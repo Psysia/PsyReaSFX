@@ -1035,3 +1035,24 @@ body[data-theme="paper"] #wave-readouts output {
   width: 1px;
   pointer-events: none;
 }
+#search-suggestions {
+  margin: 0;
+  padding: 5px;
+  max-height: 300px;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+#search-suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px;
+  border-color: transparent;
+}
+#search-suggestions [aria-selected="true"],
+#search-suggestions button:hover {
+  background: var(--selected);
+}

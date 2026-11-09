@@ -1,9 +1,11 @@
 import { connectHost } from "./host.js";
+import { createLocalizer } from "./locale.js";
 
 const $ = (id) => document.getElementById(id);
 const defaults = {
   version: 1,
   theme: "dark",
+  language: "zh",
   left: false,
   right: true,
   leftWidth: 206,
@@ -53,6 +55,8 @@ try {
   prefs = structuredClone(defaults);
 }
 
+const localizer = createLocalizer();
+localizer.setLanguage(prefs.language);
 let host;
 let snapshot;
 let page;
@@ -615,6 +619,7 @@ function folderBranch(root, folder = root) {
     event.stopPropagation();
     return query({ libraryId: root.libraryId, root: folder.path });
   });
+  label.dataset.literal = "true";
   summary.append(label);
   branch.append(summary);
   let loaded = false;
@@ -678,6 +683,7 @@ function renderSidebar() {
       ),
     );
     libraries[libraries.length - 1].dataset.libraryId = library.id;
+    libraries[libraries.length - 1].dataset.literal = "true";
     for (const root of snapshot.roots.filter(
       (root) => root.libraryId === library.id,
     )) {
@@ -778,6 +784,14 @@ function renderTabs() {
 function applySnapshot(next) {
   const previous = snapshot;
   snapshot = next;
+  if (next.language && next.language !== prefs.language) {
+    prefs.language = next.language;
+    localizer.setLanguage(next.language);
+    persist();
+    $("ucs-categories").replaceChildren();
+    if ($("ucs-directory").open)
+      $("ucs-directory").dispatchEvent(new Event("toggle"));
+  }
   const ready = !next.startup;
   if (next.sortMode) $("sort").value = next.sortMode;
   if (next.sortDescending !== undefined) {
@@ -1658,7 +1672,14 @@ function appendSettings(container, settings, groupFilter) {
     input.dataset.setting = definition.key;
     if (definition.kind === "choice") {
       for (const option of definition.options)
-        input.add(new Option(option, option));
+        input.add(
+          new Option(
+            definition.key === "language"
+              ? { zh: "简体中文", en: "English" }[option]
+              : option,
+            option,
+          ),
+        );
     } else {
       input.type =
         { boolean: "checkbox", number: "number", color: "color" }[
@@ -1712,7 +1733,9 @@ async function appendManagement(container) {
     section.append(node("summary", null, group.label));
     for (const item of group.items) {
       const row = node("div", "field");
-      row.append(node("span", null, item.name));
+      const name = node("span", null, item.name);
+      name.dataset.literal = "true";
+      row.append(name);
       const actions = node("div", "action-row");
       for (const operation of group.actions) {
         if (operation === "bind" && item.kind !== "project") continue;
@@ -1897,9 +1920,11 @@ async function settingsDialog() {
   body.append(node("h3", null, "AI 语义搜索"));
   const preset = node("select");
   preset.append(
-    ...(settings.ai_presets || []).map(
-      (item) => new Option(item.name, item.id),
-    ),
+    ...(settings.ai_presets || []).map((item) => {
+      const option = new Option(item.name, item.id);
+      option.dataset.literal = "true";
+      return option;
+    }),
   );
   preset.value = settings.ai_active_preset_id || "";
   preset.onchange = action(async () => {
@@ -2012,8 +2037,118 @@ async function settingsDialog() {
   body.append(help, diagnostics);
 }
 
+let suggestionTimer;
+let suggestionSequence = 0;
+let suggestions = [];
+let activeSuggestion = -1;
+const suggestionBox = $("search-suggestions");
+function hideSearchSuggestions() {
+  ++suggestionSequence;
+  clearTimeout(suggestionTimer);
+  if (suggestionBox.matches(":popover-open")) suggestionBox.hidePopover();
+  $("search").setAttribute("aria-expanded", "false");
+  $("search").removeAttribute("aria-activedescendant");
+  activeSuggestion = -1;
+}
+async function chooseSuggestion(index) {
+  const suggestion = suggestions[index];
+  if (!suggestion) return;
+  hideSearchSuggestions();
+  $("search").value = suggestion.query;
+  $("result-scroll").scrollTop = 0;
+  await command("catalog.query", { search: suggestion.query, keepScope: true });
+  $("search").focus();
+}
+$("search").addEventListener("input", () => {
+  hideSearchSuggestions();
+  const sequence = suggestionSequence;
+  const query = $("search").value;
+  if (query.trim().length < 2) return;
+  suggestionTimer = setTimeout(
+    action(async () => {
+      const result = await command("catalog.suggestions", { query });
+      if (
+        sequence !== suggestionSequence ||
+        document.activeElement !== $("search")
+      )
+        return;
+      suggestions = result;
+      if (!suggestions.length) return;
+      suggestionBox.replaceChildren(
+        ...suggestions.map((suggestion, index) => {
+          const button = node("button", "menu-item", suggestion.label);
+          button.type = "button";
+          button.id = `ucs-suggestion-${index}`;
+          button.setAttribute("role", "option");
+          button.setAttribute("aria-selected", "false");
+          button.tabIndex = -1;
+          button.title = suggestion.detail;
+          button.onpointerdown = (event) => event.preventDefault();
+          button.onclick = action(() => chooseSuggestion(index));
+          return button;
+        }),
+      );
+      const rect = $("search-form").getBoundingClientRect();
+      suggestionBox.style.left = `${rect.left}px`;
+      suggestionBox.style.top = `${rect.bottom + 4}px`;
+      suggestionBox.style.width = `${Math.min(rect.width, innerWidth - rect.left - 8)}px`;
+      suggestionBox.showPopover();
+      $("search").setAttribute("aria-expanded", "true");
+    }),
+    150,
+  );
+});
+$("search").addEventListener(
+  "keydown",
+  action(async (event) => {
+    if (!suggestionBox.matches(":popover-open")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      hideSearchSuggestions();
+      return;
+    }
+    if (event.key === "Enter" && activeSuggestion >= 0) {
+      event.preventDefault();
+      await chooseSuggestion(activeSuggestion);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      activeSuggestion =
+        (activeSuggestion +
+          (event.key === "ArrowDown" ? 1 : -1) +
+          suggestions.length) %
+        suggestions.length;
+      for (const [index, option] of [...suggestionBox.children].entries())
+        option.setAttribute(
+          "aria-selected",
+          String(index === activeSuggestion),
+        );
+      $("search").setAttribute(
+        "aria-activedescendant",
+        `ucs-suggestion-${activeSuggestion}`,
+      );
+      suggestionBox.children[activeSuggestion].scrollIntoView({
+        block: "nearest",
+      });
+    }
+  }),
+);
+suggestionBox.addEventListener("toggle", (event) => {
+  if (event.newState === "closed")
+    $("search").setAttribute("aria-expanded", "false");
+});
+$("search").addEventListener("blur", () =>
+  setTimeout(() => {
+    if (
+      document.activeElement !== $("search") &&
+      !suggestionBox.contains(document.activeElement)
+    )
+      hideSearchSuggestions();
+  }, 0),
+);
+
 $("search-form").onsubmit = action((event) => {
   event.preventDefault();
+  hideSearchSuggestions();
   $("result-scroll").scrollTop = 0;
   return command("catalog.query", {
     search: $("search").value,
@@ -2115,10 +2250,16 @@ $("ucs-directory").ontoggle = action(async () => {
   for (const category of categories) {
     const details = node("details");
     details.append(
-      node("summary", "section-label", category.label || category.name),
+      node(
+        "summary",
+        "section-label",
+        prefs.language === "en"
+          ? category.name
+          : category.label || category.name,
+      ),
     );
     const all = navItem(
-      `全部 ${category.name}`,
+      `${prefs.language === "en" ? "All" : "全部"} ${category.name}`,
       () => query({ category: category.name }),
       false,
     );
@@ -2126,7 +2267,7 @@ $("ucs-directory").ontoggle = action(async () => {
     for (const entry of category.entries)
       details.append(
         navItem(
-          `${entry.catid} · ${entry.label || entry.name}`,
+          `${entry.catid} · ${prefs.language === "en" ? entry.name : entry.label || entry.name}`,
           () => query({ catid: entry.catid }),
           false,
           "root",
@@ -2480,6 +2621,8 @@ window.addEventListener("resize", () => {
   requestPage();
 });
 window.addEventListener("beforeunload", () => {
+  localizer.close();
+  clearTimeout(suggestionTimer);
   clearTimeout(pageRetry);
   clearTimeout(waveRetry);
   clearTimeout(fxTimer);

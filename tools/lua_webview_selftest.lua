@@ -460,6 +460,14 @@ assert(
   settings.ai_key == nil and settings.secret == nil,
   "settings snapshots must not expose credentials"
 )
+WebUI.handlers["settings.update"]({ values = { language = "en" } })
+assert(runtime.language == "en")
+local suggestions = WebUI.handlers["catalog.suggestions"]({ query = "burst" })
+assert(#suggestions > 0 and #suggestions <= 8 and suggestions[1].catid == "AIRBrst")
+assert(suggestions[1].query == "catid:AIRBrst")
+assert(#WebUI.handlers["catalog.suggestions"]({ query = "a" }) == 0)
+assert(not pcall(WebUI.handlers["settings.update"], { values = { language = "invalid" } }))
+WebUI.handlers["settings.update"]({ values = { language = "zh" } })
 print(
   "WebView headless startup, bounded paging, stale selection, DSP validation, read-only and metadata regressions passed"
 )

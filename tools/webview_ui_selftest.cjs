@@ -63,6 +63,7 @@ async function main() {
       const played = new Set();
       let playedText = true;
       let playingPath = null;
+      let language = "zh";
       const calls = [];
       window.testCalls = calls;
       const peaks = Array.from(
@@ -119,6 +120,7 @@ async function main() {
       function state() {
         return {
           revision,
+          language,
           count,
           loaded: 500000,
           pending: false,
@@ -188,6 +190,18 @@ async function main() {
               return;
             }
             let result = true;
+            if (request.method === "catalog.suggestions")
+              result =
+                request.params.query === "mech"
+                  ? [
+                      {
+                        catid: "MECHGear",
+                        label: "MECHGear · MECHANICAL / GEAR",
+                        detail: "Mechanical gears",
+                        query: "catid:MECHGear",
+                      },
+                    ]
+                  : [];
             if (request.method === "management.get") result = [];
             if (request.method === "session.ready")
               result = {
@@ -225,6 +239,8 @@ async function main() {
             if (request.method === "settings.update")
               playedText =
                 request.params.values.played_text_enabled ?? playedText;
+            if (request.method === "settings.update")
+              language = request.params.values.language || language;
             if (
               request.method === "asset.action" &&
               request.params.action === "channelMode"
@@ -254,13 +270,20 @@ async function main() {
               result = {
                 schema: [
                   {
+                    key: "language",
+                    label: "语言",
+                    kind: "choice",
+                    group: "常规",
+                    options: ["zh", "en"],
+                  },
+                  {
                     key: "played_text_enabled",
                     label: "已播放文字高亮",
                     kind: "boolean",
                     group: "试听颜色",
                   },
                 ],
-                values: { played_text_enabled: playedText },
+                values: { played_text_enabled: playedText, language },
                 transfer_dir: "D:\\Exports",
                 transfer_template: "{name}",
                 transfer_format: "wav24",
@@ -326,7 +349,48 @@ async function main() {
       () => document.querySelectorAll(".result-row.played").length === 0,
     );
     await page.locator('[data-setting="played_text_enabled"]').check();
+    await page
+      .locator("#settings-body summary")
+      .filter({ hasText: "常规" })
+      .click();
+    const originalDescription = await page
+      .locator(".result-cell.description")
+      .first()
+      .textContent();
+    await page.locator('[data-setting="language"]').selectOption("en");
+    await page.waitForFunction(() => document.documentElement.lang === "en-US");
+    await page
+      .getByRole("button", { name: "Close settings", exact: true })
+      .waitFor();
+    assert.equal(
+      await page.locator(".result-cell.description").first().textContent(),
+      originalDescription,
+      "localization must preserve catalog text",
+    );
+    fs.mkdirSync(output, { recursive: true });
+    await page.screenshot({ path: path.join(output, "english-settings.png") });
+    await page.locator('[data-setting="language"]').selectOption("zh");
+    await page.waitForFunction(() => document.documentElement.lang === "zh-CN");
     await page.getByRole("button", { name: "关闭设置" }).click();
+    await page.locator("#search").fill("mech");
+    await page.waitForSelector(
+      '#search-suggestions:popover-open [role="option"]',
+    );
+    await page.locator("#search").press("ArrowDown");
+    await page.locator("#search").press("Enter");
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "catalog.query" &&
+          call.params.search === "catid:MECHGear" &&
+          call.params.keepScope === true,
+      ),
+    );
+    assert.equal(
+      await page.locator("#search").getAttribute("aria-expanded"),
+      "false",
+    );
+    await page.locator(".result-cell.name").nth(1).click();
     await page
       .locator("#inspector-body summary")
       .filter({ hasText: "试听声道" })

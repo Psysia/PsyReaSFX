@@ -31,6 +31,10 @@
               placeholder="搜索文件名、描述、关键词…"
               autocomplete="off"
               aria-label="搜索声音"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="search-suggestions"
             /><button id="ai-search" type="button" title="AI 语义搜索">
               AI
             </button>
@@ -315,6 +319,12 @@
         <div id="settings-body"></div>
       </form>
     </dialog>
+    <div
+      id="search-suggestions"
+      popover="auto"
+      role="listbox"
+      aria-label="UCS 搜索提示"
+    ></div>
     <script type="module" src="app.js"></script>
   </body>
 </html>

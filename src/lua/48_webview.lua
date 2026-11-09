@@ -426,6 +426,25 @@ WebUI.handlers["catalog.ucs"] = function()
   return categories
 end
 
+WebUI.handlers["catalog.suggestions"] = function(params)
+  local query = text(params.query, 4096)
+  local output = {}
+  for _, suggestion in ipairs(ucs_search_suggestions(query, state.language, 8)) do
+    local entry = suggestion.entry
+    output[#output + 1] = {
+      catid = entry.catid,
+      label = entry.catid
+        .. " · "
+        .. entry.category
+        .. " / "
+        .. ("en" == state.language and entry.subcategory or entry.subcategory_zh),
+      detail = text("en" == state.language and entry.explanation or entry.synonyms_zh),
+      query = ucs_apply_search_suggestion(query, entry.catid),
+    }
+  end
+  return output
+end
+
 WebUI.handlers["selection.set"] = function(params)
   refresh_revision()
   assert(params.revision == WebUI.revision, "结果已更新，请重试选择")
@@ -820,6 +839,13 @@ WebUI.handlers["tasks.cancel"] = function()
   return true
 end
 local settings_schema = {
+  {
+    key = "language",
+    label = "语言",
+    group = "常规",
+    kind = "choice",
+    options = { "zh", "en" },
+  },
   { key = "artwork_enabled", label = "启用封面", group = "外观", kind = "boolean" },
   {
     key = "inspector_artwork_pinned",
@@ -1712,6 +1738,7 @@ function webview_publish()
   end
   local snapshot = {
     workflowStatuses = statuses,
+    language = state.language,
     statusFilter = state.status_filter,
     savedSearches = searches,
     classificationReview = state.ucs_reclassification_review and {
@@ -1727,7 +1754,7 @@ function webview_publish()
       phase = state.startup_session.phase,
       failure = state.startup_session.failure,
     } or nil,
-    status = text(state.status),
+    status = text(translate_ui_text(state.status)),
     error = state.status_error,
     readOnly = state.persistence_read_only,
     libraries = libraries,

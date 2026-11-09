@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.3-beta5
+-- @version 0.9.3-beta6
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 5"
+local VERSION = "0.9.3 Beta 6"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta5",
-  source_sha256 = "3170c961e776695057bd9f262635ca4d97f9ecc77f39ab12b9614852acc1297b",
+  release_id = "PsyReaSFX/0.9.3-beta6",
+  source_sha256 = "5aaceb0a86c8f26fff881426e596c7f45e3f3520da0a853cbde2b050bbd49b3f",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -17520,6 +17520,25 @@ WebUI.handlers["catalog.ucs"] = function()
   return categories
 end
 
+WebUI.handlers["catalog.suggestions"] = function(params)
+  local query = text(params.query, 4096)
+  local output = {}
+  for _, suggestion in ipairs(ucs_search_suggestions(query, state.language, 8)) do
+    local entry = suggestion.entry
+    output[#output + 1] = {
+      catid = entry.catid,
+      label = entry.catid
+        .. " · "
+        .. entry.category
+        .. " / "
+        .. ("en" == state.language and entry.subcategory or entry.subcategory_zh),
+      detail = text("en" == state.language and entry.explanation or entry.synonyms_zh),
+      query = ucs_apply_search_suggestion(query, entry.catid),
+    }
+  end
+  return output
+end
+
 WebUI.handlers["selection.set"] = function(params)
   refresh_revision()
   assert(params.revision == WebUI.revision, "结果已更新，请重试选择")
@@ -17914,6 +17933,13 @@ WebUI.handlers["tasks.cancel"] = function()
   return true
 end
 local settings_schema = {
+  {
+    key = "language",
+    label = "语言",
+    group = "常规",
+    kind = "choice",
+    options = { "zh", "en" },
+  },
   { key = "artwork_enabled", label = "启用封面", group = "外观", kind = "boolean" },
   {
     key = "inspector_artwork_pinned",
@@ -18806,6 +18832,7 @@ function webview_publish()
   end
   local snapshot = {
     workflowStatuses = statuses,
+    language = state.language,
     statusFilter = state.status_filter,
     savedSearches = searches,
     classificationReview = state.ucs_reclassification_review and {
@@ -18821,7 +18848,7 @@ function webview_publish()
       phase = state.startup_session.phase,
       failure = state.startup_session.failure,
     } or nil,
-    status = text(state.status),
+    status = text(translate_ui_text(state.status)),
     error = state.status_error,
     readOnly = state.persistence_read_only,
     libraries = libraries,
