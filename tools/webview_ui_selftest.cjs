@@ -5,6 +5,9 @@ const http = require("node:http");
 const path = require("node:path");
 const { chromium } = require(process.argv[2] || "playwright");
 const root = path.resolve(__dirname, "../src/web");
+const displayVersion = JSON.parse(
+  fs.readFileSync(path.join(root, "app.json"), "utf8"),
+).version.replace("-beta", " Beta ");
 const output = path.resolve(__dirname, "../dist/webview/verification");
 
 async function main() {
@@ -44,7 +47,7 @@ async function main() {
     });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.addInitScript(() => {
+    await page.addInitScript((displayVersion) => {
       let listener;
       let revision = 1;
       let count = 500000;
@@ -160,7 +163,7 @@ async function main() {
             if (request.method === "session.ready")
               result = {
                 protocol: 1,
-                version: "0.9.3 Beta 1",
+                version: displayVersion,
                 host: window.reaper ? "reaper" : "desktop",
                 capabilities: { preview: true, insert: true },
                 runtimePolicy: {
@@ -230,14 +233,14 @@ async function main() {
           },
         },
       };
-    });
+    }, displayVersion);
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector(".result-row");
     assert.equal(
       await page.locator("#app-version").textContent(),
-      "0.9.3 Beta 1",
+      displayVersion,
     );
-    assert.equal(await page.title(), "PsyReaSFX 0.9.3 Beta 1");
+    assert.equal(await page.title(), `PsyReaSFX ${displayVersion}`);
     assert.equal(
       await page.locator('.column-title[data-column="index"]').count(),
       0,

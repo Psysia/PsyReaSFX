@@ -16,21 +16,29 @@ if (Test-Path -LiteralPath $FixtureDirectory) { throw 'Use a new ReaPack fixture
 $app = Get-Content -LiteralPath (Join-Path $repoRoot 'src/web/app.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $lock = Get-Content -LiteralPath (Join-Path $repoRoot 'dependencies/reawebapi/windows-x64.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $rawPrefix = "https://raw.githubusercontent.com/Psysia/PsyReaSFX/v$($app.version)/"
-$assetPrefix = "https://github.com/Psysia/PsyReaSFX/releases/download/v$($app.version)/"
 $packages = @($index.index.category.reapack)
 $script = $packages | Where-Object { $_.name -eq 'PsyReaSFX.lua' }
 $runtime = $packages | Where-Object { $_.name -eq 'PsyReaSFX WebView Runtime.ext' }
 $webVersion = @($script.version | Where-Object { $_.name -ceq $app.version })
 $runtimeVersion = @($runtime.version | Where-Object { $_.name -ceq ($lock.version + '-beta1') })
 if ($webVersion.Count -ne 1 -or $runtimeVersion.Count -ne 1 -or $runtime.type -cne 'extension') { throw 'Missing WebView beta or runtime extension package.' }
+$binarySource = @($runtimeVersion[0].source | Where-Object { $_.type -ceq 'extension' -and $_.file -ceq 'reaper_reawebapi-x64.dll' })
+if ($binarySource.Count -ne 1 -or $binarySource[0].InnerText -cnotmatch '^https://github\.com/Psysia/PsyReaSFX/releases/download/(v\d+\.\d+\.\d+-beta\d+(?:\.\d+)?)/reaper_reawebapi-x64\.dll$') {
+    throw 'Runtime binary must use a pinned project beta release.'
+}
+$runtimeTag = $Matches[1]
+$assetPrefix = "https://github.com/Psysia/PsyReaSFX/releases/download/$runtimeTag/"
+$runtimeRawPrefix = "https://raw.githubusercontent.com/Psysia/PsyReaSFX/$runtimeTag/"
 if ($app.version -notmatch '-beta' -or $runtimeVersion[0].name -notmatch '-beta') { throw 'Experimental WebView packages must be pre-releases.' }
 if (-not ($script.version | Where-Object { $_.name -ceq '0.9.2-beta4' }) -or -not ($script.version | Where-Object { $_.name -ceq '0.9.1' })) { throw 'Legacy rollback versions are missing.' }
 
 function Resolve-Payload([string]$Url) {
-    if ($Url.StartsWith($rawPrefix, [StringComparison]::Ordinal)) {
-        $relative = $Url.Substring($rawPrefix.Length)
-        if ($relative -match '(^|/)\.\.(/|$)' -or $relative.Contains(':')) { throw 'Unsafe repository source path.' }
-        return Join-Path $repoRoot $relative
+    foreach ($prefix in @($rawPrefix, $runtimeRawPrefix)) {
+        if ($Url.StartsWith($prefix, [StringComparison]::Ordinal)) {
+            $relative = $Url.Substring($prefix.Length)
+            if ($relative -match '(^|/)\.\.(/|$)' -or $relative.Contains(':')) { throw 'Unsafe repository source path.' }
+            return Join-Path $repoRoot $relative
+        }
     }
     if ($Url -ceq ($assetPrefix + 'reaper_reawebapi-x64.dll')) { return Join-Path $PackagePath 'runtime/reawebapi/reaper_reawebapi-x64.dll' }
     if ($Url -ceq ($assetPrefix + 'ReaWebAPI-source.zip')) { return Join-Path $PackagePath 'sources/ReaWebAPI-source.zip' }

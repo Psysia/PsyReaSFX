@@ -1,12 +1,15 @@
 param(
     [ValidateSet('reaper', 'desktop')][string]$Target = 'reaper',
     [string]$OutputPath = '',
-    [string]$Version = '0.9.3-beta1',
+    [string]$Version = '',
     [string]$DependencyLockPath = (Join-Path $PSScriptRoot '../dependencies/reawebapi/windows-x64.lock.json'),
     [string]$ArchivePath = ''
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+if (-not $Version) {
+    $Version = (Get-Content -LiteralPath (Join-Path $repoRoot 'src/web/app.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+}
 if ($Version -notmatch '^[0-9A-Za-z.\-]+$') { throw 'Invalid release version.' }
 if (-not $OutputPath) { $OutputPath = Join-Path $repoRoot "dist/webview/$Target-package" }
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)

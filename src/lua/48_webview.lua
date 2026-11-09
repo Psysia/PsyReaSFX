@@ -108,6 +108,40 @@ local function waveform(asset, points, channels)
   }
 end
 
+local function prompt_runtime_install(missing_api)
+  local has_reapack = type(reaper.ReaPack_BrowsePackages) == "function"
+  local title = SCRIPT_NAME .. " · 缺少 WebView 运行时"
+  local destination = has_reapack
+      and "是否现在打开 ReaPack，并定位到这个运行时组件？"
+    or "当前未检测到 ReaPack。是否打开发布页，下载完整测试版安装包？"
+  local choice = reaper.MB(
+    "未检测到可用的 ReaWebAPI，或当前版本缺少所需接口。\n\n"
+      .. "需要安装 PsyReaSFX WebView Runtime。请在 Psysia 软件源启用预发布并同步。\n"
+      .. "安装或更新完成后，请重启 REAPER，再运行 PsyReaSFX。\n"
+      .. "已有其他软件源管理 ReaWebAPI 时，可更新原组件并检查兼容性。\n\n"
+      .. destination
+      .. "\n\n缺少接口 "
+      .. missing_api,
+    title,
+    4
+  )
+  if choice ~= 6 then
+    return
+  end
+  if has_reapack then
+    local opened = pcall(reaper.ReaPack_BrowsePackages, "PsyReaSFX WebView Runtime")
+    if opened then
+      return
+    end
+    reaper.MB("无法打开 ReaPack，将打开发布页下载完整安装包。", title, 0)
+  end
+  local url = PROJECT_URL .. "/releases"
+  local opened = pcall(open_url, url)
+  if not opened then
+    reaper.MB("无法自动打开浏览器，请手动访问\n\n" .. url, title, 0)
+  end
+end
+
 function webview_open()
   local lock_file = io.open(SCRIPT_DIR .. "runtime-lock.json", "rb")
   local lock_text = lock_file and lock_file:read(32769) or ""
@@ -139,13 +173,7 @@ function webview_open()
     "ReaWeb_Close",
   }) do
     if type(reaper[name]) ~= "function" then
-      reaper.MB(
-        "请在 ReaPack 启用预发布，安装同仓库的 PsyReaSFX WebView Runtime，再重启 REAPER。"
-          .. "\n已有 ReaWebAPI 时请先检查其接口兼容性。缺少接口："
-          .. name,
-        "PsyReaSFX 0.9.a",
-        0
-      )
+      prompt_runtime_install(name)
       return false
     end
   end
