@@ -139,6 +139,88 @@ open_url = function()
 end
 assert(webview_open() == false)
 assert(notices[#notices]:find("https://github.com/Psysia/PsyReaSFX/releases", 1, true))
+local ownership_apis = {
+  "ReaPack_GetOwner",
+  "ReaPack_GetEntryInfo",
+  "ReaPack_FreeEntry",
+  "ReaPack_AboutInstalledPackage",
+}
+local original_ownership = {}
+for _, name in ipairs(ownership_apis) do
+  original_ownership[name] = reaper[name]
+end
+local allocations, releases, about_calls = 0, 0, 0
+local info_error, show_about = false, true
+reaper.ReaPack_GetOwner = function(path)
+  assert(path == fixture .. "/UserPlugins/reaper_reawebapi-x64.dll")
+  allocations = allocations + 1
+  return { released = false }
+end
+reaper.ReaPack_GetEntryInfo = function(entry)
+  assert(not entry.released)
+  if info_error then
+    error("metadata unavailable")
+  end
+  return true, "zaibuyidao Scripts", "ReaWebAPI", "ReaWebAPI.ext", "ReaWebAPI", 2, "0.3.9.29"
+end
+reaper.ReaPack_FreeEntry = function(entry)
+  releases = releases + 1
+  assert(not entry.released, "owner entries must be released once")
+  entry.released = true
+end
+reaper.ReaPack_AboutInstalledPackage = function(entry)
+  assert(not entry.released, "owner entry must remain valid while opening its page")
+  about_calls = about_calls + 1
+  return show_about
+end
+reaper.ReaPack_BrowsePackages = function(filter)
+  searches[#searches + 1] = filter
+end
+open_url = function(url)
+  links[#links + 1] = url
+end
+local previous_searches = #searches
+assert(webview_open() == false)
+assert(about_calls == 1 and releases == allocations and #searches == previous_searches)
+assert(
+  questions[#questions]:find("zaibuyidao Scripts", 1, true)
+    and questions[#questions]:find("0.3.9.29", 1, true)
+)
+assert(
+  not questions[#questions]:find("首次安装可选择", 1, true),
+  "existing ownership must not recommend a duplicate"
+)
+choice = 7
+assert(webview_open() == false)
+assert(
+  about_calls == 1 and releases == allocations,
+  "cancel must release the owner without navigating"
+)
+choice, show_about = 6, false
+assert(webview_open() == false)
+assert(
+  searches[#searches] == "ReaWebAPI" and releases == allocations,
+  "owner page failure must search the original package"
+)
+info_error, show_about = true, true
+assert(webview_open() == false)
+assert(
+  about_calls == 3 and releases == allocations,
+  "missing metadata must preserve ownership and release its handle"
+)
+for _, name in ipairs(ownership_apis) do
+  reaper[name] = original_ownership[name]
+end
+local original_exists = reaper.file_exists
+reaper.file_exists = function(path)
+  return path == fixture .. "/UserPlugins/reaper_reawebapi-x64.dll" or original_exists(path)
+end
+assert(webview_open() == false)
+assert(
+  searches[#searches] == "ReaWebAPI",
+  "unmanaged existing DLLs must receive restart/update guidance"
+)
+reaper.file_exists = original_exists
 reaper.ReaWeb_Open = original_native_open
 local original_send = reaper.ReaWeb_Send
 reaper.ReaWeb_Send = nil

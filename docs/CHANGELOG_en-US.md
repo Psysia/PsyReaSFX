@@ -1,5 +1,11 @@
 # PsyReaSFX Changelog
 
+## 0.9.3 Beta 3 (0.9.a WebView) — 2026-11-09
+
+- Detect the ReaPack owner of the shared runtime DLL and open the existing package for updates.
+- Guide existing DLL installations through restart and original-package updates. Offer the companion runtime for first-time installation.
+- Verify upstream ReaWebAPI 0.3.9.29 in isolated native bootstrap, import, waveform and insertion tests.
+
 ## 0.9.3 Beta 2 (0.9.a WebView) — 2026-11-09
 
 - Prompt when ReaWebAPI or a required interface is missing, and open ReaPack filtered to the runtime component after confirmation.
