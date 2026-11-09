@@ -1,0 +1,20 @@
+Cockos Loudness Meter reference
+
+Copyright (C) 2021 and later Cockos Incorporated
+
+The Native Meter implementation uses REAPER's
+analysis/loudness_meter JSFX as the behavioral and algorithmic reference
+for compatibility with Cockos' official loudness meter.
+
+The implementation is written in C++ and adapted to ReaWebAPI's native
+meter architecture. Portions that are derived from the Cockos JSFX are
+distributed under the GNU Lesser General Public License.
+
+The original JSFX states:
+  This effect Copyright (C) 2021 and later Cockos Incorporated
+  License: LGPL - http://www.gnu.org/licenses/lgpl.html
+
+COPYING.LESSER and COPYING are included with the project.
+
+Other loudness analysis may use libebur128. See libebur128.txt for its
+copyright and license notice.

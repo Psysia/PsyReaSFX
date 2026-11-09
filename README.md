@@ -84,7 +84,7 @@ and index; a missing or failed component automatically falls back to acoustic se
 
 <p><a href="website/assets/screenshots/reapack-enable-beta.jpg"><img src="website/assets/screenshots/reapack-enable-beta.jpg" alt="Historical ReaPack menu example: Versions, Pin current version and Apply / OK" width="800"></a></p>
 
-This historical Beta screenshot shows the menu locations. The pre-release checkbox is only for future test builds. Versions now retains 0.9.1, 0.9.0, 0.8.5 and 0.7.23 Stable; historical Betas remain on GitHub Releases.
+This historical Beta screenshot shows the menu locations. Enable pre-releases for the current WebView beta. Versions also retains the legacy-renderer beta and 0.9.1, 0.9.0, 0.8.5 and 0.7.23 Stable. Earlier betas are available on GitHub Releases.
 
 **Neural search needs the separate [PsyReaSFX Neural Similarity][neural-download] package.** Install its stable 0.9.0 data package through ReaPack or use the complete ZIP above. Components from Beta 8.5 onward remain compatible. **AI semantic search needs your own API settings**, configured in Settings; Enter runs normal search and the gold AI button runs AI search. Updating the main script requires no library rebuild.
 
@@ -159,6 +159,8 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.1** | Default release; the complete 0.9.0 feature set with reliability and performance fixes. |
+| WebView beta | **0.9.3-beta1 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
+| Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
 | Optional component | [PsyReaSFX Neural Similarity][neural-download] | Local neural similar-sound search for Windows x64. |
 
@@ -191,7 +193,7 @@ or the [illustrated Stable update guide](https://psysia.github.io/PsyReaSFX/#bet
 
 The ReaPack Versions menu keeps 0.9.1, 0.9.0, 0.8.5 and 0.7.23 Stable; the [optional neural package][neural-download] keeps 0.9.0 Stable, which 0.9.1 uses unchanged. Older previews remain available on GitHub Releases. Existing installations and asset data are not deleted.
 
-- **Pre-release: 0.9.2 Beta 3** — a performance and reliability pass over selection, search, import, saving and relinking, offered for testing. Enable pre-releases in ReaPack (`Extensions → ReaPack → Manage repositories → Enable pre-releases`) to try it; the 0.9.0 neural component is reused unchanged. Details in the [changelog](docs/CHANGELOG_en-US.md).
+- **Pre-release 0.9.3 Beta 1 (0.9.a WebView)**. Enable pre-releases, synchronize, update `PsyReaSFX.lua` to `0.9.3-beta1`, install the companion `PsyReaSFX WebView Runtime` beta, then restart REAPER. A compatible existing ReaWebAPI installation can also be used. Advanced feature parity remains in progress. Versions retains `0.9.2-beta4` for the legacy renderer. See the [beta installation and acceptance notes](docs/releases/release-notes-webview-0.9.3-beta1.md).
 - **Stable channel: 0.9.1** — the default ReaPack release for everyday use. It fixes waveform caches being rebuilt from audio, stale workflow-status searches and wrongly canceled background jobs, and lowers per-frame cost in the English interface. Update the main script and restart; the 0.9.0 neural component needs no update.
 - **Included in 0.9.0** — right-click the metadata inspector to locate the specific publisher product (e.g. BOOM Cinematic Hits) using source Library/Album/product metadata, artwork and ancestor names. Without reliable evidence, browse the asset's current folder. A logical library or vendor collection such as Aki/BOOM is not used to group unrelated products. No popup.
 

@@ -83,7 +83,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 <p><a href="website/assets/screenshots/reapack-enable-beta.jpg"><img src="website/assets/screenshots/reapack-enable-beta.jpg" alt="历史 ReaPack 菜单示例：Versions、Pin current version 与 Apply / OK" width="800"></a></p>
 
-保留此历史 Beta 截图用于说明菜单位置；预发布开关仅用于将来的测试版本。Versions 现在保留 0.9.1、0.9.0、0.8.5 和 0.7.23 正式版，历史 Beta 仍可从 GitHub Releases 下载。
+此历史 Beta 截图用于说明菜单位置。启用预发布可见当前 WebView 测试版。Versions 同时保留旧界面测试版和 0.9.1、0.9.0、0.8.5、0.7.23 正式版，更早的 Beta 可从 GitHub Releases 下载。
 
 **神经检索需另装 [PsyReaSFX Neural Similarity][neural-download] 数据包**：可通过 ReaPack 安装 0.9.0 正式组件，或使用上面的完整 ZIP。Beta 8.5 及更新组件继续兼容。**AI 搜索需自行配置 API**：在设置中填写服务商、API Key 与模型；普通回车执行普通搜索，金色 AI 按钮执行 AI 搜索。更新主脚本不需要重建音效库。
 
@@ -158,6 +158,8 @@ AI 语义搜索是另一个功能，不依赖此包。
 | 通道 | 版本 | 说明 |
 |---|---|---|
 | 正式版 | **0.9.1** | 默认更新版本，包含 0.9.0 全部功能及可靠性与性能修复。 |
+| WebView 测试版 | **0.9.3-beta1（0.9.a）** | Windows x64 新界面，需要 ReaWebAPI，供预发布测试。 |
+| 旧界面测试版 | **0.9.2-beta4** | 可在 Versions 中选择回退。 |
 | 历史稳定版 | **0.9.0 / 0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
 | 可选组件 | [PsyReaSFX Neural Similarity][neural-download] | Windows x64 本地神经相似声音检索组件。 |
 
@@ -188,9 +190,9 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 ### 当前开发状态
 
-ReaPack 的 Versions 菜单保留 0.9.1、0.9.0、0.8.5 和 0.7.23 Stable；[可选神经组件][neural-download]保留 0.9.0 正式版，0.9.1 直接沿用。历史预发布仍可从 GitHub Releases 下载，不会删除已有安装或素材数据。
+ReaPack 的 Versions 菜单保留当前 WebView 测试版、旧界面测试版和 0.9.1、0.9.0、0.8.5、0.7.23 Stable。[可选神经组件][neural-download]提供 0.9.0 正式版。更早的预发布可从 GitHub Releases 下载。
 
-- **预发布：0.9.2 Beta 3** — 针对选择、搜索、导入、保存和重新定位的性能与可靠性专项，供测试使用。在 ReaPack 中启用预发布（`扩展 → ReaPack → 管理软件源 → 启用预发布`）即可试用，0.9.0 神经组件原样沿用。详见[更新日志](docs/CHANGELOG_zh-CN.md)。
+- **预发布 0.9.3 Beta 1（0.9.a WebView）**。启用预发布后同步，将 `PsyReaSFX.lua` 更新到 `0.9.3-beta1`，安装同仓库的 `PsyReaSFX WebView Runtime` 测试组件，再重启 REAPER。已有兼容 ReaWebAPI 时可使用已有扩展。高级功能的完整迁移仍在进行中，旧界面 `0.9.2-beta4` 可在 Versions 中回退。详见[测试版安装与验证范围](docs/releases/release-notes-webview-0.9.3-beta1.md)。
 - **稳定通道：0.9.1** — 面向日常使用的默认 ReaPack 版本。修复波形缓存被重新从音频解码、按工作流状态搜索结果过期、后台任务被误取消等问题，并降低英文界面每帧开销。只需更新主脚本后重开，0.9.0 神经组件无需更新。
 - **0.9.0 已包含** — 右侧元数据面板右键定位厂商的具体音效库产品包（如 BOOM Cinematic Hits），依据原始 Library／Album／产品 metadata、封面和目录命名寻找对应目录；没有可靠匹配就显示素材当前文件夹。不会按“Aki”或“BOOM”厂商合集整组筛选，无需弹窗。
 

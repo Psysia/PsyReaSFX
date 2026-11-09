@@ -37,7 +37,7 @@ jobs:
           $url = 'https://github.com/DevelopersCommunity/cmake-lua/releases/download/v5.4.6/Lua-5.4.6-win64.msi'
           $msi = Join-Path $env:RUNNER_TEMP 'Lua-5.4.6-win64.msi'
           $target = Join-Path $env:RUNNER_TEMP 'Lua-5.4.6'
-          Invoke-WebRequest -Uri $url -OutFile $msi
+          Invoke-WebRequest -Uri $url -OutFile $msi -MaximumRetryCount 3 -RetryIntervalSec 5
           $actual = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
           $expected = '1087abb5aca89cad29283a17745ac2819aa46ca076084e8b3416db87d2694ed8'
           if ($actual -cne $expected) { throw "Lua runtime hash mismatch: $actual" }
@@ -60,7 +60,7 @@ jobs:
         shell: pwsh
         run: |
           $built = Join-Path $env:RUNNER_TEMP 'PsyReaSFX.lua'
-          ./tools/Build-LuaRelease.ps1 -Version 0.9.2-beta3 -OutputPath $built
+          ./tools/Build-LuaRelease.ps1 -Version 0.9.2-beta4 -OutputPath $built
           $tracked = [IO.File]::ReadAllText('PsyReaSFX_v0_7_23_Stable.lua').Replace("`r`n", "`n").Replace("`r", "`n")
           $generated = [IO.File]::ReadAllText($built).Replace("`r`n", "`n").Replace("`r", "`n")
           if ($tracked -cne $generated) {
@@ -71,6 +71,36 @@ jobs:
           # such as more than 200 active locals in the main chunk.
           luac -p $built
           if ($LASTEXITCODE -ne 0) { throw 'Generated Lua script does not compile.' }
+
+      - name: Verify WebView entry and headless backend
+        shell: pwsh
+        run: |
+          node tools/check_lua_module_scopes.cjs --webview
+          node --check src/web/app.js
+          node --check src/web/host.js
+          $webBuild = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView'
+          ./tools/Build-WebRelease.ps1 -OutputPath $webBuild
+          ./tools/Test-ReaPackWebView.ps1 -PackagePath $webBuild
+          $webTracked = [IO.File]::ReadAllText('PsyReaSFX_WebView.lua').Replace("`r`n", "`n")
+          $webGenerated = [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX.lua')).Replace("`r`n", "`n")
+          if ($webTracked -cne $webGenerated) { throw 'Tracked WebView beta entry is stale.' }
+          ./tools/Test-WebViewPackage.ps1 -PackagePath $webBuild -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-package-test') -ArchivePath (Join-Path $env:RUNNER_TEMP 'PsyReaSFX_WebView_0.9.3-beta1_win_x64.zip')
+          ./tools/Test-ReaWebAPICandidate.ps1
+          luac -p (Join-Path $webBuild 'PsyReaSFX.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'WebView entry does not compile.' }
+          $webFixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-fixture'
+          New-Item -ItemType Directory -Path $webFixture | Out-Null
+          lua tools/lua_webview_selftest.lua (Join-Path $webBuild 'PsyReaSFX.lua') $webFixture
+          if ($LASTEXITCODE -ne 0) { throw 'WebView backend regression failed.' }
+
+      - name: Verify WebView layout and interactions
+        shell: pwsh
+        run: |
+          $webTestTools = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-tools'
+          npm install --prefix $webTestTools --no-save --ignore-scripts playwright@1.56.1
+          if ($LASTEXITCODE -ne 0) { throw 'Browser test tooling installation failed.' }
+          node tools/webview_ui_selftest.cjs (Join-Path $webTestTools 'node_modules/playwright')
+          if ($LASTEXITCODE -ne 0) { throw 'WebView layout regression failed.' }
 
       - name: Run Lua persistence fault injection
         shell: pwsh
@@ -307,16 +337,16 @@ jobs:
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-release-assets'
-          ./tools/Build-Release.ps1 -Version 0.9.2-beta3 -OutputDirectory $output
-          ./tools/Test-ReleaseProvenance.ps1 -ArchivePath (Join-Path $output 'PsyReaSFX_v0_9_2_beta3.zip')
-          ./tools/Test-ReleaseProvenance.ps1 -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_2_beta3_win_x64.zip')
+          ./tools/Build-Release.ps1 -Version 0.9.2-beta4 -OutputDirectory $output
+          ./tools/Test-ReleaseProvenance.ps1 -ArchivePath (Join-Path $output 'PsyReaSFX_v0_9_2_beta4.zip')
+          ./tools/Test-ReleaseProvenance.ps1 -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_2_beta4_win_x64.zip')
           ./tools/Test-NeuralPackage.ps1 `
-            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_2_beta3_win_x64.zip') `
+            -ArchivePath (Join-Path $output 'PsyReaSFX_Neural_Similarity_v0_9_2_beta4_win_x64.zip') `
             -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-package')
           ./tools/Test-ReaPackNeuralPackage.ps1 `
             -IndexPath 'index.xml' `
             -Version '0.9.0' `
-            -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_2_beta3_win_x64.exe')
+            -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_2_beta4_win_x64.exe')
 
       - name: Run Desktop self-test
         shell: pwsh

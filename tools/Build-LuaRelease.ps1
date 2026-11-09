@@ -1,6 +1,7 @@
 param(
     [string]$Version = "",
-    [string]$OutputPath = ""
+    [string]$OutputPath = "",
+    [ValidateSet('imgui', 'webview')][string]$Ui = 'imgui'
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,6 +33,9 @@ $modules = @(
     "46_product_navigation.lua",
     "50_runtime_ui.lua"
 )
+if ($Ui -eq 'webview') {
+    $modules = $modules[0..($modules.Count - 2)] + '48_webview.lua' + $modules[-1]
+}
 # Every module after the bootstrap is emitted inside its own `do ... end` block.
 # Lua allows at most 200 active local variables per function, and one shared
 # chunk used to pay for every module's top-level locals at once. A block frees
@@ -48,6 +52,9 @@ $parts = for ($index = 0; $index -lt $modules.Count; $index++) {
     if ($index -eq 0) { $text } else { "do`n" + $text + "`nend" }
 }
 $release = [string]::Join("`n", $parts)
+if ($Ui -eq 'webview') {
+    $release = $release.Replace('local WEBVIEW_MODE = false', 'local WEBVIEW_MODE = true')
+}
 
 $matches = [regex]::Matches($release, '(?m)^-- @version\s+[^\r\n]+$')
 if ($matches.Count -ne 1) { throw "Expected exactly one Lua @version header; found $($matches.Count)." }

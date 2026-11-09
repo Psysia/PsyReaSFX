@@ -1,5 +1,19 @@
 # PsyReaSFX Changelog
 
+## 0.9.3 Beta 1 (0.9.a WebView) — 2026-11-09
+
+- Publish the waveform-first Windows x64 WebView interface with configurable columns, hidden-by-default row indexes, full-width audition and collapsible FX.
+- Reuse Lua asset services through bounded paging and a shared host contract for future Desktop reuse.
+- Provide the separately installed ReaWebAPI 0.3.9.30 beta runtime with licenses and matching source. Restart REAPER after installation.
+- Verify native window creation, transport, import, selection, waveforms and insertion in an isolated REAPER profile. Advanced feature parity and broader native acceptance remain in progress.
+- Versions retains the 0.9.2 Beta 4 legacy renderer and 0.9.1 Stable. See the [Beta 1 release notes](releases/release-notes-webview-0.9.3-beta1.md).
+
+## 0.9.2 Beta 4 — 2026-11-09 (pre-release)
+
+Replaces Beta 3; everything listed under the earlier betas below still applies.
+
+- The frame-timing diagnostics now also report how long each background job takes per frame (scan, import, metadata, folder index, artwork, wave queue, loudness, counts, saving, results rebuild...). With the drawing sections already reported, a slow frame can be traced to a specific job from the overlay or from Copy diagnostics.
+
 ## 0.9.2 Beta 3 — 2026-11-09 (pre-release)
 
 Replaces Beta 2; everything listed under Beta 1 and Beta 2 below still applies.

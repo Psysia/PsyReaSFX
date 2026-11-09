@@ -14,6 +14,7 @@ const build = fs.readFileSync(path.join(root, "tools", "Build-LuaRelease.ps1"), 
 const block = build.match(/\$modules\s*=\s*@\(([\s\S]*?)\)/);
 if (!block) { console.error("module list not found in Build-LuaRelease.ps1"); process.exit(1); }
 const modules = [...block[1].matchAll(/"([^"]+\.lua)"/g)].map((match) => match[1]);
+if (process.argv.includes("--webview")) modules.splice(modules.length - 1, 0, "48_webview.lua");
 if (modules.length < 2) { console.error("unexpected module list"); process.exit(1); }
 
 const declared = []; // per module: Map name -> line (top-level locals)
@@ -50,7 +51,8 @@ const problems = [];
 // Module 0 (bootstrap) is not wrapped, so its locals stay visible everywhere.
 for (let owner = 1; owner < modules.length; owner++) {
   for (const [localName, line] of declared[owner]) {
-    for (let user = owner + 1; user < modules.length; user++) {
+    for (let user = 1; user < modules.length; user++) {
+      if (user === owner) continue;
       if (freeNames[user].has(localName)) {
         problems.push(
           `${modules[user]}:${freeNames[user].get(localName)} uses '${localName}', ` +
