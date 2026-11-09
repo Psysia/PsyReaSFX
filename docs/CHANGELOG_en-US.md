@@ -1,5 +1,11 @@
 # PsyReaSFX Changelog
 
+## 0.9.2 Beta 4 — 2026-11-09 (pre-release)
+
+Replaces Beta 3; everything listed under the earlier betas below still applies.
+
+- The frame-timing diagnostics now also report how long each background job takes per frame (scan, import, metadata, folder index, artwork, wave queue, loudness, counts, saving, results rebuild...). With the drawing sections already reported, a slow frame can be traced to a specific job from the overlay or from Copy diagnostics.
+
 ## 0.9.2 Beta 3 — 2026-11-09 (pre-release)
 
 Replaces Beta 2; everything listed under Beta 1 and Beta 2 below still applies.

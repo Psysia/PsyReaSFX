@@ -353,6 +353,21 @@ do
   assert(sections:find("^results 10%.0") and sections:find("toolbar 2%.0"), sections)
   assert(next(FrameStats.current) == nil and FrameStats.mark_name == nil)
   assert(frame_stats_text():find("Drawing sections", 1, true))
+
+  -- Background jobs are timed the same way; a job that stops running fades out.
+  clock = 300
+  bg_mark("metadata")
+  clock = clock + 0.012
+  bg_mark("wave-queue")
+  clock = clock + 0.003
+  bg_mark(nil)
+  frame_stats_record(300, 300.015, 300.020)
+  local background = frame_sections_text(FrameStats.bg_sections)
+  assert(background:find("^metadata 12%.0") and background:find("wave%-queue 3%.0"), background)
+  for _ = 1, 80 do frame_stats_record(301, 301.0, 301.001) end
+  assert(not frame_sections_text(FrameStats.bg_sections):find("metadata", 1, true),
+    "a job that no longer runs disappears from the report")
+  assert(frame_stats_text():find("Background work", 1, true))
 end
 
 -- ----------------------------------------------------------------------------

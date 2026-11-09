@@ -25324,7 +25324,24 @@ FrameStats = FrameStats or {
   motion_frames = 0,
   sections = {},
   current = {},
+  bg_sections = {},
+  bg_current = {},
 }
+
+-- Same idea for the background work that runs before drawing: bg_mark("x")
+-- charges the time since the previous mark to the previous name, so the
+-- diagnostics can say which job keeps a frame busy.
+function bg_mark(name)
+  local stats = FrameStats
+  local now = reaper.time_precise()
+  local previous = stats.bg_mark_name
+  if previous then
+    stats.bg_current[previous] =
+      (stats.bg_current[previous] or 0) + (now - stats.bg_mark_time)
+  end
+  stats.bg_mark_name = name
+  stats.bg_mark_time = now
+end
 
 -- Splits the drawing time of one frame into named sections: frame_mark("x")
 -- charges the time since the previous mark to the previous section.
@@ -25362,20 +25379,36 @@ function frame_stats_record(started, background_done, draw_done)
     stats.current[name] = nil
   end
   stats.mark_name = nil
+  -- A job that did not run this frame decays towards zero instead of
+  -- keeping its last value forever.
+  for name in pairs(stats.bg_sections) do
+    stats.bg_sections[name] = blend(stats.bg_sections[name], stats.bg_current[name] or 0)
+  end
+  for name, seconds in pairs(stats.bg_current) do
+    if stats.bg_sections[name] == nil then
+      stats.bg_sections[name] = blend(nil, seconds)
+    end
+    stats.bg_current[name] = nil
+  end
+  stats.bg_mark_name = nil
 end
 
 -- "results 14.5 · preview 5.2 · sidebar 3.1 ..." (largest first, in ms).
-function frame_sections_text()
+-- `group` is FrameStats.sections (drawing) or FrameStats.bg_sections.
+function frame_sections_text(group)
+  group = group or FrameStats.sections
   local names = {}
-  for name in pairs(FrameStats.sections) do names[#names + 1] = name end
+  for name, seconds in pairs(group) do
+    if seconds >= 0.00005 then names[#names + 1] = name end
+  end
   table.sort(names, function(left, right)
-    local a, b = FrameStats.sections[left], FrameStats.sections[right]
+    local a, b = group[left], group[right]
     if a == b then return left < right end
     return a > b
   end)
   local parts = {}
   for _, name in ipairs(names) do
-    parts[#parts + 1] = string.format("%s %.1f", name, FrameStats.sections[name] * 1000)
+    parts[#parts + 1] = string.format("%s %.1f", name, group[name] * 1000)
   end
   return table.concat(parts, " · ")
 end
@@ -25394,6 +25427,7 @@ function frame_stats_text()
     stats.motion_frames or 0,
     stats.frames or 0
   ) .. "\nDrawing sections (ms): " .. frame_sections_text()
+    .. "\nBackground work (ms): " .. frame_sections_text(FrameStats.bg_sections)
 end
 
 function draw_frame_stats_overlay()
@@ -25413,15 +25447,20 @@ function draw_frame_stats_overlay()
   local draw_list = type(ImGui.GetForegroundDrawList) == "function"
     and ImGui.GetForegroundDrawList(ctx)
     or ImGui.GetWindowDrawList(ctx)
-  local sections = frame_sections_text()
-  local sections_width = select(1, ImGui.CalcTextSize(ctx, sections))
-  local box_width = math.max(text_width, sections_width)
+  local sections = "draw: " .. frame_sections_text()
+  local background = "bg: " .. frame_sections_text(FrameStats.bg_sections)
+  local box_width = math.max(
+    text_width,
+    select(1, ImGui.CalcTextSize(ctx, sections)),
+    select(1, ImGui.CalcTextSize(ctx, background))
+  )
   local left = x + width - box_width - 18
   ImGui.DrawList_AddRectFilled(
-    draw_list, left - 6, y + 4, left + box_width + 6, y + 42, 0x000000C0, 4
+    draw_list, left - 6, y + 4, left + box_width + 6, y + 60, 0x000000C0, 4
   )
   ImGui.DrawList_AddText(draw_list, left, y + 7, 0xF2D675FF, label)
   ImGui.DrawList_AddText(draw_list, left, y + 24, 0xBFD8EFFF, sections)
+  ImGui.DrawList_AddText(draw_list, left, y + 41, 0xBFD8EFFF, background)
 end
 
 function draw_main()
@@ -26150,10 +26189,15 @@ function loop()
   local frame_started = reaper.time_precise()
   local moving = ui_in_motion()
 
+  bg_mark("binding")
   process_asset_library_binding_refresh()
+  bg_mark("neural-probe")
   process_neural_similarity_probe()
+  bg_mark("ai")
   process_ai_semantic_search()
+  bg_mark("recovery-audit")
   process_import_recovery_audit()
+  bg_mark("exclusive-job")
 
   if state.transfer_running then
     -- Transfer receives the background-work budget while active. Library
@@ -26173,38 +26217,59 @@ function loop()
   elseif moving then
     -- The window is being moved or resized: leave the frame to drawing.
   else
+    bg_mark("scan")
     process_scan()
+    bg_mark("import")
     process_import_session()
+    bg_mark("metadata")
     process_metadata_queue()
+    bg_mark("folder-index")
     process_folder_navigation_build()
+    bg_mark("artwork")
     process_artwork_queue()
+    bg_mark("wave-verify")
     process_wave_cache_verification()
+    bg_mark("missing-audit")
     process_missing_audit()
+    bg_mark("duplicates")
     process_duplicate_scan()
     process_duplicate_confirmation()
+    bg_mark("wave-precache")
     process_wave_precache()
+    bg_mark("similarity")
     process_similarity_warmup()
     process_similarity_search()
+    bg_mark("wave-queue")
     process_wave_queue()
+    bg_mark("transients")
     process_pending_transient_detection()
+    bg_mark("loudness")
     process_loudness_queue()
   end
+  bg_mark("counts")
   process_library_count_rebuild()
   process_ucs_count_rebuild()
+  bg_mark("save")
   process_auxiliary_save()
+  bg_mark("preview")
   cleanup_retired_preview_sources(false)
   poll_preview()
+  bg_mark("project")
   poll_current_project_binding()
+  bg_mark("watch-save")
   if not moving then
     directory_online_pump()
     watch_folders()
     autosave()
   end
 
+  bg_mark("tabs-refresh")
   if workspace_tabs_process_refresh and not moving then workspace_tabs_process_refresh() end
+  bg_mark("results-rebuild")
   if (state.results_dirty or state.results_job) and not moving then
     process_results_rebuild()
   end
+  bg_mark(nil)
 
   local background_done = reaper.time_precise()
   draw_main()

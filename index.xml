@@ -13,19 +13,18 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
-      <version name="0.9.2-beta3" author="Psysia" time="2026-11-09T05:10:00Z">
+      <version name="0.9.2-beta4" author="Psysia" time="2026-11-09T06:20:00Z">
         <changelog><![CDATA[
-- Pre-release (replaces Beta 2): performance and reliability pass over selection, search, import, saving and relinking. Enable pre-releases in ReaPack to try it; the stable channel stays at 0.9.1.
-- Moving or resizing the window is smoother: while the window moves, waveforms draw a coarser envelope, tooltips and cover decoding wait and background work pauses; full detail returns a moment after you let go.
-- New: Settings > Maintenance can show a small frame-timing overlay (fps and where each frame's time goes), and Copy diagnostics now includes the same numbers. Please send them if the window still feels slow.
-- The version in the title bar and About page is correct (Beta 2); selection, search, import and saving improvements from Beta 1 are included.
+- Pre-release (replaces Beta 3): performance and reliability pass over selection, search, import, saving and relinking. Enable pre-releases in ReaPack to try it; the stable channel stays at 0.9.1.
+- The frame-timing diagnostics (Settings > Maintenance, and Copy diagnostics) now also list how long each background job takes per frame, so slow frames can be traced to a specific job.
+- Smoother window moving and resizing, the corrected version number and the selection, search, import and saving improvements from the earlier betas are included.
 - Update the main script and restart. The 0.9.0 neural component, existing databases and caches remain compatible.
         ]]></changelog>
-        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta3/PsyReaSFX_v0_7_23_Stable.lua</source>
-        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta3/assets/brand/psyreasfx-icon.png</source>
-        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta3/assets/fonts/OFL.txt</source>
-        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta3/assets/ucs/ucs-8.2.1.tsv</source>
+        <source main="main" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta4/PsyReaSFX_v0_7_23_Stable.lua</source>
+        <source file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta4/assets/brand/psyreasfx-icon.png</source>
+        <source file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta4/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta4/assets/fonts/OFL.txt</source>
+        <source file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.2-beta4/assets/ucs/ucs-8.2.1.tsv</source>
       </version>
       <version name="0.9.1" author="Psysia" time="2026-11-06T04:45:55Z">
         <changelog><![CDATA[
