@@ -20,8 +20,8 @@ DATABASE_FILE = real_snapshot or "memory-snapshot"
 DATABASE_JOURNAL_FILE = real_journal or "memory-journal"
 DATABASE_JOURNAL_COMPACT_COUNT = 10000
 WORKFLOW_STATUS = { none = true }
-local fields = region(catalog, "local DB_FIELDS = {", "function load_or_migrate_libraries()")
-fields = fields:match("local DB_FIELDS = (%b{})")
+local fields = region(catalog, "DB_FIELDS = {", "function load_or_migrate_libraries()")
+fields = fields:match("DB_FIELDS = (%b{})")
 DB_FIELDS = assert(load("return " .. fields))()
 AppState = { set = function(key, value) state[key] = value end,
   apply = function(values) for key, value in pairs(values) do state[key] = value end end }
@@ -34,7 +34,7 @@ assert(load(region(core, "function safe_lower(value)", "function windows_extende
 assert(load(region(core, "function stable_id(prefix, seed)", "function unique_library_name(base)")))()
 assert(load(region(core, "function invalidate_folder_navigation()", "function new_folder_navigation_node(")))()
 assert(load(region(core, "function invalidate_library_counts()", "function refresh_asset_library_binding(asset)")))()
-assert(load(region(catalog, "function asset_relative_path(path, root)", "function make_placeholder(path, known_root)")))()
+assert(load(region(catalog, "function asset_relative_path(path, root)", "function make_placeholder(path, known_root, known_present)")))()
 assert(load(region(catalog, "function asset_path_sort_key(asset)", "-- Persistence")))()
 assert(loadfile("src/lua/45_duplicate_confirmation.lua"))()
 function invalidate_similarity_index() end
@@ -47,6 +47,11 @@ assert(loadfile("src/lua/37_catalog_caches.lua"))()
 local database_start = runtime:find("function startup_checkpoint(phase)", 1, true)
   and "function startup_checkpoint(phase)" or "function load_database()"
 assert(load(region(runtime, database_start, "function database_asset_values(asset)")))()
+SelectionIndex = { revision = 0, meta_epoch = 0 }
+function selection_touch() SelectionIndex.revision = SelectionIndex.revision + 1 end
+function selection_replace(set) state.selected_set = set or {}; selection_touch() end
+function selection_add(key) state.selected_set[key] = true; selection_touch() end
+function selection_remove(key) state.selected_set[key] = nil; selection_touch() end
 assert(load(region(runtime, "function replace_database_asset(asset, probe_file)", "function write_database_asset_line(file, asset)")))()
 assert(load(region(runtime, "function database_asset_values(asset)", "function mark_asset_database_change(asset, result_change)")))()
 function mark_database_snapshot_dirty() state.db_dirty = true end

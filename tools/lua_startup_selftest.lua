@@ -23,7 +23,7 @@ local path_key_source = region(core, "function path_key(path)", "function canoni
 assert(path_key_source:find('SEP == "\\\\"', 1, true), "path_key must use the cached platform separator")
 assert(not path_key_source:find("GetOS", 1, true), "path_key must not call the REAPER host per asset")
 
-local identity_source = region(catalog, "function ensure_asset_identity(asset, probe_file)", "function make_placeholder(path, known_root)")
+local identity_source = region(catalog, "function ensure_asset_identity(asset, probe_file)", "function make_placeholder(path, known_root, known_present)")
 assert(identity_source:find("probe_file ~= false", 1, true), "asset identity must support trusted persisted rows")
 
 local file_probes = 0

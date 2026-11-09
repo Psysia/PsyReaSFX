@@ -192,6 +192,66 @@ until step_regions_persistence_job(
   changing_job, changing_writer, 1, escape
 )
 
+-- Adding keys between frames can rehash the table and make next() skip
+-- entries. The job must still write every original entry exactly once.
+do
+  local original_regions = {}
+  for index = 1, 500 do
+    original_regions["orig" .. index] = {
+      { path = "o" .. index .. ".wav", start = 0, finish = 1 },
+    }
+  end
+  local growing_job = new_regions_persistence_job(original_regions)
+  local growing_writer = new_writer()
+  step_regions_persistence_job(growing_job, growing_writer, 7, escape)
+  for index = 1, 5000 do
+    original_regions["late" .. index] = {
+      { path = "l" .. index .. ".wav", start = 0, finish = 1 },
+    }
+  end
+  original_regions["orig3"] = nil
+  local guard_steps = 0
+  repeat
+    guard_steps = guard_steps + 1
+    assert(guard_steps < 5000, "growing region map did not finish")
+  until step_regions_persistence_job(growing_job, growing_writer, 64, escape)
+  local seen = {}
+  for _, line in ipairs(growing_writer.lines) do
+    local path = line:match("^([^\t]+)")
+    seen[path] = (seen[path] or 0) + 1
+  end
+  for index = 1, 500 do
+    local path = "o" .. index .. ".wav"
+    local expected_count = (index == 3 and seen[path] == nil) and 0 or 1
+    assert((seen[path] or 0) == expected_count or index == 3,
+      "original entry lost or duplicated: " .. path)
+  end
+  for path, count in pairs(seen) do
+    assert(count == 1, "entry written twice: " .. path)
+  end
+
+  local growing_loudness = {}
+  for index = 1, 300 do
+    growing_loudness["k" .. index] = { path = "k" .. index .. ".wav", size = index }
+  end
+  local loud_job = new_loudness_persistence_job(growing_loudness)
+  local loud_writer = new_writer()
+  step_loudness_persistence_job(loud_job, loud_writer, 5, escape)
+  for index = 1, 4000 do
+    growing_loudness["new" .. index] = { path = "n" .. index .. ".wav", size = index }
+  end
+  repeat until step_loudness_persistence_job(loud_job, loud_writer, 50, escape)
+  local loud_seen = {}
+  for _, line in ipairs(loud_writer.lines) do
+    local path = line:match("^([^\t]+)")
+    loud_seen[path] = (loud_seen[path] or 0) + 1
+  end
+  for index = 1, 300 do
+    assert(loud_seen["k" .. index .. ".wav"] == 1,
+      "loudness entry lost while the cache grew: k" .. index)
+  end
+end
+
 writer = nil
 regions = nil
 regions_job = nil

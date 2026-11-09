@@ -523,4 +523,35 @@ assert(source:find("metadata and audio", 1, true))
 assert(source:find("ProtectedData", 1, true))
 assert(source:find("response_format", 1, true))
 
+-- Secrets quoted in error text are masked before display or recording.
+assert(ai_semantic_redact("HTTP 401 Bearer abc123def456 rejected")
+  == "HTTP 401 Bearer [redacted] rejected")
+assert(ai_semantic_redact("bearer   token_value-9 end") == "bearer [redacted] end")
+assert(ai_semantic_redact("bad key sk-AbCdEf0123456789xyz in header")
+  == "bad key sk-[redacted] in header")
+assert(ai_semantic_redact("sk-short is kept; ask-AbCdEf0123456789 is not a key")
+  == "sk-short is kept; ask-AbCdEf0123456789 is not a key")
+assert(ai_semantic_redact(nil) == "")
+assert(ai_semantic_redact("plain failure") == "plain failure")
+
+-- A full pool whose worst entry outscores a candidate rejects it without
+-- needing a path key; equal scores still fall back to the path tie-break.
+do
+  local limit = AISemantic.candidate_pool_limit
+  local full = { candidates = {} }
+  for index = 1, limit do
+    ai_semantic_insert_candidate(full, {
+      path = string.format("C:/Pool/%06d.wav", index),
+    }, 10 + index)
+  end
+  local before = full.candidates[1]
+  local keyless = setmetatable({}, { __index = function() error("path key requested") end })
+  ai_semantic_insert_candidate(full, keyless, 1)
+  assert(full.candidates[1] == before and #full.candidates == limit)
+  ai_semantic_insert_candidate(full, { path = "C:/Pool/new.wav" }, 11 + limit)
+  assert(#full.candidates == limit)
+  table.sort(full.candidates, function(left, right) return left.score < right.score end)
+  assert(full.candidates[1].score == 12)
+end
+
 print("lua AI semantic search self-test passed")

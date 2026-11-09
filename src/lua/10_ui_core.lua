@@ -531,7 +531,7 @@ function apply_appearance_preset(key)
   end
 end
 
-local DEFAULT_WAVEFORM_PALETTE = {
+DEFAULT_WAVEFORM_PALETTE = {
   waveform_hex = "#D7D8DA",
   waveform_selected_hex = "#EAF3FF",
   waveform_played_hex = "#8FB8D8",
@@ -542,7 +542,7 @@ local DEFAULT_WAVEFORM_PALETTE = {
   region_hex = "#E2B764",
 }
 
-local WAVEFORM_PALETTE_FIELDS = {
+WAVEFORM_PALETTE_FIELDS = {
   {
     key = "waveform_hex",
     label = "普通波形",
@@ -634,15 +634,40 @@ end
 function asset_is_session_played(asset)
   return asset
     and state.session_played[
-      path_key(asset.path)
+      asset_path_sort_key and asset_path_sort_key(asset)
+        or path_key(asset.path)
     ] == true
 end
 
-function count_path_set(values)
+-- The toolbar and settings pages show these counts on every frame. Walking a
+-- large set each time is wasted work, so a count is reused for a short moment
+-- (pass `fresh` where an exact answer decides behavior). Keys are weak, so a
+-- replaced set drops its entry.
+CountPathSetMemo = CountPathSetMemo or setmetatable({}, { __mode = "k" })
+COUNT_PATH_SET_TTL = 0.25
+
+function count_path_set(values, fresh)
+  if type(values) ~= "table" then
+    return 0
+  end
+
+  local now = os.clock()
+  local memo = CountPathSetMemo[values]
+  if memo and not fresh and now - memo.at < COUNT_PATH_SET_TTL then
+    return memo.count
+  end
+
   local count = 0
 
-  for _ in pairs(values or {}) do
+  for _ in pairs(values) do
     count = count + 1
+  end
+
+  if memo then
+    memo.count = count
+    memo.at = now
+  else
+    CountPathSetMemo[values] = { count = count, at = now }
   end
 
   return count
@@ -772,7 +797,7 @@ function restore_last_session_played_highlights(silent)
     cancel_auxiliary_save("restore session highlights")
   end
   local count =
-    last_session_played_count()
+    count_path_set(state.last_session_played, true)
 
   if count == 0 then
     if not silent then
@@ -1046,6 +1071,53 @@ function file_size(path)
   local size = file:seek("end") or 0
   file:close()
   return size
+end
+
+-- Draw code asks "is this folder reachable?" for every library and source on
+-- every frame. A real probe can block for the network timeout on an offline
+-- share, so drawing reads a cached answer and a single probe runs per frame
+-- from directory_online_pump(). An unknown folder is assumed reachable until
+-- its first probe completes.
+DirectoryOnline = DirectoryOnline or { entries = {}, pending = {} }
+DIRECTORY_ONLINE_TTL = 10
+DIRECTORY_OFFLINE_TTL = 30
+
+function directory_online(path)
+  path = tostring(path or "")
+  local entries = DirectoryOnline.entries
+  local entry = entries[path]
+  if not entry then
+    entry = { online = true, checked = 0, queued = false }
+    entries[path] = entry
+  end
+
+  if not entry.queued then
+    local ttl = entry.online and DIRECTORY_ONLINE_TTL or DIRECTORY_OFFLINE_TTL
+    if os.time() - entry.checked >= ttl then
+      entry.queued = true
+      local pending = DirectoryOnline.pending
+      pending[#pending + 1] = path
+    end
+  end
+
+  return entry.online
+end
+
+function directory_online_pump()
+  local path = table.remove(DirectoryOnline.pending, 1)
+  if path == nil then return false end
+  local entry = DirectoryOnline.entries[path]
+  if entry then
+    entry.online = directory_exists(path) == true
+    entry.checked = os.time()
+    entry.queued = false
+  end
+  return true
+end
+
+function directory_online_forget()
+  DirectoryOnline.entries = {}
+  DirectoryOnline.pending = {}
 end
 
 function directory_exists(path)
@@ -1782,11 +1854,27 @@ function unescape_tsv(value)
   )
 end
 
+-- Plain find/sub instead of a lazy gmatch over a copy of the line, and the
+-- per-field unescape is skipped entirely for lines without a '%' (the common
+-- case). Fields are the same as before, including empty and trailing ones.
 function split_tsv(line)
   local fields = {}
+  local count = 0
+  local position = 1
+  local escaped = line:find("%", 1, true) ~= nil
 
-  for field in (line .. "\t"):gmatch("(.-)\t") do
-    fields[#fields + 1] = unescape_tsv(field)
+  while true do
+    local tab = line:find("\t", position, true)
+    local field = tab and line:sub(position, tab - 1) or line:sub(position)
+
+    count = count + 1
+    fields[count] = escaped and unescape_tsv(field) or field
+
+    if not tab then
+      break
+    end
+
+    position = tab + 1
   end
 
   return fields
@@ -1827,15 +1915,42 @@ function split_words(text)
   return words
 end
 
-function fnv1a(text)
-  local hash = 2166136261
+FNV1A_OFFSET = 2166136261
 
-  for i = 1, #text do
-    hash = ((hash ~ text:byte(i)) * 16777619)
-      & 0xFFFFFFFF
+-- Continues an FNV-1a hash over `text` and returns the 32-bit state, so large
+-- payloads can be hashed piece by piece without concatenating them first.
+-- Only the low 32 bits are kept, and multiplication modulo 2^64 leaves those
+-- bits exactly as multiplying the masked value would, so the state is masked
+-- once at the end instead of after every byte. Eight bytes are fetched per
+-- call to string.byte, which removes most of the per-byte call overhead.
+function fnv1a_feed(hash, text)
+  local length = #text
+  local byte = string.byte
+  local index = 1
+
+  while index + 7 <= length do
+    local b1, b2, b3, b4, b5, b6, b7, b8 = byte(text, index, index + 7)
+    hash = (hash ~ b1) * 16777619
+    hash = (hash ~ b2) * 16777619
+    hash = (hash ~ b3) * 16777619
+    hash = (hash ~ b4) * 16777619
+    hash = (hash ~ b5) * 16777619
+    hash = (hash ~ b6) * 16777619
+    hash = (hash ~ b7) * 16777619
+    hash = (hash ~ b8) * 16777619
+    index = index + 8
   end
 
-  return string.format("%08x", hash)
+  while index <= length do
+    hash = (hash ~ byte(text, index)) * 16777619
+    index = index + 1
+  end
+
+  return hash & 0xFFFFFFFF
+end
+
+function fnv1a(text)
+  return string.format("%08x", fnv1a_feed(FNV1A_OFFSET, text))
 end
 
 function mark_interaction()

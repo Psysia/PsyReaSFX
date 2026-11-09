@@ -1,5 +1,5 @@
 -- Catalog identity, metadata, configuration and library persistence.
-local HostApi = Host or reaper
+HostApi = Host or reaper
 
 function parse_ucs_filename(filename)
   local result = ucs_classify_filename_exact(filename)
@@ -71,7 +71,9 @@ function ensure_asset_identity(asset, probe_file)
   end
 end
 
-function make_placeholder(path, known_root)
+-- known_present: the caller has just enumerated this file, so identity setup
+-- does not need to probe the filesystem for it again.
+function make_placeholder(path, known_root, known_present)
   local name = basename(path)
   local ucs = parse_ucs_filename(name)
   local root, root_record
@@ -133,7 +135,10 @@ function make_placeholder(path, known_root)
     fingerprint_stat_source = "",
   }
 
-  ensure_asset_identity(asset)
+  ensure_asset_identity(asset, known_present ~= true)
+  if known_present == true then
+    asset.last_seen = os.time()
+  end
   return asset
 end
 
@@ -332,7 +337,7 @@ end
 -- Persistence
 ----------------------------------------------------------------
 
-local DB_FIELDS = {
+DB_FIELDS = {
   "asset_id",
   "path",
   "relative_path",

@@ -91,12 +91,25 @@ function merge_asset_changes(target, source)
   return true
 end
 
-local function journal_escape(value)
-  return tostring(value or "")
-    :gsub("\\", "\\\\")
-    :gsub("\t", "\\t")
-    :gsub("\r", "\\r")
-    :gsub("\n", "\\n")
+-- Most fields contain none of the four special characters, so test with a
+-- single find first; otherwise one gsub with a lookup table performs the same
+-- mapping as the former four chained substitutions (backslash was handled
+-- first, so the combined single pass produces identical bytes).
+local journal_escape
+do
+  local escape_map = {
+    ["\\"] = "\\\\",
+    ["\t"] = "\\t",
+    ["\r"] = "\\r",
+    ["\n"] = "\\n",
+  }
+  journal_escape = function(value)
+    value = tostring(value or "")
+    if not value:find("[\\\t\r\n]") then
+      return value
+    end
+    return (value:gsub("[\\\t\r\n]", escape_map))
+  end
 end
 
 local function journal_split(line)
@@ -115,12 +128,38 @@ local function journal_split(line)
   return fields
 end
 
+-- Adler-32. Bytes are consumed 16 at a time and the modulus is applied once
+-- per 5552-byte block (the standard NMAX, an exact multiple of 16), which
+-- yields the same value as reducing after every byte.
 local function journal_checksum(text)
   local first = 1
   local second = 0
-  for index = 1, #text do
-    first = (first + text:byte(index)) % 65521
-    second = (second + first) % 65521
+  local length = #text
+  local byte = string.byte
+  local position = 1
+  while position <= length do
+    local block_end = position + 5551
+    if block_end > length then block_end = length end
+    while position + 15 <= block_end do
+      local b1, b2, b3, b4, b5, b6, b7, b8,
+        b9, b10, b11, b12, b13, b14, b15, b16 =
+        byte(text, position, position + 15)
+      second = second + 16 * first
+        + 16 * b1 + 15 * b2 + 14 * b3 + 13 * b4
+        + 12 * b5 + 11 * b6 + 10 * b7 + 9 * b8
+        + 8 * b9 + 7 * b10 + 6 * b11 + 5 * b12
+        + 4 * b13 + 3 * b14 + 2 * b15 + b16
+      first = first + b1 + b2 + b3 + b4 + b5 + b6 + b7 + b8
+        + b9 + b10 + b11 + b12 + b13 + b14 + b15 + b16
+      position = position + 16
+    end
+    while position <= block_end do
+      first = first + byte(text, position)
+      second = second + first
+      position = position + 1
+    end
+    first = first % 65521
+    second = second % 65521
   end
   return string.format("%08x", second * 65536 + first)
 end

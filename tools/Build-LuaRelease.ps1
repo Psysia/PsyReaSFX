@@ -32,10 +32,20 @@ $modules = @(
     "46_product_navigation.lua",
     "50_runtime_ui.lua"
 )
-$parts = foreach ($module in $modules) {
+# Every module after the bootstrap is emitted inside its own `do ... end` block.
+# Lua allows at most 200 active local variables per function, and one shared
+# chunk used to pay for every module's top-level locals at once. A block frees
+# them when the module ends, so a module may use locals freely as long as no
+# later module refers to them; tools/check_lua_module_scopes.cjs enforces that
+# (anything shared must be a global). The bootstrap stays outside any block
+# because it holds the shared constants and the `@version` header, which must
+# remain the first lines of the file.
+$parts = for ($index = 0; $index -lt $modules.Count; $index++) {
+    $module = $modules[$index]
     $path = Join-Path $sourceRoot $module
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing Lua module: $path" }
-    [IO.File]::ReadAllText($path).Replace("`r`n", "`n").Replace("`r", "`n")
+    $text = [IO.File]::ReadAllText($path).Replace("`r`n", "`n").Replace("`r", "`n")
+    if ($index -eq 0) { $text } else { "do`n" + $text + "`nend" }
 }
 $release = [string]::Join("`n", $parts)
 

@@ -64,7 +64,7 @@ function load_database()
     local asset, raw_path = database_asset_from_line(headers, line)
 
     if asset then
-      local key = path_key(asset.path)
+      local key = asset_path_sort_key(asset)
       local existed = state.by_path[key] ~= nil
       add_loaded_database_asset(asset, key)
       if asset_positions and not existed then
@@ -181,19 +181,20 @@ function mark_asset_database_change(asset, result_change)
     return false
   end
   if workspace_tabs_invalidate then workspace_tabs_invalidate(result_change or "background", asset) end
+  if SelectionIndex then SelectionIndex.meta_epoch = SelectionIndex.meta_epoch + 1 end
   if state.root_removal_session then
     local pending = state.root_removal_session.concurrent_asset_changes
     if not pending then
       pending = {}
       state.root_removal_session.concurrent_asset_changes = pending
     end
-    pending[path_key(asset.path)] = asset
+    pending[asset_path_sort_key(asset)] = asset
     return true
   end
   state.db_dirty = true
   return record_asset_change(
     state.database_changes,
-    path_key(asset.path),
+    asset_path_sort_key(asset),
     "upsert",
     database_asset_values(asset)
   )
@@ -269,7 +270,7 @@ function save_database_changes()
 end
 
 function replace_database_asset(asset, probe_file)
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
   local existing = state.by_path[key]
   if not existing then
     add_or_update_asset(asset, probe_file)
@@ -370,12 +371,12 @@ function replay_database_journal(asset_positions)
           state.assets,
           asset_positions,
           key,
-          function(asset) return path_key(asset.path) end
+          function(asset) return asset_path_sort_key(asset) end
         )
       end
       state.by_path[key] = nil
       state.favorites[key] = nil
-      state.selected_set[key] = nil
+      selection_remove(key)
     else
       local existed = state.by_path[key] ~= nil
       replace_database_asset(action.asset, false)
@@ -930,7 +931,7 @@ function record_project_usage(asset, action)
     return
   end
 
-  local asset_key = path_key(asset.path)
+  local asset_key = asset_path_sort_key(asset)
   local save_session = state.auxiliary_save_session
   if save_session and save_session.kind == "project_usage" then
     save_session.pending_usage[#save_session.pending_usage + 1] = {
@@ -1571,7 +1572,7 @@ function add_assets_to_collection(
   local added = 0
 
   for _, asset in ipairs(assets) do
-    local key = path_key(asset.path)
+    local key = asset_path_sort_key(asset)
 
     if not collection.items[key] then
       collection.items[key] = asset.path
@@ -1619,7 +1620,7 @@ function remove_assets_from_collection(
   local removed = 0
 
   for _, asset in ipairs(assets) do
-    local key = path_key(asset.path)
+    local key = asset_path_sort_key(asset)
 
     if collection.items[key] then
       collection.items[key] = nil
@@ -1837,7 +1838,7 @@ function activate_saved_search(saved)
     state.active_collection_id = nil
   end
 
-  state.selected_set = {}
+  selection_replace({})
   state.selected_index = 0
   state.selected_path = nil
   state.selection_anchor = 0
@@ -2087,7 +2088,7 @@ function record_preview_history(asset)
     state.preview_history_assets[asset.asset_id] = asset
   end
   local played_key =
-    path_key(asset.path)
+    asset_path_sort_key(asset)
 
   if not state.session_played[played_key] then
     if save_session and save_session.kind == "session_played" then
@@ -2615,12 +2616,43 @@ function find_library_artwork_in_root(root)
   return ""
 end
 
+-- Rows ask whether their cover still exists on every frame. Remember the
+-- answer briefly (a missing file is re-checked sooner so a restored cover
+-- appears quickly) instead of making a filesystem call per row per frame.
+ArtworkExists = ArtworkExists or { entries = {}, count = 0 }
+ARTWORK_EXISTS_TTL = 5
+ARTWORK_MISSING_TTL = 2
+ARTWORK_EXISTS_LIMIT = 4096
+
+function artwork_file_exists(path)
+  local cache = ArtworkExists
+  local now = os.time()
+  local entry = cache.entries[path]
+  if entry then
+    local ttl = entry.exists and ARTWORK_EXISTS_TTL or ARTWORK_MISSING_TTL
+    if now - entry.checked < ttl then
+      return entry.exists
+    end
+  else
+    if cache.count >= ARTWORK_EXISTS_LIMIT then
+      cache.entries = {}
+      cache.count = 0
+    end
+    entry = {}
+    cache.entries[path] = entry
+    cache.count = cache.count + 1
+  end
+  entry.exists = reaper.file_exists(path) == true
+  entry.checked = now
+  return entry.exists
+end
+
 function valid_artwork_path(path)
   path = tostring(path or "")
 
   return path ~= ""
     and path ~= "-"
-    and reaper.file_exists(path)
+    and artwork_file_exists(path)
 end
 
 function root_record_for_asset(asset)
@@ -2855,7 +2887,7 @@ function queue_artwork(asset, priority)
     return
   end
 
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
 
   if state.artwork_queued[key] then
     return
@@ -2949,31 +2981,58 @@ function release_artwork_image(key)
   state.artwork_images[key] = nil
 end
 
+-- Evict the least recently used image. (The order list used to be a plain
+-- FIFO, so the most used cover could be dropped first.)
 function trim_artwork_image_cache()
-  while #state.artwork_image_order
-      > state.artwork_image_limit do
-    local oldest =
-      table.remove(
-        state.artwork_image_order,
-        1
-      )
+  local order = state.artwork_image_order
+  while #order > state.artwork_image_limit do
+    local oldest_index = 1
+    local oldest_used = math.huge
+    for index, key in ipairs(order) do
+      local entry = state.artwork_images[key]
+      local used = entry and entry.last_used or -1
+      if used < oldest_used then
+        oldest_index = index
+        oldest_used = used
+      end
+    end
 
-    release_artwork_image(oldest)
+    release_artwork_image(table.remove(order, oldest_index))
   end
 end
+
+ArtworkKeyMemo = ArtworkKeyMemo or { keys = {}, count = 0 }
+
+function artwork_cache_key(path)
+  local memo = ArtworkKeyMemo
+  local key = memo.keys[path]
+  if key == nil then
+    if memo.count >= 2048 then
+      memo.keys = {}
+      memo.count = 0
+    end
+    key = path_key(path)
+    memo.keys[path] = key
+    memo.count = memo.count + 1
+  end
+  return key
+end
+
+ArtworkCreateBudget = ArtworkCreateBudget or { frame = -1, used = 0 }
+ARTWORK_CREATES_PER_FRAME = 2
 
 function artwork_image_from_path(path)
   if not path
     or path == ""
-    or path == "-"
-    or not reaper.file_exists(path) then
+    or path == "-" then
     return nil
   end
 
-  local key = path_key(path)
+  local key = artwork_cache_key(path)
   local entry = state.artwork_images[key]
   local now = reaper.time_precise()
 
+  -- An image that is already loaded needs no filesystem probe.
   if entry
     and entry.image
     and ImGui.ValidatePtr(
@@ -2984,11 +3043,32 @@ function artwork_image_from_path(path)
     return entry.image
   end
 
+  if not artwork_file_exists(path) then
+    return nil
+  end
+
   if entry
     and entry.failed
     and now - (entry.last_used or 0) < 8 then
     return nil
   end
+
+  -- Decoding a cover is synchronous. Cap it per frame so the first scroll
+  -- over many rows spreads the work across frames; the placeholder shows
+  -- until the next frame retries.
+  local frame = type(ImGui.GetFrameCount) == "function"
+    and ImGui.GetFrameCount(ctx) or 0
+  local budget = ArtworkCreateBudget
+  if budget.frame ~= frame then
+    budget.frame = frame
+    budget.used = 0
+  end
+  if budget.used >= ARTWORK_CREATES_PER_FRAME then
+    return nil
+  end
+  budget.used = budget.used + 1
+
+  local was_ordered = entry ~= nil and not entry.failed
 
   local ok, image =
     pcall(ImGui.CreateImage, path)
@@ -3008,9 +3088,13 @@ function artwork_image_from_path(path)
     last_used = now,
   }
 
-  state.artwork_image_order[
-    #state.artwork_image_order + 1
-  ] = key
+  -- A re-created image (its pointer went stale) is already in the order list;
+  -- appending it again would let a later eviction release the live image.
+  if not was_ordered then
+    state.artwork_image_order[
+      #state.artwork_image_order + 1
+    ] = key
+  end
 
   trim_artwork_image_cache()
   return image
@@ -3374,6 +3458,7 @@ end
 function index_asset(asset)
   if not asset
     or not reaper.file_exists(asset.path) then
+    if asset then asset.meta_failed_at = os.time() end
     return false
   end
 
@@ -3381,6 +3466,7 @@ function index_asset(asset)
     reaper.PCM_Source_CreateFromFile(asset.path)
 
   if not source then
+    asset.meta_failed_at = os.time()
     return false
   end
 
@@ -3502,6 +3588,7 @@ function index_asset(asset)
   end
 
   asset.indexed = true
+  asset.meta_failed_at = nil
   asset._search_blob = nil
   refresh_ucs_pending_membership(asset)
 
@@ -3729,7 +3816,7 @@ function remove_ucs_confirmation_undo(key)
 end
 
 function remember_ucs_confirmation_undo(asset)
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
   if not state.ucs_confirmation_undo[key] then
     state.ucs_confirmation_undo[key] = {
       path = asset.path,
@@ -3777,7 +3864,7 @@ function confirm_ucs_candidate(asset, catid)
   end
   remember_ucs_confirmation_undo(asset)
   if not ucs_assign_classification(asset, result) then
-    remove_ucs_confirmation_undo(path_key(asset.path))
+    remove_ucs_confirmation_undo(asset_path_sort_key(asset))
     return false
   end
   asset._search_blob = nil
@@ -3835,7 +3922,14 @@ function queue_metadata(asset, priority)
     return
   end
 
-  local key = path_key(asset.path)
+  -- A file that could not be read is retried at most every 30 s, not on every
+  -- frame the row stays visible.
+  if asset.meta_failed_at
+    and os.time() - asset.meta_failed_at < 30 then
+    return
+  end
+
+  local key = asset_path_sort_key(asset)
 
   if state.meta_queued[key] then
     return
@@ -3932,7 +4026,7 @@ function process_import_recovery_audit()
   for index = audit.index, last do
     local asset = audit.assets[index]
     if asset and not asset.ready
-      and not state.failed_tasks[path_key(asset.path)] then
+      and not state.failed_tasks[asset_path_sort_key(asset)] then
       local _, root = root_for_path(asset.path)
       if root and root.enabled ~= false then
         audit.pending[#audit.pending + 1] = asset
@@ -4160,7 +4254,7 @@ function process_scan_finalize(scan)
       end,
       function(key, asset)
         state.favorites[key] = nil
-        state.selected_set[key] = nil
+        selection_remove(key)
         state.preview_history_assets[asset.asset_id or ""] = nil
         scan.finalize_removed_so_far =
           scan.finalize_removed_so_far + 1
@@ -4189,7 +4283,7 @@ function process_scan_finalize(scan)
   )
   for index = scan.pending_index, last do
     local asset = scan.new_assets[index]
-    local key = asset and path_key(asset.path) or ""
+    local key = asset and asset_path_sort_key(asset) or ""
     if asset and key ~= "" and not scan.pending_seen[key]
       and not asset.ready then
       scan.pending_seen[key] = true
@@ -4225,7 +4319,7 @@ function process_scan_cancel(scan)
     for index = scan.cancel_index, last do
       local asset = scan.new_assets[index]
       if asset and not asset.ready and not scan.compact_status then
-        scan.cancel_keys[path_key(asset.path)] = true
+        scan.cancel_keys[asset_path_sort_key(asset)] = true
       end
     end
     scan.cancel_index = last + 1
@@ -4245,7 +4339,7 @@ function process_scan_cancel(scan)
     end,
     function(key, asset)
       state.favorites[key] = nil
-      state.selected_set[key] = nil
+      selection_remove(key)
       state.preview_history_assets[asset.asset_id or ""] = nil
     end
   )
@@ -4343,7 +4437,7 @@ function process_scan()
             if not state.by_path[key] then
               local asset =
                 add_or_update_asset(
-                  make_placeholder(path, dir.root)
+                  make_placeholder(path, dir.root, true)
                 )
 
               scan.new_assets[#scan.new_assets + 1] =
@@ -4354,6 +4448,7 @@ function process_scan()
               local asset = state.by_path[key]
               asset.ready = false
               asset.indexed = false
+              asset.meta_failed_at = nil
               scan.new_assets[#scan.new_assets + 1] = asset
             elseif not state.by_path[key].ready
               and (scan.reason ~= "Watch Folder" or not state.failed_tasks[key]) then
@@ -4457,7 +4552,7 @@ function field_value(asset, field)
     return tostring(asset.channels or 0)
   elseif field == "fav"
     or field == "favorite" then
-    return state.favorites[path_key(asset.path)]
+    return state.favorites[asset_path_sort_key(asset)]
       and "true"
       or "false"
   elseif field == "status"
@@ -4471,12 +4566,12 @@ function field_value(asset, field)
     return asset_is_played(asset) and "true" or "false"
   elseif field == "missing"
     or field == "offline" then
-    return state.missing_assets[path_key(asset.path)]
+    return state.missing_assets[asset_path_sort_key(asset)]
       and "true"
       or "false"
   elseif field == "duplicate"
     or field == "dupe" then
-    return state.duplicate_lookup[path_key(asset.path)]
+    return state.duplicate_lookup[asset_path_sort_key(asset)]
       and "true"
       or "false"
   elseif field == "project"
@@ -4486,7 +4581,7 @@ function field_value(asset, field)
       false
     )
     return bucket
-      and bucket.assets[path_key(asset.path)]
+      and bucket.assets[asset_path_sort_key(asset)]
       and "true"
       or "false"
   end
@@ -4494,144 +4589,223 @@ function field_value(asset, field)
   return ""
 end
 
-function matches_search(asset)
-  -- AI results are already ranked against the shared search-field text. Do
-  -- not run the natural-language request through the literal local filter.
-  if "ai_semantic" == state.view then return true end
+-- The query is parsed once per distinct query string. Re-parsing it for every
+-- asset (trim, split, lowercase, field match) cost millions of short-lived
+-- strings on every keystroke in a large catalog.
+SearchTermsMemo = SearchTermsMemo or {}
 
-  local query = trim(state.search)
+function compile_search_terms(raw_query)
+  local memo = SearchTermsMemo
+  if memo.raw == raw_query and memo.terms then
+    return memo.terms
+  end
 
-  if query == "" then
+  local terms = {}
+  local query = trim(raw_query)
+
+  if query ~= "" then
+    for _, raw in ipairs(split_words(query)) do
+      local exclude = raw:sub(1, 1) == "-"
+      local token = exclude and raw:sub(2) or raw
+      token = safe_lower(token)
+
+      if token ~= "" then
+        local field, wanted =
+          token:match("^([%w_]+)%:(.+)$")
+
+        terms[#terms + 1] = {
+          exclude = exclude,
+          field = field,
+          wanted = field and wanted or token,
+        }
+      end
+    end
+  end
+
+  memo.raw = raw_query
+  memo.terms = terms
+  return terms
+end
+
+function search_terms_match(asset, terms)
+  local count = #terms
+
+  if count == 0 then
     return true
   end
 
   local blob = search_blob(asset)
 
-  for _, raw in ipairs(split_words(query)) do
-    local exclude = raw:sub(1, 1) == "-"
-    local token = exclude and raw:sub(2) or raw
-    token = safe_lower(token)
+  for index = 1, count do
+    local term = terms[index]
+    local matched
 
-    if token ~= "" then
-      local field, wanted =
-        token:match("^([%w_]+)%:(.+)$")
+    if term.field then
+      matched =
+        safe_lower(field_value(asset, term.field))
+          :find(term.wanted, 1, true)
+        ~= nil
+    else
+      matched =
+        blob:find(term.wanted, 1, true) ~= nil
+    end
 
-      local matched
-
-      if field then
-        matched =
-          safe_lower(field_value(asset, field))
-            :find(wanted, 1, true)
-          ~= nil
-      else
-        matched =
-          blob:find(token, 1, true) ~= nil
-      end
-
-      if exclude and matched then
-        return false
-      elseif not exclude and not matched then
-        return false
-      end
+    if term.exclude and matched then
+      return false
+    elseif not term.exclude and not matched then
+      return false
     end
   end
 
   return true
 end
 
+function matches_search(asset)
+  -- AI results are already ranked against the shared search-field text. Do
+  -- not run the natural-language request through the literal local filter.
+  if "ai_semantic" == state.view then return true end
+
+  return search_terms_match(asset, compile_search_terms(state.search))
+end
+
+-- nil when the current query filters nothing, otherwise a closure over the
+-- parsed terms for the results rebuild job.
+function make_search_predicate()
+  if "ai_semantic" == state.view then return nil end
+
+  local terms = compile_search_terms(state.search)
+
+  if #terms == 0 then
+    return nil
+  end
+
+  return function(asset)
+    return search_terms_match(asset, terms)
+  end
+end
+
 function asset_in_view(asset)
-  if not asset.ready or asset.pending_batch then
-    return false
-  end
-  local ucs_category, ucs_subcategory, ucs_catid
-  if ucs_directory_view(state.view) then
-    ucs_category, ucs_subcategory, ucs_catid =
-      ucs_asset_hierarchy(asset)
+  return make_asset_view_predicate()(asset)
+end
+
+-- Builds the per-asset view/filter test once per results rebuild. Everything
+-- that does not depend on the asset (the current view, filter tables, the
+-- active collection, the root prefix) is resolved here instead of for every
+-- one of up to hundreds of thousands of assets.
+function make_asset_view_predicate()
+  local view = state.view
+  local ucs_view = ucs_directory_view(view)
+  local favorites = state.favorites
+  local ucs_filter_category = state.ucs_filter_category
+  local ucs_filter_subcategory = state.ucs_filter_subcategory
+  local ucs_filter_catid = state.ucs_filter_catid
+  local similarity_lookup = state.similarity_lookup
+  local ai_semantic_lookup = state.ai_semantic_lookup
+  local missing_assets = state.missing_assets
+  local duplicate_lookup = state.duplicate_lookup
+  local duplicate_confirmed_lookup = state.duplicate_confirmed_lookup
+  local duplicate_failures = state.duplicate_confirmation_failures
+
+  local project_assets
+  if "project_used" == view then
+    local bucket = project_usage_bucket(state.current_project_path, false)
+    project_assets = bucket and bucket.assets or false
   end
 
-  if state.view == "favorites"
-    and not state.favorites[path_key(asset.path)] then
-    return false
-  elseif state.view == "recent"
-    and (asset.last_used or 0) <= 0 then
-    return false
-  elseif state.view == "previewed"
-    and (asset.last_previewed or 0) <= 0 then
-    return false
-  elseif "ucs_pending" == state.view
-    and asset.ucs_status ~= "pending" then
-    return false
-  elseif "ucs_category" == state.view
-    and ucs_category ~= state.ucs_filter_category then
-    return false
-  elseif "ucs_subcategory" == state.view
-    and (ucs_category ~= state.ucs_filter_category
-      or ucs_subcategory ~= state.ucs_filter_subcategory) then
-    return false
-  elseif "ucs_catid" == state.view
-    and ucs_catid ~= state.ucs_filter_catid then
-    return false
-  elseif "similar" == state.view
-    and not state.similarity_lookup[path_key(asset.path)] then
-    return false
-  elseif "ai_semantic" == state.view
-    and not state.ai_semantic_lookup[path_key(asset.path)] then
-    return false
-  elseif state.view == "missing"
-    and not state.missing_assets[path_key(asset.path)] then
-    return false
-  elseif state.view == "duplicates"
-    and not state.duplicate_lookup[path_key(asset.path)] then
-    return false
-  elseif state.view == "duplicates_confirmed"
-    and not state.duplicate_confirmed_lookup[path_key(asset.path)] then
-    return false
-  elseif state.view == "duplicate_failures"
-    and not state.duplicate_confirmation_failures[path_key(asset.path)] then
-    return false
-  elseif state.view == "project_used" then
-    local bucket = project_usage_bucket(
-      state.current_project_path,
-      false
-    )
-    if not bucket
-      or not bucket.assets[path_key(asset.path)] then
-      return false
-    end
-  end
-
+  local collection_items
+  local collection_missing = false
   if state.active_collection_id then
-    local collection =
-      state.collection_by_id[
-        state.active_collection_id
-      ]
-
-    if not collection
-      or not collection.items[path_key(asset.path)] then
-      return false
+    local collection = state.collection_by_id[state.active_collection_id]
+    if collection then
+      collection_items = collection.items
+    else
+      collection_missing = true
     end
   end
 
-  if state.status_filter
-    and (asset.workflow_status or "none")
-      ~= state.status_filter then
-    return false
-  end
+  local status_filter = state.status_filter
+  local library_filter_id = state.library_filter_id
 
-  if state.root_filter
-    and not path_is_inside(
-      asset.path,
-      state.root_filter
-    ) then
-    return false
+  -- path_is_inside(): equal to the root, or below it.
+  local root_exact
+  local root_prefix
+  if state.root_filter then
+    root_exact = path_key(state.root_filter)
+    root_prefix = root_exact:sub(-1) ~= SEP and (root_exact .. SEP) or root_exact
   end
+  local root_prefix_length = root_prefix and #root_prefix or 0
 
-  if state.library_filter_id
-    and asset.library_id ~= state.library_filter_id then
-    return false
+  return function(asset)
+    if not asset.ready or asset.pending_batch then
+      return false
+    end
+
+    local key = asset_path_sort_key(asset)
+    local ucs_category, ucs_subcategory, ucs_catid
+    if ucs_view then
+      ucs_category, ucs_subcategory, ucs_catid =
+        ucs_asset_hierarchy(asset)
+    end
+
+    if view == "favorites" then
+      if not favorites[key] then return false end
+    elseif view == "recent" then
+      if (asset.last_used or 0) <= 0 then return false end
+    elseif view == "previewed" then
+      if (asset.last_previewed or 0) <= 0 then return false end
+    elseif "ucs_pending" == view then
+      if asset.ucs_status ~= "pending" then return false end
+    elseif "ucs_category" == view then
+      if ucs_category ~= ucs_filter_category then return false end
+    elseif "ucs_subcategory" == view then
+      if ucs_category ~= ucs_filter_category
+        or ucs_subcategory ~= ucs_filter_subcategory then
+        return false
+      end
+    elseif "ucs_catid" == view then
+      if ucs_catid ~= ucs_filter_catid then return false end
+    elseif "similar" == view then
+      if not similarity_lookup[key] then return false end
+    elseif "ai_semantic" == view then
+      if not ai_semantic_lookup[key] then return false end
+    elseif view == "missing" then
+      if not missing_assets[key] then return false end
+    elseif view == "duplicates" then
+      if not duplicate_lookup[key] then return false end
+    elseif view == "duplicates_confirmed" then
+      if not duplicate_confirmed_lookup[key] then return false end
+    elseif view == "duplicate_failures" then
+      if not duplicate_failures[key] then return false end
+    elseif view == "project_used" then
+      if not project_assets or not project_assets[key] then
+        return false
+      end
+    end
+
+    if collection_missing then
+      return false
+    elseif collection_items and not collection_items[key] then
+      return false
+    end
+
+    if status_filter
+      and (asset.workflow_status or "none") ~= status_filter then
+      return false
+    end
+
+    if root_exact
+      and key ~= root_exact
+      and key:sub(1, root_prefix_length) ~= root_prefix then
+      return false
+    end
+
+    if library_filter_id
+      and asset.library_id ~= library_filter_id then
+      return false
+    end
+
+    return true
   end
-
-  return true
 end
 
 local function cached_sort_text(asset, field, source_field, value_field)
@@ -4738,14 +4912,26 @@ local function result_sort_comparator()
   end
 end
 
+-- View/filter test followed by the text query, both resolved once per rebuild.
+function results_filter_predicate()
+  local in_view = make_asset_view_predicate()
+  local matches = make_search_predicate()
+
+  if not matches then
+    return in_view
+  end
+
+  return function(asset)
+    return in_view(asset) and matches(asset)
+  end
+end
+
 function start_results_rebuild()
   if workspace_tabs_results_started then workspace_tabs_results_started() end
   AppState.set("results_dirty", false)
   AppState.set("results_job", begin_incremental_result_job(
     state.assets,
-    function(asset)
-      return asset_in_view(asset) and matches_search(asset)
-    end,
+    results_filter_predicate(),
     result_sort_comparator(),
     cached_sort_path,
     state.selected_path and path_key(state.selected_path) or nil
@@ -4790,18 +4976,39 @@ end
 
 function wave_cache_key(asset, points, preserve_channels, spectral)
   if not asset.size or asset.size <= 0 then
-    asset.size = file_size(asset.path)
+    -- file_size() answers 0 for missing or unreadable files. Rows draw this
+    -- every frame, so retry that open at most every 15 s instead of per frame.
+    local now = os.time()
+    if not asset._size_retry_at or now >= asset._size_retry_at then
+      asset.size = file_size(asset.path)
+      asset._size_retry_at =
+        (not asset.size or asset.size <= 0) and (now + 15) or nil
+    end
   end
 
-  return fnv1a(
-    path_key(asset.path)
-      .. "|"
-      .. tostring(asset.size)
-      .. "|"
-      .. tostring(points)
-      .. (preserve_channels and "|channels-rwf3" or "")
-      .. (spectral and "|spectral-rwf4" or "")
-  )
+  -- The key only changes with the path, size or variant, so memoise it on the
+  -- asset instead of hashing the path again for every visible row every frame.
+  local variant = (tonumber(points) or 0) * 4
+    + (preserve_channels and 1 or 0) + (spectral and 2 or 0)
+  local memo = asset._wave_keys
+  if not memo or memo.path ~= asset.path or memo.size ~= asset.size then
+    memo = { path = asset.path, size = asset.size }
+    asset._wave_keys = memo
+  end
+  local key = memo[variant]
+  if key == nil then
+    key = fnv1a(
+      asset_path_sort_key(asset)
+        .. "|"
+        .. tostring(asset.size)
+        .. "|"
+        .. tostring(points)
+        .. (preserve_channels and "|channels-rwf3" or "")
+        .. (spectral and "|spectral-rwf4" or "")
+    )
+    memo[variant] = key
+  end
+  return key
 end
 
 function wave_cache_path(asset, points, preserve_channels, spectral)
@@ -5805,12 +6012,53 @@ function process_wave_queue()
   state.next_wave_job = now + WAVE_INTERVAL
 end
 
+-- True exactly when load_wave_from_disk() would succeed, but only reads the
+-- payload to check its length; no peak tables are built.
 function wave_cache_file_exists(asset, points, preserve_channels)
-  return load_wave_from_disk(
-    asset,
-    points,
-    preserve_channels
-  ) ~= nil
+  local file = io.open(
+    wave_cache_path(asset, points, preserve_channels),
+    "rb"
+  )
+
+  if not file then
+    return false
+  end
+
+  local header = file:read("*l") or ""
+  local version, count_text, channels_text =
+    header:match("^(RWF[34])%s+(%d+)%s+(%d+)$")
+
+  if not version then
+    version, count_text =
+      header:match("^(RWF2)%s+(%d+)$")
+  end
+
+  local count =
+    version and tonumber(count_text)
+    or tonumber(header)
+
+  if not count
+    or count <= 0
+    or count > LARGE_WAVE_MAX_POINTS then
+    file:close()
+    return false
+  end
+
+  local expected
+  if version == "RWF3" or version == "RWF4" then
+    local channels = clamp(tonumber(channels_text) or 1, 1, 8)
+    expected = count * channels * 2
+      + (version == "RWF4" and count * 4 or 0)
+  elseif version == "RWF2" then
+    expected = count * 2
+  else
+    expected = count
+  end
+
+  local bytes = file:read(expected)
+  file:close()
+
+  return bytes ~= nil and #bytes == expected
 end
 
 function start_wave_precache(points, scope)
@@ -6333,7 +6581,7 @@ function cancel_import_session()
       local asset = session.assets[index]
       if asset then
         if not asset.ready and not session.compact_status then
-          state.by_path[path_key(asset.path)] = nil
+          state.by_path[asset_path_sort_key(asset)] = nil
         else
           asset.pending_batch = nil
         end
@@ -6422,6 +6670,23 @@ function process_import_session()
     return
   end
 
+  -- Assets that are already indexed and whose waveform is cached finish in
+  -- microseconds, so several are handled per frame; one that needs real work
+  -- (metadata read, waveform build) still ends the frame.
+  local deadline = reaper.time_precise() + IMPORT_FRAME_BUDGET
+  repeat
+    local finished = step_import_session(session)
+  until not finished
+    or state.import_session ~= session
+    or session.phase == "finalize"
+    or reaper.time_precise() >= deadline
+end
+
+IMPORT_FRAME_BUDGET = 0.006
+
+-- Advances the import by one unit of work. Returns true when an asset was
+-- completed (cheap enough to continue in the same frame), false otherwise.
+function step_import_session(session)
   if not session.current then
     local asset =
       session.assets[session.done + 1]
@@ -6430,7 +6695,7 @@ function process_import_session()
       session.phase = "finalize"
       session.finalize_index = 1
       set_status("导入分析完成，正在整理索引…")
-      return
+      return false
     end
 
     session.current = {
@@ -6457,7 +6722,7 @@ function process_import_session()
         session.done = session.done + 1
         session.current = nil
         mark_asset_database_change(asset)
-        return
+        return true
       end
     end
 
@@ -6467,22 +6732,22 @@ function process_import_session()
         state.mini_wave_points
       )
 
-    local cached = state.wave_cache[key]
-      and state.wave_cache[key].waveform
-      or load_wave_from_disk(
+    -- The waveform only has to exist on disk. Visible rows load it on demand,
+    -- so an import never pushes on-screen waveforms out of the memory cache.
+    local cached = state.wave_cache[key] ~= nil
+      or wave_cache_file_exists(
         asset,
         state.mini_wave_points
       )
 
     if cached then
-      store_wave_memory(key, cached)
       asset.ready = true
       asset.wave_error = nil
       clear_failed_task(asset)
       session.done = session.done + 1
       session.current = nil
       mark_asset_database_change(asset)
-      return
+      return true
     end
 
     current.wave_job = {
@@ -6505,11 +6770,6 @@ function process_import_session()
         * (current.wave_job.progress or 0)
 
     if result == "done" then
-      store_wave_memory(
-        current.wave_job.key,
-        waveform
-      )
-
       save_wave_to_disk(
         asset,
         state.mini_wave_points,
@@ -6533,6 +6793,8 @@ function process_import_session()
       mark_asset_database_change(asset)
     end
   end
+
+  return false
 end
 
 
@@ -6663,38 +6925,85 @@ function request_preview_stop()
   stop_preview()
 end
 
+-- Every mutation of state.selected_set goes through these helpers so derived
+-- views (visible selection, inspector list, signature) can be cached against a
+-- revision counter instead of being rebuilt every frame. Replacing the whole
+-- table (workspace tab switches do this) is detected by table identity.
+SelectionIndex = SelectionIndex or { revision = 0, meta_epoch = 0 }
+
+function selection_touch()
+  SelectionIndex.revision = SelectionIndex.revision + 1
+end
+
+function selection_replace(set)
+  state.selected_set = set or {}
+  selection_touch()
+end
+
+function selection_add(key)
+  local set = state.selected_set
+  if set[key] ~= true then
+    set[key] = true
+    selection_touch()
+  end
+end
+
+function selection_remove(key)
+  local set = state.selected_set
+  if set[key] ~= nil then
+    set[key] = nil
+    selection_touch()
+  end
+end
+
 function clear_row_selection()
-  state.selected_set = {}
+  selection_replace({})
   state.selected_index = 0
   state.selected_path = nil
   state.selection_anchor = 0
 end
 
 function is_row_selected(asset)
-  return asset
-    and state.selected_set[path_key(asset.path)] == true
+  return asset ~= nil
+    and state.selected_set[asset_path_sort_key(asset)] == true
 end
 
+-- Selected assets that are visible in the current results, in result order.
+-- The returned array is shared; callers must not modify it.
 function selected_assets()
-  local assets = {}
+  local set = state.selected_set
+  local results = state.results
+  local cache = SelectionIndex.visible
+  if cache and cache.set == set
+    and cache.revision == SelectionIndex.revision
+    and cache.results == results
+    and cache.result_count == #results then
+    return cache.assets
+  end
 
-  for _, asset in ipairs(state.results) do
-    if is_row_selected(asset) then
-      assets[#assets + 1] = asset
+  local assets = {}
+  if next(set) ~= nil then
+    for _, asset in ipairs(results) do
+      if set[asset_path_sort_key(asset)] == true then
+        assets[#assets + 1] = asset
+      end
     end
   end
 
+  SelectionIndex.visible = {
+    set = set,
+    revision = SelectionIndex.revision,
+    results = results,
+    result_count = #results,
+    assets = assets,
+  }
   return assets
 end
 
+-- Counts only selected assets that are visible, so the status text, the Enter
+-- shortcut and the actions that use selected_assets() always agree.
 function selected_count()
-  local count = 0
-
-  for _ in pairs(state.selected_set) do
-    count = count + 1
-  end
-
-  return count
+  return #selected_assets()
 end
 
 function selected_asset()
@@ -6710,11 +7019,12 @@ function selected_asset()
 end
 
 function select_all_results()
-  state.selected_set = {}
+  local everything = {}
 
   for _, asset in ipairs(state.results) do
-    state.selected_set[path_key(asset.path)] = true
+    everything[asset_path_sort_key(asset)] = true
   end
+  selection_replace(everything)
 
   if #state.results > 0 then
     state.selected_index = 1
@@ -7280,7 +7590,7 @@ function focus_asset(index, auto_play)
   local asset = state.results[index]
   local changed =
     path_key(state.selected_path or "")
-      ~= path_key(asset.path)
+      ~= asset_path_sort_key(asset)
 
   state.selected_index = index
   state.selected_path = asset.path
@@ -7314,7 +7624,7 @@ function select_result(index, auto_play)
 
   index = clamp(index, 1, #state.results)
   local asset = state.results[index]
-  state.selected_set[path_key(asset.path)] = true
+  selection_add(asset_path_sort_key(asset))
   state.selection_anchor = index
   focus_asset(index, auto_play)
 end
@@ -7331,11 +7641,11 @@ function select_result_with_modifiers(
 
   index = clamp(index, 1, #state.results)
   local asset = state.results[index]
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
 
   if shift and state.selection_anchor > 0 then
     if not ctrl then
-      state.selected_set = {}
+      selection_replace({})
     end
 
     local first =
@@ -7345,21 +7655,21 @@ function select_result_with_modifiers(
 
     for position = first, last do
       local range_asset = state.results[position]
-      state.selected_set[path_key(range_asset.path)] = true
+      selection_add(asset_path_sort_key(range_asset))
     end
 
     focus_asset(index, false)
   elseif ctrl then
     if state.selected_set[key] then
-      state.selected_set[key] = nil
+      selection_remove(key)
     else
-      state.selected_set[key] = true
+      selection_add(key)
     end
 
     state.selection_anchor = index
     focus_asset(index, false)
   else
-    state.selected_set = { [key] = true }
+    selection_replace({ [key] = true })
     state.selection_anchor = index
     focus_asset(index, auto_play)
   end
@@ -7414,7 +7724,7 @@ function toggle_favorite(asset)
   end
   if workspace_tabs_invalidate then workspace_tabs_invalidate("favorites") end
 
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
 
   if state.favorites[key] then
     state.favorites[key] = nil
@@ -7435,7 +7745,7 @@ function push_recent(asset, project_action)
   if state.root_removal_session then
     return false
   end
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
   local updated = { asset.path }
 
   for _, path in ipairs(state.recent) do
@@ -9769,7 +10079,9 @@ function restore_root_removal_record(record)
   local key = record.key
   local asset_id = record.asset_id
   if record.favorite ~= nil then state.favorites[key] = record.favorite end
-  if record.selected ~= nil then state.selected_set[key] = record.selected end
+  if record.selected ~= nil then
+    if record.selected then selection_add(key) else selection_remove(key) end
+  end
   if record.history ~= nil then
     state.preview_history_assets[asset_id] = record.history
   end
@@ -9835,7 +10147,7 @@ function finish_root_removal_rollback(session)
 end
 
 function capture_root_removal_record(session, asset)
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
   local asset_id = asset.asset_id or ""
   local record = {
     key = key,
@@ -9870,7 +10182,7 @@ function capture_root_removal_record(session, asset)
     session.changed.session_played = true
   end
   state.favorites[key] = nil
-  state.selected_set[key] = nil
+  selection_remove(key)
   state.preview_history_assets[asset_id] = nil
   state.regions_by_path[key] = nil
   state.loudness_cache[key] = nil
@@ -10129,7 +10441,7 @@ function process_root_removal()
       function(asset)
         return asset_is_in_removed_roots(asset, session.roots)
       end,
-      function(asset) return path_key(asset.path) end,
+      function(asset) return asset_path_sort_key(asset) end,
       reaper.time_precise() + ROOT_REMOVAL_FRAME_BUDGET,
       reaper.time_precise
     )
@@ -10218,6 +10530,20 @@ function replace_path_in_order(order, old_key, new_path)
   return changed
 end
 
+-- While a relink commit migrates every asset of a root, the recent list (up to
+-- 100 paths) would otherwise be scanned and re-keyed once per asset. The bulk
+-- context remembers which keys it still holds so an asset that is not in it
+-- skips the scan. Outside a commit RelinkBulk is nil and nothing changes.
+RelinkBulk = nil
+
+function new_relink_bulk_context()
+  local recent_keys = {}
+  for _, path in ipairs(state.recent or {}) do
+    recent_keys[path_key(path)] = true
+  end
+  return { recent_keys = recent_keys }
+end
+
 function migrate_path_references(old_path, new_path)
   local old_key = path_key(old_path)
   local new_key = path_key(new_path)
@@ -10243,16 +10569,25 @@ function migrate_path_references(old_path, new_path)
     state.last_session_played[new_key] = true
   end
 
-  if replace_path_in_order(state.recent, old_key, new_path) > 0 then
-    state.config_dirty = true
+  local bulk = RelinkBulk
+  if not bulk
+    or bulk.recent_keys[old_key]
+    or bulk.recent_keys[new_key] then
+    if replace_path_in_order(state.recent, old_key, new_path) > 0 then
+      state.config_dirty = true
+      if bulk then
+        bulk.recent_keys[old_key] = nil
+        bulk.recent_keys[new_key] = true
+      end
+    end
   end
 
   if state.selected_path and path_key(state.selected_path) == old_key then
     state.selected_path = new_path
   end
   if state.selected_set[old_key] then
-    state.selected_set[old_key] = nil
-    state.selected_set[new_key] = true
+    selection_remove(old_key)
+    selection_add(new_key)
   end
 
   for _, collection in ipairs(state.collections or {}) do
@@ -10346,10 +10681,15 @@ function migrate_asset_path(asset, new_path, record)
     asset.path,
     record.path
   )
-  ensure_asset_identity(asset)
+  -- One existence probe answers both the identity timestamp and `missing`.
+  local present = reaper.file_exists(asset.path)
+  ensure_asset_identity(asset, false)
+  if present then
+    asset.last_seen = os.time()
+  end
   local library = state.library_by_id[record.library_id]
   asset.library = library and library.name or asset.library
-  asset.missing = not reaper.file_exists(asset.path)
+  asset.missing = not present
   asset._search_blob = nil
   asset.artwork_checked = false
   state.database_ordered_assets = nil
@@ -10511,6 +10851,7 @@ function commit_relink_plan(plan)
   local moved = 0
   local unresolved = 0
   local moved_entries = {}
+  RelinkBulk = new_relink_bulk_context()
   for _, entry in ipairs(plan.entries) do
     local asset = entry.asset
     if migrate_asset_path(asset, entry.target, record) then
@@ -10521,11 +10862,13 @@ function commit_relink_plan(plan)
         end
         moved = moved + 1
         moved_entries[#moved_entries + 1] = entry
-        if not reaper.file_exists(entry.target) then
+        -- migrate_asset_path() already probed the target.
+        if asset.missing then
           unresolved = unresolved + 1
         end
     end
   end
+  RelinkBulk = nil
 
   if state.root_filter and path_is_inside(state.root_filter, old_root) then
     local relative = relative_path_from_root(state.root_filter, old_root) or ""
@@ -10550,11 +10893,13 @@ function commit_relink_plan(plan)
     record.volume_serial = old_volume_serial
     record.last_seen = old_last_seen
     rebuild_library_indexes()
+    RelinkBulk = new_relink_bulk_context()
     for index = #moved_entries, 1, -1 do
       local entry = moved_entries[index]
       migrate_asset_path(entry.asset, entry.old_path, record)
       entry.asset.artwork_path = entry.old_artwork
     end
+    RelinkBulk = nil
     state.root_filter = old_root_filter
     state.libraries_dirty = true
     mark_database_snapshot_dirty()
@@ -10707,18 +11052,25 @@ function process_missing_audit()
     return
   end
 
-  local budget = 36
+  -- A fixed file count is too slow on a local disk and too slow-per-frame on
+  -- a network share, so bound the frame by time (checked every 8 files) with a
+  -- generous cap.
+  local deadline = reaper.time_precise() + 0.004
+  local budget = 400
   while budget > 0 and session.index <= session.total do
     local asset = state.assets[session.index]
     session.index = session.index + 1
     session.checked = session.checked + 1
     budget = budget - 1
+    if budget % 8 == 0 and reaper.time_precise() >= deadline then
+      budget = 0
+    end
 
     local missing = session.offline[tostring(asset.root_id or "")]
       or not reaper.file_exists(asset.path)
     asset.missing = missing == true
     if asset.missing then
-      local key = path_key(asset.path)
+      local key = asset_path_sort_key(asset)
       state.missing_assets[key] = asset
       session.missing = session.missing + 1
     end
@@ -10751,9 +11103,22 @@ function sampled_file_fingerprint(path, known_size)
   end
   file:close()
 
-  local payload = tostring(size) .. "|" .. table.concat(chunks, "|")
-  local reverse_payload = tostring(size) .. "|" .. chunks[3] .. "|" .. chunks[2] .. "|" .. chunks[1]
-  return fnv1a(payload) .. fnv1a(reverse_payload)
+  -- Same digest as hashing "size|head|middle|tail" and "size|tail|middle|head"
+  -- (FNV-1a is a running state), without concatenating the ~196 KB payloads.
+  local prefix = tostring(size) .. "|"
+  local forward = fnv1a_feed(FNV1A_OFFSET, prefix)
+  forward = fnv1a_feed(forward, chunks[1])
+  forward = fnv1a_feed(forward, "|")
+  forward = fnv1a_feed(forward, chunks[2])
+  forward = fnv1a_feed(forward, "|")
+  forward = fnv1a_feed(forward, chunks[3])
+  local reverse = fnv1a_feed(FNV1A_OFFSET, prefix)
+  reverse = fnv1a_feed(reverse, chunks[3])
+  reverse = fnv1a_feed(reverse, "|")
+  reverse = fnv1a_feed(reverse, chunks[2])
+  reverse = fnv1a_feed(reverse, "|")
+  reverse = fnv1a_feed(reverse, chunks[1])
+  return string.format("%08x%08x", forward, reverse)
 end
 
 function start_duplicate_scan()
@@ -10867,7 +11232,7 @@ function start_duplicate_confirmation()
 end
 
 function mark_duplicate_confirmation_failure(session, asset)
-  local key = path_key(asset.path)
+  local key = asset_path_sort_key(asset)
   if not session.failures[key] then
     session.failures[key] = asset
     session.failure_count = session.failure_count + 1
@@ -10888,7 +11253,7 @@ function finalize_duplicate_confirmation_group(session, candidate_group)
       session.confirmed_groups[#session.confirmed_groups + 1] = confirmed
       session.confirmed_assets = session.confirmed_assets + #partition.assets
       for _, asset in ipairs(partition.assets) do
-        session.confirmed_lookup[path_key(asset.path)] = identity
+        session.confirmed_lookup[asset_path_sort_key(asset)] = identity
       end
     end
   end
@@ -11608,11 +11973,39 @@ function draw_waveform(
   local count = waveform.count
   local center = y + height * 0.5
   local half = height * 0.45
-  local step = width / count
+  local peaks = waveform.peaks
 
-  for index = 1, count do
+  -- A 256-512 point waveform in a 150-300 px column used to issue one draw
+  -- call per stored point. Draw at most one column per pixel, taking the peak
+  -- of the points each column covers (cached per width on the waveform).
+  local columns = count
+  local pixels = math.max(1, math.floor(width))
+  if count > pixels then
+    columns = pixels
+    local reduced = waveform.reduced_columns
+    if not reduced or reduced.columns ~= columns
+      or reduced.count ~= count then
+      reduced = { columns = columns, count = count }
+      for column = 1, columns do
+        local first = math.floor((column - 1) * count / columns) + 1
+        local last = math.max(first, math.floor(column * count / columns))
+        local peak = 0
+        for index = first, last do
+          local value = peaks[index] or 0
+          if value > peak then peak = value end
+        end
+        reduced[column] = peak
+      end
+      waveform.reduced_columns = reduced
+    end
+    peaks = reduced
+  end
+
+  local step = width / columns
+
+  for index = 1, columns do
     local amplitude =
-      waveform.peaks[index] or 0
+      peaks[index] or 0
 
     local px =
       x + (index - 0.5) * step
@@ -13498,7 +13891,7 @@ function library_paths_summary(library)
     end
 
     lines[#lines + 1] =
-      (directory_exists(record.path) and "● " or "○ ")
+      (directory_online(record.path) and "● " or "○ ")
       .. record.path
     lines[#lines] = compact(lines[#lines], 64)
   end
@@ -13781,7 +14174,7 @@ function draw_library_manager_popup()
 
     for root_index, record in ipairs(library.roots) do
       ImGui.PushID(ctx, root_index)
-      local online = directory_exists(record.path)
+      local online = directory_online(record.path)
       ImGui.TextColored(
         ctx,
         online and COLOR.muted or 0xE36B68FF,
@@ -14185,398 +14578,6 @@ function clear_folder_path(keep_library)
   state.config_dirty = true
 end
 
-function folder_path_label()
-  if not state.root_filter then
-    if state.library_filter_id then
-      local library =
-        state.library_by_id[state.library_filter_id]
-
-      if library then
-        return (
-          state.language == "en"
-          and "Library: "
-          or "音效库："
-        ) .. library.name
-      end
-    end
-
-    return (
-      state.language == "en"
-      and "Path: "
-      or "路径："
-    ) .. translate_ui_text("全部音效库")
-  end
-
-  local _, record = root_for_path(state.root_filter)
-  local library = record
-    and state.library_by_id[record.library_id]
-    or nil
-  local parts = {}
-
-  if library then
-    parts[#parts + 1] = library.name
-  end
-
-  if record then
-    parts[#parts + 1] =
-      record.alias ~= "" and record.alias
-      or basename(record.path)
-
-    local relative =
-      state.root_filter:sub(#record.path + 1)
-        :gsub("^[\\/]+", "")
-
-    for segment in relative:gmatch("[^\\/]+") do
-      parts[#parts + 1] = segment
-    end
-  else
-    parts[#parts + 1] = state.root_filter
-  end
-
-  return (
-    state.language == "en"
-    and "Path: "
-    or "路径："
-  ) .. table.concat(parts, " / ")
-end
-
-function draw_path_navigation_bar()
-  local available = select(1, ImGui.GetContentRegionAvail(ctx))
-  local clear_width = state.root_filter and 30 or 0
-  local button_width = math.max(160, available - clear_width - 6)
-  local active =
-    state.folder_browser_open or state.root_filter ~= nil
-
-  if active then
-    ImGui.PushStyleColor(
-      ctx,
-      ImGui.Col_Button,
-      rgba_with_alpha(COLOR.selected, 0xA8)
-    )
-    ImGui.PushStyleColor(
-      ctx,
-      ImGui.Col_ButtonHovered,
-      rgba_with_alpha(COLOR.selected, 0xD8)
-    )
-  end
-
-  local path_button_clicked = ImGui.Button(
-    ctx,
-    (state.folder_browser_open and "▾  " or "▸  ")
-      .. folder_path_label()
-      .. "##folder_path_bar",
-    button_width,
-    0
-  )
-
-  if path_button_clicked then
-    state.folder_browser_open =
-      not state.folder_browser_open
-    state.config_dirty = true
-
-    if state.folder_browser_open then
-      ensure_folder_navigation_build()
-    end
-  end
-
-  if active then
-    ImGui.PopStyleColor(ctx, 2)
-  end
-
-  tooltip(
-    state.root_filter
-      or translate_ui_text(
-        "展开全部音效库的文件夹结构"
-      )
-  )
-
-  if state.root_filter then
-    ImGui.SameLine(ctx)
-
-    if dark_button("×##clear_folder_path", 30) then
-      clear_folder_path(true)
-    end
-
-    tooltip("清除路径条件")
-  end
-end
-
-function draw_folder_tree_node(node, depth, library_id)
-  local has_children = #node.children > 0
-  local expanded =
-    state.expanded_folder_nodes[node.key] == true
-  local selected = state.root_filter
-    and path_key(state.root_filter) == node.key
-
-  ImGui.PushID(ctx, "folder_node_" .. node.key)
-  ImGui.SetCursorPosX(ctx, 18 + depth * 18)
-
-  if has_children then
-    if dark_button(expanded and "▾" or "▸", 20) then
-      state.expanded_folder_nodes[node.key] = not expanded
-      folder_sidebar_invalidate()
-      state.config_dirty = true
-      expanded = not expanded
-    end
-  else
-    ImGui.TextDisabled(ctx, "·")
-  end
-
-  ImGui.SameLine(ctx, 0, 2)
-
-  sidebar_item(
-    compact(node.name, 42)
-      .. "  "
-      .. tostring(node.total_count)
-      .. "##folder_name",
-    selected,
-    function()
-      activate_folder_path(
-        node.path,
-        library_id,
-        true
-      )
-    end
-  )
-
-  tooltip(node.path)
-
-  if ImGui.BeginPopupContextItem(
-    ctx,
-    "folder_context"
-  ) then
-    if ImGui.MenuItem(ctx, "打开目录") then
-      open_folder(node.path)
-    end
-
-    if has_children
-      and ImGui.MenuItem(
-        ctx,
-        expanded and "折叠此层级" or "展开此层级"
-      ) then
-      state.expanded_folder_nodes[node.key] = not expanded
-      folder_sidebar_invalidate()
-      state.config_dirty = true
-      expanded = not expanded
-    end
-
-    ImGui.EndPopup(ctx)
-  end
-
-  if expanded then
-    for _, child in ipairs(node.children) do
-      draw_folder_tree_node(
-        child,
-        depth + 1,
-        library_id
-      )
-    end
-  end
-
-  ImGui.PopID(ctx)
-end
-
-function draw_folder_browser()
-  if not state.folder_browser_open then
-    return
-  end
-
-  ensure_folder_navigation_build()
-
-  local available_w, available_h =
-    ImGui.GetContentRegionAvail(ctx)
-  local browser_h = math.min(
-    clamp(available_h * 0.34, 150, 300),
-    math.max(90, available_h - 250)
-  )
-
-  ImGui.PushStyleColor(
-    ctx,
-    ImGui.Col_ChildBg,
-    rgba_with_alpha(COLOR.panel, 0xFC)
-  )
-
-  local visible = ImGui.BeginChild(
-    ctx,
-    "folder_browser_inline",
-    available_w,
-    browser_h,
-    ImGui.ChildFlags_Borders,
-    0
-  )
-
-  if visible then
-    ImGui.TextColored(
-      ctx,
-      COLOR.text,
-      translate_ui_text("文件夹层级")
-    )
-    ImGui.SameLine(ctx)
-    ImGui.TextDisabled(
-      ctx,
-      translate_ui_text(
-        "箭头展开；单击名称跳转并显示该目录及其子目录"
-      )
-    )
-    ImGui.Separator(ctx)
-
-    sidebar_item(
-      translate_ui_text("全部音效库")
-        .. "  "
-        .. tostring(#state.assets)
-        .. "##folder_browser_all",
-      state.root_filter == nil
-        and state.library_filter_id == nil,
-      function()
-        clear_folder_path(false)
-        state.folder_browser_open = false
-      end
-    )
-
-    for _, library in ipairs(state.libraries) do
-      local expanded =
-        state.expanded_libraries[library.id] == true
-      local selected =
-        state.library_filter_id == library.id
-        and state.root_filter == nil
-
-      ImGui.PushID(ctx, "folder_library_" .. library.id)
-
-      if dark_button(expanded and "▾" or "▸", 20) then
-        expanded = not expanded
-        state.expanded_libraries[library.id] = expanded
-        state.libraries_dirty = true
-        state.config_dirty = true
-      end
-
-      ImGui.SameLine(ctx, 0, 2)
-
-      sidebar_item(
-        compact(library.name, 44)
-          .. "  "
-          .. tostring(library_asset_count(library.id))
-          .. "##folder_library_name",
-        selected,
-        function()
-          state.view = "all"
-          state.library_filter_id = library.id
-          state.root_filter = nil
-          state.active_collection_id = nil
-          clear_row_selection()
-          state.results_dirty = true
-          state.config_dirty = true
-          state.folder_browser_open = false
-        end
-      )
-
-      if expanded then
-        for _, record in ipairs(library.roots) do
-          ImGui.PushID(
-            ctx,
-            "folder_source_row_" .. record.id
-          )
-
-          local source_expanded =
-            state.expanded_source_folders[record.id] == true
-          local source_selected =
-            state.root_filter
-            and path_key(state.root_filter)
-              == path_key(record.path)
-          local tree =
-            state.folder_navigation_trees[record.id]
-          local has_children =
-            tree and #tree.children > 0
-          local can_expand =
-            has_children
-            or not state.folder_navigation_ready
-
-          ImGui.SetCursorPosX(ctx, 18)
-
-          if can_expand then
-            if dark_button(
-              source_expanded and "▾" or "▸",
-              20
-            ) then
-              source_expanded = not source_expanded
-              state.expanded_source_folders[record.id] =
-                source_expanded
-              state.config_dirty = true
-              ensure_folder_navigation_build()
-            end
-          else
-            ImGui.TextDisabled(ctx, "·")
-          end
-
-          ImGui.SameLine(ctx, 0, 2)
-
-          local source_name =
-            record.alias ~= "" and record.alias
-            or basename(record.path)
-          local source_count =
-            tree and tree.total_count or 0
-
-          sidebar_item(
-            (directory_exists(record.path) and "● " or "○ ")
-              .. compact(source_name, 40)
-              .. (
-                state.folder_navigation_ready
-                and ("  " .. tostring(source_count))
-                or ""
-              )
-              .. "##folder_source_"
-              .. record.id,
-            source_selected,
-            function()
-              activate_folder_path(
-                record.path,
-                library.id,
-                true
-              )
-            end
-          )
-
-          tooltip(record.path)
-
-          if source_expanded then
-            if not state.folder_navigation_ready then
-              local job = state.folder_navigation_job
-              local done = job
-                and math.max(0, job.index - 1)
-                or 0
-              local total = job and job.total or #state.assets
-              ImGui.SetCursorPosX(ctx, 42)
-              ImGui.TextDisabled(
-                ctx,
-                string.format(
-                  "%s  %d / %d",
-                  translate_ui_text("正在建立目录索引…"),
-                  done,
-                  total
-                )
-              )
-            elseif tree then
-              for _, child in ipairs(tree.children) do
-                draw_folder_tree_node(
-                  child,
-                  2,
-                  library.id
-                )
-              end
-            end
-          end
-
-          ImGui.PopID(ctx)
-        end
-      end
-
-      ImGui.PopID(ctx)
-    end
-  end
-
-  ImGui.EndChild(ctx)
-  ImGui.PopStyleColor(ctx)
-end
-
 function activate_library_path(library_id)
   state.view = "all"
   state.library_filter_id = library_id
@@ -14691,7 +14692,7 @@ function draw_source_cascade_menu(record, library, depth)
   local open = draw_folder_hover_row(
     depth,
     "source:" .. record.id,
-    (directory_exists(record.path) and "● " or "○ ")
+    (directory_online(record.path) and "● " or "○ ")
       .. source_name,
     count or 0,
     has_children,
@@ -14906,11 +14907,7 @@ function draw_sidebar()
     end
   )
 
-  local favorite_count = 0
-
-  for _ in pairs(state.favorites) do
-    favorite_count = favorite_count + 1
-  end
+  local favorite_count = count_path_set(state.favorites)
 
   sidebar_item(
     string.format("收藏  %d", favorite_count),
@@ -15204,7 +15201,9 @@ function draw_sidebar()
       end
     )
 
-    tooltip(library_paths_summary(library), false)
+    if ImGui.IsItemHovered(ctx) then
+      tooltip(library_paths_summary(library), false)
+    end
     accept_folder_drop_target(library.id)
 
     if ImGui.BeginPopupContextItem(
@@ -15252,7 +15251,7 @@ function draw_sidebar()
       for root_index, record in ipairs(library.roots) do
         local root_selected = state.root_filter
           and path_key(state.root_filter) == path_key(record.path)
-        local online = directory_exists(record.path)
+        local online = directory_online(record.path)
         local root_label = record.alias ~= ""
           and record.alias
           or basename(record.path)
@@ -17160,9 +17159,16 @@ function draw_list_header(
 end
 
 function row_popup(asset)
+  -- The popup id follows the asset, but hashing its path on every frame for
+  -- every visible row is wasted work: remember it with the path it came from.
+  local popup_key = asset_path_sort_key(asset)
+  if asset._popup_key ~= popup_key then
+    asset._popup_key = popup_key
+    asset._popup_id = "asset_context_" .. fnv1a(popup_key)
+  end
   if not ImGui.BeginPopupContextItem(
     ctx,
-    "asset_context_" .. fnv1a(path_key(asset.path))
+    asset._popup_id
   ) then
     return
   end
@@ -17325,7 +17331,7 @@ function row_popup(asset)
 
   if ImGui.MenuItem(
     ctx,
-    state.favorites[path_key(asset.path)]
+    state.favorites[asset_path_sort_key(asset)]
       and "取消收藏"
       or "收藏",
     "F"
@@ -17335,6 +17341,7 @@ function row_popup(asset)
 
   if ImGui.MenuItem(ctx, "重新读取元数据") then
     asset.indexed = false
+    asset.meta_failed_at = nil
     queue_metadata(asset, true)
   end
 
@@ -17466,6 +17473,49 @@ function draw_similarity_score_bar(draw_list, entry, x, y, width, height)
   )
 end
 
+-- Secondary label under the file name ("Category · Subcategory"), rebuilt
+-- only when either part changes instead of on every frame for every row.
+function asset_category_label(asset)
+  local category = asset.category or ""
+  local subcategory = asset.subcategory or ""
+  if asset._label_category ~= category
+    or asset._label_subcategory ~= subcategory then
+    asset._label_category = category
+    asset._label_subcategory = subcategory
+    asset._category_label =
+      table.concat({ category, subcategory }, " · ")
+        :gsub("^ · ", "")
+        :gsub(" · $", "")
+  end
+  return asset._category_label
+end
+
+-- Height of one text line in the current font; measured once per font size.
+RowTextHeight = RowTextHeight or {}
+
+function row_text_height()
+  local font = ui_font_size()
+  if RowTextHeight.font ~= font or not RowTextHeight.height then
+    RowTextHeight.font = font
+    RowTextHeight.height =
+      select(2, ImGui.CalcTextSize(ctx, "Ag")) or 14
+  end
+  return RowTextHeight.height
+end
+
+-- path_key(state.preview_path) for the row that may be playing; the path only
+-- changes when playback starts, but every visible row compares against it.
+PreviewPathKeyMemo = PreviewPathKeyMemo or {}
+
+function preview_path_key()
+  local path = state.preview_path
+  if PreviewPathKeyMemo.path ~= path or PreviewPathKeyMemo.key == nil then
+    PreviewPathKeyMemo.path = path
+    PreviewPathKeyMemo.key = path_key(path)
+  end
+  return PreviewPathKeyMemo.key
+end
+
 function draw_result_row(
   asset,
   index,
@@ -17503,7 +17553,7 @@ function draw_result_row(
   local selected =
     is_row_selected(asset)
 
-  local asset_key = path_key(asset.path)
+  local asset_key = asset_path_sort_key(asset)
   local similarity_entry = "similar" == state.view
       and similarity_result_for_asset(asset)
     or nil
@@ -17553,11 +17603,7 @@ function draw_result_row(
   local compact_row =
     state.ui_density == "compact"
 
-  local text_height =
-    select(
-      2,
-      ImGui.CalcTextSize(ctx, "Ag")
-    ) or 14
+  local text_height = row_text_height()
 
   local centered_y =
     y + math.max(
@@ -17631,7 +17677,7 @@ function draw_result_row(
 
       if state.preview
         and state.preview_path
-        and path_key(state.preview_path)
+        and preview_path_key()
           == asset_key then
         local percent =
           clamp(
@@ -17739,15 +17785,7 @@ function draw_result_row(
             and similarity_entry.explanation
             or "en" == state.language and "audio features" or "音频特征"
         else
-          secondary =
-            table.concat(
-              {
-                asset.category or "",
-                asset.subcategory or "",
-              },
-              " · "
-            ):gsub("^ · ", "")
-              :gsub(" · $", "")
+          secondary = asset_category_label(asset)
         end
 
         draw_clipped_text(
@@ -18462,7 +18500,7 @@ function draw_large_wave(asset)
   if state.preview
     and state.preview_path
     and path_key(state.preview_path)
-      == path_key(asset.path)
+      == asset_path_sort_key(asset)
     and state.preview_length > 0
     and state.preview_percent >= state.wave_view_start
     and state.preview_percent <= state.wave_view_end then
@@ -19356,7 +19394,7 @@ function draw_action_strip(asset, minimal, button_size)
       "favorite",
       "star",
       "收藏或取消收藏",
-      state.favorites[path_key(asset.path)] == true,
+      state.favorites[asset_path_sort_key(asset)] == true,
       button_size
     ) then
       toggle_favorite(asset)
@@ -19711,7 +19749,7 @@ function draw_time_metrics(asset)
   local current_seconds = 0
 
   if state.preview_path
-    and path_key(state.preview_path) == path_key(asset.path) then
+    and path_key(state.preview_path) == asset_path_sort_key(asset) then
     current_seconds =
       (asset.duration or 0)
         * (state.preview_percent or 0)
@@ -20432,11 +20470,37 @@ local METADATA_EDIT_FIELDS = {
   },
 }
 
+-- The inspector asks for this every frame. The list is cached against the
+-- selection revision; a small selection also re-checks object identity because
+-- a rescan may replace an asset table without touching the selection. The
+-- returned array is shared; callers must not modify it.
 function selected_assets_fast()
+  local set = state.selected_set
+  local by_path = state.by_path
+  local cache = SelectionIndex.fast
+  if cache and cache.set == set
+    and cache.revision == SelectionIndex.revision
+    and cache.by_path == by_path
+    and cache.results == state.results
+    and cache.selected_path == state.selected_path
+    and cache.selected_index == state.selected_index then
+    local cached = cache.assets
+    local intact = true
+    if #cached <= 64 then
+      for _, asset in ipairs(cached) do
+        if by_path[asset_path_sort_key(asset)] ~= asset then
+          intact = false
+          break
+        end
+      end
+    end
+    if intact then return cached end
+  end
+
   local assets = {}
 
-  for key in pairs(state.selected_set) do
-    local asset = state.by_path[key]
+  for key in pairs(set) do
+    local asset = by_path[key]
 
     if asset then
       assets[#assets + 1] = asset
@@ -20451,30 +20515,87 @@ function selected_assets_fast()
     end
   end
 
-  table.sort(
-    assets,
-    function(a, b)
-      return path_key(a.path)
-        < path_key(b.path)
+  if #assets <= 2000 then
+    table.sort(
+      assets,
+      function(a, b)
+        return asset_path_sort_key(a)
+          < asset_path_sort_key(b)
+      end
+    )
+  elseif #assets > 1 then
+    -- Sorting hundreds of thousands of rows would stall the UI. Only the
+    -- primary (first) asset has to be deterministic, so move the smallest
+    -- key to the front.
+    local smallest = 1
+    local smallest_key = asset_path_sort_key(assets[1])
+    for index = 2, #assets do
+      local candidate_key = asset_path_sort_key(assets[index])
+      if candidate_key < smallest_key then
+        smallest = index
+        smallest_key = candidate_key
+      end
     end
-  )
+    assets[1], assets[smallest] = assets[smallest], assets[1]
+  end
 
+  SelectionIndex.fast = {
+    set = set,
+    revision = SelectionIndex.revision,
+    by_path = by_path,
+    results = state.results,
+    selected_path = state.selected_path,
+    selected_index = state.selected_index,
+    assets = assets,
+  }
   return assets
 end
 
+-- Returns (identity, stamp). identity changes with the selected paths; stamp
+-- changes when the selected assets' editable metadata changes underneath.
+-- Both are cached per selection until an asset changes, so the inspector does
+-- not hash the whole selection every frame.
 function metadata_selection_signature(assets)
-  local parts = {
-    tostring(#assets),
-  }
-
-  for _, asset in ipairs(assets) do
-    parts[#parts + 1] =
-      path_key(asset.path)
-      .. ":"
-      .. tostring(asset.indexed)
+  local entry = SelectionIndex.fast
+  local epoch = SelectionIndex.meta_epoch
+  if entry and entry.assets == assets
+    and entry.signature_epoch == epoch then
+    return entry.identity, entry.stamp
   end
 
-  return fnv1a(table.concat(parts, "|"))
+  local identity
+  local stamp
+  if #assets <= 256 then
+    local identity_parts = { tostring(#assets) }
+    local stamp_parts = {}
+    for _, asset in ipairs(assets) do
+      identity_parts[#identity_parts + 1] = asset_path_sort_key(asset)
+      stamp_parts[#stamp_parts + 1] = tostring(asset.indexed)
+      for _, field in ipairs(METADATA_EDIT_FIELDS) do
+        stamp_parts[#stamp_parts + 1] = tostring(asset[field.key] or "")
+      end
+    end
+    identity = fnv1a(table.concat(identity_parts, "|"))
+    stamp = fnv1a(table.concat(stamp_parts, "|"))
+  else
+    -- Large selections are identified by size, ends and revision instead of
+    -- hashing every path.
+    identity = string.format(
+      "bulk|%d|%s|%s|%d",
+      #assets,
+      asset_path_sort_key(assets[1]),
+      asset_path_sort_key(assets[#assets]),
+      SelectionIndex.revision
+    )
+    stamp = "bulk"
+  end
+
+  if entry and entry.assets == assets then
+    entry.signature_epoch = epoch
+    entry.identity = identity
+    entry.stamp = stamp
+  end
+  return identity, stamp
 end
 
 function common_metadata_value(assets, field)
@@ -20495,18 +20616,27 @@ function common_metadata_value(assets, field)
 end
 
 function sync_metadata_editor(assets)
-  local signature =
-    metadata_selection_signature(assets)
+  local identity, stamp = metadata_selection_signature(assets)
+  local editor = state.metadata_editor
 
-  if state.metadata_editor.signature
-    == signature then
+  if editor.signature == identity and editor.stamp == stamp then
     return
   end
 
-  state.metadata_editor.signature = signature
-  state.metadata_editor.values = {}
-  state.metadata_editor.enabled = {}
-  state.metadata_editor.mixed = {}
+  -- Same selection, but an asset changed underneath (background indexing
+  -- finished, a cover was cleared...): refresh what the user has not touched
+  -- and keep what they typed, instead of wiping or silently reverting it.
+  local same_selection = editor.signature == identity
+  local previous_values = editor.values or {}
+  local previous_loaded = editor.loaded or {}
+  local previous_enabled = editor.enabled or {}
+
+  editor.signature = identity
+  editor.stamp = stamp
+  editor.values = {}
+  editor.enabled = {}
+  editor.mixed = {}
+  editor.loaded = {}
 
   local single = #assets == 1
 
@@ -20517,9 +20647,18 @@ function sync_metadata_editor(assets)
         field.key
       )
 
-    state.metadata_editor.values[field.key] = value
-    state.metadata_editor.mixed[field.key] = mixed
-    state.metadata_editor.enabled[field.key] = single
+    editor.loaded[field.key] = value
+    editor.mixed[field.key] = mixed
+
+    if same_selection
+      and previous_values[field.key] ~= nil
+      and previous_values[field.key] ~= previous_loaded[field.key] then
+      editor.values[field.key] = previous_values[field.key]
+      editor.enabled[field.key] = previous_enabled[field.key]
+    else
+      editor.values[field.key] = value
+      editor.enabled[field.key] = single
+    end
   end
 end
 
@@ -20562,7 +20701,7 @@ function apply_metadata_editor(assets)
 
     if asset_changed then
       if ucs_changed then
-        remove_ucs_confirmation_undo(path_key(asset.path))
+        remove_ucs_confirmation_undo(asset_path_sort_key(asset))
         asset.ucs_status = "manual"
         asset.ucs_source = "manual"
         asset.ucs_version = UCS_CATALOG_VERSION
@@ -20723,7 +20862,7 @@ function draw_ucs_candidate_actions(asset)
   local candidates = "pending" == asset.ucs_status
       and ucs_parse_candidates(asset.ucs_candidates)
     or {}
-  local undo_key = path_key(asset.path)
+  local undo_key = asset_path_sort_key(asset)
   local has_undo = state.ucs_confirmation_undo[undo_key] ~= nil
   if #candidates == 0 and not has_undo then return end
 
@@ -20847,7 +20986,7 @@ function browse_asset_library(asset)
   end
   AppState.set("root_filter", target)
   AppState.set("selected_path",asset.path)
-  AppState.set("selected_set",{[path_key(asset.path)]=true})
+  selection_replace({[asset_path_sort_key(asset)]=true})
   AppState.set("selected_index",0)
   AppState.set("selection_anchor",0)
   AppState.set("workspace_tab_scroll_restore",{x=state.results_scroll_x or 0,y=0,frames=2})
@@ -20903,9 +21042,27 @@ function draw_metadata_inspector()
     return
   end
 
-  for _, asset in ipairs(assets) do
-    if not asset.indexed then
-      queue_metadata(asset, true)
+  if #assets <= 200 then
+    for _, asset in ipairs(assets) do
+      if not asset.indexed then
+        queue_metadata(asset, true)
+      end
+    end
+  else
+    -- Queue only the first batch of a large selection, and only once per
+    -- selection: queue_metadata(..., true) inserts at the queue head and
+    -- would otherwise cost O(n^2) on the first frame.
+    local entry = SelectionIndex.fast
+    if entry and entry.assets == assets and not entry.queued then
+      entry.queued = true
+      local queued = 0
+      for _, asset in ipairs(assets) do
+        if not asset.indexed then
+          queue_metadata(asset, true)
+          queued = queued + 1
+          if queued >= 200 then break end
+        end
+      end
     end
   end
 
@@ -24808,14 +24965,14 @@ function keyboard()
       local all_favorite = true
 
       for _, asset in ipairs(assets) do
-        if not state.favorites[path_key(asset.path)] then
+        if not state.favorites[asset_path_sort_key(asset)] then
           all_favorite = false
           break
         end
       end
 
       for _, asset in ipairs(assets) do
-        state.favorites[path_key(asset.path)] =
+        state.favorites[asset_path_sort_key(asset)] =
           all_favorite and nil or true
       end
 
@@ -24865,41 +25022,81 @@ end
 -- Main window
 ----------------------------------------------------------------
 
-function push_theme()
-  ImGui.PushFont(ctx, nil, ui_font_size())
+-- Everything apply_ui_density_metrics / apply_theme_palette /
+-- apply_surface_style read. They only write globals derived from these inputs,
+-- so the (allocating) re-application is skipped while none of them changed.
+THEME_INPUT_FIELDS = {
+  "ui_density", "surface_style", "theme_preset", "custom_accent_hex",
+  "custom_shell_hex", "waveform_hex", "waveform_selected_hex",
+  "waveform_played_hex", "waveform_marked_hex", "playhead_hex",
+  "region_hex", "selection_hex", "played_text_hex",
+}
+ThemeApplied = ThemeApplied or {}
+
+function apply_theme_if_changed()
+  local applied = ThemeApplied
+  local font = ui_font_size()
+  local changed = applied.font ~= font
+  for _, name in ipairs(THEME_INPUT_FIELDS) do
+    if applied[name] ~= state[name] then
+      changed = true
+      break
+    end
+  end
+  if not changed then return end
+
   apply_ui_density_metrics()
   apply_theme_palette()
   apply_surface_style()
+  applied.font = font
+  for _, name in ipairs(THEME_INPUT_FIELDS) do
+    applied[name] = state[name]
+  end
+end
 
-  local colors = {
-    { ImGui.Col_WindowBg, COLOR.window },
-    { ImGui.Col_TitleBg, COLOR.title },
-    { ImGui.Col_TitleBgActive, COLOR.title_active },
-    { ImGui.Col_TitleBgCollapsed, COLOR.title },
-    { ImGui.Col_ChildBg, COLOR.panel },
-    { ImGui.Col_PopupBg, COLOR.panel_alt },
-    { ImGui.Col_Border, COLOR.grid },
-    { ImGui.Col_Text, COLOR.text },
-    { ImGui.Col_TextDisabled, COLOR.dim },
-    { ImGui.Col_FrameBg, COLOR.button },
-    { ImGui.Col_FrameBgHovered, COLOR.button_hover },
-    { ImGui.Col_FrameBgActive, COLOR.button_hover },
-    { ImGui.Col_Header, COLOR.selected },
-    { ImGui.Col_HeaderHovered, COLOR.selected },
-    { ImGui.Col_HeaderActive, COLOR.selected },
-    { ImGui.Col_CheckMark, COLOR.border },
-    { ImGui.Col_SliderGrab, COLOR.border },
-    { ImGui.Col_SliderGrabActive, COLOR.selected_text },
-    { ImGui.Col_ScrollbarBg, COLOR.window },
-    { ImGui.Col_ScrollbarGrab, 0x55575DFF },
-    { ImGui.Col_ScrollbarGrabHovered, 0x777A82FF },
-  }
+-- {ImGui color slot, COLOR key} or {slot, nil, fixed rgba}; built once.
+THEME_COLOR_SLOTS = nil
+
+function theme_color_slots()
+  if not THEME_COLOR_SLOTS then
+    THEME_COLOR_SLOTS = {
+      { ImGui.Col_WindowBg, "window" },
+      { ImGui.Col_TitleBg, "title" },
+      { ImGui.Col_TitleBgActive, "title_active" },
+      { ImGui.Col_TitleBgCollapsed, "title" },
+      { ImGui.Col_ChildBg, "panel" },
+      { ImGui.Col_PopupBg, "panel_alt" },
+      { ImGui.Col_Border, "grid" },
+      { ImGui.Col_Text, "text" },
+      { ImGui.Col_TextDisabled, "dim" },
+      { ImGui.Col_FrameBg, "button" },
+      { ImGui.Col_FrameBgHovered, "button_hover" },
+      { ImGui.Col_FrameBgActive, "button_hover" },
+      { ImGui.Col_Header, "selected" },
+      { ImGui.Col_HeaderHovered, "selected" },
+      { ImGui.Col_HeaderActive, "selected" },
+      { ImGui.Col_CheckMark, "border" },
+      { ImGui.Col_SliderGrab, "border" },
+      { ImGui.Col_SliderGrabActive, "selected_text" },
+      { ImGui.Col_ScrollbarBg, "window" },
+      { ImGui.Col_ScrollbarGrab, nil, 0x55575DFF },
+      { ImGui.Col_ScrollbarGrabHovered, nil, 0x777A82FF },
+    }
+  end
+  return THEME_COLOR_SLOTS
+end
+
+function push_theme()
+  ImGui.PushFont(ctx, nil, ui_font_size())
+  apply_theme_if_changed()
+
+  local colors = theme_color_slots()
 
   for _, item in ipairs(colors) do
     ImGui.PushStyleColor(
       ctx,
       item[1],
-      item[2]
+      item[2] and COLOR[item[2]] or item[3]
     )
   end
 
@@ -25808,6 +26005,7 @@ function loop()
   cleanup_retired_preview_sources(false)
   poll_preview()
   poll_current_project_binding()
+  directory_online_pump()
   watch_folders()
   autosave()
 

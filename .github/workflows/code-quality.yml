@@ -51,6 +51,11 @@ jobs:
           npm install --no-save --ignore-scripts luaparse@0.3.1
           node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync('PsyReaSFX_v0_7_23_Stable.lua','utf8'),{luaVersion:'5.3'}); console.log('Lua parse OK');"
 
+      - name: Check Lua module scopes
+        shell: pwsh
+        run: |
+          node tools/check_lua_module_scopes.cjs
+
       - name: Verify modular Lua release
         shell: pwsh
         run: |
@@ -62,6 +67,10 @@ jobs:
             throw 'Tracked ReaPack script is stale. Rebuild it from src/lua before committing.'
           }
           node -e "const fs=require('fs'),lua=require('luaparse'); lua.parse(fs.readFileSync(process.argv[1],'utf8'),{luaVersion:'5.3'}); console.log('Generated Lua parse OK');" $built
+          # Compiling with the real Lua 5.4 catches limits luaparse cannot see,
+          # such as more than 200 active locals in the main chunk.
+          luac -p $built
+          if ($LASTEXITCODE -ne 0) { throw 'Generated Lua script does not compile.' }
 
       - name: Run Lua persistence fault injection
         shell: pwsh
@@ -238,6 +247,18 @@ jobs:
         shell: pwsh
         run: |
           lua tools/lua_jobs_selftest.lua (Resolve-Path 'src/lua/20_jobs_storage.lua')
+
+      - name: Run Lua search, hashing, relink and interaction-cache self-tests
+        shell: pwsh
+        run: |
+          lua tools/lua_search_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua') (Resolve-Path 'src/lua/10_ui_core.lua') (Resolve-Path 'src/lua/30_catalog.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'Search predicate test failed' }
+          lua tools/lua_hash_selftest.lua (Resolve-Path 'src/lua/10_ui_core.lua') (Resolve-Path 'src/lua/50_runtime_ui.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'Hash and TSV test failed' }
+          lua tools/lua_relink_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'Relink migration test failed' }
+          lua tools/lua_interaction_cache_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua') (Resolve-Path 'src/lua/10_ui_core.lua') (Resolve-Path 'src/lua/30_catalog.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'Interaction cache test failed' }
 
       - name: Audit Lua architecture boundaries
         run: python tools/audit_lua_architecture.py

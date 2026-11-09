@@ -15,6 +15,7 @@ function clamp(value, minimum, maximum)
 end
 
 function path_key(path) return tostring(path):lower() end
+function asset_path_sort_key(asset) return path_key(asset.path) end
 function file_size() return 0 end
 function ensure_dirs() end
 function fnv1a(value)
@@ -57,4 +58,53 @@ assert(math.abs(loaded.spectral_tonality[1] - 0.25) < 0.00002, "RWF4 tonality mu
 assert(math.abs(loaded.channel_peaks[2][2] - 0.75) < 0.00002, "RWF4 channel peaks must round-trip")
 
 os.remove(cache_path)
+-- wave_cache_file_exists() must agree with load_wave_from_disk() for valid,
+-- truncated and malformed cache files while reading only the payload length.
+do
+  local exists_start = assert(source:find("function wave_cache_file_exists(", 1, true))
+  local exists_end = assert(source:find("function start_wave_precache(", exists_start, true))
+  assert(load(source:sub(exists_start, exists_end - 1), "wave-exists", "t", _ENV))()
+
+  local probe_asset = { path = "exists-selftest.wav", size = 456 }
+  local probe_wave = {
+    count = 4, channels = 2, peaks = { 0.1, 0.2, 0.3, 0.4 },
+    channel_peaks = { { 0.1, 0.2, 0.3, 0.4 }, { 0.4, 0.3, 0.2, 0.1 } },
+  }
+  local probe_path = wave_cache_path(probe_asset, 2048, true)
+  os.remove(probe_path)
+  assert(wave_cache_file_exists(probe_asset, 2048, true) == false)
+
+  save_wave_to_disk(probe_asset, 2048, probe_wave, true)
+  local valid_file = assert(io.open(probe_path, "rb"))
+  local valid_bytes = valid_file:read("*a")
+  valid_file:close()
+
+  local variants = {
+    valid_bytes,
+    valid_bytes:sub(1, #valid_bytes - 1),
+    valid_bytes:sub(1, valid_bytes:find("\n", 1, true)),
+    "garbage header\n" .. string.rep("x", 40),
+    "RWF3 0 2\n",
+    "RWF3 4 2\n" .. string.rep("\1", 16),
+    "RWF3 4 2\n" .. string.rep("\1", 15),
+    "RWF4 4 1\n" .. string.rep("\1", 8 + 16),
+    "RWF4 4 1\n" .. string.rep("\1", 8 + 15),
+    "RWF2 3\n" .. string.rep("\1", 6),
+    "RWF2 3\n" .. string.rep("\1", 5),
+    "3\n" .. string.rep("\1", 3),
+    "3\n" .. string.rep("\1", 2),
+    "9999999\n" .. string.rep("\1", 64),
+    "",
+  }
+  for index, content in ipairs(variants) do
+    local handle = assert(io.open(probe_path, "wb"))
+    handle:write(content)
+    handle:close()
+    assert(wave_cache_file_exists(probe_asset, 2048, true)
+      == (load_wave_from_disk(probe_asset, 2048, true) ~= nil),
+      "existence check disagrees with the loader for variant " .. index)
+  end
+  os.remove(probe_path)
+end
+
 print("Lua spectral cache self-test passed")

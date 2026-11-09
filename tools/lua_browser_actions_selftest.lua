@@ -15,6 +15,12 @@ function workspace_tabs_busy() return busy end
 function stop_preview() stopped=stopped+1 end
 function workspace_tabs_track() tracked=tracked+1 end
 function path_key(value) return value:lower() end
+function asset_path_sort_key(asset) return path_key(asset.path) end
+SelectionIndex = { revision = 0, meta_epoch = 0 }
+function selection_touch() SelectionIndex.revision = SelectionIndex.revision + 1 end
+function selection_replace(set) state.selected_set = set or {}; selection_touch() end
+function selection_add(key) state.selected_set[key] = true; selection_touch() end
+function selection_remove(key) state.selected_set[key] = nil; selection_touch() end
 function dirname(path) return path:match("^(.*)/[^/]+$") end
 function basename(path) return path:match("([^/]+)$") or path end
 function path_is_inside(path,root) return path_key(path):find(path_key(root).."/",1,true)==1 end

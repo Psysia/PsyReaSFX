@@ -255,35 +255,44 @@ function step_path_set_persistence_job(
   return job.next_key == nil
 end
 
--- Map-backed catalogs can change between UI frames. Lua's next() raises an
--- error when its cursor key was removed, so retain a visited set and recover
--- from a deleted cursor by finding the first unvisited live key. Normal saves
--- stay O(n); the recovery scan is only paid when a concurrent deletion occurs.
+-- Map-backed catalogs can change between UI frames, but Lua leaves next()
+-- undefined once a key has been added to the table during a traversal: a rehash
+-- reorders it and entries can be skipped, silently dropping rows from the file
+-- being written. The job therefore snapshots the keys when it is created and
+-- walks that array. A key removed in the meantime is skipped; one added in the
+-- meantime is not part of this save (the owner marks the catalog dirty again,
+-- so the next save writes it). `next_key` always names the next snapshot key,
+-- or nil when the walk is finished.
 local function take_next_live_map_entry(job)
-  while job.next_key ~= nil do
-    local entry_key = job.next_key
-    local value = job.entries[entry_key]
+  local entries = job.entries
+  local keys = job.keys
+  while job.key_index <= job.key_count do
+    local entry_key = keys[job.key_index]
+    job.key_index = job.key_index + 1
+    job.next_key = keys[job.key_index]
+    local value = entries[entry_key]
     if value ~= nil then
-      job.visited[entry_key] = true
-      job.next_key = next(job.entries, entry_key)
       return entry_key, value
     end
-
-    local candidate = next(job.entries)
-    while candidate ~= nil and job.visited[candidate] do
-      candidate = next(job.entries, candidate)
-    end
-    job.next_key = candidate
   end
+  job.next_key = nil
   return nil
 end
 
 local function new_live_map_job(entries)
   entries = type(entries) == "table" and entries or {}
+  local keys = {}
+  local key_count = 0
+  for key in pairs(entries) do
+    key_count = key_count + 1
+    keys[key_count] = key
+  end
   return {
     entries = entries,
-    next_key = next(entries),
-    visited = {},
+    keys = keys,
+    key_count = key_count,
+    key_index = 1,
+    next_key = keys[1],
     processed = 0,
     written = 0,
   }

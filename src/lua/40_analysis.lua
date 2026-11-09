@@ -1,5 +1,5 @@
 -- Region, loudness, channel and transient analysis services.
-local HostApi = Host or reaper
+HostApi = Host or reaper
 
 function asset_regions(asset)
   if not asset then
@@ -39,7 +39,12 @@ function load_regions()
     return
   end
 
+  local loaded = 0
   for line in file:lines() do
+    loaded = loaded + 1
+    if loaded % 2048 == 0 and startup_checkpoint then
+      startup_checkpoint()
+    end
     local fields = split_tsv(line)
     local path = fields[1]
 
@@ -387,7 +392,13 @@ function load_loudness_cache()
     return
   end
 
+  local loaded = 0
   for line in file:lines() do
+    -- Startup runs as a coroutine; give the UI a frame on large caches.
+    loaded = loaded + 1
+    if loaded % 2048 == 0 and startup_checkpoint then
+      startup_checkpoint()
+    end
     local fields = split_tsv(line)
     local path = fields[1]
 
