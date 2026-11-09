@@ -15,7 +15,7 @@ if ($currentVersion -notmatch '^0\.9\.\d+(?:-beta\d+(?:\.\d+)?)?$') {
 # releases (e.g. 0.9.1) keep the 0.9.0 component, whose protocol is unchanged.
 $neuralVersion = "0.9.0"
 $mainVersions = @($currentVersion)
-foreach ($archived in @("0.9.0", "0.8.5", "0.7.23")) {
+foreach ($archived in @("0.9.1", "0.9.0", "0.8.5", "0.7.23")) {
     if ($mainVersions -notcontains $archived) { $mainVersions += $archived }
 }
 

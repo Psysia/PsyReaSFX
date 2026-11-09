@@ -1,5 +1,20 @@
 # PsyReaSFX Changelog
 
+## 0.9.2 Beta 1 — 2026-11-09 (pre-release)
+
+Pre-release for testing; the stable channel remains 0.9.1. Enable pre-releases in ReaPack to install it.
+
+- Responsiveness: selecting all results, the metadata inspector, folder reachability dots, cover thumbnails, the theme and list waveforms no longer redo work on every frame.
+- Search: the query and the view/filter conditions are parsed once per results rebuild instead of once per asset.
+- Import and scanning: several ready assets are finished per frame, imported waveforms no longer push on-screen waveforms out of memory, scanning skips a redundant file check, and the missing-file audit is time-bounded.
+- Faster hashing, duplicate fingerprints, TSV loading, journal encoding, incremental sorting, similarity ranking and neural result parsing; saved data formats are unchanged.
+- Relinking a source probes each file once and no longer rescans the recent list for every asset.
+- Saving no longer skips entries when the catalog changes while a background save is running.
+- The inspector keeps what you typed when an asset refreshes underneath, and no longer writes a stale cover path back.
+- The selected count and the Enter shortcut agree with what is visible; unreadable files are retried every 30 s instead of every frame; neural status reads tolerate brief failures; API keys are masked in error messages.
+- Internal: each source module is built in its own scope, and about 390 lines of unused folder-browser code were removed.
+- Update the main script and restart. The 0.9.0 neural component, existing databases and caches remain compatible. This build has not run on a wide range of libraries yet; please report anything that feels slower or behaves differently.
+
 ## 0.9.1 Stable — 2026-11-06
 
 - Revisited list rows reload their saved `.rwf` waveform cache instead of re-decoding the source audio after leaving the in-memory cache.
