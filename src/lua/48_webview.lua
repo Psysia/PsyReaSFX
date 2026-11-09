@@ -108,37 +108,78 @@ local function waveform(asset, points, channels)
   }
 end
 
+local function runtime_owner(path)
+  if
+    type(reaper.ReaPack_GetOwner) ~= "function" or type(reaper.ReaPack_FreeEntry) ~= "function"
+  then
+    return nil
+  end
+  local ok, entry = pcall(reaper.ReaPack_GetOwner, path)
+  if not ok or not entry then
+    return nil
+  end
+  local owner = { entry = entry, filter = "ReaWebAPI", label = "已有 ReaPack 组件" }
+  local parsed, found, repository, category, package_name, description, kind, version =
+    pcall(reaper.ReaPack_GetEntryInfo, entry)
+  if parsed and found and type(package_name) == "string" and package_name ~= "" then
+    owner.filter = package_name:gsub("%.ext$", "")
+    owner.label = text(repository, 256) .. " / " .. package_name .. " " .. text(version, 128)
+  end
+  return owner
+end
+
 local function prompt_runtime_install(missing_api)
   local has_reapack = type(reaper.ReaPack_BrowsePackages) == "function"
-  local title = SCRIPT_NAME .. " · 缺少 WebView 运行时"
+  local path = reaper.GetResourcePath() .. "/UserPlugins/reaper_reawebapi-x64.dll"
+  local owner = runtime_owner(path)
+  local installed = owner ~= nil or reaper.file_exists(path)
+  local filter = owner and owner.filter
+    or (installed and "ReaWebAPI" or "PsyReaSFX WebView Runtime")
+  local instructions = installed
+      and "已发现 ReaWebAPI 的安装记录或 DLL。请先重启 REAPER，使已安装的组件生效。\n" .. "版本缺少接口时，请在原组件中检查更新。\n"
+    or "首次安装可选择 PsyReaSFX WebView Runtime，并在 Psysia 软件源启用预发布和同步。\n"
+  if owner then
+    instructions = instructions .. "当前归属 " .. owner.label .. "\n"
+  end
+  local title = SCRIPT_NAME .. " · WebView 运行时未就绪"
   local destination = has_reapack
-      and "是否现在打开 ReaPack，并定位到这个运行时组件？"
+      and (installed and "是否打开现有组件的 ReaPack 页面，检查安装与更新？" or "是否现在打开 ReaPack，并定位到首次安装的运行时组件？")
     or "当前未检测到 ReaPack。是否打开发布页，下载完整测试版安装包？"
   local choice = reaper.MB(
     "未检测到可用的 ReaWebAPI，或当前版本缺少所需接口。\n\n"
-      .. "需要安装 PsyReaSFX WebView Runtime。请在 Psysia 软件源启用预发布并同步。\n"
+      .. instructions
       .. "安装或更新完成后，请重启 REAPER，再运行 PsyReaSFX。\n"
-      .. "已有其他软件源管理 ReaWebAPI 时，可更新原组件并检查兼容性。\n\n"
+      .. "\n"
       .. destination
       .. "\n\n缺少接口 "
       .. missing_api,
     title,
     4
   )
-  if choice ~= 6 then
-    return
-  end
-  if has_reapack then
-    local opened = pcall(reaper.ReaPack_BrowsePackages, "PsyReaSFX WebView Runtime")
-    if opened then
-      return
+  if choice == 6 then
+    local opened = false
+    if has_reapack then
+      if owner and type(reaper.ReaPack_AboutInstalledPackage) == "function" then
+        local ok, shown = pcall(reaper.ReaPack_AboutInstalledPackage, owner.entry)
+        opened = ok and shown == true
+      end
+      if not opened then
+        opened = pcall(reaper.ReaPack_BrowsePackages, filter)
+      end
+      if not opened then
+        reaper.MB("无法打开 ReaPack，将打开发布页下载完整安装包。", title, 0)
+      end
     end
-    reaper.MB("无法打开 ReaPack，将打开发布页下载完整安装包。", title, 0)
+    if not opened then
+      local url = PROJECT_URL .. "/releases"
+      local navigated = pcall(open_url, url)
+      if not navigated then
+        reaper.MB("无法自动打开浏览器，请手动访问\n\n" .. url, title, 0)
+      end
+    end
   end
-  local url = PROJECT_URL .. "/releases"
-  local opened = pcall(open_url, url)
-  if not opened then
-    reaper.MB("无法自动打开浏览器，请手动访问\n\n" .. url, title, 0)
+  if owner then
+    pcall(reaper.ReaPack_FreeEntry, owner.entry)
   end
 end
 
