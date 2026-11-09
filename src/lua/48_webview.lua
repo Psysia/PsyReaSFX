@@ -43,10 +43,22 @@ local function asset_data(asset)
     channels = asset.channels or 0,
     sampleRate = asset.sample_rate or 0,
     bitDepth = asset.bit_depth or 0,
-    library = (state.library_by_id[asset.library_id] or {}).name or "",
+    format = string.format(
+      "%s  %s  %dch",
+      format_rate(asset.sample_rate),
+      (tonumber(asset.bit_depth) or 0) > 0 and tostring(asset.bit_depth) .. "-bit" or "—",
+      tonumber(asset.channels) or 0
+    ),
+    library = asset.library or (state.library_by_id[asset.library_id] or {}).name or "",
     favorite = state.favorites[asset_path_sort_key(asset)] == true,
     marked = asset.marked == true,
+    played = asset_is_session_played(asset) == true,
+    previewCount = asset.preview_count or 0,
+    usedCount = asset.used_count or 0,
+    workflowLabel = workflow_label(asset.workflow_status or "none"),
   }
+  local similarity = "similar" == state.view and similarity_result_for_asset(asset)
+  output.similarity = similarity and string.format("%.0f%%", similarity.score or 0) or ""
   output.truncated = {}
   for _, field in ipairs({
     "description",
@@ -96,7 +108,7 @@ local function send(message)
 end
 
 local function waveform(asset, points, channels)
-  local wave = queue_wave(asset, points, channels, channels)
+  local wave = queue_wave(asset, points, channels, channels, state.spectral_peaks_enabled)
   if not wave then
     return nil
   end
@@ -105,6 +117,8 @@ local function waveform(asset, points, channels)
     peaks = wave.peaks,
     channels = wave.channel_peaks,
     channelCount = wave.channels,
+    spectralFrequency = wave.spectral_frequency,
+    spectralTonality = wave.spectral_tonality,
   }
 end
 
@@ -277,7 +291,7 @@ WebUI.handlers["catalog.page"] = function(params)
     item.index = index
     item.selected = state.selected_set[asset_path_sort_key(asset)] == true
     if params.waveforms ~= false then
-      item.waveform = waveform(asset, MINI_WAVE_DEFAULT_POINTS, false)
+      item.waveform = waveform(asset, state.mini_wave_points, false)
     end
     local size = #neural_json_encode(item)
     if bytes + size > 700000 then
@@ -329,7 +343,15 @@ WebUI.handlers["catalog.query"] = function(params)
   end
   for parameter, key in pairs(filters) do
     local value = params[parameter]
-    AppState.set(key, value ~= "" and value or nil)
+    if not params.keepScope or value ~= nil then
+      AppState.set(key, value ~= "" and value or nil)
+    end
+  end
+  if params.status ~= nil then
+    assert(params.status == "" or WORKFLOW_STATUS[params.status], "未知工作流筛选")
+    AppState.set("status_filter", params.status ~= "" and params.status or nil)
+  elseif not params.keepScope then
+    AppState.set("status_filter", nil)
   end
   if state.ucs_filter_catid then
     AppState.set("view", "ucs_catid")
@@ -341,7 +363,14 @@ WebUI.handlers["catalog.query"] = function(params)
 end
 
 WebUI.handlers["catalog.sort"] = function(params)
-  local sorts = { name = true, duration = true, library = true, used = true, previewed = true }
+  local sorts = {
+    name = true,
+    duration = true,
+    library = true,
+    used = true,
+    previewed = true,
+    similarity = true,
+  }
   assert(sorts[params.field], "未知排序字段")
   AppState.apply({
     sort_mode = params.field,
@@ -350,6 +379,36 @@ WebUI.handlers["catalog.sort"] = function(params)
     config_dirty = true,
   })
   return true
+end
+
+WebUI.handlers["catalog.folders"] = function(params)
+  ensure_folder_navigation_build()
+  if not state.folder_navigation_ready then
+    return { pending = true, items = {} }
+  end
+  local node = assert(state.folder_navigation_trees[params.rootId], "来源已移除")
+  local requested = canonical_source_path(text(params.path))
+  assert(
+    path_is_inside(requested, node.path) or path_key(requested) == node.key,
+    "目录超出来源范围"
+  )
+  local relative = requested:sub(#node.path + 1):gsub("^[\\/]+", "")
+  for segment in relative:gmatch("[^\\/]+") do
+    node =
+      assert(node.children_by_key[path_key(join_path(node.path, segment))], "文件夹已改变")
+  end
+  local offset = math.floor(number(params.offset or 0, 0, 10000000))
+  local items = {}
+  for index = offset + 1, math.min(#node.children, offset + 100) do
+    local child = node.children[index]
+    items[#items + 1] = {
+      name = child.name,
+      path = child.path,
+      count = child.total_count,
+      children = #child.children > 0,
+    }
+  end
+  return { pending = false, items = items, total = #node.children, offset = offset }
 end
 
 WebUI.handlers["catalog.ucs"] = function()
@@ -377,6 +436,16 @@ WebUI.handlers["selection.set"] = function(params)
   return asset_data(selected_asset())
 end
 
+WebUI.handlers["selection.move"] = function(params)
+  if 0 == #state.results then
+    return false
+  end
+  local direction = number(params.direction, -1, 1)
+  local index = math.max(1, math.min(#state.results, (state.selected_index or 0) + direction))
+  select_result_with_modifiers(index, false, params.shift == true, state.auto_preview)
+  return index
+end
+
 WebUI.handlers["selection.all"] = function()
   select_all_results()
   return true
@@ -386,7 +455,7 @@ WebUI.handlers["waveform.get"] = function(params)
   return {
     path = asset.path,
     duration = asset.duration or 0,
-    waveform = waveform(asset, math.floor(number(params.points or 1024, 64, 2048)), true),
+    waveform = waveform(asset, math.floor(number(params.points or 1024, 64, 4096)), true),
   }
 end
 WebUI.handlers["preview.play"] = function(params)
@@ -428,6 +497,9 @@ WebUI.handlers["preview.region"] = function(params)
   local first = number(params.start, 0, 1)
   local last = number(params.finish, first, 1)
   AppState.apply({ region_start = first, region_end = last })
+  if state.loop_selection and last > first then
+    AppState.set("loop", true)
+  end
   return true
 end
 WebUI.handlers["favorite.toggle"] = function(params)
@@ -435,6 +507,74 @@ WebUI.handlers["favorite.toggle"] = function(params)
   toggle_favorite(asset_for(params.path))
   return true
 end
+local function metadata_selection()
+  local assets = selected_assets()
+  local values, mixed, truncated = {}, {}, {}
+  local signature = 2166136261
+  for _, asset in ipairs(assets) do
+    signature = fnv1a_feed(signature, asset.path .. "\0")
+    for _, field in ipairs(metadata_edit_fields()) do
+      local value = tostring(asset[field.key] or "")
+      signature = fnv1a_feed(signature, field.key .. "\0" .. value .. "\0")
+      if values[field.key] == nil then
+        values[field.key] = value
+      elseif values[field.key] ~= value then
+        mixed[field.key] = true
+      end
+    end
+  end
+  for key in pairs(mixed) do
+    values[key] = ""
+  end
+  for key, value in pairs(values) do
+    values[key] = text(value, 8192)
+    if values[key] ~= value then
+      truncated[key] = true
+    end
+  end
+  return {
+    count = #assets,
+    token = tostring(signature),
+    values = values,
+    mixed = mixed,
+    truncated = truncated,
+    fields = metadata_edit_fields(),
+  },
+    assets
+end
+
+WebUI.handlers["metadata.selection"] = function()
+  return (metadata_selection())
+end
+WebUI.handlers["metadata.batch"] = function(params)
+  writable()
+  assert(type(params.values) == "table", "缺少元数据字段")
+  local current, assets = metadata_selection()
+  assert(
+    current.token == params.token and current.count == params.count,
+    "选择或元数据已改变，请重新打开编辑器"
+  )
+  local allowed = {}
+  for _, field in ipairs(metadata_edit_fields()) do
+    allowed[field.key] = true
+  end
+  for key, value in pairs(params.values or {}) do
+    assert(allowed[key] and type(value) == "string" and #value <= 8192, "无效元数据字段")
+    assert(not current.truncated[key], "字段过长，不能用摘要覆盖完整内容")
+  end
+  state.metadata_editor.signature = ""
+  sync_metadata_editor(assets)
+  for _, field in ipairs(metadata_edit_fields()) do
+    state.metadata_editor.enabled[field.key] = params.values[field.key] ~= nil
+    if params.values[field.key] ~= nil then
+      state.metadata_editor.values[field.key] = params.values[field.key]
+    end
+  end
+  apply_metadata_editor(assets)
+  WebUI.revision = WebUI.revision + 1
+  return true
+end
+
 WebUI.handlers["metadata.save"] = function(params)
   writable()
   local asset = asset_for(params.path)
@@ -457,6 +597,7 @@ WebUI.handlers["metadata.save"] = function(params)
     )
     assert(type(value) == "string" and #value <= 8192, "元数据文本过长")
   end
+  state.metadata_editor.signature = ""
   sync_metadata_editor({ asset })
   for key, value in pairs(params.values or {}) do
     state.metadata_editor.values[key] = value
@@ -464,6 +605,30 @@ WebUI.handlers["metadata.save"] = function(params)
   apply_metadata_editor({ asset })
   return asset_data(asset)
 end
+WebUI.handlers["library.drop"] = function(params)
+  writable()
+  assert(
+    type(params.paths) == "table" and #params.paths > 0 and #params.paths <= 256,
+    "无效来源数量"
+  )
+  local folders = {}
+  for _, path in ipairs(params.paths) do
+    assert(type(path) == "string" and directory_exists(path), "请拖入来源文件夹")
+    folders[#folders + 1] = path
+  end
+  if params.libraryId then
+    assert(state.library_by_id[params.libraryId], "目标音效库已移除")
+    add_folders_to_library(params.libraryId, folders)
+  elseif params.separate then
+    create_libraries_from_folders(folders)
+  else
+    local library = create_library(basename(folders[1]))
+    assert(library, "创建音效库失败")
+    add_folders_to_library(library.id, folders)
+  end
+  return true
+end
+
 WebUI.handlers["library.add"] = function(params)
   writable()
   local library = params.libraryId and state.library_by_id[params.libraryId]
@@ -497,12 +662,34 @@ WebUI.handlers["tab.action"] = function(params)
   elseif params.action == "activate" then
     workspace_tab_activate(params.id)
   elseif params.action == "close" then
-    workspace_tab_close(params.id)
+    assert(
+      params.mode == nil or params.mode == "others" or params.mode == "right",
+      "未知关闭范围"
+    )
+    workspace_tab_close(params.id, params.mode)
+  elseif params.action == "move" then
+    workspace_tab_move(params.id, number(params.direction, -1, 1))
+  elseif params.action == "rename" then
+    local tab = assert(workspace_tab_by_id(params.id), "标签页已关闭")
+    local ok, name = reaper.GetUserInputs("重命名标签页", 1, "名称:", tab.name or "")
+    if ok then
+      tab.name = text(name, 128)
+      AppState.mark_dirty("config_dirty")
+    end
   else
     error("未知标签操作")
   end
   return true
 end
+WebUI.handlers["drag.drop"] = function(params)
+  writable()
+  local asset = params.path and asset_for(params.path) or selected_asset()
+  assert(asset, "请先选择素材")
+  begin_external_drag(asset, params.selection == true)
+  drop_external_drag()
+  return true
+end
+
 WebUI.handlers["insert"] = function(params)
   assert(not state.persistence_read_only, "当前处于只读保护")
   local assets = selected_assets()
@@ -516,7 +703,13 @@ WebUI.handlers["transfer.start"] = function(params)
   writable()
   local choices = {
     transfer_format = { wav16 = true, wav24 = true, wav32 = true, flac = true },
-    transfer_sample_rate = { source = true, ["44100"] = true, ["48000"] = true, ["96000"] = true },
+    transfer_sample_rate = {
+      source = true,
+      ["44100"] = true,
+      ["48000"] = true,
+      ["96000"] = true,
+      ["192000"] = true,
+    },
     transfer_channels = { source = true, mono = true, stereo = true },
     transfer_scope = { selection = true, full = true },
   }
@@ -544,7 +737,7 @@ WebUI.handlers["region.action"] = function(params)
   if params.action == "save" then
     save_current_selection_as_region(asset)
   elseif params.action == "activate" then
-    activate_saved_region(asset, params.index, false)
+    activate_saved_region(asset, params.index, params.play == true)
   elseif params.action == "delete" then
     delete_saved_region(asset, params.index)
   else
@@ -562,14 +755,17 @@ WebUI.handlers["search.more"] = function()
 end
 WebUI.handlers["search.similar"] = function(params)
   assert(selected_asset(), "请先选择素材")
-  start_similarity_search(selected_asset(), params.scope == "results" and "results" or "all")
+  start_similarity_search(selected_asset(), params.scope == "current" and "current" or "all")
   return true
 end
 WebUI.handlers["maintenance"] = function(params)
   writable()
   local actions = {
     scan = function()
-      start_scan("手动扫描")
+      start_scan(
+        "手动扫描",
+        state.library_filter_id and roots_for_library(state.library_filter_id) or nil
+      )
     end,
     missing = start_missing_audit,
     duplicates = start_duplicate_scan,
@@ -579,6 +775,9 @@ WebUI.handlers["maintenance"] = function(params)
     end,
     classify = start_ucs_reclassification_preview,
     classifyApply = start_ucs_reclassification_apply,
+    classifyDiscard = function()
+      AppState.set("ucs_reclassification_review", nil)
+    end,
   }
   assert(actions[params.action], "未知维护操作")()
   return true
@@ -595,9 +794,385 @@ WebUI.handlers["tasks.cancel"] = function()
   end
   ai_semantic_cancel()
   AppState.set("transfer_cancel_requested", true)
+  cancel_wave_precache()
+  cancel_ucs_reclassification()
+  cancel_pending_transient_detection()
+  if state.relink_plan_session then
+    cancel_relink_plan(state.relink_plan_session, "canceled")
+  end
+  if state.root_removal_session then
+    cancel_root_removal(state.root_removal_session, "canceled")
+  end
+  for _, field in ipairs({
+    "cache_verify_session",
+    "missing_audit",
+    "duplicate_scan",
+    "duplicate_confirmation",
+  }) do
+    local job = state[field]
+    if job then
+      close_duplicate_confirmation_session(job)
+      Jobs.cancel(job.job_token)
+      Jobs.finish(job.job_token, true, "canceled")
+      AppState.set(field, nil)
+    end
+  end
   return true
 end
+local settings_schema = {
+  { key = "artwork_enabled", label = "启用封面", group = "外观", kind = "boolean" },
+  {
+    key = "inspector_artwork_pinned",
+    label = "检查器封面固定在顶部",
+    group = "外观",
+    kind = "boolean",
+  },
+  { key = "selection_hex", label = "选区颜色", group = "试听颜色", kind = "color" },
+  { key = "playhead_hex", label = "播放指针颜色", group = "试听颜色", kind = "color" },
+  { key = "region_hex", label = "Region 颜色", group = "试听颜色", kind = "color" },
+  {
+    key = "mini_wave_points",
+    integer = true,
+    label = "列表波形采样点数",
+    group = "波形与分析",
+    kind = "number",
+    minimum = MINI_WAVE_DEFAULT_POINTS,
+    maximum = MINI_WAVE_MAX_POINTS,
+  },
+  {
+    key = "precache_points",
+    integer = true,
+    label = "高精度波形采样点数",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 2048,
+    maximum = 4096,
+  },
+  {
+    key = "transient_threshold",
+    label = "瞬态阈值（线性振幅）",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 0.001,
+    maximum = 0.8913,
+  },
+  { key = "auto_backup", label = "自动备份", group = "维护", kind = "boolean" },
+  {
+    key = "backup_keep_count",
+    integer = true,
+    label = "备份保留数",
+    group = "维护",
+    kind = "number",
+    minimum = 1,
+    maximum = 100,
+  },
+  {
+    key = "auto_collect_project_usage",
+    label = "自动收集工程使用记录",
+    group = "维护",
+    kind = "boolean",
+  },
+  {
+    key = "multichannel_waveform",
+    label = "多声道波形",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  {
+    key = "spectral_peaks_enabled",
+    label = "频谱峰值着色",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  {
+    key = "watch_interval",
+    label = "检查间隔",
+    group = "常规",
+    kind = "number",
+    minimum = 15.0,
+    maximum = 600.0,
+  },
+  {
+    key = "watch_silent",
+    label = "静默后台检查（仅显示工具栏动态状态）",
+    group = "常规",
+    kind = "boolean",
+  },
+  {
+    key = "resume_scan_on_start",
+    label = "启动时恢复中断的扫描",
+    group = "常规",
+    kind = "boolean",
+  },
+  {
+    key = "enter_insert_shortcuts",
+    label = "启用 Enter / Ctrl+Enter 快速插入 REAPER",
+    group = "常规",
+    kind = "boolean",
+  },
+  { key = "insert_prefix", label = "前缀", group = "常规", kind = "string" },
+  { key = "insert_suffix", label = "后缀", group = "常规", kind = "string" },
+  {
+    key = "insert_lowercase",
+    label = "Take 名称转为小写",
+    group = "常规",
+    kind = "boolean",
+  },
+  {
+    key = "insert_fade_ms",
+    label = "插入淡化",
+    group = "常规",
+    kind = "number",
+    minimum = 0.0,
+    maximum = 100.0,
+  },
+  {
+    key = "played_text_enabled",
+    label = "已播放文字高亮",
+    group = "试听颜色",
+    kind = "boolean",
+  },
+  {
+    key = "played_waveform_enabled",
+    label = "已播放波形高亮",
+    group = "试听颜色",
+    kind = "boolean",
+  },
+  {
+    key = "restore_played_on_start",
+    label = "启动时自动恢复上次浏览高亮",
+    group = "试听颜色",
+    kind = "boolean",
+  },
+  {
+    key = "wave_scrub_enabled",
+    label = "启用右键擦播",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  {
+    key = "loop_selection",
+    label = "选区完成后自动循环",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  {
+    key = "transient_smoothing_ms",
+    label = "平滑时间",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 0.0,
+    maximum = 80.0,
+  },
+  {
+    key = "transient_min_gap_ms",
+    label = "最小间隔",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 20.0,
+    maximum = 2000.0,
+  },
+  {
+    key = "transient_pre_ms",
+    label = "Region 前置",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 0.0,
+    maximum = 1000.0,
+  },
+  {
+    key = "transient_post_ms",
+    label = "Region 后置",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 20.0,
+    maximum = 5000.0,
+  },
+  {
+    key = "transient_max_regions",
+    integer = true,
+    label = "最大 Region 数",
+    group = "波形与分析",
+    kind = "number",
+    minimum = 1.0,
+    maximum = 256.0,
+  },
+  {
+    key = "transient_replace_existing",
+    label = "替换已有瞬态建议",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  {
+    key = "show_loudness_metrics",
+    label = "显示响度统计",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  { key = "loudness_show_i", label = "LUFS-I", group = "波形与分析", kind = "boolean" },
+  { key = "loudness_show_m", label = "LUFS-M max", group = "波形与分析", kind = "boolean" },
+  { key = "loudness_show_s", label = "LUFS-S max", group = "波形与分析", kind = "boolean" },
+  { key = "loudness_show_tp", label = "True Peak", group = "波形与分析", kind = "boolean" },
+  {
+    key = "loudness_match",
+    label = "启用估算响度匹配",
+    group = "波形与分析",
+    kind = "boolean",
+  },
+  {
+    key = "loudness_target_db",
+    label = "目标响度",
+    group = "波形与分析",
+    kind = "number",
+    minimum = -30.0,
+    maximum = -6.0,
+  },
+  {
+    key = "transfer_lowercase",
+    label = "文件名转为小写",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  {
+    key = "transfer_preserve_metadata",
+    label = "尽可能保留源文件元数据",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  { key = "transfer_dither", label = "启用抖动", group = "Transfer", kind = "boolean" },
+  { key = "transfer_noise_shaping", label = "噪声整形", group = "Transfer", kind = "boolean" },
+  {
+    key = "transfer_fade_in_ms",
+    label = "淡入",
+    group = "Transfer",
+    kind = "number",
+    minimum = 0.0,
+    maximum = 500.0,
+  },
+  {
+    key = "transfer_fade_out_ms",
+    label = "淡出",
+    group = "Transfer",
+    kind = "number",
+    minimum = 0.0,
+    maximum = 2000.0,
+  },
+  {
+    key = "transfer_smart_tail",
+    label = "智能保留选区尾音",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  {
+    key = "transfer_tail_threshold_db",
+    label = "尾音阈值",
+    group = "Transfer",
+    kind = "number",
+    minimum = -96.0,
+    maximum = -18.0,
+  },
+  {
+    key = "transfer_tail_max_ms",
+    label = "最大尾音",
+    group = "Transfer",
+    kind = "number",
+    minimum = 100.0,
+    maximum = 30000.0,
+  },
+  {
+    key = "transfer_tail_hold_ms",
+    label = "尾音留白",
+    group = "Transfer",
+    kind = "number",
+    minimum = 0.0,
+    maximum = 2000.0,
+  },
+  {
+    key = "transfer_variants_enabled",
+    label = "启用批量变体",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  { key = "transfer_variant_pitches", label = "Pitch 列表", group = "Transfer", kind = "string" },
+  { key = "transfer_variant_rates", label = "Rate 列表", group = "Transfer", kind = "string" },
+  { key = "transfer_variant_gains", label = "Gain 列表", group = "Transfer", kind = "string" },
+  {
+    key = "transfer_variant_include_reverse",
+    label = "同时生成正向与反向",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  {
+    key = "transfer_variant_auto_suffix",
+    label = "模板未含变体字段时自动追加安全后缀",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  {
+    key = "transfer_insert_after",
+    label = "导出后插入 REAPER",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  {
+    key = "transfer_open_dir_after",
+    label = "导出完成后打开输出目录",
+    group = "Transfer",
+    kind = "boolean",
+  },
+  {
+    key = "played_text_hex",
+    label = "已试听文字颜色",
+    group = "试听颜色",
+    kind = "color",
+  },
+  { key = "waveform_hex", label = "普通波形颜色", group = "试听颜色", kind = "color" },
+  {
+    key = "waveform_played_hex",
+    label = "已试听波形颜色",
+    group = "试听颜色",
+    kind = "color",
+  },
+  {
+    key = "waveform_marked_hex",
+    label = "标记波形颜色",
+    group = "试听颜色",
+    kind = "color",
+  },
+  {
+    key = "waveform_selected_hex",
+    label = "选中波形颜色",
+    group = "试听颜色",
+    kind = "color",
+  },
+  {
+    key = "transfer_normalize",
+    label = "标准化",
+    group = "Transfer",
+    kind = "choice",
+    options = { "off", "peak", "true_peak", "rms_i", "lufs_i" },
+  },
+  {
+    key = "transfer_normalize_target",
+    label = "标准化目标",
+    group = "Transfer",
+    kind = "number",
+    minimum = -36,
+    maximum = 0,
+  },
+  {
+    key = "transfer_collision",
+    label = "重名策略",
+    group = "Transfer",
+    kind = "choice",
+    options = { "increment", "skip", "overwrite" },
+  },
+}
 WebUI.handlers["settings.get"] = function()
+  local values = {}
+  for _, definition in ipairs(settings_schema) do
+    values[definition.key] = state[definition.key]
+  end
   local presets = {}
   for _, preset in ipairs(state.ai_presets) do
     presets[#presets + 1] = { id = preset.id, name = preset.name }
@@ -615,10 +1190,373 @@ WebUI.handlers["settings.get"] = function()
     ai_url = state.ai_api_url,
     ai_model = state.ai_model,
     ai_key_saved = ai_semantic_preset_key_usable(),
+    ai_status = state.ai_preset_status,
     ai_presets = presets,
+    schema = settings_schema,
+    values = values,
     ai_active_preset_id = state.ai_active_preset_id,
     ai_preset_name = state.ai_preset_name,
   }
+end
+
+WebUI.handlers["settings.update"] = function(params)
+  writable()
+  local updates = {}
+  for key, value in pairs(params.values or {}) do
+    local definition
+    for _, item in ipairs(settings_schema) do
+      if item.key == key then
+        definition = item
+        break
+      end
+    end
+    assert(definition, "未知设置")
+    if definition.kind == "number" then
+      value = number(value, definition.minimum, definition.maximum)
+      assert(not definition.integer or value % 1 == 0, "请输入整数")
+    elseif definition.kind == "boolean" then
+      assert(type(value) == "boolean", "无效开关值")
+    elseif definition.kind == "choice" then
+      local valid = false
+      for _, option in ipairs(definition.options) do
+        if value == option then
+          valid = true
+        end
+      end
+      assert(valid, "未知选项")
+    elseif definition.kind == "color" then
+      assert(type(value) == "string" and value:match("^#%x%x%x%x%x%x$"), "无效颜色")
+    else
+      assert(type(value) == "string" and #value <= 4096, "设置文本过长")
+    end
+    updates[key] = value
+  end
+  AppState.apply(updates)
+  AppState.mark_dirty("config_dirty")
+  apply_waveform_palette()
+  update_preview_parameters()
+  WebUI.revision = WebUI.revision + 1
+  return true
+end
+
+WebUI.handlers["asset.action"] = function(params)
+  local asset = params.path and asset_for(params.path) or selected_asset()
+  assert(asset, "请先选择素材")
+  local targets = is_row_selected(asset) and selected_assets() or { asset }
+  local operations = {
+    play = function()
+      play_preview(asset, 0, false)
+    end,
+    insert = function()
+      for _, target in ipairs(targets) do
+        insert_asset(target, params.newTrack == true, params.bwf == true)
+      end
+    end,
+    stack = function()
+      insert_selected_stack(0, 1)
+    end,
+    mark = function()
+      local marked = true
+      for _, target in ipairs(targets) do
+        if not target.marked then
+          marked = false
+          break
+        end
+      end
+      set_assets_marked(targets, not marked)
+    end,
+    favorite = function()
+      local all_favorite = true
+      for _, target in ipairs(targets) do
+        if not state.favorites[asset_path_sort_key(target)] then
+          all_favorite = false
+        end
+      end
+      for _, target in ipairs(targets) do
+        if (state.favorites[asset_path_sort_key(target)] == true) == all_favorite then
+          toggle_favorite(target)
+        end
+      end
+    end,
+    workflow = function()
+      assert(WORKFLOW_STATUS[params.status], "未知工作流状态")
+      set_workflow_status(targets, params.status)
+    end,
+    metadata = function()
+      for _, target in ipairs(targets) do
+        target.indexed = false
+        target.meta_failed_at = nil
+        queue_metadata(target, true)
+      end
+    end,
+    removeCollection = function()
+      local collection = state.collection_by_id[state.active_collection_id]
+      assert(collection, "请先打开集合")
+      remove_assets_from_collection(collection, targets)
+    end,
+    similar = function()
+      start_similarity_search(asset, params.scope == "current" and "current" or "all")
+    end,
+    loudness = function()
+      request_loudness_analysis(asset, true)
+    end,
+    browseProduct = function()
+      browse_asset_library(asset)
+    end,
+    artwork = function()
+      choose_artwork_for_asset(asset)
+    end,
+    filter = function()
+      local fields = {
+        description = true,
+        keywords = true,
+        category = true,
+        subcategory = true,
+        catid = true,
+        library = true,
+      }
+      assert(fields[params.field], "不支持此筛选字段")
+      add_metadata_filter(params.field, tostring(asset[params.field] or ""))
+    end,
+    confirmUcs = function()
+      assert(confirm_ucs_candidate(asset, text(params.catid, 64)))
+    end,
+    undoUcs = function()
+      undo_ucs_confirmation(asset)
+    end,
+    transients = function()
+      request_transient_detection(asset)
+    end,
+    undoTransients = function()
+      undo_last_transient_detection(asset)
+    end,
+    clearTransients = function()
+      clear_all_transient_suggestions(asset)
+    end,
+    channelsAll = function()
+      select_all_preview_channels(asset)
+      update_preview_parameters()
+    end,
+    channelMode = function()
+      local count = preview_asset_channel_count(asset)
+      local mode = params.mode
+      assert(
+        count <= 2
+          and (
+            mode == "original"
+            or mode == "mono"
+            or (count == 2 and (mode == "left" or mode == "right"))
+          ),
+        "无效试听声道模式"
+      )
+      AppState.set("preview_channel_mode", mode)
+      AppState.mark_dirty("config_dirty")
+      update_preview_parameters()
+    end,
+    channel = function()
+      assert(preview_asset_channel_count(asset) > 2, "立体声素材请使用试听声道模式")
+      local channel = math.floor(number(params.channel, 1, preview_asset_channel_count(asset)))
+      apply_preview_channel_selection(
+        asset,
+        channel,
+        params.ctrl == true,
+        params.shift == true,
+        false
+      )
+      update_preview_parameters()
+    end,
+  }
+  writable()
+  assert(operations[params.action], "未知素材操作")()
+  WebUI.revision = WebUI.revision + 1
+  return true
+end
+
+WebUI.handlers["diagnostics.get"] = function()
+  return build_diagnostics_text()
+end
+
+WebUI.handlers["management.get"] = function()
+  local groups = {
+    {
+      kind = "library",
+      label = "音效库",
+      items = {},
+      actions = { "add", "rename", "scan", "remove" },
+    },
+    {
+      kind = "root",
+      label = "来源文件夹",
+      items = {},
+      actions = { "scan", "relink", "artwork", "redetectArtwork", "clearArtwork", "remove" },
+    },
+    {
+      kind = "collection",
+      label = "集合",
+      items = {},
+      actions = { "addSelection", "removeSelection", "bind", "rename", "remove" },
+    },
+    {
+      kind = "search",
+      label = "保存的搜索",
+      items = {},
+      actions = { "activate", "overwrite", "rename", "remove" },
+    },
+  }
+  for _, item in ipairs(state.libraries) do
+    groups[1].items[#groups[1].items + 1] = { id = item.id, name = item.name }
+  end
+  for _, item in ipairs(state.root_records) do
+    groups[2].items[#groups[2].items + 1] = { id = item.id, name = item.path }
+  end
+  for _, item in ipairs(state.collections) do
+    groups[3].items[#groups[3].items + 1] = { id = item.id, name = item.name, kind = item.kind }
+  end
+  for _, item in ipairs(state.saved_searches) do
+    groups[4].items[#groups[4].items + 1] = { id = item.id, name = item.name }
+  end
+  return groups
+end
+
+WebUI.handlers["management.action"] = function(params)
+  writable()
+  local lists = {
+    library = state.libraries,
+    root = state.root_records,
+    collection = state.collections,
+    search = state.saved_searches,
+  }
+  local list = assert(lists[params.kind], "未知管理类别")
+  local target
+  for _, item in ipairs(list) do
+    if item.id == params.id then
+      target = item
+      break
+    end
+  end
+  assert(target, "项目已移除，请刷新")
+  local actions = {
+    library = {
+      add = function()
+        add_root(target.id)
+      end,
+      rename = function()
+        rename_library(target)
+      end,
+      scan = function()
+        start_scan("手动扫描", roots_for_library(target.id))
+      end,
+      remove = function()
+        remove_library(target.id)
+      end,
+    },
+    root = {
+      scan = function()
+        start_scan("手动扫描", { target.path })
+      end,
+      relink = function()
+        relink_root(target)
+      end,
+      artwork = function()
+        choose_artwork_for_root(target)
+      end,
+      redetectArtwork = function()
+        redetect_root_artwork(target)
+      end,
+      clearArtwork = function()
+        clear_root_artwork(target)
+      end,
+      remove = function()
+        remove_root(target)
+      end,
+    },
+    collection = {
+      addSelection = function()
+        add_assets_to_collection(target, selected_assets())
+      end,
+      removeSelection = function()
+        remove_assets_from_collection(target, selected_assets())
+      end,
+      bind = function()
+        assert(target.kind == "project", "仅项目素材箱支持工程绑定")
+        refresh_current_project_binding()
+        bind_project_bin(target, state.current_project_path)
+      end,
+      rename = function()
+        rename_collection(target)
+      end,
+      remove = function()
+        delete_collection(target)
+      end,
+    },
+    search = {
+      overwrite = function()
+        target.query, target.view = state.search, state.view
+        target.root, target.library_id = state.root_filter or "", state.library_filter_id
+        target.sort_mode, target.sort_desc = state.sort_mode, state.sort_desc
+        target.status_filter, target.collection_id = state.status_filter, state.active_collection_id
+        local ucs = ucs_directory_view(state.view)
+        target.ucs_category = ucs and state.ucs_filter_category or nil
+        target.ucs_subcategory = ucs and state.ucs_filter_subcategory or nil
+        target.ucs_catid = ucs and state.ucs_filter_catid or nil
+        AppState.mark_dirty("searches_dirty")
+      end,
+      activate = function()
+        activate_saved_search(target)
+      end,
+      rename = function()
+        rename_saved_search(target)
+      end,
+      remove = function()
+        delete_saved_search(target)
+      end,
+    },
+  }
+  assert(actions[params.kind][params.action], "未知管理操作")()
+  WebUI.revision = WebUI.revision + 1
+  return true
+end
+
+WebUI.handlers["records.action"] = function(params)
+  writable()
+  local operations = {
+    restorePlayed = restore_last_session_played_highlights,
+    clearPlayed = clear_session_played_highlights,
+    clearSavedPlayed = clear_saved_session_played_highlights,
+    saveSearch = save_current_search,
+    clearSimilarity = clear_similarity_cache,
+    clearWaveforms = clear_wave_cache,
+    clearArtwork = clear_artwork_cache,
+    retryFailed = retry_failed_tasks,
+    currentProject = function()
+      refresh_current_project_binding()
+      ensure_current_project_bin(true)
+    end,
+    dataFolder = function()
+      open_folder(DATA_DIR)
+    end,
+    cacheFolder = prompt_wave_cache_directory,
+    cacheDefault = restore_default_wave_cache_directory,
+    resetInterface = reset_interface_settings,
+    resetDatabase = reset_database_keep_roots,
+    factoryReset = factory_reset,
+    precache = function()
+      start_wave_precache(state.precache_points, "all")
+    end,
+    precacheCurrent = function()
+      start_wave_precache(state.precache_points, "current")
+    end,
+    cancelPrecache = function()
+      AppState.set("precache_cancel_requested", true)
+    end,
+    cancelClassify = cancel_ucs_reclassification,
+    cancelTransients = cancel_pending_transient_detection,
+    verifyDuplicates = start_duplicate_confirmation,
+    restoreBackup = restore_latest_data_backup,
+  }
+  assert(operations[params.action], "未知记录操作")()
+  WebUI.revision = WebUI.revision + 1
+  return true
 end
 
 WebUI.handlers["settings.watch"] = function(params)
@@ -641,11 +1579,15 @@ WebUI.handlers["settings.ai"] = function(params)
     assert(ok, reason)
     return true
   end
-  if params.action == "test" then
-    start_ai_semantic_connection_test()
+  if params.action == "delete" then
+    if reaper.MB("删除当前 AI 预设及其保存的密钥？", SCRIPT_NAME, 4) ~= 6 then
+      return false
+    end
+    local ok, reason = ai_semantic_delete_preset(text(params.id, 80))
+    assert(ok, reason)
     return true
   end
-  assert(params.action == "save", "未知 AI 设置操作")
+  assert(params.action == "save" or params.action == "test", "未知 AI 设置操作")
   assert(
     params.provider == "deepseek" or params.provider == "openai" or params.provider == "custom",
     "无效服务商"
@@ -661,6 +1603,12 @@ WebUI.handlers["settings.ai"] = function(params)
     ai_preset_name = name,
     ai_api_key_input = text(params.key, 8192),
   })
+  if params.action == "test" then
+    local ok, failure = start_ai_semantic_connection_test()
+    AppState.set("ai_api_key_input", "")
+    assert(ok, failure)
+    return true
+  end
   local ok, failure = ai_semantic_save_preset()
   AppState.set("ai_api_key_input", "")
   assert(ok, failure)
@@ -718,7 +1666,10 @@ function webview_publish()
   end
   WebUI.next_publish = now + 0.15
   refresh_revision()
-  local libraries, collections, tabs, roots = {}, {}, {}, {}
+  local libraries, collections, tabs, roots, searches = {}, {}, {}, {}, {}
+  for _, saved in ipairs(state.saved_searches) do
+    searches[#searches + 1] = { id = saved.id, name = text(saved.name, 160) }
+  end
   for _, library in ipairs(state.libraries) do
     libraries[#libraries + 1] = { id = library.id, name = library.name }
   end
@@ -741,8 +1692,33 @@ function webview_publish()
   if selected then
     selected.regions = asset_regions(asset)
     selected.index = state.selected_index
+    selected.loudness = collect_loudness_summary_items(asset)
+    selected.channelsSelected = ensure_preview_channel_selection(asset)
+    selected.channelMode = state.preview_channel_mode
+    selected.ucsCandidates = {}
+    if asset.ucs_status == "pending" then
+      for _, candidate in ipairs(ucs_parse_candidates(asset.ucs_candidates)) do
+        selected.ucsCandidates[#selected.ucsCandidates + 1] = {
+          catid = candidate.entry.catid,
+          label = ucs_entry_display_name(candidate.entry),
+          score = candidate.score,
+        }
+      end
+    end
+  end
+  local statuses = {}
+  for _, id in ipairs(WORKFLOW_STATUS_ORDER) do
+    statuses[#statuses + 1] = { id = id, label = WORKFLOW_STATUS[id].label }
   end
   local snapshot = {
+    workflowStatuses = statuses,
+    statusFilter = state.status_filter,
+    savedSearches = searches,
+    classificationReview = state.ucs_reclassification_review and {
+      counts = state.ucs_reclassification_review.counts,
+      total = state.ucs_reclassification_review.total,
+      samples = state.ucs_reclassification_review.samples,
+    } or nil,
     revision = WebUI.revision,
     count = #state.results,
     loaded = #state.assets,
@@ -759,6 +1735,8 @@ function webview_publish()
     roots = roots,
     tabs = tabs,
     activeTab = state.workspace_tab_active,
+    sortMode = state.sort_mode,
+    sortDescending = state.sort_desc,
     search = state.search,
     view = state.view,
     libraryId = state.library_filter_id,
@@ -770,6 +1748,35 @@ function webview_publish()
     regionStart = state.region_start,
     regionEnd = state.region_end,
     autoPreview = state.auto_preview,
+    multichannelWaveform = state.multichannel_waveform,
+    detailPoints = state.precache_points,
+    spectralPeaks = state.spectral_peaks_enabled,
+    waveScrub = state.wave_scrub_enabled,
+    aiSummary = state.ai_semantic_last_summary,
+    transferProgress = state.transfer_job and {
+      completed = state.transfer_job.completed or 0,
+      total = state.transfer_job.total or 0,
+    } or nil,
+    transferSummary = state.transfer_last_summary,
+    transferError = state.transfer_last_error,
+    transferOutput = state.transfer_last_output,
+    artworkEnabled = state.artwork_enabled,
+    artworkPinned = state.inspector_artwork_pinned,
+    previewPath = state.preview_path,
+    enterInsertShortcuts = state.enter_insert_shortcuts,
+    playedCount = session_played_count(),
+    rowAppearance = {
+      textEnabled = state.played_text_enabled,
+      waveformEnabled = state.played_waveform_enabled,
+      text = state.played_text_hex,
+      waveform = state.waveform_hex,
+      played = state.waveform_played_hex,
+      marked = state.waveform_marked_hex,
+      selected = state.waveform_selected_hex,
+      selection = state.selection_hex,
+      playhead = state.playhead_hex,
+      region = state.region_hex,
+    },
     fx = {
       pitch = state.pitch,
       rate = state.rate,
@@ -784,6 +1791,15 @@ function webview_publish()
       transfer = state.transfer_running,
       similar = state.similarity_session ~= nil,
       ai = state.ai_semantic_session ~= nil,
+      precache = state.precache_session ~= nil,
+      classify = state.ucs_reclassification_session ~= nil,
+      relink = state.relink_plan_session ~= nil,
+      remove = state.root_removal_session ~= nil,
+      verify = state.cache_verify_session ~= nil,
+      missing = state.missing_audit ~= nil,
+      duplicates = state.duplicate_scan ~= nil or state.duplicate_confirmation ~= nil,
+      transients = state.pending_transient_detection ~= nil,
+      loudness = state.loudness_active ~= nil,
     },
     aiHasMore = state.ai_semantic_has_more,
   }

@@ -98,6 +98,14 @@
             </button>
           </div>
           <div id="collections"></div>
+          <details>
+            <summary class="section-label">保存的搜索</summary>
+            <div id="saved-searches"></div>
+          </details>
+          <details>
+            <summary class="section-label">工作流筛选</summary>
+            <div id="workflow-filters"></div>
+          </details>
         </aside>
         <div
           class="vertical-splitter"
@@ -116,7 +124,8 @@
               <option value="duration">时长</option>
               <option value="library">音效库</option>
               <option value="used">最近插入</option>
-              <option value="previewed">最近试听</option></select
+              <option value="previewed">最近试听</option>
+              <option value="similarity">相似度</option></select
             ><button
               id="sort-direction"
               title="切换升降序"
@@ -283,6 +292,8 @@
           ><span class="workspace-spacer"></span
           ><button id="zoom-reset" title="复位缩放">适应</button
           ><button id="fx-toggle" aria-expanded="false">FX⌄</button
+          ><button id="drag-selection" title="按住并拖到 REAPER 编排区">
+            拖入选区</button
           ><button id="insert">↥ 插入 REAPER</button
           ><button id="transfer-open">⇥ Transfer</button>
         </div>

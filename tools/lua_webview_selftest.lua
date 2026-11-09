@@ -287,14 +287,96 @@ runtime.assets, runtime.results = { asset }, { asset }
 runtime.by_path[path_key(asset.path)] = asset
 local cached_key = asset_path_sort_key(asset)
 replace_database_asset(asset, false)
-assert(asset_path_sort_key(asset) == cached_key, "journal replacement must rebuild invalidated path cache")
+assert(
+  asset_path_sort_key(asset) == cached_key,
+  "journal replacement must rebuild invalidated path cache"
+)
 assert(type(wave_cache_key(asset, 128, false, false)) == "string")
 asset.ready = true
 runtime.root_filter = fixture
 assert(results_filter_predicate()(asset), "root filtering must survive journal replacement")
 runtime.root_filter = nil
 
-
+record_preview_history(asset)
+local played_page = WebUI.handlers["catalog.page"]({ offset = 0, limit = 20, waveforms = false })
+assert(played_page.items[1].played == true, "successful preview must expose session highlighting")
+WebUI.handlers["records.action"]({ action = "clearPlayed" })
+assert(not WebUI.handlers["catalog.page"]({ waveforms = false }).items[1].played)
+assert(asset.last_previewed > 0, "clearing session highlights must retain history")
+WebUI.handlers["asset.action"]({ action = "mark", path = asset.path })
+assert(asset.marked == true)
+WebUI.handlers["asset.action"]({ action = "mark", path = asset.path })
+assert(asset.marked == false)
+WebUI.handlers["asset.action"]({ action = "workflow", path = asset.path, status = "approved" })
+assert(asset.workflow_status == "approved")
+WebUI.handlers["asset.action"]({ action = "channelMode", path = asset.path, mode = "left" })
+assert(runtime.preview_channel_mode == "left")
+assert(
+  not pcall(
+    WebUI.handlers["asset.action"],
+    { action = "channelMode", path = asset.path, mode = "custom" }
+  )
+)
+assert(
+  not pcall(WebUI.handlers["asset.action"], { action = "channel", path = asset.path, channel = 1 })
+)
+WebUI.handlers["asset.action"]({ action = "channelMode", path = asset.path, mode = "original" })
+WebUI.handlers["settings.update"]({
+  values = { played_text_enabled = false, transfer_fade_in_ms = 12 },
+})
+assert(runtime.played_text_enabled == false and runtime.transfer_fade_in_ms == 12)
+assert(
+  not pcall(
+    WebUI.handlers["settings.update"],
+    { values = { played_text_enabled = true, transfer_fade_in_ms = -1 } }
+  )
+)
+assert(runtime.played_text_enabled == false, "invalid settings batches must not partially apply")
+assert(not pcall(WebUI.handlers["settings.update"], { values = { persistence_read_only = false } }))
+WebUI.handlers["settings.update"]({ values = { played_text_enabled = true } })
+assert(#WebUI.handlers["management.get"]() == 4)
+local second = {
+  path = fixture .. "\\second.wav",
+  name = "second.wav",
+  description = "second description",
+  keywords = "second",
+  ready = true,
+}
+runtime.assets, runtime.results = { asset, second }, { asset, second }
+runtime.by_path[path_key(second.path)] = second
+WebUI.handlers["selection.all"]({})
+local batch = WebUI.handlers["metadata.selection"]({})
+assert(batch.count == 2 and batch.mixed.description)
+runtime.favorites[path_key(asset.path)] = true
+WebUI.handlers["asset.action"]({ action = "favorite", path = asset.path })
+assert(
+  runtime.favorites[path_key(asset.path)] and runtime.favorites[path_key(second.path)],
+  "mixed selection must favorite all"
+)
+WebUI.handlers["asset.action"]({ action = "favorite", path = asset.path })
+assert(
+  not runtime.favorites[path_key(asset.path)] and not runtime.favorites[path_key(second.path)],
+  "all-favorite selection must clear all"
+)
+WebUI.handlers["metadata.batch"]({
+  count = batch.count,
+  token = batch.token,
+  values = { keywords = "shared" },
+})
+assert(asset.keywords == "shared" and second.keywords == "shared")
+assert(asset.description == "original" and second.description == "second description")
+local stale_batch = WebUI.handlers["metadata.selection"]({})
+second.description = "background edit"
+assert(
+  not pcall(
+    WebUI.handlers["metadata.batch"],
+    { count = stale_batch.count, token = stale_batch.token, values = { keywords = "overwrite" } }
+  )
+)
+assert(asset.keywords == "shared" and second.keywords == "shared")
+runtime.assets, runtime.results = { asset }, { asset }
+asset.keywords = "metal"
+WebUI.handlers["selection.all"]({})
 local first = WebUI.handlers["catalog.page"]({ offset = 0, limit = 20, waveforms = false })
 assert(#first.items == 1 and first.items[1].name == asset.name)
 assert(first.items[1].waveform == nil, "hidden waveform column must not queue audio work")
@@ -353,6 +435,13 @@ assert(
 )
 WebUI.handlers["catalog.query"]({ search = "metal", libraryId = "", view = "all" })
 assert(runtime.search == "metal" and runtime.results_dirty)
+runtime.root_filter = fixture
+runtime.library_filter_id = "scoped-library"
+WebUI.handlers["catalog.query"]({ search = "gear", keepScope = true, status = "approved" })
+assert(runtime.root_filter == fixture and runtime.library_filter_id == "scoped-library")
+assert(runtime.status_filter == "approved")
+WebUI.handlers["catalog.query"]({ search = "", view = "all" })
+assert(runtime.root_filter == nil and runtime.status_filter == nil)
 local input = {
   neural_json_encode({ protocol = 1, id = "invalid-method", method = "unknown", params = {} }),
   "{bad",

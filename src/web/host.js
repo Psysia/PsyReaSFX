@@ -117,6 +117,18 @@ export async function connectHost() {
     connection.dispose = await window.reaper.events.on("message", (raw) =>
       connection.receive(raw),
     );
+    connection.subscribeDrops = async (callback) => {
+      const dispose = await window.reaper.events.on("native-drop", callback);
+      if (connection.closed) {
+        dispose();
+        return;
+      }
+      const previousDispose = connection.dispose;
+      connection.dispose = () => {
+        previousDispose?.();
+        dispose();
+      };
+    };
     connection.dragFiles = (paths) => {
       if (!window.reaper.dragDrop?.startFiles)
         return Promise.reject(
