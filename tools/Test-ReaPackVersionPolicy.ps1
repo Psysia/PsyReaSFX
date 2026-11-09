@@ -11,6 +11,15 @@ if ($currentVersion -notmatch '^0\.9\.\d+(?:-beta\d+(?:\.\d+)?)?$') {
     throw "Unexpected current version: $currentVersion"
 }
 
+# The version shown in the title bar and About page is a literal in the source.
+# The release build rewrites it from @version, but the source must agree too so
+# unbuilt runs and the tracked script never show a stale number.
+$expectedDisplay = if ($currentVersion -match '-beta') { $currentVersion -replace '-beta', ' Beta ' } else { "$currentVersion Stable" }
+$displayMatch = [regex]::Match($bootstrap, '(?m)^local VERSION = "([^"\r\n]*)"')
+if (-not $displayMatch.Success -or $displayMatch.Groups[1].Value -cne $expectedDisplay) {
+    throw "Displayed version '$($displayMatch.Groups[1].Value)' must be '$expectedDisplay' to match @version $currentVersion."
+}
+
 # The optional neural component is versioned independently: script-only
 # releases (e.g. 0.9.1) keep the 0.9.0 component, whose protocol is unchanged.
 $neuralVersion = "0.9.0"
