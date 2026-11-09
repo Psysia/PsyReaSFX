@@ -1,5 +1,11 @@
 # PsyReaSFX Changelog
 
+## 0.9.3 Beta 2 (0.9.a WebView) — 2026-11-09
+
+- Prompt when ReaWebAPI or a required interface is missing, and open ReaPack filtered to the runtime component after confirmation.
+- Offer project release downloads when ReaPack is unavailable or fails to open, with pre-release and restart instructions.
+- Verify independently pinned script and runtime sources. The runtime component uses 0.3.9.30-beta1.
+
 ## 0.9.3 Beta 1 (0.9.a WebView) — 2026-11-09
 
 - Publish the waveform-first Windows x64 WebView interface with configurable columns, hidden-by-default row indexes, full-width audition and collapsible FX.

@@ -84,7 +84,8 @@ jobs:
           $webTracked = [IO.File]::ReadAllText('PsyReaSFX_WebView.lua').Replace("`r`n", "`n")
           $webGenerated = [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX.lua')).Replace("`r`n", "`n")
           if ($webTracked -cne $webGenerated) { throw 'Tracked WebView beta entry is stale.' }
-          ./tools/Test-WebViewPackage.ps1 -PackagePath $webBuild -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-package-test') -ArchivePath (Join-Path $env:RUNNER_TEMP 'PsyReaSFX_WebView_0.9.3-beta1_win_x64.zip')
+          $webVersion = (Get-Content 'src/web/app.json' -Raw | ConvertFrom-Json).version
+          ./tools/Test-WebViewPackage.ps1 -PackagePath $webBuild -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-package-test') -ArchivePath (Join-Path $env:RUNNER_TEMP "PsyReaSFX_WebView_${webVersion}_win_x64.zip")
           ./tools/Test-ReaWebAPICandidate.ps1
           luac -p (Join-Path $webBuild 'PsyReaSFX.lua')
           if ($LASTEXITCODE -ne 0) { throw 'WebView entry does not compile.' }

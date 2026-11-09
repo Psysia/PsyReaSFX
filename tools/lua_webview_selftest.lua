@@ -98,6 +98,65 @@ for _, broken_lock in ipairs({ "", "{bad", string.rep("x", 32769) }) do
   )
 end
 io.open, reaper.MB = original_open, original_message_box
+local original_native_open = reaper.ReaWeb_Open
+local original_browse, original_open_url = reaper.ReaPack_BrowsePackages, open_url
+local choice, questions, notices, searches, links = 6, {}, {}, {}, {}
+reaper.MB = function(message, title, kind)
+  if kind == 4 then
+    questions[#questions + 1] = message
+    return choice
+  end
+  notices[#notices + 1] = message
+  return 1
+end
+open_url = function(url)
+  links[#links + 1] = url
+end
+reaper.ReaPack_BrowsePackages = function(filter)
+  searches[#searches + 1] = filter
+end
+reaper.ReaWeb_Open = nil
+assert(webview_open() == false)
+assert(#questions == 1 and searches[1] == "PsyReaSFX WebView Runtime" and #links == 0)
+assert(questions[1]:find("重启 REAPER", 1, true), "dependency prompt must explain restart")
+choice = 7
+assert(webview_open() == false)
+assert(#searches == 1 and #links == 0, "declining must not navigate")
+choice = 6
+reaper.ReaPack_BrowsePackages = nil
+assert(webview_open() == false)
+assert(
+  links[1] == "https://github.com/Psysia/PsyReaSFX/releases",
+  "missing ReaPack must offer downloads"
+)
+reaper.ReaPack_BrowsePackages = function()
+  error("ReaPack unavailable")
+end
+assert(webview_open() == false)
+assert(#links == 2 and #notices == 1, "ReaPack errors must fall back to downloads")
+open_url = function()
+  error("browser unavailable")
+end
+assert(webview_open() == false)
+assert(notices[#notices]:find("https://github.com/Psysia/PsyReaSFX/releases", 1, true))
+reaper.ReaWeb_Open = original_native_open
+local original_send = reaper.ReaWeb_Send
+reaper.ReaWeb_Send = nil
+choice = 7
+assert(webview_open() == false)
+assert(
+  questions[#questions]:find("ReaWeb_Send", 1, true),
+  "partial API installations must prompt too"
+)
+reaper.ReaWeb_Send = original_send
+local previous_questions = #questions
+webview_open()
+assert(
+  #questions == previous_questions,
+  "available dependencies must not trigger installation prompts"
+)
+reaper.ReaPack_BrowsePackages, open_url, reaper.MB =
+  original_browse, original_open_url, original_message_box
 local session = WebUI.handlers["session.ready"]()
 assert(
   session.runtimePolicy.protocol == 1,
