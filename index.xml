@@ -13,32 +13,32 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
-      <version name="0.9.3-beta3" author="Psysia" time="2026-11-09T13:02:24Z">
+      <version name="0.9.3-beta4" author="Psysia" time="2026-11-09T13:27:32Z">
         <changelog><![CDATA[
-- Reuse existing ReaWebAPI installations. Missing-interface prompts inspect DLL ownership and open the original ReaPack package for updates.
-- Explain restart/update guidance for existing DLLs. The companion runtime is an optional first-time-installation route.
-- Upstream runtime 0.3.9.29 passed isolated native startup, import, selection, waveform and insertion tests.
-- Cancel a queued duplicate companion-runtime installation after an ownership conflict. Update the main script to this beta.
+- Fix selection messages rejected by the native JSON transport when optional values are absent.
+- Rebuild invalidated asset path caches after journal updates, fixing filtering and waveform failures.
+- Open settings immediately with loading, error and retry states.
+- Expand browser and Lua regressions for native transport interactions and journal-updated assets.
         ]]></changelog>
-        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/PsyReaSFX_WebView.lua</source>
-        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/src/web/app.js</source>
-        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/src/web/app.json</source>
-        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/src/web/host.d.ts</source>
-        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/src/web/host.js</source>
-        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/src/web/index.html</source>
-        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/src/web/styles.css</source>
-        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/dependencies/reawebapi/windows-x64.lock.json</source>
-        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/LICENSE</source>
-        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/assets/brand/psyreasfx-hero.png</source>
-        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/assets/brand/psyreasfx-icon.png</source>
-        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/assets/fonts/OFL.txt</source>
-        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/assets/ucs/README.md</source>
-        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta3/assets/ucs/ucs-8.2.1.tsv</source>
+        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/PsyReaSFX_WebView.lua</source>
+        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/src/web/app.js</source>
+        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/src/web/app.json</source>
+        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/src/web/host.d.ts</source>
+        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/src/web/host.js</source>
+        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/src/web/index.html</source>
+        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/src/web/styles.css</source>
+        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/dependencies/reawebapi/windows-x64.lock.json</source>
+        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/LICENSE</source>
+        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/assets/brand/psyreasfx-hero.png</source>
+        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/assets/brand/psyreasfx-icon.png</source>
+        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/assets/fonts/OFL.txt</source>
+        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/assets/ucs/README.md</source>
+        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta4/assets/ucs/ucs-8.2.1.tsv</source>
       </version>
       <version name="0.9.2-beta4" author="Psysia" time="2026-11-09T06:20:00Z">
         <changelog><![CDATA[
-- Pre-release (replaces Beta 3): performance and reliability pass over selection, search, import, saving and relinking. Enable pre-releases in ReaPack to try it; the stable channel stays at 0.9.1.
+- Pre-release (replaces Beta 4): performance and reliability pass over selection, search, import, saving and relinking. Enable pre-releases in ReaPack to try it; the stable channel stays at 0.9.1.
 - The frame-timing diagnostics (Settings > Maintenance, and Copy diagnostics) now also list how long each background job takes per frame, so slow frames can be traced to a specific job.
 - Smoother window moving and resizing, the corrected version number and the selection, search, import and saving improvements from the earlier betas are included.
 - Update the main script and restart. The 0.9.0 neural component, existing databases and caches remain compatible.

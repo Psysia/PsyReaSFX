@@ -47,7 +47,12 @@ export class HostConnection extends EventTarget {
       }, 25000);
       this.pending.set(id, { resolve, reject, timer });
       Promise.resolve()
-        .then(() => this.send({ protocol: 1, id, method, params }))
+        .then(() =>
+          // Native ReaWebAPI rejects undefined properties, including optional fields.
+          this.send(
+            JSON.parse(JSON.stringify({ protocol: 1, id, method, params })),
+          ),
+        )
         .catch((error) => {
           clearTimeout(timer);
           this.pending.delete(id);

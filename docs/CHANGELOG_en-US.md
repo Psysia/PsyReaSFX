@@ -1,3 +1,7 @@
+## 0.9.3-beta4
+
+Fix optional native-message fields and invalidated asset path caches. Show settings immediately with loading, failure and retry states.
+
 # PsyReaSFX Changelog
 
 ## 0.9.3 Beta 3 (0.9.a WebView) — 2026-11-09

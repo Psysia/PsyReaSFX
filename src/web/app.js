@@ -1086,8 +1086,21 @@ function rowMenu(event, asset) {
 }
 
 async function settingsDialog() {
-  const settings = await command("settings.get");
   const body = $("settings-body");
+  body.replaceChildren(node("p", "muted", "正在读取设置…"));
+  if (!$("settings-dialog").open) $("settings-dialog").showModal();
+  let settings;
+  try {
+    settings = await command("settings.get");
+  } catch (error) {
+    body.replaceChildren(node("p", "error", error.message));
+    const retry = node("button", null, "重新读取设置");
+    retry.type = "button";
+    retry.onclick = action(settingsDialog);
+    body.append(retry);
+    return;
+  }
+  if (!$("settings-dialog").open) return;
   body.replaceChildren(node("h3", null, "显示"));
   if (host.runtime) {
     body.prepend(
@@ -1216,7 +1229,6 @@ async function settingsDialog() {
     aiActions.append(button);
   }
   body.append(aiActions);
-  if (!$("settings-dialog").open) $("settings-dialog").showModal();
 }
 
 $("search-form").onsubmit = action((event) => {

@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.3-beta3
+-- @version 0.9.3-beta4
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 3"
+local VERSION = "0.9.3 Beta 4"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta3",
-  source_sha256 = "9bdbe2a87e49e91f27b797ebc16959bdd7387ef6ad1034b7431d7fb45a62e264",
+  release_id = "PsyReaSFX/0.9.3-beta4",
+  source_sha256 = "7cec661c9ff245131b671629c1cc34421d331ef4a2635d9db573e1210d38ffbf",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -8667,7 +8667,7 @@ end
 
 function asset_path_sort_key(asset)
   local source = tostring(asset.path or "")
-  if asset._sort_path_source ~= source then
+  if asset._sort_path_source ~= source or asset._sort_path_value == nil then
     asset._sort_path_source = source
     asset._sort_path_value = path_key(source)
   end
