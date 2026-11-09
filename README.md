@@ -191,7 +191,7 @@ or the [illustrated Stable update guide](https://psysia.github.io/PsyReaSFX/#bet
 
 The ReaPack Versions menu keeps 0.9.1, 0.9.0, 0.8.5 and 0.7.23 Stable; the [optional neural package][neural-download] keeps 0.9.0 Stable, which 0.9.1 uses unchanged. Older previews remain available on GitHub Releases. Existing installations and asset data are not deleted.
 
-- **Pre-release: 0.9.2 Beta 1** — a performance and reliability pass over selection, search, import, saving and relinking, offered for testing. Enable pre-releases in ReaPack (`Extensions → ReaPack → Manage repositories → Enable pre-releases`) to try it; the 0.9.0 neural component is reused unchanged. Details in the [changelog](docs/CHANGELOG_en-US.md).
+- **Pre-release: 0.9.2 Beta 2** — a performance and reliability pass over selection, search, import, saving and relinking, offered for testing. Enable pre-releases in ReaPack (`Extensions → ReaPack → Manage repositories → Enable pre-releases`) to try it; the 0.9.0 neural component is reused unchanged. Details in the [changelog](docs/CHANGELOG_en-US.md).
 - **Stable channel: 0.9.1** — the default ReaPack release for everyday use. It fixes waveform caches being rebuilt from audio, stale workflow-status searches and wrongly canceled background jobs, and lowers per-frame cost in the English interface. Update the main script and restart; the 0.9.0 neural component needs no update.
 - **Included in 0.9.0** — right-click the metadata inspector to locate the specific publisher product (e.g. BOOM Cinematic Hits) using source Library/Album/product metadata, artwork and ancestor names. Without reliable evidence, browse the asset's current folder. A logical library or vendor collection such as Aki/BOOM is not used to group unrelated products. No popup.
 

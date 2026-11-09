@@ -1,5 +1,11 @@
 # PsyReaSFX Changelog
 
+## 0.9.2 Beta 2 — 2026-11-09 (pre-release)
+
+Replaces Beta 1; everything listed under Beta 1 below still applies.
+
+- Fixes the version number in the title bar, About page, splash screen and saved manifests. They read "0.9.0 Stable" in 0.9.0, 0.9.1 and Beta 1 because the displayed name was a hand-edited literal that was not updated. It is now derived from the release version when the script is built, and the release checks fail if the two disagree.
+
 ## 0.9.2 Beta 1 — 2026-11-09 (pre-release)
 
 Pre-release for testing; the stable channel remains 0.9.1. Enable pre-releases in ReaPack to install it.

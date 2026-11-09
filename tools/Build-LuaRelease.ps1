@@ -58,8 +58,18 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
     $release = [regex]::Replace($release, '(?m)^-- @version\s+[^\r\n]+$', "-- @version $Version", 1)
 }
 
+$releaseVersion = [regex]::Match($release, '(?m)^-- @version\s+(\S+)').Groups[1].Value
 $release = [regex]::Replace($release, 'release_id = "PsyReaSFX/[^"\r\n]+"',
-    'release_id = "PsyReaSFX/' + ([regex]::Match($release, '(?m)^-- @version\s+(\S+)').Groups[1].Value) + '"')
+    'release_id = "PsyReaSFX/' + $releaseVersion + '"')
+
+# The name shown in the title bar, About page and splash must follow @version.
+# It used to be a hand-edited literal that went stale for two releases.
+$displayVersion = if ($releaseVersion -match '-beta') { $releaseVersion -replace '-beta', ' Beta ' } else { "$releaseVersion Stable" }
+$displayPattern = '(?m)^local VERSION = "[^"\r\n]*"'
+if ([regex]::Matches($release, $displayPattern).Count -ne 1) {
+    throw "Expected exactly one displayed-version literal."
+}
+$release = [regex]::Replace($release, $displayPattern, 'local VERSION = "' + $displayVersion + '"')
 $provenancePattern = 'source_sha256 = "development"'
 if ([regex]::Matches($release, $provenancePattern).Count -ne 1) {
     throw "Expected exactly one release provenance template."
