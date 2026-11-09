@@ -159,7 +159,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.1** | Default release; the complete 0.9.0 feature set with reliability and performance fixes. |
-| WebView beta | **0.9.3-beta3 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
+| WebView beta | **0.9.3-beta4 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
 | Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
 | Optional component | [PsyReaSFX Neural Similarity][neural-download] | Local neural similar-sound search for Windows x64. |
@@ -193,7 +193,7 @@ or the [illustrated Stable update guide](https://psysia.github.io/PsyReaSFX/#bet
 
 The ReaPack Versions menu keeps 0.9.1, 0.9.0, 0.8.5 and 0.7.23 Stable; the [optional neural package][neural-download] keeps 0.9.0 Stable, which 0.9.1 uses unchanged. Older previews remain available on GitHub Releases. Existing installations and asset data are not deleted.
 
-- **Pre-release 0.9.3 Beta 3 (0.9.a WebView)**. Enable pre-releases, synchronize, update `PsyReaSFX.lua` to `0.9.3-beta3`, use an existing compatible ReaWebAPI installation. First-time users can install the companion `PsyReaSFX WebView Runtime` beta, then restart REAPER. Advanced feature parity remains in progress. Versions retains `0.9.2-beta4` for the legacy renderer. See the [beta installation and acceptance notes](docs/releases/release-notes-webview-0.9.3-beta3.md).
+- **Pre-release 0.9.3 Beta 4 (0.9.a WebView)**. Enable pre-releases, synchronize, update `PsyReaSFX.lua` to `0.9.3-beta4`, use an existing compatible ReaWebAPI installation. First-time users can install the companion `PsyReaSFX WebView Runtime` beta, then restart REAPER. Advanced feature parity remains in progress. Versions retains `0.9.2-beta4` for the legacy renderer. See the [beta installation and acceptance notes](docs/releases/release-notes-webview-0.9.3-beta4.md).
 - **Stable channel: 0.9.1** — the default ReaPack release for everyday use. It fixes waveform caches being rebuilt from audio, stale workflow-status searches and wrongly canceled background jobs, and lowers per-frame cost in the English interface. Update the main script and restart; the 0.9.0 neural component needs no update.
 - **Included in 0.9.0** — right-click the metadata inspector to locate the specific publisher product (e.g. BOOM Cinematic Hits) using source Library/Album/product metadata, artwork and ancestor names. Without reliable evidence, browse the asset's current folder. A logical library or vendor collection such as Aki/BOOM is not used to group unrelated products. No popup.
 

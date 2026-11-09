@@ -144,7 +144,7 @@ end
 
 function asset_path_sort_key(asset)
   local source = tostring(asset.path or "")
-  if asset._sort_path_source ~= source then
+  if asset._sort_path_source ~= source or asset._sort_path_value == nil then
     asset._sort_path_source = source
     asset._sort_path_value = path_key(source)
   end

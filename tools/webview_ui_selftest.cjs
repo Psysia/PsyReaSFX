@@ -159,6 +159,11 @@ async function main() {
           removeEventListener() {},
           postMessage(request) {
             calls.push(request);
+            if (request.method === "settings.get" && window.testSettingsError) {
+              queueMicrotask(() => listener({ data: { protocol: 1, id: request.id,
+                ok: false, error: "模拟宿主读取失败" } }));
+              return;
+            }
             let result = true;
             if (request.method === "session.ready")
               result = {
@@ -255,6 +260,16 @@ async function main() {
       (await page.locator(".result-row").count()) < 100,
       "500k catalog must render a bounded viewport",
     );
+    await page.locator("#settings-open").click();
+    await page.waitForSelector("#settings-dialog[open]", { timeout: 3000 });
+    await page.getByRole("button", { name: "关闭设置" }).click();
+    await page.evaluate(() => { window.testSettingsError = true; });
+    await page.locator("#settings-open").click();
+    await page.getByRole("button", { name: "重新读取设置" }).waitFor();
+    await page.evaluate(() => { window.testSettingsError = false; });
+    await page.getByRole("button", { name: "重新读取设置" }).click();
+    await page.locator('#settings-body input[data-field="url"]').waitFor();
+    await page.getByRole("button", { name: "关闭设置" }).click();
     const before = await page.locator("#detail-wave").boundingBox();
     await page.locator("#left-toggle").click();
     await page.locator("#right-toggle").click();
@@ -397,6 +412,14 @@ async function main() {
           },
           host: {
             send(message) {
+              function validate(value) {
+                if (value === undefined || typeof value === "function" ||
+                    (typeof value === "number" && !Number.isFinite(value)))
+                  throw new Error("Expected a JSON-serializable value");
+                if (value && typeof value === "object")
+                  Object.values(value).forEach(validate);
+              }
+              validate(message);
               window.chrome.webview.postMessage(message);
               return Promise.resolve(true);
             },
@@ -423,6 +446,20 @@ async function main() {
       /ReaWebAPI 0.3.9.30/,
       "ReaWebAPI transport must connect",
     );
+    await page.locator(".result-cell.name").first().click();
+    await page.waitForFunction(() => window.testCalls.some(call => call.method === "selection.set"));
+    await page.locator("#settings-open").click();
+    await page.waitForSelector("#settings-dialog[open]", { timeout: 3000 });
+    await page.getByRole("button", { name: "关闭设置" }).click();
+    await page.locator('[data-inspector="regions"]').click();
+    await page.locator('[data-inspector="transfer"]').click();
+    await page.locator('#inspector-body input[data-field="transfer_dir"]').waitFor();
+    await page.locator('[data-inspector="metadata"]').click();
+    await page.locator("#loop").click();
+    await page.locator("#stop").click();
+    await page.locator("#new-tab").click();
+    assert.equal(await page.locator("#status.error").count(), 0,
+      "native transport interactions must not report serialization failures");
     const url = new URL(page.url());
     url.searchParams.set("runtimeVersion", "0.4.0");
     await page.goto(url.toString());

@@ -269,6 +269,10 @@ for index = 1, 30 do
 end
 assert(runtime, "test must access the actual runtime state")
 assert(runtime.startup_session == nil, "headless startup must complete without ReaImGui")
+local settings = WebUI.handlers["settings.get"]()
+assert(type(settings.ai_presets) == "table", "settings must load after headless startup")
+assert(type(neural_json_encode(settings)) == "string")
+
 local asset = {
   path = fixture .. "\\test.wav",
   name = "测试声音.wav",
@@ -281,6 +285,16 @@ local asset = {
 }
 runtime.assets, runtime.results = { asset }, { asset }
 runtime.by_path[path_key(asset.path)] = asset
+local cached_key = asset_path_sort_key(asset)
+replace_database_asset(asset, false)
+assert(asset_path_sort_key(asset) == cached_key, "journal replacement must rebuild invalidated path cache")
+assert(type(wave_cache_key(asset, 128, false, false)) == "string")
+asset.ready = true
+runtime.root_filter = fixture
+assert(results_filter_predicate()(asset), "root filtering must survive journal replacement")
+runtime.root_filter = nil
+
+
 local first = WebUI.handlers["catalog.page"]({ offset = 0, limit = 20, waveforms = false })
 assert(#first.items == 1 and first.items[1].name == asset.name)
 assert(first.items[1].waveform == nil, "hidden waveform column must not queue audio work")

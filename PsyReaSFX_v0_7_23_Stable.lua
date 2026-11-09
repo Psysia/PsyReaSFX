@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "7f29527cf3e87a2dc553b7fb09971a448e34a8424e073050a22ff87b0302199d",
+  source_sha256 = "9d69d75830a45cacf3e43fe2dbf01eadd1284139ac6c0047bf38cbaad7875b28",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -8667,7 +8667,7 @@ end
 
 function asset_path_sort_key(asset)
   local source = tostring(asset.path or "")
-  if asset._sort_path_source ~= source then
+  if asset._sort_path_source ~= source or asset._sort_path_value == nil then
     asset._sort_path_source = source
     asset._sort_path_value = path_key(source)
   end
