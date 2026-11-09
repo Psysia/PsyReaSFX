@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.2-beta2
+-- @version 0.9.2-beta3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -100,6 +100,7 @@
 --   - Beta 8.4：标签完成快照、后台补全合并刷新、按页面依赖更新与 Watch Folder 无变化跳过刷新
 --   - Beta 8.5：Watch Folder 快捷开关、右侧素材来源浏览、神经阶段与音频窗口进度及取消
 --   - Beta 8.6：右侧面板右键直接跳转素材所在音效库，移除失效的弹窗交互
+--   - 0.9.2 Beta 3：移动或缩放窗口时降低绘制与后台负载以提高帧率，新增帧耗时诊断
 --   - 0.9.2 Beta 2：修正标题栏、关于页与启动画面仍显示 0.9.0 Stable 的版本号，改为构建时由 @version 推导
 --   - 0.9.2 Beta 1：选择集/搜索/导入/保存路径的性能与正确性专项，模块独立作用域构建
 --   - 0.9.1 Stable：修复波形缓存重复解码、状态搜索过期与任务误取消，降低英文界面每帧开销
@@ -214,7 +215,7 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.2 Beta 2"
+local VERSION = "0.9.2 Beta 3"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
@@ -1821,6 +1822,7 @@ I18N_EN = {
   ["打开数据目录"] = "Open data directory",
   ["打开文档目录"] = "Open documentation directory",
   ["复制诊断信息"] = "Copy diagnostics",
+  ["在窗口右上角显示帧耗时（仅本次运行，用于诊断卡顿）"] = "Show frame timing in the top-right corner (this session only, for diagnosing stutter)",
   ["诊断信息已复制"] = "Diagnostics copied",
   ["项目与支持"] = "Project and support",
   ["许可"] = "License",

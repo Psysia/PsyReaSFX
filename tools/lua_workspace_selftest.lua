@@ -267,7 +267,13 @@ function begin_module(id,w,h) assert(w>0 and h>0) saved_regions[id]={w,h} return
 function end_module() end
 function draw_inspector_splitter() end
 for _,name in ipairs({"draw_toolbar","draw_workspace_tabs","workspace_tabs_track","draw_sub_toolbar","draw_path_condition_bar","draw_import_progress","draw_help_popup","draw_transient_detection_popup","draw_transfer_popup","draw_settings_popup","draw_folder_drop_choice_popup","keyboard","process_external_drag","draw_tooltip_overlay"}) do _G[name]=function() end end
-assert(load(region(runtime,"function draw_main()","function autosave()")))()
+-- draw_main now also relies on the window-motion and frame-statistics helpers
+-- that sit just above it.
+reaper=reaper or {time_precise=os.clock}
+mark_interaction=mark_interaction or function() end
+ImGui.GetWindowPos=function() return 0,0 end
+ImGui.GetWindowSize=function() return main_width,main_height end
+assert(load(region(runtime,"UiMotion = UiMotion or","function autosave()")))()
 VERSION,SCRIPT_NAME="Test","PsyReaSFX"
 state.open=true state.inspector_width=320 state.sidebar_width=240
 for _,size in ipairs({10,13,18,24}) do
