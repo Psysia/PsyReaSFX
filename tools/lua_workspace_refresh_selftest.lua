@@ -26,6 +26,10 @@ assert(loadfile("src/lua/13_workspace_tabs.lua"))()
 assert(loadfile("src/lua/35_incremental_results.lua"))()
 local runtime=read("src/lua/50_runtime_ui.lua")
 assert(load(region(runtime,"local function cached_sort_text(","function rebuild_results()")))()
+-- Replaces the real compiled predicates: this test stubs the filters, so it asks for one compiled predicate per job.
+function results_filter_predicate()
+  return function(asset) return asset_in_view(asset) and matches_search(asset) end
+end
 for i=1,30000 do
   local asset={path="C:/a/"..i..".wav",name=string.format("sound%06d",i),ready=true,library_id="a"}
   state.assets[i]=asset state.by_path[path_key(asset.path)]=asset

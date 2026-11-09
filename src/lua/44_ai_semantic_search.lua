@@ -136,6 +136,7 @@ try {
     $Message = "$Message $($_.ErrorDetails.Message)"
   }
   $Message = $Message -replace '(?i)Bearer\s+[^\s"'']+', 'Bearer [redacted]'
+  $Message = $Message -replace '\bsk-[A-Za-z0-9_-]{8,}', 'sk-[redacted]'
   Write-Status ([string]$Request.statusPath) @{ state = 'error'; message = $Message }
   exit 1
 } finally {
@@ -1144,7 +1145,18 @@ end
 
 function ai_semantic_insert_candidate(session, asset, score)
   if score <= 0 then return end
-  local entry = { asset = asset, score = score, sort_path = path_key(asset.path) }
+  -- A full pool whose worst entry scores higher can never admit this asset;
+  -- skip the path key and the entry allocation for it.
+  if #session.candidates >= AISemantic.candidate_pool_limit
+    and score < session.candidates[1].score then
+    return
+  end
+  local entry = {
+    asset = asset,
+    score = score,
+    sort_path = asset_path_sort_key and asset_path_sort_key(asset)
+      or path_key(asset.path),
+  }
   if #session.candidates < AISemantic.candidate_pool_limit then
     session.candidates[#session.candidates + 1] = entry
     ai_semantic_heap_sift_up(session.candidates, #session.candidates)
@@ -1251,7 +1263,20 @@ function start_ai_semantic_next_page()
   return true
 end
 
+-- Error text can quote the request or response. Mask bearer tokens and
+-- sk-style keys before it reaches the status line, the test record or a log.
+function ai_semantic_redact(message)
+  message = tostring(message or "")
+  message = message:gsub("([Bb][Ee][Aa][Rr][Ee][Rr])%s+[^%s\"']+", "%1 [redacted]")
+  message = message:gsub(
+    "%f[%w_%-]sk%-[%w_%-][%w_%-][%w_%-][%w_%-][%w_%-][%w_%-][%w_%-][%w_%-][%w_%-]*",
+    "sk-[redacted]"
+  )
+  return message
+end
+
 function ai_semantic_fail(session, message)
+  message = message ~= nil and ai_semantic_redact(message) or nil
   if session.phase == "test_wait" then ai_semantic_record_test(session, false, tostring(message)) end
   if session.api_job then ai_semantic_cleanup_job(session.api_job) end
   Jobs.finish(session.job_token, false, message)
@@ -1391,7 +1416,8 @@ function process_ai_semantic_search()
     local deadline = Host.time_precise() + AISemantic.frame_budget
     while session.source_index <= session.total
       and processed < AISemantic.frame_records
-      and (processed == 0 or Host.time_precise() < deadline) do
+      and (processed == 0 or processed % 32 ~= 0
+        or Host.time_precise() < deadline) do
       local asset = session.source[session.source_index]
       if ai_semantic_asset_scope_match(asset) then
         ai_semantic_insert_candidate(

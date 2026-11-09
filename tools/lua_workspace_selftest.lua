@@ -22,6 +22,12 @@ function safe_lower(s) return tostring(s or ""):lower() end
 function clamp(n,a,b) return math.max(a, math.min(b,n)) end
 function canonical_source_path(s) return tostring(s or ""):gsub("\\", "/"):gsub("/$", "") end
 function path_key(s) return safe_lower(canonical_source_path(s)) end
+function asset_path_sort_key(asset) return path_key(asset.path) end
+SelectionIndex = { revision = 0, meta_epoch = 0 }
+function selection_touch() SelectionIndex.revision = SelectionIndex.revision + 1 end
+function selection_replace(set) state.selected_set = set or {}; selection_touch() end
+function selection_add(key) state.selected_set[key] = true; selection_touch() end
+function selection_remove(key) state.selected_set[key] = nil; selection_touch() end
 function basename(s) return s:match("([^/]+)$") or s end
 function dirname(s) return s:match("^(.*)/[^/]+$") or "" end
 function join_path(a,b) return a .. "/" .. b end
@@ -230,7 +236,7 @@ surface_width=800 cursor_x,cursor_y=0,0
 draw_control_deck({path="C:/clipped.wav"})
 assert(child_ends==previous_ends and var_balance==0 and color_balance==0, "clipped deck must not EndChild twice")
 child_visible=true
-assert(load(region(runtime,"function push_theme()","function draw_inspector_splitter(")))()
+assert(load(region(runtime,"THEME_INPUT_FIELDS = {","function draw_inspector_splitter(")))()
 function apply_theme_palette() end
 function apply_surface_style() end
 function rgba_with_alpha(v) return v end

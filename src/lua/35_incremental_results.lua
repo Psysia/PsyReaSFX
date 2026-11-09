@@ -32,100 +32,153 @@ function begin_incremental_result_job(
     index = 1,
     total = #(source or {}),
     matches = {},
+    match_count = 0,
     sort_index = 1,
-    runs = {},
+    sort_chunk = math.max(1, math.floor(RESULT_SORT_CHUNK_SIZE)),
     stage = "filter",
     selected_index = 0,
   }
 end
 
-local function begin_merge_round(job)
-  if #job.runs <= 1 then
-    job.result = job.runs[1] or {}
-    job.runs = nil
+-- Bottom-up merge sort over the sorted chunks. All chunks live back to back in
+-- one flat array and the merge ping-pongs between two flat arrays, so a round
+-- allocates nothing (the second buffer is created once) and every write uses an
+-- explicit index. The merge tree (pairs of neighbouring runs, an odd trailing
+-- run is carried over) and the tie rule (the left run wins unless the right
+-- element is strictly less) are the same as the previous pairwise
+-- implementation, so the resulting order is identical.
+local function begin_merge_phase(job)
+  local count = job.match_count
+  local width = job.sort_chunk
+  if count <= width then
+    job.result = job.matches
+    job.matches = nil
     job.select_index = 1
     job.stage = "select"
     return
   end
 
-  job.merge_input = job.runs
-  job.merge_output = {}
-  job.merge_pair_index = 1
-  job.merge = nil
-  job.runs = nil
+  job.merge_source = job.matches
+  job.merge_target = {}
+  job.matches = nil
+  job.merge_width = width
+  job.merge_start = 1
+  job.merge_left = nil
   job.stage = "merge"
 end
 
-local function prepare_merge_pair(job)
-  local left = job.merge_input[job.merge_pair_index]
-  local right = job.merge_input[job.merge_pair_index + 1]
-
-  if not left then
-    job.runs = job.merge_output
-    job.merge_input = nil
-    job.merge_output = nil
-    begin_merge_round(job)
-    return false
-  end
-
-  if not right then
-    job.merge_output[#job.merge_output + 1] = left
-    job.merge_pair_index = job.merge_pair_index + 2
-    return false
-  end
-
-  job.merge = {
-    left = left,
-    right = right,
-    left_index = 1,
-    right_index = 1,
-    output = {},
-  }
-  return true
-end
-
-local function append_merge_value(merge, value)
-  merge.output[#merge.output + 1] = value
-end
-
 local function step_merge(job, budget)
-  local processed = 0
+  local source = job.merge_source
+  local target = job.merge_target
+  local less = job.less
+  local count = job.match_count
+  local move = table.move
 
-  while processed < budget and job.stage == "merge" do
-    if not job.merge then
-      if not prepare_merge_pair(job) then
-        if job.stage ~= "merge" then
-          break
+  while budget > 0 do
+    local left = job.merge_left
+    if not left then
+      local width = job.merge_width
+      local start = job.merge_start
+      if start > count then
+        -- Round complete: the target now holds runs of twice the width.
+        source, target = target, source
+        width = width * 2
+        job.merge_source = source
+        job.merge_target = target
+        job.merge_width = width
+        job.merge_start = 1
+        if width >= count then
+          job.result = source
+          job.merge_source = nil
+          job.merge_target = nil
+          job.select_index = 1
+          job.stage = "select"
+          return
         end
-      end
-    end
-
-    local merge = job.merge
-    if merge then
-      local left_value = merge.left[merge.left_index]
-      local right_value = merge.right[merge.right_index]
-
-      if left_value and right_value then
-        if job.less(right_value, left_value) then
-          append_merge_value(merge, right_value)
-          merge.right_index = merge.right_index + 1
-        else
-          append_merge_value(merge, left_value)
-          merge.left_index = merge.left_index + 1
-        end
-      elseif left_value then
-        append_merge_value(merge, left_value)
-        merge.left_index = merge.left_index + 1
-      elseif right_value then
-        append_merge_value(merge, right_value)
-        merge.right_index = merge.right_index + 1
       else
-        job.merge_output[#job.merge_output + 1] = merge.output
-        job.merge_pair_index = job.merge_pair_index + 2
-        job.merge = nil
+        local left_end = start + width - 1
+        if left_end > count then left_end = count end
+        local right_end = left_end + width
+        if right_end > count then right_end = count end
+        job.merge_left = start
+        job.merge_left_end = left_end
+        job.merge_right = left_end + 1
+        job.merge_right_end = right_end
+        job.merge_out = start
+        job.merge_bulk = false
+        job.merge_checked = false
+      end
+    else
+      local left_end = job.merge_left_end
+      local right = job.merge_right
+      local right_end = job.merge_right_end
+      local out = job.merge_out
+
+      if not job.merge_checked then
+        job.merge_checked = true
+        if right > right_end then
+          job.merge_bulk = true
+        else
+          -- A pair that is already in order (the left tail is not greater
+          -- than the right head) is a plain concatenation.
+          if not less(source[right], source[left_end]) then
+            job.merge_bulk = true
+          end
+          budget = budget - 1
+        end
       end
 
-      processed = processed + 1
+      if job.merge_bulk then
+        local take
+        if left <= left_end then
+          take = left_end - left + 1
+          if take > budget then take = budget end
+          move(source, left, left + take - 1, out, target)
+          left = left + take
+        else
+          take = right_end - right + 1
+          if take > budget then take = budget end
+          move(source, right, right + take - 1, out, target)
+          right = right + take
+        end
+        out = out + take
+        budget = budget - take
+      else
+        local left_value = source[left]
+        local right_value = source[right]
+        while true do
+          if less(right_value, left_value) then
+            target[out] = right_value
+            out = out + 1
+            right = right + 1
+            if right > right_end then
+              job.merge_bulk = true
+              break
+            end
+            right_value = source[right]
+          else
+            target[out] = left_value
+            out = out + 1
+            left = left + 1
+            if left > left_end then
+              job.merge_bulk = true
+              break
+            end
+            left_value = source[left]
+          end
+          budget = budget - 1
+          if budget <= 0 then break end
+        end
+      end
+
+      if left > left_end and right > right_end then
+        job.merge_left = nil
+        job.merge_start = job.merge_start + job.merge_width * 2
+      else
+        job.merge_left = left
+        job.merge_right = right
+        job.merge_out = out
+      end
     end
   end
 end
@@ -141,35 +194,41 @@ function step_incremental_result_job(job, budget)
 
   if job.stage == "filter" then
     local processed = 0
-    while job.index <= job.total and processed < budget do
-      local value = job.source[job.index]
-      if value and job.predicate(value) then
-        job.matches[#job.matches + 1] = value
+    local source = job.source
+    local predicate = job.predicate
+    local matches = job.matches
+    local match_count = job.match_count
+    local index = job.index
+    local total = job.total
+    while index <= total and processed < budget do
+      local value = source[index]
+      if value and predicate(value) then
+        match_count = match_count + 1
+        matches[match_count] = value
       end
-      job.index = job.index + 1
+      index = index + 1
       processed = processed + 1
     end
+    job.index = index
+    job.match_count = match_count
 
-    if job.index > job.total then
+    if index > total then
       job.source = nil
       job.stage = "sort_chunks"
     end
   elseif job.stage == "sort_chunks" then
-    if job.sort_index <= #job.matches then
-      local run = {}
-      local last = math.min(
-        #job.matches,
-        job.sort_index + RESULT_SORT_CHUNK_SIZE - 1
-      )
-      for index = job.sort_index, last do
-        run[#run + 1] = job.matches[index]
-      end
+    local count = job.match_count
+    local first = job.sort_index
+    if first <= count then
+      local last = math.min(count, first + job.sort_chunk - 1)
+      -- table.sort cannot sort a sub-range, so sort a copy of the chunk and
+      -- write it back to the same positions of the flat array.
+      local run = table.move(job.matches, first, last, 1, {})
       table.sort(run, job.less)
-      job.runs[#job.runs + 1] = run
+      table.move(run, 1, last - first + 1, first, job.matches)
       job.sort_index = last + 1
     else
-      job.matches = nil
-      begin_merge_round(job)
+      begin_merge_phase(job)
     end
   elseif job.stage == "merge" then
     step_merge(job, budget)
@@ -178,18 +237,23 @@ function step_incremental_result_job(job, budget)
       job.stage = "complete"
     else
       local processed = 0
-      while job.select_index <= #job.result
+      local result = job.result
+      local result_count = #result
+      local select_index = job.select_index
+      local key_selector = job.key_selector
+      local selected_key = job.selected_key
+      while select_index <= result_count
         and processed < budget do
-        if job.key_selector(job.result[job.select_index])
-          == job.selected_key then
-          job.selected_index = job.select_index
-          job.select_index = #job.result + 1
+        if key_selector(result[select_index]) == selected_key then
+          job.selected_index = select_index
+          select_index = result_count + 1
           break
         end
-        job.select_index = job.select_index + 1
+        select_index = select_index + 1
         processed = processed + 1
       end
-      if job.select_index > #job.result then
+      job.select_index = select_index
+      if select_index > result_count then
         job.stage = "complete"
       end
     end

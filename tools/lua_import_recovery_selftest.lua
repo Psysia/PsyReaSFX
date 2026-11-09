@@ -10,6 +10,7 @@ end
 IMPORT_RECOVERY_ASSETS_PER_FRAME = 2
 local scan_calls, writes, starts = 0, 0, 0
 function path_key(path) return path:lower() end
+function asset_path_sort_key(asset) return path_key(asset.path) end
 function can_run_heavy_job() return true end
 function root_for_path(path)
   if path:find("disabled", 1, true) then return "disabled", { enabled = false } end

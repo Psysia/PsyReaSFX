@@ -54,6 +54,14 @@ function invalidate_similarity_index()
   end
 end
 
+-- Sort/identity key of an asset path. Prefers the per-asset cache kept by the
+-- catalog (it invalidates itself when the path changes); modules loaded on
+-- their own fall back to path_key.
+function similarity_asset_path_key(asset)
+  if asset_path_sort_key then return asset_path_sort_key(asset) end
+  return path_key(asset.path)
+end
+
 function similarity_asset_signature(asset)
   if not asset then return "" end
   local size = tonumber(asset.size) or 0
@@ -61,20 +69,29 @@ function similarity_asset_signature(asset)
     size = file_size(asset.path)
     asset.size = size
   end
-  local identity_key = table.concat({
-    path_key(asset.path),
-    tostring(size),
-    string.format("%.6f", tonumber(asset.duration) or 0),
-  }, "|")
-  if asset.similarity_signature_key == identity_key
-    and tostring(asset.similarity_signature or "") ~= "" then
-    return asset.similarity_signature
+  local path = asset.path
+  local duration = tonumber(asset.duration) or 0
+  -- Validate the cached signature against the raw identity fields. Rebuilding
+  -- the identity string for every lookup dominated large-library indexing.
+  local cached = asset.similarity_signature
+  if type(cached) == "string" and cached ~= ""
+    and asset._sim_sig_path == path
+    and asset._sim_sig_size == size
+    and asset._sim_sig_duration == duration then
+    return cached
   end
+  local identity_key = table.concat({
+    path_key(path),
+    tostring(size),
+    string.format("%.6f", duration),
+  }, "|")
   local identity = table.concat({
     identity_key,
     "sim-v1",
   }, "|")
-  asset.similarity_signature_key = identity_key
+  asset._sim_sig_path = path
+  asset._sim_sig_size = size
+  asset._sim_sig_duration = duration
   asset.similarity_signature =
     fnv1a(identity .. "|a") .. fnv1a("b|" .. identity)
   return asset.similarity_signature
@@ -90,18 +107,7 @@ function similarity_encode_features(features)
 end
 
 function similarity_decode_features(encoded)
-  encoded = tostring(encoded or "")
-  if #encoded ~= Similarity.feature_count * 2
-    or encoded:find("[^0-9a-fA-F]") then
-    return nil
-  end
-  local features = {}
-  for index = 1, Similarity.feature_count do
-    features[index] = (
-      tonumber(encoded:sub(index * 2 - 1, index * 2), 16) or 0
-    ) / 255
-  end
-  return features
+  return similarity_unpack_features(similarity_pack_hex(encoded))
 end
 
 function similarity_pack_features(features)
@@ -113,19 +119,32 @@ function similarity_pack_features(features)
   return table.concat(packed)
 end
 
+-- Two hex digits (either case, mixed allowed) -> the byte they encode.
+SIMILARITY_HEX2CHAR = {}
+do
+  local digits = "0123456789abcdefABCDEF"
+  for high = 1, #digits do
+    for low = 1, #digits do
+      SIMILARITY_HEX2CHAR[digits:sub(high, high) .. digits:sub(low, low)] =
+        string.char(
+          tonumber(digits:sub(high, high), 16) * 16
+            + tonumber(digits:sub(low, low), 16)
+        )
+    end
+  end
+end
+
 function similarity_pack_hex(encoded)
   encoded = tostring(encoded or "")
-  if #encoded ~= Similarity.feature_count * 2
-    or encoded:find("[^0-9a-fA-F]") then
-    return nil
-  end
-  local packed = {}
-  for index = 1, Similarity.feature_count do
-    packed[index] = string.char(
-      tonumber(encoded:sub(index * 2 - 1, index * 2), 16) or 0
-    )
-  end
-  return table.concat(packed)
+  if #encoded ~= Similarity.feature_count * 2 then return nil end
+  -- Every character belongs to a matched pair exactly when all of them are
+  -- hexadecimal digits, so the replacement count doubles as the validation.
+  local packed, pairs_replaced = encoded:gsub(
+    "%x%x",
+    SIMILARITY_HEX2CHAR
+  )
+  if pairs_replaced ~= Similarity.feature_count then return nil end
+  return packed
 end
 
 function similarity_unpack_features(packed)
@@ -387,6 +406,25 @@ function similarity_bucket_axis(candidate, feature_index)
 end
 
 function similarity_bucket_key(candidate)
+  local axes = Similarity.bucket_features
+  if type(candidate) == "string"
+    and #candidate == Similarity.feature_count
+    and #axes == 5 then
+    -- Hot path: packed one-byte-per-feature records, one string.char call.
+    local bins = Similarity.bucket_bins
+    local last = bins - 1
+    local a1, a2, a3, a4, a5 = candidate:byte(axes[1]), candidate:byte(axes[2]),
+      candidate:byte(axes[3]), candidate:byte(axes[4]), candidate:byte(axes[5])
+    a1 = math.min(last, math.floor(a1 / 255 * bins))
+    a2 = math.min(last, math.floor(a2 / 255 * bins))
+    a3 = math.min(last, math.floor(a3 / 255 * bins))
+    a4 = math.min(last, math.floor(a4 / 255 * bins))
+    a5 = math.min(last, math.floor(a5 / 255 * bins))
+    return string.char(
+      candidate:byte(15) / 255 >= 0.5 and 1 or 0,
+      a1, a2, a3, a4, a5
+    )
+  end
   local spectral = similarity_candidate_feature(candidate, 15) >= 0.5
   local parts = { string.char(spectral and 1 or 0) }
   for _, feature_index in ipairs(Similarity.bucket_features) do
@@ -465,33 +503,47 @@ end
 
 function similarity_cache_step_load(session)
   local processed = 0
+  local added = 0
+  local loaded = 0
+  local file = session.cache_file
+  local cache = state.similarity_cache
+  local record_limit = Similarity.cache_load_records
+  local check_interval = Similarity.clock_check_interval
   local deadline = HostApi.time_precise() + Similarity.frame_budget
-  while processed < Similarity.cache_load_records
+  local finished = false
+  while processed < record_limit
     and (processed == 0
-      or processed % Similarity.clock_check_interval ~= 0
+      or processed % check_interval ~= 0
       or HostApi.time_precise() < deadline) do
-    local line = session.cache_file:read("*l")
+    local line = file:read("*l")
     if not line then
-      session.cache_file:close()
-      session.cache_file = nil
-      AppState.set("similarity_cache_loaded", true)
-      session.phase = "reference"
-      return
+      finished = true
+      break
     end
-    local signature, encoded = line:match("^([0-9a-fA-F]+)\t([0-9a-fA-F]+)$")
-    if signature and #signature == 16
-      and #encoded == Similarity.feature_count * 2
-      and not encoded:find("[^0-9a-fA-F]") then
-      if not state.similarity_cache[signature] then
-        AppState.set(
-          "similarity_cache_count",
-          (state.similarity_cache_count or 0) + 1
-        )
+    local signature, encoded = line:match("^(%x+)\t(%x+)$")
+    if signature and #signature == 16 then
+      local packed = similarity_pack_hex(encoded)
+      if packed then
+        if not cache[signature] then added = added + 1 end
+        cache[signature] = packed
+        loaded = loaded + 1
       end
-      state.similarity_cache[signature] = similarity_pack_hex(encoded)
-      session.cache_loaded_count = session.cache_loaded_count + 1
     end
     processed = processed + 1
+  end
+  -- Commit the counters once per frame instead of once per record.
+  if added > 0 then
+    AppState.set(
+      "similarity_cache_count",
+      (state.similarity_cache_count or 0) + added
+    )
+  end
+  session.cache_loaded_count = session.cache_loaded_count + loaded
+  if finished then
+    file:close()
+    session.cache_file = nil
+    AppState.set("similarity_cache_loaded", true)
+    session.phase = "reference"
   end
 end
 
@@ -620,23 +672,59 @@ function similarity_heap_sift_down(heap, index)
   end
 end
 
-function similarity_insert_ranked(session, asset, score, features)
+-- True when a candidate with this score can still enter (or tie into) the
+-- Top-K heap, so callers can skip path-key work for hopeless candidates.
+function similarity_rank_may_enter(ranked, score)
+  if #ranked < Similarity.result_limit then return true end
+  local worst = ranked[1].score
+  if score ~= worst then return score > worst end
+  return true
+end
+
+-- sort_path is optional: callers that already hold the asset path key pass it
+-- so it is not recomputed. The entry is only allocated when it is retained.
+function similarity_insert_ranked(session, asset, score, features, sort_path)
+  local ranked = session.ranked
+  local count = #ranked
+  if count < Similarity.result_limit then
+    local entry = {
+      asset = asset,
+      score = score,
+      features = features,
+      sort_path = sort_path or similarity_asset_path_key(asset),
+    }
+    ranked[count + 1] = entry
+    similarity_heap_sift_up(ranked, count + 1)
+    return entry
+  end
+  local worst = ranked[1]
+  if score ~= worst.score then
+    if not (score > worst.score) then return nil end
+    sort_path = sort_path or similarity_asset_path_key(asset)
+  else
+    sort_path = sort_path or similarity_asset_path_key(asset)
+    if not (sort_path < worst.sort_path) then return nil end
+  end
   local entry = {
     asset = asset,
     score = score,
     features = features,
-    sort_path = path_key(asset.path),
+    sort_path = sort_path,
   }
-  if #session.ranked < Similarity.result_limit then
-    session.ranked[#session.ranked + 1] = entry
-    similarity_heap_sift_up(session.ranked, #session.ranked)
-    return entry
-  elseif similarity_rank_is_better(entry, session.ranked[1]) then
-    session.ranked[1] = entry
-    similarity_heap_sift_down(session.ranked, 1)
-    return entry
+  ranked[1] = entry
+  similarity_heap_sift_down(ranked, 1)
+  return entry
+end
+
+-- Reference path key, computed once per search session.
+function similarity_reference_key(session)
+  local key = session.reference_key
+  if key == nil then
+    local reference = session.reference
+    key = reference and similarity_asset_path_key(reference) or false
+    session.reference_key = key
   end
-  return nil
+  return key
 end
 
 function similarity_prepare_bucket_queue(session)
@@ -896,13 +984,18 @@ function similarity_process_ranked_buckets(session)
       session.bucket_asset_index = 1
     else
       local packed = state.similarity_cache[similarity_asset_signature(asset)]
-      if packed and path_key(asset.path) ~= path_key(session.reference.path) then
-        similarity_insert_ranked(
-          session,
-          asset,
-          similarity_compare_encoded(session.reference_features, packed),
+      if packed then
+        local score = similarity_compare_encoded(
+          session.reference_features,
           packed
         )
+        -- Hopeless candidates never touch the path key at all.
+        if similarity_rank_may_enter(session.ranked, score) then
+          local sort_path = similarity_asset_path_key(asset)
+          if sort_path ~= similarity_reference_key(session) then
+            similarity_insert_ranked(session, asset, score, packed, sort_path)
+          end
+        end
       end
       session.bucket_asset_index = session.bucket_asset_index + 1
       session.ranked_cached = session.ranked_cached + 1
@@ -942,9 +1035,13 @@ function similarity_process_missing(session)
         session.reference_features,
         packed
       )
-      if not session.reference
-        or path_key(asset.path) ~= path_key(session.reference.path) then
+      if not session.reference then
         similarity_insert_ranked(session, asset, score, packed)
+      elseif similarity_rank_may_enter(session.ranked, score) then
+        local sort_path = similarity_asset_path_key(asset)
+        if sort_path ~= similarity_reference_key(session) then
+          similarity_insert_ranked(session, asset, score, packed, sort_path)
+        end
       end
       local key = similarity_bucket_key(packed)
       local bucket = session.index_buckets[key]
@@ -1010,7 +1107,7 @@ function finish_similarity_search(canceled)
         labels[#labels + 1] = group.label
       end
     end
-    state.similarity_lookup[path_key(entry.asset.path)] = {
+    state.similarity_lookup[entry.sort_path] = {
       score = entry.score,
       explanation = table.concat(labels, "、"),
       neural_score = entry.neural_score,
@@ -1092,6 +1189,7 @@ function start_similarity_search(reference, scope)
   local source = scope == "all" and state.assets or state.results
   AppState.set("similarity_session", {
     reference = reference,
+    reference_key = similarity_asset_path_key(reference),
     reference_signature = similarity_asset_signature(reference),
     reference_features = nil,
     source = source,
@@ -1194,5 +1292,6 @@ function process_similarity_search()
 end
 
 function similarity_result_for_asset(asset)
-  return asset and state.similarity_lookup[path_key(asset.path)] or nil
+  return asset and state.similarity_lookup[similarity_asset_path_key(asset)]
+    or nil
 end

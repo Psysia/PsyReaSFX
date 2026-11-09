@@ -70,14 +70,14 @@ local asset_view = function_region(
   "local function cached_sort_text("
 )
 assert(
-  asset_view:find('"ucs_pending" == state.view', 1, true)
+  asset_view:find('"ucs_pending" == view', 1, true)
     and asset_view:find('asset.ucs_status ~= "pending"', 1, true),
   "UCS review queue must filter to pending assets"
 )
 assert(
-  asset_view:find('"ucs_category" == state.view', 1, true)
-    and asset_view:find('"ucs_subcategory" == state.view', 1, true)
-    and asset_view:find('"ucs_catid" == state.view', 1, true),
+  asset_view:find('"ucs_category" == view', 1, true)
+    and asset_view:find('"ucs_subcategory" == view', 1, true)
+    and asset_view:find('"ucs_catid" == view', 1, true),
   "UCS virtual-directory levels must filter the catalog"
 )
 

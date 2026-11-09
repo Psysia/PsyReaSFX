@@ -255,6 +255,291 @@ for _, entry in ipairs(workflow_exact.ranked) do
     "indexed workflow must preserve every exhaustive Top-K result")
 end
 
+-- Differential tests: previous implementations versus the optimized ones.
+do
+  local seed = 987654321
+  local function random(limit)
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed % limit
+  end
+  local feature_count = Similarity.feature_count
+
+  local function old_pack_hex(text)
+    text = tostring(text or "")
+    if #text ~= feature_count * 2 or text:find("[^0-9a-fA-F]") then
+      return nil
+    end
+    local out = {}
+    for index = 1, feature_count do
+      out[index] = string.char(
+        tonumber(text:sub(index * 2 - 1, index * 2), 16) or 0
+      )
+    end
+    return table.concat(out)
+  end
+  local function old_decode(text)
+    text = tostring(text or "")
+    if #text ~= feature_count * 2 or text:find("[^0-9a-fA-F]") then
+      return nil
+    end
+    local out = {}
+    for index = 1, feature_count do
+      out[index] = (tonumber(text:sub(index * 2 - 1, index * 2), 16) or 0) / 255
+    end
+    return out
+  end
+  local function old_bucket_key(candidate)
+    local spectral = similarity_candidate_feature(candidate, 15) >= 0.5
+    local parts = { string.char(spectral and 1 or 0) }
+    for _, feature_index in ipairs(Similarity.bucket_features) do
+      parts[#parts + 1] = string.char(similarity_bucket_axis(candidate, feature_index))
+    end
+    return table.concat(parts)
+  end
+  local alphabet = "0123456789abcdefABCDEF"
+  local function random_hex(length)
+    local chars = {}
+    for index = 1, length do
+      local pick = random(#alphabet) + 1
+      chars[index] = alphabet:sub(pick, pick)
+    end
+    return table.concat(chars)
+  end
+
+  -- Hex decode: valid (mixed case), wrong length, one bad character anywhere.
+  local invalid_chars = { "g", "G", "z", " ", "-", "+", "\n", "\0", "/", ":", "@", "`", "x" }
+  for _ = 1, 4000 do
+    local text = random_hex(feature_count * 2)
+    assert(similarity_pack_hex(text) == old_pack_hex(text))
+    local a, b = similarity_decode_features(text), old_decode(text)
+    for index = 1, feature_count do assert(a[index] == b[index]) end
+    local bad = text
+    local position = random(#bad) + 1
+    bad = bad:sub(1, position - 1) .. invalid_chars[random(#invalid_chars) + 1]
+      .. bad:sub(position + 1)
+    assert(similarity_pack_hex(bad) == nil and old_pack_hex(bad) == nil)
+    assert(similarity_decode_features(bad) == nil)
+    local short = random_hex(random(feature_count * 2 + 6))
+    assert(similarity_pack_hex(short) == old_pack_hex(short))
+  end
+  assert(similarity_pack_hex(nil) == nil and similarity_pack_hex("") == nil)
+  assert(similarity_pack_hex(string.rep("0", 29) .. "\0") == nil)
+  assert(similarity_pack_hex(string.rep("fF", 15)) == string.rep("\255", 15))
+
+  -- Bucket keys: packed bytes, hex strings and plain feature tables.
+  for sample = 1, 6000 do
+    local candidate
+    local kind = sample % 3
+    if kind == 0 then
+      local bytes = {}
+      for index = 1, feature_count do bytes[index] = string.char(random(256)) end
+      candidate = table.concat(bytes)
+    elseif kind == 1 then
+      candidate = random_hex(feature_count * 2)
+    else
+      candidate = {}
+      for index = 1, feature_count do candidate[index] = random(1001) / 1000 end
+    end
+    assert(similarity_bucket_key(candidate) == old_bucket_key(candidate),
+      "bucket key must match the generic implementation")
+  end
+  for value = 0, 255 do
+    local bytes = {}
+    for index = 1, feature_count do bytes[index] = string.char(value) end
+    local candidate = table.concat(bytes)
+    assert(similarity_bucket_key(candidate) == old_bucket_key(candidate))
+  end
+
+  -- Ranking heap: identical retained entries and identical return values.
+  local function old_insert(session, asset, score, features)
+    local entry = {
+      asset = asset, score = score, features = features,
+      sort_path = path_key(asset.path),
+    }
+    if #session.ranked < Similarity.result_limit then
+      session.ranked[#session.ranked + 1] = entry
+      similarity_heap_sift_up(session.ranked, #session.ranked)
+      return entry
+    elseif similarity_rank_is_better(entry, session.ranked[1]) then
+      session.ranked[1] = entry
+      similarity_heap_sift_down(session.ranked, 1)
+      return entry
+    end
+    return nil
+  end
+  local old_session, new_session = { ranked = {} }, { ranked = {} }
+  for sample = 1, 6000 do
+    -- Few distinct scores and paths force many ties on score and on path.
+    local asset = { path = string.format("X:/Tie/%03d.WAV", random(400)) }
+    local score = random(40) / 4
+    local old_entry = old_insert(old_session, asset, score, "f")
+    local may_enter = similarity_rank_may_enter(new_session.ranked, score)
+    local new_entry = similarity_insert_ranked(new_session, asset, score, "f")
+    assert((old_entry ~= nil) == (new_entry ~= nil),
+      "retention decision must match at sample " .. sample)
+    if old_entry then assert(may_enter) end
+    if not may_enter then assert(new_entry == nil) end
+    assert(#old_session.ranked == #new_session.ranked)
+    if sample % 97 == 0 or sample == 6000 then
+      for index = 1, #old_session.ranked do
+        local left, right = old_session.ranked[index], new_session.ranked[index]
+        assert(left.score == right.score and left.sort_path == right.sort_path
+          and left.asset == right.asset, "heap layout must match")
+      end
+    end
+  end
+  -- A caller-supplied sort_path is used verbatim; asset path is not needed.
+  local supplied = { ranked = {} }
+  local entry = similarity_insert_ranked(supplied, {}, 5, "f", "supplied-key")
+  assert(entry.sort_path == "supplied-key")
+
+  -- Signature: raw-field cache validation versus rebuilt identity string.
+  local function old_signature(asset)
+    local size = tonumber(asset.size) or 0
+    local identity_key = table.concat({
+      path_key(asset.path), tostring(size),
+      string.format("%.6f", tonumber(asset.duration) or 0),
+    }, "|")
+    local identity = identity_key .. "|sim-v1"
+    return fnv1a(identity .. "|a") .. fnv1a("b|" .. identity)
+  end
+  for sample = 1, 3000 do
+    local asset = {
+      path = string.format("X:/Sig/%d/Name %d.wav", random(50), random(1000)),
+      size = 1 + random(100000),
+      duration = random(100000) / 100,
+    }
+    assert(similarity_asset_signature(asset) == old_signature(asset))
+    assert(similarity_asset_signature(asset) == old_signature(asset),
+      "cached signature must stay valid")
+    local before = asset.similarity_signature
+    asset.size = asset.size + 1
+    assert(similarity_asset_signature(asset) == old_signature(asset)
+      and asset.similarity_signature ~= before, "size change must invalidate")
+    asset.duration = asset.duration + 0.5
+    assert(similarity_asset_signature(asset) == old_signature(asset),
+      "duration change must invalidate")
+    asset.path = asset.path .. "x"
+    assert(similarity_asset_signature(asset) == old_signature(asset),
+      "path change must invalidate")
+    -- same identity after path_key folding (case) keeps the same signature
+    local folded = { path = asset.path:upper(), size = asset.size, duration = asset.duration }
+    assert(similarity_asset_signature(folded) == similarity_asset_signature(asset))
+  end
+
+  -- Feature-cache loader: per-frame counter commit, identical content.
+  if cache_directory then
+    local lines = { table.concat({ Similarity.cache_magic,
+      tostring(Similarity.cache_version), tostring(feature_count) }, "\t") }
+    local expected, expected_count = {}, 0
+    for _ = 1, 3000 do
+      local signature = random_hex(16):lower()
+      local hex = random_hex(feature_count * 2)
+      local roll = random(10)
+      if roll == 0 then
+        lines[#lines + 1] = signature .. "\t" .. hex:sub(1, -2)
+      elseif roll == 1 then
+        lines[#lines + 1] = signature .. "\t" .. hex:sub(1, -2) .. "g"
+      elseif roll == 2 then
+        lines[#lines + 1] = signature:sub(1, 15) .. "\t" .. hex
+      elseif roll == 3 then
+        lines[#lines + 1] = "garbage line"
+      else
+        lines[#lines + 1] = signature .. "\t" .. hex
+        if not expected[signature] then expected_count = expected_count + 1 end
+        expected[signature] = old_pack_hex(hex)
+        if roll == 4 then -- duplicate signature, last record wins, not recounted
+          local other = random_hex(feature_count * 2)
+          lines[#lines + 1] = signature .. "\t" .. other
+          expected[signature] = old_pack_hex(other)
+        end
+      end
+    end
+    local file = assert(io.open(similarity_cache_path(), "wb"))
+    file:write(table.concat(lines, "\n"), "\n")
+    file:close()
+    state.similarity_cache = {}
+    state.similarity_cache_count = 0
+    state.similarity_cache_loaded = false
+    state.similarity_cache_reset_required = false
+    local count_commits = 0
+    local original_set = AppState.set
+    AppState.set = function(name, value)
+      if name == "similarity_cache_count" then count_commits = count_commits + 1 end
+      return original_set(name, value)
+    end
+    local saved_records = Similarity.cache_load_records
+    Similarity.cache_load_records = 500
+    local load_session = { phase = "prepare" }
+    similarity_cache_begin_load(load_session)
+    local frames = 0
+    while load_session.phase == "load_cache" do
+      similarity_cache_step_load(load_session)
+      frames = frames + 1
+    end
+    Similarity.cache_load_records = saved_records
+    AppState.set = original_set
+    assert(frames >= 6 and count_commits <= frames,
+      "cache count must be committed at most once per frame")
+    assert(state.similarity_cache_count == expected_count)
+    assert(load_session.cache_loaded_count >= expected_count)
+    local seen = 0
+    for signature, packed in pairs(state.similarity_cache) do
+      seen = seen + 1
+      assert(expected[signature] == packed, "loaded record differs")
+    end
+    assert(seen == expected_count)
+    assert(state.similarity_cache_loaded == true)
+    os.remove(similarity_cache_path())
+  end
+
+  -- Reference exclusion uses the cached path key once per session, and the
+  -- catalog's asset_path_sort_key is preferred when it exists.
+  local key_calls = 0
+  local previous_sort_key = asset_path_sort_key
+  function asset_path_sort_key(asset)
+    key_calls = key_calls + 1
+    return path_key(asset.path)
+  end
+  local reference_asset_2 = { path = "X:/Ref/Same.wav", size = 10, duration = 1, ready = true }
+  local twin = { path = "x:/ref/SAME.wav", size = 11, duration = 1, ready = true }
+  local rank_session = {
+    reference = reference_asset_2,
+    reference_features = identical,
+    ranked = {},
+    bucket_queue = { { key = "k", assets = {}, upper_score = 100 } },
+    bucket_index = 1, bucket_asset_index = 1,
+    ranked_cached = 0, pruned_cached = 0,
+    missing = {}, failed_assets = {}, total = 0, source = {},
+  }
+  local saved_cache = state.similarity_cache
+  state.similarity_cache = {}
+  local descriptor_assets = rank_session.bucket_queue[1].assets
+  descriptor_assets[1] = twin
+  for index = 1, 300 do
+    descriptor_assets[index + 1] = {
+      path = string.format("X:/Ref/Other%03d.wav", index),
+      size = 100 + index, duration = 1, ready = true,
+    }
+  end
+  for _, member in ipairs(descriptor_assets) do
+    state.similarity_cache[similarity_asset_signature(member)] = packed
+  end
+  while rank_session.bucket_queue do
+    similarity_process_ranked_buckets(rank_session)
+  end
+  for _, member in ipairs(rank_session.ranked) do
+    assert(member.asset ~= twin, "case-folded twin of the reference must be excluded")
+  end
+  assert(#rank_session.ranked == Similarity.result_limit)
+  assert(key_calls > 0, "asset_path_sort_key must be used when available")
+  -- 301 candidates: one key per candidate that could enter the heap, plus the
+  -- reference once; never four per candidate.
+  assert(key_calls <= 301 + 1 + 1, "path keys must not be recomputed per comparison")
+  asset_path_sort_key = previous_sort_key
+  state.similarity_cache = saved_cache
+end
+
 local signatures = {}
 for index = 1, capacity do
   local signature = similarity_asset_signature({

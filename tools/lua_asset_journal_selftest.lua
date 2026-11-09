@@ -163,6 +163,86 @@ local failed_write, failed_write_error = write_asset_journal_atomic(
 assert(not failed_write and failed_write_error == "write_failed")
 assert(failed_writer_closed)
 
+-- Differential check of the optimised escape/checksum against the original
+-- (byte-at-a-time Adler-32, four chained gsubs). Old journals must still
+-- replay, and newly written journals must stay byte-identical.
+do
+  local function reference_escape(value)
+    return (tostring(value or "")
+      :gsub("\\", "\\\\")
+      :gsub("\t", "\\t")
+      :gsub("\r", "\\r")
+      :gsub("\n", "\\n"))
+  end
+  local function reference_checksum(text)
+    local first = 1
+    local second = 0
+    for index = 1, #text do
+      first = (first + text:byte(index)) % 65521
+      second = (second + first) % 65521
+    end
+    return string.format("%08x", second * 65536 + first)
+  end
+
+  local diff_fields = { "value" }
+  local function check_value(value)
+    local text = assert(encode_asset_journal(
+      3, diff_fields, { { op = "upsert", values = { value } } }
+    ))
+    local payload = "upsert\t" .. reference_escape(value)
+    local last_line = text:match("([^\n]*)\n$")
+    assert(
+      last_line == payload .. "\t" .. reference_checksum(payload),
+      "journal line differs for value of length " .. #value
+    )
+    local decoded = assert(decode_asset_journal(text, 3, diff_fields))
+    assert(#decoded == 1 and decoded[1].values[1] == value,
+      "journal round trip differs for value of length " .. #value)
+  end
+
+  local samples = {
+    "", "a", "\\", "\t", "\r", "\n", "\\\\", "\\t", "a\\b\tc\rd\ne",
+    "\255\254\128\0\1", "\\\n\\\t\\\r", "plain ascii path C:/x/y.wav",
+  }
+  for _, sample in ipairs(samples) do check_value(sample) end
+
+  -- Lengths around the 16-byte unroll and the 5552-byte modulus block.
+  local lengths = {}
+  for length = 0, 40 do lengths[#lengths + 1] = length end
+  for _, base in ipairs({ 5552, 11104, 16656 }) do
+    for delta = -20, 20 do lengths[#lengths + 1] = base + delta end
+  end
+  lengths[#lengths + 1] = 100000
+  lengths[#lengths + 1] = 300001
+  for _, length in ipairs(lengths) do
+    check_value(string.rep("\255", length))  -- worst case for overflow
+    check_value(string.rep("x", length))
+  end
+
+  -- Deterministic pseudo-random bytes biased toward the special characters.
+  local seed = 987654321
+  local function next_random(limit)
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % limit
+  end
+  local specials = { 92, 9, 13, 10 }
+  for _ = 1, 400 do
+    local length = next_random(200)
+    if next_random(10) == 0 then length = 5500 + next_random(200) end
+    local bytes = {}
+    for index = 1, length do
+      if next_random(6) == 0 then
+        bytes[index] = string.char(specials[next_random(4) + 1])
+      else
+        bytes[index] = string.char(next_random(256))
+      end
+    end
+    -- A raw tab/newline cannot survive inside a checksum-free field, but the
+    -- escape step removes them, so any byte string is valid input here.
+    check_value(table.concat(bytes))
+  end
+end
+
 local many = {}
 for index = 1, 10000 do
   many[index] = {

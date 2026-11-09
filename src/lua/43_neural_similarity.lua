@@ -18,6 +18,9 @@ NeuralSimilarity = {
   capability_timeout = 30,
   job_start_timeout = 30,
   job_stall_timeout = 600,
+  -- Consecutive unreadable/partial status reads tolerated before falling back
+  -- (the sidecar replaces the status file by rename, which can be observed).
+  status_failure_limit = 5,
 }
 
 local function neural_host_api()
@@ -86,73 +89,100 @@ function neural_json_encode(value)
   return "{" .. table.concat(output, ",") .. "}"
 end
 
+-- Single-character escapes of a JSON string (shared, allocated once).
+NEURAL_JSON_UNESCAPE = {
+  ['"'] = '"', ['\\'] = '\\', ['/'] = '/',
+  b = '\b', f = '\f', n = '\n', r = '\r', t = '\t',
+}
+
 function neural_json_decode(text)
   text = tostring(text or "")
   local position = 1
   local length = #text
+  local unescape = NEURAL_JSON_UNESCAPE
   local function skip_space()
+    -- Every JSON whitespace byte is <= 32, so anything above stops here.
+    local current = text:byte(position)
+    if not current or current > 32 then return end
     local _, last = text:find("^[ \t\r\n]*", position)
     position = (last or position - 1) + 1
   end
   local parse_value
   local function parse_string()
-    if text:sub(position, position) ~= '"' then error("expected JSON string") end
+    if text:byte(position) ~= 34 then error("expected JSON string") end
     position = position + 1
-    local output = {}
-    while position <= length do
-      local character = text:sub(position, position)
-      if character == '"' then
-        position = position + 1
+    -- Plain runs are copied in bulk; only quotes, backslashes and control
+    -- characters need individual handling.
+    local output = nil
+    local count = 0
+    while true do
+      local stop = text:find('["\\\0-\31]', position)
+      if not stop then error("unterminated JSON string") end
+      local character = text:byte(stop)
+      if character == 34 then
+        local segment = text:sub(position, stop - 1)
+        position = stop + 1
+        if not output then return segment end
+        count = count + 1
+        output[count] = segment
         return table.concat(output)
+      elseif character ~= 92 then
+        error("invalid JSON string character")
       end
-      if character == "\\" then
-        local escape = text:sub(position + 1, position + 1)
-        local mapped = ({ ['"'] = '"', ['\\'] = '\\', ['/'] = '/',
-          b = '\b', f = '\f', n = '\n', r = '\r', t = '\t' })[escape]
-        if mapped then
-          output[#output + 1] = mapped
-          position = position + 2
-        elseif escape == "u" then
-          local hex = text:sub(position + 2, position + 5)
-          local code = tonumber(hex, 16)
-          if not code or #hex ~= 4 then error("invalid JSON unicode escape") end
-          position = position + 6
-          if code >= 0xd800 and code <= 0xdbff then
-            if text:sub(position, position + 1) ~= "\\u" then
-              error("incomplete JSON surrogate pair")
-            end
-            local low = tonumber(text:sub(position + 2, position + 5), 16)
-            if not low or low < 0xdc00 or low > 0xdfff then
-              error("invalid JSON surrogate pair")
-            end
-            code = 0x10000 + (code - 0xd800) * 0x400 + (low - 0xdc00)
-            position = position + 6
-          elseif code >= 0xdc00 and code <= 0xdfff then
-            error("invalid JSON low surrogate")
+      output = output or {}
+      if stop > position then
+        count = count + 1
+        output[count] = text:sub(position, stop - 1)
+      end
+      position = stop
+      local escape = text:sub(position + 1, position + 1)
+      local mapped = unescape[escape]
+      if mapped then
+        count = count + 1
+        output[count] = mapped
+        position = position + 2
+      elseif escape == "u" then
+        local hex = text:sub(position + 2, position + 5)
+        local code = tonumber(hex, 16)
+        if not code or #hex ~= 4 then error("invalid JSON unicode escape") end
+        position = position + 6
+        if code >= 0xd800 and code <= 0xdbff then
+          if text:sub(position, position + 1) ~= "\\u" then
+            error("incomplete JSON surrogate pair")
           end
-          output[#output + 1] = utf8.char(code)
-        else
-          error("invalid JSON escape")
+          local low = tonumber(text:sub(position + 2, position + 5), 16)
+          if not low or low < 0xdc00 or low > 0xdfff then
+            error("invalid JSON surrogate pair")
+          end
+          code = 0x10000 + (code - 0xd800) * 0x400 + (low - 0xdc00)
+          position = position + 6
+        elseif code >= 0xdc00 and code <= 0xdfff then
+          error("invalid JSON low surrogate")
         end
+        count = count + 1
+        output[count] = utf8.char(code)
       else
-        if string.byte(character) < 32 then error("invalid JSON string character") end
-        output[#output + 1] = character
-        position = position + 1
+        error("invalid JSON escape")
       end
     end
-    error("unterminated JSON string")
   end
   local function parse_array()
     position = position + 1
     local output = {}
+    local count = 0
     skip_space()
-    if text:sub(position, position) == "]" then position = position + 1 return output end
+    if text:byte(position) == 93 then position = position + 1 return output end
     while true do
-      output[#output + 1] = parse_value()
+      local value = parse_value()
+      -- null elements are dropped, exactly like assigning nil at #output + 1
+      if value ~= nil then
+        count = count + 1
+        output[count] = value
+      end
       skip_space()
-      local character = text:sub(position, position)
-      if character == "]" then position = position + 1 return output end
-      if character ~= "," then error("expected JSON array separator") end
+      local character = text:byte(position)
+      if character == 93 then position = position + 1 return output end
+      if character ~= 44 then error("expected JSON array separator") end
       position = position + 1
     end
   end
@@ -160,35 +190,36 @@ function neural_json_decode(text)
     position = position + 1
     local output = {}
     skip_space()
-    if text:sub(position, position) == "}" then position = position + 1 return output end
+    if text:byte(position) == 125 then position = position + 1 return output end
     while true do
       skip_space()
       local key = parse_string()
       skip_space()
-      if text:sub(position, position) ~= ":" then error("expected JSON property separator") end
+      if text:byte(position) ~= 58 then error("expected JSON property separator") end
       position = position + 1
       output[key] = parse_value()
       skip_space()
-      local character = text:sub(position, position)
-      if character == "}" then position = position + 1 return output end
-      if character ~= "," then error("expected JSON object separator") end
+      local character = text:byte(position)
+      if character == 125 then position = position + 1 return output end
+      if character ~= 44 then error("expected JSON object separator") end
       position = position + 1
     end
   end
   function parse_value()
     skip_space()
-    local character = text:sub(position, position)
-    if character == '"' then return parse_string() end
-    if character == "[" then return parse_array() end
-    if character == "{" then return parse_object() end
-    local literals = { ["true"] = true, ["false"] = false }
-    for literal, value in pairs(literals) do
-      if text:sub(position, position + #literal - 1) == literal then
-        position = position + #literal
-        return value
-      end
+    local character = text:byte(position)
+    if character == 34 then return parse_string() end
+    if character == 91 then return parse_array() end
+    if character == 123 then return parse_object() end
+    if character == 116 and text:sub(position, position + 3) == "true" then
+      position = position + 4
+      return true
     end
-    if text:sub(position, position + 3) == "null" then
+    if character == 102 and text:sub(position, position + 4) == "false" then
+      position = position + 5
+      return false
+    end
+    if character == 110 and text:sub(position, position + 3) == "null" then
       position = position + 4
       return nil
     end
@@ -644,6 +675,19 @@ local function neural_fallback(session, reason)
   set_status("神经相似度不可用，已回退到基础声学检索")
 end
 
+-- Start/stall watchdog shared by the normal poll path and by tolerated
+-- transient status-read failures.
+function neural_check_job_timeouts(session, job, now)
+  if not job.status_seen and now - job.started > NeuralSimilarity.job_start_timeout then
+    neural_fallback(session, "job_start_timeout")
+    return
+  end
+  if now - (job.last_change or job.started) > NeuralSimilarity.job_stall_timeout then
+    neural_similarity_cancel(session)
+    neural_fallback(session, "job_stalled")
+  end
+end
+
 local function neural_parse_job_file(path, maximum)
   local content, read_error = neural_read_file(path, maximum)
   if not content then return nil, read_error or "read_failed" end
@@ -780,7 +824,23 @@ local function neural_process_wait(session)
   job.next_poll = now + NeuralSimilarity.poll_interval
   if neural_file_exists(job.paths.status) then
     local status, reason, content = neural_parse_job_file(job.paths.status, 64 * 1024)
-    if not status then neural_fallback(session, reason) return end
+    if not status then
+      -- The sidecar replaces the status file by rename; a read that lands in
+      -- that window fails or sees a partial document. Tolerate a few
+      -- consecutive failures (never past the stall timeout) before giving up.
+      local failures = (job.status_failures or 0) + 1
+      job.status_failures = failures
+      if reason == "too_large"
+        or failures >= NeuralSimilarity.status_failure_limit
+        or now - (job.last_change or job.started)
+          > NeuralSimilarity.job_stall_timeout then
+        neural_fallback(session, reason)
+        return
+      end
+      neural_check_job_timeouts(session, job, now)
+      return
+    end
+    job.status_failures = 0
     if content ~= job.last_status then
       job.last_status = content
       job.last_change = now
@@ -831,14 +891,7 @@ local function neural_process_wait(session)
         phase, completed, total))
     end
   end
-  if not job.status_seen and now - job.started > NeuralSimilarity.job_start_timeout then
-    neural_fallback(session, "job_start_timeout")
-    return
-  end
-  if now - (job.last_change or job.started) > NeuralSimilarity.job_stall_timeout then
-    neural_similarity_cancel(session)
-    neural_fallback(session, "job_stalled")
-  end
+  neural_check_job_timeouts(session, job, now)
 end
 
 local function neural_process_prepare(session)

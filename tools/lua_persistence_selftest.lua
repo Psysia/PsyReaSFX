@@ -107,6 +107,84 @@ assert(aborted_writer:abort())
 assert(read_all(aborted_target) == "committed")
 assert(not exists(aborted_target .. ".tmp"))
 
+-- The writer asks for a large full buffer (fewer WriteFile calls on huge
+-- snapshots) without changing the bytes, and tolerates handles lacking
+-- setvbuf or whose setvbuf raises.
+do
+  local real_open = io.open
+  local calls = {}
+  local expected = {}
+  for index = 1, 3000 do
+    expected[#expected + 1] =
+      "row\t" .. index .. "\tvalue\\with\\backslash\n"
+  end
+  expected = table.concat(expected)
+
+  local function write_rows(target)
+    local writer = assert(atomic_file_writer(target))
+    for index = 1, 3000 do
+      assert(writer:write("row\t", index, "\tvalue\\with\\backslash\n"))
+    end
+    assert(writer:close())
+  end
+
+  local plain_target = path_join(root, "vbuf-plain.tsv")
+  write_rows(plain_target)
+  assert(read_all(plain_target) == expected)
+
+  io.open = function(path, mode)
+    local handle, message = real_open(path, mode)
+    if handle and mode == "wb" and tostring(path):find("vbuf%-", 1) then
+      return {
+        write = function(_, ...) return handle:write(...) end,
+        flush = function() return handle:flush() end,
+        close = function() return handle:close() end,
+        setvbuf = function(_, ...)
+          calls[#calls + 1] = { ... }
+          return handle:setvbuf(...)
+        end,
+      }
+    end
+    return handle, message
+  end
+  local spy_target = path_join(root, "vbuf-spy.tsv")
+  write_rows(spy_target)
+  assert(#calls == 1 and calls[1][1] == "full" and calls[1][2] == 1048576)
+  assert(read_all(spy_target) == expected)
+
+  io.open = function(path, mode)
+    local handle, message = real_open(path, mode)
+    if handle and mode == "wb" and tostring(path):find("vbuf%-", 1) then
+      return {
+        write = function(_, ...) return handle:write(...) end,
+        flush = function() return handle:flush() end,
+        close = function() return handle:close() end,
+        setvbuf = function() error("setvbuf unsupported") end,
+      }
+    end
+    return handle, message
+  end
+  local failing_target = path_join(root, "vbuf-failing.tsv")
+  write_rows(failing_target)
+  assert(read_all(failing_target) == expected)
+
+  io.open = function(path, mode)
+    local handle, message = real_open(path, mode)
+    if handle and mode == "wb" and tostring(path):find("vbuf%-", 1) then
+      return {
+        write = function(_, ...) return handle:write(...) end,
+        flush = function() return handle:flush() end,
+        close = function() return handle:close() end,
+      }
+    end
+    return handle, message
+  end
+  local missing_target = path_join(root, "vbuf-missing.tsv")
+  write_rows(missing_target)
+  assert(read_all(missing_target) == expected)
+  io.open = real_open
+end
+
 local backup = path_join(root, "backup")
 local first = CONFIG_FILE
 local second = LIBRARIES_FILE

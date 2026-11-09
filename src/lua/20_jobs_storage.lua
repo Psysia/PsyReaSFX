@@ -1,5 +1,7 @@
 -- Background jobs, atomic storage, recovery and cache maintenance.
-local HostApi = Host or reaper
+-- Global on purpose: later modules use it, and each module is built into its
+-- own scope (see tools/Build-LuaRelease.ps1), so a local would not be visible.
+HostApi = Host or reaper
 
 function Jobs.begin(
   kind,
@@ -369,7 +371,7 @@ function persistent_data_files()
 end
 
 local PERSISTENCE_SCHEMA_MAGIC = "psyreasfx_schema"
-local PERSISTENCE_SCHEMAS = {
+PERSISTENCE_SCHEMAS = {
   [CONFIG_FILE] = {
     kind = "config",
     version = 1,
@@ -791,6 +793,16 @@ function atomic_file_writer(target_path)
   local raw, open_error = io.open(temporary_path, "wb")
   if not raw then
     return nil, open_error
+  end
+
+  -- Large snapshots are written as many small fragments; a 1 MiB full
+  -- buffer turns tens of thousands of WriteFile calls into a few hundred.
+  -- Handles without setvbuf (test doubles) simply keep default buffering.
+  if type(raw) == "userdata" or type(raw) == "table" then
+    local set_buffer = raw.setvbuf
+    if type(set_buffer) == "function" then
+      pcall(set_buffer, raw, "full", 1048576)
+    end
   end
 
   local writer = {
