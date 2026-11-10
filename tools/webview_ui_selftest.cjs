@@ -322,6 +322,16 @@ async function main() {
                 ),
               };
             }
+            if (request.method === "path.choose")
+              result = window.testCancelPicker
+                ? { cancelled: true }
+                : {
+                    cancelled: false,
+                    path:
+                      request.params.kind === "artwork"
+                        ? "D:\\封面\\cover.png"
+                        : "D:\\输出目录\\Chosen",
+                  };
             if (request.method === "preview.play" && selected) {
               played.add(selected.index);
               playingPath = selected.path;
@@ -397,6 +407,12 @@ async function main() {
                 loading: Boolean(stateOverrides.startup),
                 schema: [
                   {
+                    key: "transfer_dir",
+                    label: "输出目录",
+                    kind: "string",
+                    group: "Transfer",
+                  },
+                  {
                     key: "insert_fade_ms",
                     label: "插入淡化",
                     kind: "number",
@@ -445,6 +461,7 @@ async function main() {
                   },
                 ],
                 values: {
+                  transfer_dir: "D:\\Exports",
                   played_text_enabled: playedText,
                   language,
                   insert_fade_ms: 10,
@@ -477,8 +494,27 @@ async function main() {
         },
       };
     }, displayVersion);
+    await page.addInitScript(() => {
+      if (!localStorage.getItem("psyreasfx.workspace.v1"))
+        localStorage.setItem(
+          "psyreasfx.workspace.v1",
+          JSON.stringify({
+            version: 1,
+            leftWidth: 245.6000213,
+            rightWidth: 290.25,
+            auditionHeight: 282.4,
+          }),
+        );
+    });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector(".result-row");
+    assert.equal(
+      await page.evaluate(() =>
+        document.documentElement.style.getPropertyValue("--sidebar-left"),
+      ),
+      "246px",
+      "migrate fractional splitter widths on startup",
+    );
     assert.equal(
       await page.locator("#app-version").textContent(),
       displayVersion,
@@ -822,7 +858,25 @@ async function main() {
     await page.evaluate(() =>
       window.testSetState({ tasks: { transfer: true, scan: true } }),
     );
-    await page.locator("#tasks-menu").click();
+    assert.match(
+      await page.locator("#activity-text").textContent(),
+      /交付.*扫描|扫描.*交付/,
+    );
+    await page.locator("#activity-status").click();
+    await page.waitForSelector("#task-panel:popover-open");
+    await page.locator("#activity-status").click();
+    await page.waitForFunction(
+      () => !document.querySelector("#task-panel").matches(":popover-open"),
+    );
+    await page.mouse.move(800, 50);
+    await page.locator("#activity-status").hover();
+    await page.waitForSelector("#task-panel:popover-open");
+    await page.locator("#task-panel").hover();
+    await page.waitForTimeout(280);
+    assert(
+      await page.locator("#task-panel").isVisible(),
+      "hover details must stay open while entering them",
+    );
     await page
       .getByRole("button", { name: "停止 · 扫描", exact: true })
       .click();
@@ -999,6 +1053,19 @@ async function main() {
     await page.screenshot({ path: path.join(output, "default-dark.png") });
     await page.locator("#settings-open").click();
     await page.locator('[data-section="appearance"]').click();
+    assert(
+      Number.isInteger(
+        Number(
+          await page.locator('[data-preference="leftWidth"]').inputValue(),
+        ),
+      ),
+      "dragged splitter widths must remain valid integers",
+    );
+    assert(
+      await page
+        .locator('[data-preference="auditionHeight"]')
+        .evaluate((input) => input.validity.valid),
+    );
     await page.locator('[data-preference="theme"]').selectOption("paper");
     await page.locator("#settings-apply").click();
     await page.locator("#settings-close").click();
@@ -1010,6 +1077,92 @@ async function main() {
       "theme choice must persist",
     );
     await page.screenshot({ path: path.join(output, "optional-paper.png") });
+    for (const theme of [
+      "graphite",
+      "slate",
+      "amethyst",
+      "forest",
+      "frost",
+      "paper",
+    ]) {
+      await page.locator("#settings-open").click();
+      await page.locator('[data-section="appearance"]').click();
+      assert.equal(await page.locator(".theme-preset").count(), 7);
+      await page.locator(`[data-theme-preset="${theme}"]`).click();
+      const presetAccent = await page
+        .locator('[data-preference="accentColor"]')
+        .inputValue();
+      await page.locator("#settings-apply").click();
+      await page.locator("#settings-close").click();
+      assert.equal(
+        await page.locator("body").getAttribute("data-theme"),
+        theme,
+      );
+      const colors = await page.locator("body").evaluate((body) => ({
+        accent: getComputedStyle(body).getPropertyValue("--accent").trim(),
+        input: getComputedStyle(document.querySelector("#fx-gain-value"))
+          .backgroundColor,
+      }));
+      assert.notEqual(
+        colors.accent,
+        "#c7b57f",
+        "preset accents must not be masked by legacy defaults",
+      );
+      assert.equal(
+        colors.accent,
+        presetAccent,
+        "the editable accent must match the preset",
+      );
+      if (["slate", "frost"].includes(theme))
+        await page.screenshot({
+          path: path.join(output, `beta11-theme-${theme}.png`),
+        });
+    }
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="appearance"]').click();
+    await page.locator('[data-preference="accentColor"]').fill("#c7b57f");
+    await page.locator("#settings-apply").click();
+    assert.equal(
+      await page
+        .locator("body")
+        .evaluate((body) =>
+          getComputedStyle(body).getPropertyValue("--accent").trim(),
+        ),
+      "#c7b57f",
+      "custom gold must work on non-dark presets too",
+    );
+    await page.locator("#settings-close").click();
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="transfer"]').click();
+    await page
+      .getByRole("button", { name: "浏览输出目录", exact: true })
+      .click();
+    assert.equal(
+      await page.locator('[data-setting="transfer_dir"]').inputValue(),
+      "D:\\输出目录\\Chosen",
+    );
+    await page.evaluate(() => {
+      window.testCancelPicker = true;
+    });
+    await page
+      .getByRole("button", { name: "浏览输出目录", exact: true })
+      .click();
+    assert.equal(
+      await page.locator('[data-setting="transfer_dir"]').inputValue(),
+      "D:\\输出目录\\Chosen",
+      "cancel must preserve the path draft",
+    );
+    await page.locator("#settings-discard").click();
+    await page.locator('[data-section="about"]').click();
+    await page
+      .getByRole("button", { name: "GitHub 项目主页", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (c) => c.method === "app.link" && c.params.target === "project",
+      ),
+    );
+    await page.locator("#settings-close").click();
     await page.setViewportSize({ width: 1000, height: 720 });
     await page.screenshot({ path: path.join(output, "compact-window.png") });
     // Beta 9: local audition keys, compact translated menus and submenu navigation.
@@ -1228,7 +1381,8 @@ async function main() {
       0,
       "remove the redundant top collection entry",
     );
-    assert(await page.locator("#tasks-menu").isVisible());
+    assert(await page.locator("#activity-status").isVisible());
+    assert.equal(await page.locator("#tasks-menu, #host-label").count(), 0);
     const libraryIcon = await page
       .locator(".library-row .ui-icon")
       .first()
@@ -1455,7 +1609,7 @@ async function main() {
         },
       }),
     );
-    await page.locator("#tasks-menu").click();
+    await page.locator("#activity-status").click();
     assert.match(
       await page.locator("#analysis-bar").textContent(),
       /建立声音特征缓存.*27 \/ 125/s,
@@ -1470,6 +1624,16 @@ async function main() {
     await page.evaluate(() =>
       window.testSetState({
         tasks: { scan: true, similar: true },
+        taskDetails: {
+          scan: {
+            files: 85179,
+            directories: 200,
+            path: "D:\\音效库\\机械",
+            label: "更新来源",
+            total: 0,
+            completed: 0,
+          },
+        },
         similarityProgress: {
           phase: "waiting",
           completed: 0,
@@ -1489,7 +1653,13 @@ async function main() {
       "取消等待",
     );
     assert.equal(await page.locator("#task-count").textContent(), "2");
-    await page.screenshot({ path: path.join(output, "beta10-task-panel.png") });
+    assert.match(
+      await page.locator("#task-list").textContent(),
+      /85,179.*200.*D:\\音效库\\机械/s,
+    );
+    await page.screenshot({
+      path: path.join(output, "beta11-task-details.png"),
+    });
     await page.locator("#analysis-cancel").click();
     await page.waitForFunction(
       () =>
@@ -1554,6 +1724,25 @@ async function main() {
         boxes.transport.bottom <= boxes.audition.bottom + 1,
         "transport must stay inside the player",
       );
+      const controls = await page.locator(".transport").evaluate((row) =>
+        [...row.children]
+          .filter((el) => el.getClientRects().length)
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            return { id: el.id || el.tagName, left: r.left, right: r.right };
+          }),
+      );
+      for (let i = 0; i < controls.length; i++) {
+        assert(
+          controls[i].left >= -1 && controls[i].right <= size.width + 1,
+          `${controls[i].id} must stay in the viewport at ${size.width}px`,
+        );
+        if (i)
+          assert(
+            controls[i].left >= controls[i - 1].right - 1,
+            "activity must not overlap adjacent transport controls",
+          );
+      }
       if (size.height === 620) {
         const rail = page.locator("#navigation-rail");
         assert.equal(
@@ -1748,11 +1937,14 @@ async function main() {
     });
     await page.reload();
     await page.waitForSelector(".result-row");
+    assert.equal(await page.locator("#host-label").count(), 0);
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="about"]').click();
     assert.match(
-      await page.locator("#host-label").textContent(),
+      await page.locator("#settings-body").textContent(),
       /ReaWebAPI 0.3.9.30/,
-      "ReaWebAPI transport must connect",
     );
+    await page.locator("#settings-close").click();
     assert.deepEqual(
       await page.evaluate(() => window.testKeyboardPolicy),
       [
@@ -1838,14 +2030,17 @@ async function main() {
     url.searchParams.set("runtimeVersion", "0.4.0");
     await page.goto(url.toString());
     await page.waitForSelector(".result-row");
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="about"]').click();
     assert.match(
-      await page.locator("#host-label").textContent(),
+      await page.locator("#settings-body").textContent(),
       /0.4.0.*外部版本/,
     );
+    await page.locator("#settings-close").click();
     url.searchParams.set("runtimeContract", "99");
     await page.goto(url.toString());
     await page.waitForFunction(() => window.testDisposed === true);
-    assert.equal(await page.locator("#host-label").textContent(), "宿主未连接");
+    assert.equal(await page.locator("#result-count").textContent(), "等待宿主");
     assert.equal(
       await page.locator(".result-row").count(),
       0,

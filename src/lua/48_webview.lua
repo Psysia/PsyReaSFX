@@ -268,12 +268,13 @@ function WebUI.update_taskbar(now)
   if WebUI.next_taskbar and now < WebUI.next_taskbar then return end
   WebUI.next_taskbar = now + 1
   if not reaper.GetOS():match("^Win") then return end
-  for _, name in ipairs({ "JS_Window_Find", "JS_Window_GetClassName", "JS_Window_GetParent",
+  for _, name in ipairs({ "JS_Window_Find", "JS_Window_GetClassName", "JS_Window_GetRelated",
     "JS_Window_GetLong", "JS_Window_SetLong", "JS_Window_Show", "JS_Window_IsVisible" }) do
     if type(reaper[name]) ~= "function" then WebUI.taskbar_status = "js_api_unavailable"; return end
   end
   local hwnd = reaper.JS_Window_Find("PsyReaSFX " .. VERSION, true)
-  if not hwnd or reaper.JS_Window_GetClassName(hwnd) ~= "ReaWebAPI.Window" then return end
+  if not hwnd then WebUI.taskbar_status = "window_pending"; return end
+  if reaper.JS_Window_GetClassName(hwnd) ~= "ReaWebAPI.Window" then WebUI.taskbar_status = "class_mismatch"; return end
   local style = math.floor(reaper.JS_Window_GetLong(hwnd, "STYLE"))
   local extended = math.floor(reaper.JS_Window_GetLong(hwnd, "EXSTYLE"))
   if (style & 0x40000000) ~= 0 then
@@ -284,7 +285,11 @@ function WebUI.update_taskbar(now)
     WebUI.taskbar_status = "docked"
     return
   end
-  if reaper.JS_Window_GetParent(hwnd) ~= reaper.GetMainHwnd() then return end
+  -- GetParent returns NULL for owned WS_OVERLAPPED windows: ownership is not
+  -- parenthood. ReaWebAPI uses WS_OVERLAPPEDWINDOW, so query GW_OWNER instead.
+  if reaper.JS_Window_GetRelated(hwnd, "OWNER") ~= reaper.GetMainHwnd() then
+    WebUI.taskbar_status = "owner_mismatch"; return
+  end
   local desired = (extended | 0x40000) & ~0x80 -- APPWINDOW, without TOOLWINDOW
   if desired ~= extended then
     local visible = reaper.JS_Window_IsVisible(hwnd)
@@ -296,6 +301,35 @@ function WebUI.update_taskbar(now)
   WebUI.taskbar_status = (math.floor(reaper.JS_Window_GetLong(hwnd, "EXSTYLE")) & 0x40000) ~= 0 and "enabled" or "unavailable"
 end
 
+function WebUI.task_details()
+  local result = {}
+  local function counter(value)
+    if type(value) == "number" and value == value and math.abs(value) < math.huge then
+      return math.max(0, math.floor(value))
+    end
+  end
+  for name, session in pairs({ scan = state.scan, import = state.import_session,
+    precache = state.precache_session, transfer = state.transfer_job,
+    relink = state.relink_plan_session, remove = state.root_removal_session,
+    ai = state.ai_semantic_session, verify = state.cache_verify_session }) do
+    if type(session) == "table" then
+      local current = type(session.current) == "table" and session.current or {}
+      result[name] = {
+        label = text(translate_ui_text(session.label or session.reason or ""), 160),
+        phase = text(session.phase or "", 80),
+        completed = counter(session.done) or counter(session.completed) or counter(session.processed)
+          or math.max(0, (counter(session.phase == "collect" and session.collect_index or session.index) or 1) - 1),
+        total = counter(session.phase == "collect" and session.source_total or session.total) or 0,
+        -- Verification stores its file list under `files`; never serialize job arrays.
+        files = counter(session.files), directories = counter(session.directories), failed = counter(session.failed),
+        path = text(current.path or (type(current.asset) == "table" and current.asset.path)
+          or session.output_directory or session.new_root or "", 1024),
+      }
+    end
+  end
+  return result
+end
+
 WebUI.handlers["session.ready"] = function()
   WebUI.outbox = {}
   WebUI.last_snapshot = nil
@@ -304,6 +338,8 @@ WebUI.handlers["session.ready"] = function()
     product = "PsyReaSFX",
     version = VERSION,
     host = "reaper",
+    author = AUTHOR_NAME,
+    copyright = COPYRIGHT_TEXT,
     runtimePolicy = WebUI.runtime_policy,
     capabilities = {
       catalog = true,
@@ -315,6 +351,28 @@ WebUI.handlers["session.ready"] = function()
       tasks = true,
     },
   }
+end
+
+WebUI.handlers["app.link"] = function(params)
+  local links = { project = PROJECT_URL, releases = PROJECT_URL .. "/releases",
+    issues = PROJECT_URL .. "/issues", docs = PROJECT_URL .. "/blob/main/" .. (state.language == "en" and "README.md" or "README_zh-CN.md") }
+  open_url(assert(links[params.target], "未知项目链接"))
+  return true
+end
+
+WebUI.handlers["path.choose"] = function(params)
+  local initial = text(params.initial or "", 4096)
+  assert(not initial:find("%z"), "无效路径")
+  local path
+  if params.kind == "folder" then
+    path = choose_folder("选择输出文件夹", initial)
+  elseif params.kind == "artwork" then
+    local ok, selected = reaper.GetUserFileNameForRead(initial, translate_ui_text("选择封面"), "png,jpg,jpeg,bmp,tga")
+    if ok then path = selected end
+  else
+    error("未知路径选择类型")
+  end
+  return { path = path, cancelled = not path or path == "" }
 end
 
 WebUI.handlers["catalog.page"] = function(params)
@@ -2184,6 +2242,7 @@ function webview_publish()
       preserve_pitch = state.preserve_pitch,
       reverse = state.reverse,
     },
+    taskDetails = WebUI.task_details(),
     tasks = {
       scan = state.scan ~= nil,
       import = state.import_session ~= nil,

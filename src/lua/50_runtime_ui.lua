@@ -9857,19 +9857,15 @@ function choose_folder(title, initial)
       initial or ""
     )
 
-    if ok and accepted and accepted ~= 0 then
+    if ok and accepted == 1 then
       return normalize_slashes(trim(path or ""))
     end
+    if ok and accepted == 0 then return nil end
+    set_status("无法打开系统文件夹选择窗口", true)
+    return nil
   end
-
-  local ok, input = reaper.GetUserInputs(
-    title or "选择文件夹",
-    1,
-    "文件夹路径:,extrawidth=420",
-    initial or ""
-  )
-
-  return ok and normalize_slashes(trim(input or "")) or nil
+  set_status("系统文件夹选择需要 js_ReaScriptAPI，请通过 ReaPack 安装该扩展后重启 REAPER", true)
+  return nil
 end
 
 function validate_new_root(root)
@@ -22668,34 +22664,8 @@ end
 
 function prompt_transfer_directory()
   local initial = state.transfer_dir or DEFAULT_TRANSFER_DIR
-  local chosen = nil
-
-  if type(reaper.JS_Dialog_BrowseForFolder) == "function" then
-    local ok, accepted, path = pcall(
-      reaper.JS_Dialog_BrowseForFolder,
-      translate_ui_text("选择 Transfer 输出目录"),
-      initial
-    )
-
-    if ok and accepted and accepted ~= 0 then
-      chosen = path
-    end
-  end
-
-  if not chosen then
-    local ok, input = reaper.GetUserInputs(
-      "选择 Transfer 输出目录",
-      1,
-      "输出目录:,extrawidth=420",
-      initial
-    )
-
-    if not ok then
-      return
-    end
-
-    chosen = input
-  end
+  local chosen = choose_folder("选择 Transfer 输出目录", initial)
+  if not chosen then return end
 
   chosen = normalize_slashes(trim(chosen or ""))
 

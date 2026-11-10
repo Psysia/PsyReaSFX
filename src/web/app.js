@@ -1,11 +1,12 @@
 import { connectHost } from "./host.js";
 import { createLocalizer } from "./locale.js";
-import { createSettings, transferPresets } from "./settings.js";
+import { createSettings, transferPresets, themePresets } from "./settings.js";
 import { icon } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
 const defaults = {
   version: 1,
+  themeColorsVersion: 1,
   theme: "dark",
   language: "zh",
   left: false,
@@ -58,12 +59,24 @@ try {
       ? {
           ...defaults,
           ...saved,
+          themeColorsVersion: saved.themeColorsVersion || 0,
           columns: { ...defaults.columns, ...saved.columns },
           widths: { ...defaults.widths, ...saved.widths },
         }
       : structuredClone(defaults);
 } catch {
   prefs = structuredClone(defaults);
+}
+// Older preferences stored the dark palette's defaults for every theme.
+// Migrate once; later explicit custom colors (including gold) must be preserved.
+if (prefs.themeColorsVersion !== 1) {
+  const theme =
+    themePresets.find((item) => item.id === prefs.theme) || themePresets[0];
+  if (prefs.accentColor === defaults.accentColor)
+    prefs.accentColor = theme.colors[2];
+  if (prefs.surfaceColor === defaults.surfaceColor)
+    prefs.surfaceColor = theme.colors[1];
+  prefs.themeColorsVersion = 1;
 }
 
 const localizer = createLocalizer();
@@ -137,6 +150,8 @@ function node(tag, className, content) {
 function report(error) {
   $("status").textContent = error?.message || String(error);
   $("status").classList.add("error");
+  $("activity-text").textContent = error?.message || String(error);
+  $("activity-status").classList.add("has-error");
   $("toast-message").textContent = error?.message || String(error);
   $("toast").hidden = false;
   clearTimeout(reportTimer);
@@ -208,15 +223,21 @@ function persist() {
 }
 
 function applyPreferences() {
-  prefs.leftWidth = clamp(prefs.leftWidth, 140, 420);
-  prefs.rightWidth = clamp(prefs.rightWidth, 220, 480);
-  prefs.rowHeight = clamp(
-    prefs.rowHeight,
-    Math.max(24, prefs.fontSize + 10),
-    52,
+  const theme =
+    themePresets.find((item) => item.id === prefs.theme) || themePresets[0];
+  prefs.theme = theme.id;
+  // Pointer coordinates can be fractional at Windows display scaling levels.
+  // Persist whole CSS pixels so settings' integer controls always remain valid.
+  prefs.fontSize = Math.round(clamp(prefs.fontSize, 10, 24));
+  prefs.leftWidth = Math.round(clamp(prefs.leftWidth, 140, 420));
+  prefs.rightWidth = Math.round(clamp(prefs.rightWidth, 220, 480));
+  prefs.rowHeight = Math.round(
+    clamp(prefs.rowHeight, Math.max(24, prefs.fontSize + 10), 52),
   );
-  prefs.fontSize = clamp(prefs.fontSize, 10, 24);
-  document.body.dataset.theme = prefs.theme === "paper" ? "paper" : "dark";
+  document.body.dataset.theme = prefs.theme;
+  document.body.dataset.tone = ["paper", "frost"].includes(prefs.theme)
+    ? "light"
+    : "dark";
   document.body.classList.toggle("left-hidden", !prefs.left);
   document.body.classList.toggle("right-hidden", !prefs.right);
   const style = document.documentElement.style;
@@ -231,12 +252,15 @@ function applyPreferences() {
   $("fx-toggle").setAttribute("aria-expanded", String(prefs.fx));
   $("left-toggle").setAttribute("aria-expanded", String(prefs.left));
   $("right-toggle").setAttribute("aria-expanded", String(prefs.right));
-  if (prefs.theme !== "paper") {
-    style.setProperty("--accent", prefs.accentColor || defaults.accentColor);
-    style.setProperty("--surface", prefs.surfaceColor || defaults.surfaceColor);
-  } else {
-    style.removeProperty("--accent");
-    style.removeProperty("--surface");
+  // Put overrides on the same element as the theme palette, not its ancestor.
+  style.removeProperty("--accent");
+  style.removeProperty("--surface");
+  for (const [variable, key] of [
+    ["--accent", "accentColor"],
+    ["--surface", "surfaceColor"],
+  ]) {
+    if (prefs[key]) document.body.style.setProperty(variable, prefs[key]);
+    else document.body.style.removeProperty(variable);
   }
   renderColumns();
   renderRows();
@@ -247,10 +271,8 @@ function applyPreferences() {
 function layoutAudition() {
   // Keep the waveform's saved height independent of temporary controls.
   const extra = (prefs.fx ? 48 : 0) + (innerWidth <= 1100 ? 24 : 0);
-  prefs.auditionHeight = clamp(
-    prefs.auditionHeight,
-    192,
-    Math.max(192, innerHeight - 300 - extra),
+  prefs.auditionHeight = Math.round(
+    clamp(prefs.auditionHeight, 192, Math.max(192, innerHeight - 300 - extra)),
   );
   document.documentElement.style.setProperty(
     "--audition-height",
@@ -615,7 +637,7 @@ function waveformInk(value, fallback) {
   // Default pale inks belong to the dark native palette. Keep explicit custom
   // colors, but use the paper theme's readable ink for those default values.
   if (
-    prefs.theme === "paper" &&
+    ["paper", "frost"].includes(prefs.theme) &&
     ["#d7d8da", "#eaf3ff", "#dce8f3", "#f5faff"].includes(value?.toLowerCase())
   )
     return fallback;
@@ -1216,13 +1238,44 @@ function applySnapshot(next) {
     );
   $("task-count").textContent = tasks.length;
   $("task-count").hidden = tasks.length === 0;
-  $("tasks-menu").title = tasks.length ? tasks.join(" · ") : "当前没有后台任务";
-  $("tasks-menu").classList.toggle("has-tasks", tasks.length > 0);
-  $("tasks-menu").classList.toggle(
+  $("activity-status").classList.toggle(
+    "has-tasks",
+    tasks.length > 0 || Boolean(next.startup),
+  );
+  $("activity-status").classList.toggle(
     "has-error",
     Boolean(next.error || next.startup?.failure),
   );
   $("cancel-tasks").hidden = tasks.length < 2;
+  const progress = next.similarityProgress;
+  const waiting = progress?.phase === "waiting";
+  let activity = tasks.length
+    ? tasks.map((label) => localizer.text(label)).join(" · ")
+    : next.playing
+      ? "正在试听"
+      : next.paused
+        ? "试听已暂停"
+        : "就绪";
+  const firstTask = Object.keys(next.tasks || {}).find(
+    (key) => next.tasks[key],
+  );
+  const detail = next.taskDetails?.[firstTask];
+  if (detail?.total > 0)
+    activity = `${localizer.text(taskLabels[firstTask] || firstTask)} ${detail.completed}/${detail.total}${tasks.length > 1 ? ` · +${tasks.length - 1}` : ""}`;
+  else if (firstTask === "scan" && detail?.files != null)
+    activity = `${localizer.text("扫描")} · ${detail.files.toLocaleString()}${localizer.text(" 个音频")}`;
+  if (waiting)
+    activity = `${localizer.text("相似检索等待中")} · ${progress.waitingFor || ""}`;
+  else if (progress?.total && next.tasks?.similar)
+    activity = `${localizer.text("相似检索")} ${progress.completed || 0}/${progress.total}`;
+  else if (next.tasks?.transfer && next.transferProgress?.total)
+    activity = `${localizer.text("交付")} ${next.transferProgress.completed}/${next.transferProgress.total}`;
+  if (next.startup) activity = next.startup.phase;
+  if (next.error || next.startup?.failure)
+    activity = next.startup?.failure || next.status;
+  $("activity-text").textContent = localizer.text(activity);
+  if ((tasks.length || next.startup) && !next.error && !next.startup?.failure)
+    $("status").textContent = localizer.text(activity);
   renderTasks();
   $("play").setAttribute("aria-pressed", String(next.playing));
   $("play").textContent = next.playing
@@ -1711,7 +1764,36 @@ function field(label, key, value, multiline = false) {
   const input = node(multiline ? "textarea" : "input");
   input.value = value || "";
   input.dataset.field = key;
-  wrapper.append(input);
+  if (key === "artwork_path") {
+    const pathEntry = node("span", "path-control");
+    const browse = node("button", null, "浏览…");
+    browse.type = "button";
+    browse.setAttribute("aria-label", "浏览封面文件");
+    browse.onclick = action(async () => {
+      browse.disabled = true;
+      const selectedPath = snapshot?.selected?.path;
+      const selectedRevision = snapshot?.selectionRevision;
+      try {
+        const result = await command("path.choose", {
+          kind: "artwork",
+          initial: input.value === "-" ? "" : input.value,
+        });
+        if (
+          !result.cancelled &&
+          input.isConnected &&
+          snapshot?.selected?.path === selectedPath &&
+          snapshot?.selectionRevision === selectedRevision
+        ) {
+          input.value = result.path;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      } finally {
+        browse.disabled = false;
+      }
+    });
+    pathEntry.append(input, browse);
+    wrapper.append(pathEntry);
+  } else wrapper.append(input);
   return [wrapper, input];
 }
 
@@ -2520,7 +2602,7 @@ function renderTasks() {
     ([, active]) => active,
   );
   const waiting = snapshot?.similarityProgress?.phase === "waiting";
-  const key = JSON.stringify([entries, waiting]);
+  const key = JSON.stringify([entries, waiting, snapshot?.taskDetails]);
   if (key === tasksKey) return;
   tasksKey = key;
   const rows = entries
@@ -2531,28 +2613,103 @@ function renderTasks() {
       const cancel = node("button", null, "取消");
       cancel.setAttribute("aria-label", `停止 · ${label}`);
       cancel.onclick = action(() => command("tasks.cancel", { task }));
-      row.append(node("span", null, label), cancel);
+      const content = node("div", "task-description");
+      content.append(node("strong", null, label));
+      const detail = snapshot?.taskDetails?.[task];
+      if (detail) {
+        if (detail.label) content.append(node("span", null, detail.label));
+        if (detail.total > 0)
+          content.append(
+            node(
+              "span",
+              null,
+              `${detail.completed.toLocaleString()} / ${detail.total.toLocaleString()}`,
+            ),
+          );
+        if (detail.files != null)
+          content.append(
+            node(
+              "span",
+              null,
+              `${detail.files.toLocaleString()}${localizer.text(" 个音频")} · ${(detail.directories || 0).toLocaleString()}${localizer.text(" 个目录")}`,
+            ),
+          );
+        if (detail.failed)
+          content.append(
+            node("span", "error", `${localizer.text("失败")} ${detail.failed}`),
+          );
+        if (detail.path)
+          content.append(node("small", "task-path", detail.path));
+      }
+      row.append(content, cancel);
       return row;
     });
   if (!entries.length) rows.push(node("p", "muted", "当前没有后台任务"));
   $("task-list").replaceChildren(...rows);
 }
 function positionTasks() {
-  const rect = $("tasks-menu").getBoundingClientRect();
-  $("task-panel").style.top = `${rect.bottom + 8}px`;
-  $("task-panel").style.maxHeight = `${innerHeight - rect.bottom - 20}px`;
+  const rect = $("activity-status").getBoundingClientRect();
+  const panel = $("task-panel");
+  panel.style.maxHeight = `${Math.max(120, rect.top - 16)}px`;
+  panel.style.left = `${clamp(rect.left, 8, Math.max(8, innerWidth - panel.offsetWidth - 8))}px`;
+  panel.style.top = `${Math.max(8, rect.top - panel.offsetHeight - 8)}px`;
 }
-$("tasks-menu").onclick = () => {
-  positionTasks();
-  $("task-panel").togglePopover();
-};
+let tasksHoverTimer,
+  tasksLeaveTimer,
+  tasksPinned = false;
+const activityButton = $("activity-status"),
+  taskPanel = $("task-panel");
+function clearTaskTimers() {
+  clearTimeout(tasksHoverTimer);
+  clearTimeout(tasksLeaveTimer);
+}
+function showTaskHover() {
+  clearTaskTimers();
+  tasksHoverTimer = setTimeout(() => {
+    if (!document.querySelector("dialog[open]")) {
+      taskPanel.showPopover();
+      positionTasks();
+    }
+  }, 240);
+}
+function leaveTasks() {
+  clearTaskTimers();
+  tasksLeaveTimer = setTimeout(() => {
+    if (
+      !tasksPinned &&
+      !activityButton.matches(":hover") &&
+      !taskPanel.matches(":hover") &&
+      !taskPanel.contains(document.activeElement)
+    )
+      taskPanel.hidePopover();
+  }, 240);
+}
+activityButton.addEventListener("pointerenter", showTaskHover);
+activityButton.addEventListener("pointerleave", leaveTasks);
+taskPanel.addEventListener("pointerenter", clearTaskTimers);
+taskPanel.addEventListener("pointerleave", leaveTasks);
+taskPanel.addEventListener("focusout", leaveTasks);
+// The native popovertarget invoker prevents light-dismiss from closing the
+// panel on pointerdown and our click immediately reopening it.
+activityButton.addEventListener("click", () => {
+  clearTaskTimers();
+  tasksPinned = !taskPanel.matches(":popover-open");
+});
 $("tasks-close").onclick = () => $("task-panel").hidePopover();
-$("task-panel").addEventListener("toggle", (event) =>
-  $("tasks-menu").setAttribute(
+$("task-panel").addEventListener("toggle", (event) => {
+  $("activity-status").setAttribute(
     "aria-expanded",
     String(event.newState === "open"),
-  ),
-);
+  );
+  if (event.newState === "open") positionTasks();
+  else {
+    tasksPinned = false;
+    clearTaskTimers();
+  }
+});
+new ResizeObserver(() => {
+  if (taskPanel.matches(":popover-open")) positionTasks();
+}).observe(taskPanel);
 window.addEventListener("resize", positionTasks);
 $("clear-query").onclick = action(() => {
   $("search").value = "";
@@ -2665,6 +2822,9 @@ for (const button of document.querySelectorAll("[data-menu]"))
         ],
       ],
       help: [
+        ["GitHub 项目主页", () => command("app.link", { target: "project" })],
+        ["更新日志与下载", () => command("app.link", { target: "releases" })],
+        ["关于 PsyReaSFX", () => settingsDialog("about")],
         ["快捷键与使用说明", () => settingsDialog("about")],
         [
           "打开文档目录",
@@ -3980,7 +4140,6 @@ async function receiveFolderDrop(payload) {
   dialog.showModal();
 }
 
-$("tasks-menu").prepend(icon("clock"));
 for (const [id, name] of [
   ["left-toggle", "menu"],
   ["right-toggle", "panel"],
@@ -4008,13 +4167,6 @@ try {
     $("app-version").textContent = host.session.version;
     document.title = `PsyReaSFX ${host.session.version}`;
   }
-  $("host-label").textContent =
-    host.session.host === "reaper" ? "REAPER · 已连接" : "Desktop · 已连接";
-  if (host.runtime) {
-    $("host-label").textContent =
-      `ReaWebAPI ${host.runtime.version} · ${host.runtime.status === "external_unverified" ? "外部版本" : "候选基线"}`;
-    $("host-label").title = host.runtime.notice;
-  }
   if (host.subscribeDrops)
     host
       .subscribeDrops((payload) => receiveFolderDrop(payload).catch(report))
@@ -4025,7 +4177,6 @@ try {
   host.addEventListener("state", (event) => applySnapshot(event.detail));
   if (host.state) applySnapshot(host.state);
 } catch (error) {
-  $("host-label").textContent = "宿主未连接";
   $("result-count").textContent = "等待宿主";
   report(error);
 }

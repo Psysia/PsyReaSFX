@@ -76,6 +76,8 @@ export interface HostResponse {
 export interface Session {
   protocol: 1;
   version?: string;
+  author?: string;
+  copyright?: string;
   host: "reaper" | "desktop";
   capabilities: Record<string, boolean>;
   runtimePolicy?: {

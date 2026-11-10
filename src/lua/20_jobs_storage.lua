@@ -1783,16 +1783,8 @@ function switch_wave_cache_directory(
 end
 
 function prompt_wave_cache_directory()
-  local ok, input =
-    HostApi.GetUserInputs(
-      "更改波形缓存目录",
-      1,
-      "新缓存目录路径:",
-      state.wave_cache_dir
-        or WAVE_CACHE_DIR
-    )
-
-  if not ok then
+  local input = choose_folder("更改波形缓存目录", state.wave_cache_dir or WAVE_CACHE_DIR)
+  if not input then
     return
   end
 

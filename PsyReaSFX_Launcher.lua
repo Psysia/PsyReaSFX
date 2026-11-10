@@ -1,6 +1,6 @@
 -- @description PsyReaSFX
 -- @author Psysia
--- @version 0.9.3-beta10
+-- @version 0.9.3-beta11
 -- The public action finishes immediately. The separately registered runtime
 -- owns the defer loop, so invoking this action again never interrupts a job.
 local source = debug.getinfo(1, "S").source:gsub("^@", "")

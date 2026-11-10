@@ -1,3 +1,13 @@
+## 0.9.3 Beta 11 (0.9.a WebView) — 2026-11-10
+
+- Normalize fractional splitter dimensions before loading/saving integer layout controls, fixing theme saves at fractional Windows scaling levels.
+- Add seven complete palettes: Classic Gold, Graphite Blue, Deep Teal, Dusk Violet, Pine Green, Paper Sage and Frost Blue, with editable colors.
+- Route source, relink, Transfer and cache folders through the native system picker; add Browse buttons to settings and artwork fields. Cancellation preserves drafts without opening another prompt.
+- Move current activity into spare transport space. Hover reveals task progress, paths and cancel actions; click, outside dismissal and Escape work consistently. Remove the top task button and runtime caption.
+- Restore About links for the project, releases, issues and documentation, and fix the malformed favorites SVG.
+- Query GW_OWNER instead of GetParent for ReaWebAPI's owned WS_OVERLAPPED windows so taskbar registration is no longer skipped. Verify the contract against real hidden Win32 windows and retain minimize/dock safeguards.
+- Extend Lua and browser regression coverage without launching REAPER or plugin scans. Windows grouping and actual end-to-end window behavior remain native acceptance items.
+
 ## 0.9.3 Beta 10 (0.9.a WebView) — 2026-11-10
 
 - Default the play button and Space to pause/resume at the captured source position, including selected regions and reverse audition. General settings can restore stop/restart; the separate Stop button always ends playback.

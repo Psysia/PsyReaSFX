@@ -41,10 +41,23 @@ export class HostConnection extends EventTarget {
       return Promise.reject(new Error("操作正在排队，请稍后重试"));
     const id = `${this.prefix}-${++this.sequence}`;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error("宿主响应超时，请检查 REAPER 是否正在处理模态窗口"));
-      }, 25000);
+      const timer = setTimeout(
+        () => {
+          this.pending.delete(id);
+          reject(new Error("宿主响应超时，请检查 REAPER 是否正在处理模态窗口"));
+        },
+        [
+          "path.choose",
+          "library.add",
+          "library.drop",
+          "management.action",
+          "transfer.directory",
+          "records.action",
+          "asset.action",
+        ].includes(method)
+          ? 300000
+          : 25000,
+      );
       this.pending.set(id, { resolve, reject, timer });
       Promise.resolve()
         .then(() =>

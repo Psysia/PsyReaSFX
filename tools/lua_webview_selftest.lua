@@ -752,13 +752,15 @@ do
 end
 do
   local original = {}
-  local names = { "JS_Window_Find", "JS_Window_GetClassName", "JS_Window_GetParent", "JS_Window_GetLong",
+  local names = { "JS_Window_Find", "JS_Window_GetClassName", "JS_Window_GetParent", "JS_Window_GetRelated", "JS_Window_GetLong",
     "JS_Window_SetLong", "JS_Window_Show", "JS_Window_IsVisible", "GetMainHwnd" }
   for _, name in ipairs(names) do original[name] = reaper[name] end
   local style, extended, class, owner, visible, calls = 0, 0x80, "ReaWebAPI.Window", "reaper", true, {}
   reaper.JS_Window_Find = function() return "prs" end
   reaper.JS_Window_GetClassName = function() return class end
-  reaper.JS_Window_GetParent = function() return owner end
+  -- Real Windows GetParent is NULL for an owned WS_OVERLAPPED window.
+  reaper.JS_Window_GetParent = function() return nil end
+  reaper.JS_Window_GetRelated = function(_, relation) assert(relation == "OWNER"); return owner end
   reaper.GetMainHwnd = function() return "reaper" end
   reaper.JS_Window_GetLong = function(_, field) return field == "STYLE" and style or extended end
   reaper.JS_Window_SetLong = function(_, field, value) assert(field == "EXSTYLE"); extended = value; calls[#calls+1] = "style" end
@@ -785,6 +787,43 @@ do
   WebUI.next_taskbar, WebUI.taskbar_hwnd = nil, nil
 end
 do
+  local browse, inputs, read_file, switch, mb, link = reaper.JS_Dialog_BrowseForFolder, reaper.GetUserInputs,
+    reaper.GetUserFileNameForRead, switch_wave_cache_directory, reaper.MB, open_url
+  local accepted, selected = 0, normalize_slashes("D:/音效库/Cache Folder")
+  local picker_calls, changes = 0, 0
+  reaper.JS_Dialog_BrowseForFolder = function(title, initial)
+    assert(type(title) == "string" and type(initial) == "string")
+    picker_calls = picker_calls + 1
+    return accepted, selected
+  end
+  reaper.GetUserInputs = function() error("folder cancellation must never open a manual path prompt") end
+  assert(choose_folder("选择文件夹", "D:/") == nil)
+  prompt_transfer_directory()
+  prompt_wave_cache_directory()
+  assert(picker_calls == 3, "all folder entry points must use the native picker")
+  accepted = 1
+  assert(choose_folder("选择文件夹", "D:/") == selected)
+  local result = WebUI.handlers["path.choose"]({kind="folder", initial="D:/draft"})
+  assert(not result.cancelled and result.path == selected)
+  switch_wave_cache_directory = function(path, move) assert(path == selected and move == false); changes = changes + 1 end
+  reaper.MB = function() return 7 end
+  prompt_wave_cache_directory()
+  assert(changes == 1, "cache selection must preserve the existing move-or-switch confirmation")
+  accepted = -1
+  assert(choose_folder("选择文件夹", "D:/") == nil, "negative native status is a failure, not acceptance")
+  reaper.GetUserFileNameForRead = function() return true, "D:/封面/cover.png" end
+  assert(WebUI.handlers["path.choose"]({kind="artwork"}).path == "D:/封面/cover.png")
+  assert(not pcall(WebUI.handlers["path.choose"], {kind="invalid"}))
+  local opened
+  open_url = function(url) opened = url end
+  WebUI.handlers["app.link"]({ target="project" })
+  assert(opened == "https://github.com/Psysia/PsyReaSFX")
+  assert(not pcall(WebUI.handlers["app.link"], {target="https://example.invalid"}))
+  reaper.JS_Dialog_BrowseForFolder, reaper.GetUserInputs, reaper.GetUserFileNameForRead = browse, inputs, read_file
+  switch_wave_cache_directory, reaper.MB, open_url = switch, mb, link
+  runtime.status_error = false
+end
+do
   local old_receive, old_handler = reaper.ReaWeb_Receive, WebUI.handlers["settings.ai"]
   local job = { value = "synthetic-key-must-not-be-serialized" }
   runtime.ai_key_save_session = job
@@ -803,6 +842,17 @@ do
   assert(not WebUI.pending_key_response)
   reaper.ReaWeb_Receive, WebUI.handlers["settings.ai"] = old_receive, old_handler
   WebUI.next_publish = 0
+end
+do
+  local scan, verify = runtime.scan, runtime.cache_verify_session
+  runtime.scan = { files = 85179, directories = 200, current = { path = "D:/声音库" } }
+  runtime.cache_verify_session = { files = {}, total = 50000, index = 26, failed = 0 }
+  for i = 1, 50000 do runtime.cache_verify_session.files[i] = "must-stay-native-" .. i end
+  local details = WebUI.task_details()
+  assert(details.scan.files == 85179 and details.scan.directories == 200 and details.scan.path == "D:/声音库")
+  assert(details.verify.total == 50000 and details.verify.completed == 25 and details.verify.files == nil)
+  assert(#neural_json_encode(details) < 1024, "job file arrays must not escape in snapshot details")
+  runtime.scan, runtime.cache_verify_session = scan, verify
 end
 if arg[3] then
   local file = assert(io.open(arg[3], "wb"))
