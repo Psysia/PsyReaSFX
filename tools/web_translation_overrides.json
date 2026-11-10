@@ -462,5 +462,14 @@
   " 个目录": " folders",
   "操作已提交，可在走带栏查看进度，悬停查看详情": "Operation submitted. See progress in the transport row; hover for details.",
   "无法打开系统文件夹选择窗口": "Could not open the system folder picker",
-  "系统文件夹选择需要 js_ReaScriptAPI，请通过 ReaPack 安装该扩展后重启 REAPER": "System folder selection requires js_ReaScriptAPI. Install it through ReaPack and restart REAPER."
+  "系统文件夹选择需要 js_ReaScriptAPI，请通过 ReaPack 安装该扩展后重启 REAPER": "System folder selection requires js_ReaScriptAPI. Install it through ReaPack and restart REAPER.",
+  "深色工作台 · 蓝色定位线": "Dark studio · Blue guides",
+  "中性灰阶 · 哑光金色": "Neutral grays · Matte gold",
+  "控制台分区 · 清晰行线": "Console zones · Ruled rows",
+  "柔和圆角 · 轻盈页签": "Soft corners · Floating tabs",
+  "暖灰绿调 · 安静侧栏": "Warm gray greens · Quiet sidebar",
+  "柔纸灰底 · 细线排版": "Soft paper · Fine rules",
+  "雾蓝灰底 · 轻浮工具栏": "Muted blue grays · Raised controls",
+  "点击此处试听": "Audition here",
+  "点击波形任意位置试听；Ctrl / Shift 点击多选": "Click anywhere in the waveform to audition; Ctrl / Shift click to select multiple"
 }

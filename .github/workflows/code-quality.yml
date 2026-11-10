@@ -130,6 +130,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WebView entry or source parity check failed.' }
           node tools/webview_ui_selftest.cjs (Join-Path $webTestTools 'node_modules/playwright') (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView/web')
           if ($LASTEXITCODE -ne 0) { throw 'WebView layout regression failed.' }
+          node tools/validate_website.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Website content check failed.' }
+          node tools/website_ui_selftest.cjs (Join-Path $webTestTools 'node_modules/playwright')
+          if ($LASTEXITCODE -ne 0) { throw 'Website browser regression failed.' }
 
       - name: Run Lua persistence fault injection
         shell: pwsh
