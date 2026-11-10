@@ -1094,6 +1094,21 @@ function folderBranch(root, folder = root) {
   return branch;
 }
 
+function sidebarStateKey(state) {
+  return JSON.stringify([
+    state.libraries,
+    state.collections,
+    state.roots,
+    state.libraryId,
+    state.collectionId,
+    state.view,
+    state.savedSearches,
+    state.statusFilter,
+    state.root,
+    state.language,
+  ]);
+}
+
 function renderSidebar() {
   const views = [
     ["all", "全部声音"],
@@ -1247,6 +1262,9 @@ function renderSidebar() {
     ),
   );
   $("scope").value = snapshot.libraryId || "";
+  // Settings and navigation also render this tree. Record their completed state
+  // so the next heartbeat cannot replace a folder between pointerdown and click.
+  sidebarSignature = sidebarStateKey(snapshot);
 }
 
 function renderTabs() {
@@ -1455,20 +1473,7 @@ function applySnapshot(next) {
     folderCache.clear();
     sidebarSignature = null;
   }
-  const sideKey = JSON.stringify([
-    next.libraries,
-    next.collections,
-    next.roots,
-    next.libraryId,
-    next.collectionId,
-    next.view,
-    next.savedSearches,
-    next.statusFilter,
-    next.root,
-    next.language,
-  ]);
-  if (sideKey !== sidebarSignature) {
-    sidebarSignature = sideKey;
+  if (sidebarStateKey(next) !== sidebarSignature) {
     renderSidebar();
   }
   const tabKey = JSON.stringify([next.tabs, next.activeTab]);

@@ -1610,7 +1610,15 @@ async function main() {
     await page.locator('[data-preference="fontSize"]').fill("13");
     await page.locator('[data-preference="leftWidth"]').fill("206");
     await page.locator('[data-preference="auditionHeight"]').fill("282");
-    await page.locator("#settings-apply").click();
+    assert(
+      await page.evaluate(async () => {
+        await document.querySelector("#settings-apply").onclick();
+        const branch = document.querySelector("#libraries .folder-branch");
+        window.testSetState({});
+        return branch.isConnected;
+      }),
+      "unchanged host updates after applying settings must preserve folder click targets",
+    );
     await page.locator("#settings-close").click();
     assert.equal(
       await page.locator("body").getAttribute("data-theme"),
