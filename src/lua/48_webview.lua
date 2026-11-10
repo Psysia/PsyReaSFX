@@ -340,9 +340,9 @@ WebUI.handlers["catalog.query"] = function(params)
   end
   if params.search ~= nil then
     if state.ai_semantic_session then ai_semantic_cancel() end
-    if state.view == "ai_semantic" then
+    if "ai_semantic" == state.view then
       AppState.set("view", "all")
-      if state.sort_mode == "ai_order" then AppState.apply({ sort_mode = "name", sort_desc = false }) end
+      if "ai_order" == state.sort_mode then AppState.apply({ sort_mode = "name", sort_desc = false }) end
     end
     AppState.set("search", text(params.search, 4096))
   end

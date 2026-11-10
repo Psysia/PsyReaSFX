@@ -221,7 +221,7 @@ local VERSION = "0.9.3 Beta 7"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.3-beta7",
-  source_sha256 = "a8dd36abc9f58ad7de8cc3c9643b0dbaa4d5a85ed8d145afa06a9d57f980c8a7",
+  source_sha256 = "3fe70e26a820433e79cff80b8e62ed21c2e8dd975754a8a917995746725e5380",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -17434,9 +17434,9 @@ WebUI.handlers["catalog.query"] = function(params)
   end
   if params.search ~= nil then
     if state.ai_semantic_session then ai_semantic_cancel() end
-    if state.view == "ai_semantic" then
+    if "ai_semantic" == state.view then
       AppState.set("view", "all")
-      if state.sort_mode == "ai_order" then AppState.apply({ sort_mode = "name", sort_desc = false }) end
+      if "ai_order" == state.sort_mode then AppState.apply({ sort_mode = "name", sort_desc = false }) end
     end
     AppState.set("search", text(params.search, 4096))
   end
