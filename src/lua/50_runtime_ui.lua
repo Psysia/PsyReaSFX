@@ -9682,17 +9682,19 @@ function drop_external_drag()
 
   local inserted = 0
 
-  for index, asset in ipairs(drag.assets) do
-    if insert_asset_at(
-      asset,
-      base_index + index - 1,
-      position,
-      drag.start_percent,
-      drag.end_percent
-    ) then
-      inserted = inserted + 1
+  local ok, failure = xpcall(function()
+    for index, asset in ipairs(drag.assets) do
+      if insert_asset_at(
+        asset,
+        base_index + index - 1,
+        position,
+        drag.start_percent,
+        drag.end_percent
+      ) then
+        inserted = inserted + 1
+      end
     end
-  end
+  end, debug.traceback)
 
   reaper.PreventUIRefresh(-1)
   reaper.UpdateArrange()
@@ -9701,6 +9703,11 @@ function drop_external_drag()
     "PsyReaSFX：拖拽素材到编排区",
     -1
   )
+
+  if not ok then
+    set_status("拖入素材失败：" .. tostring(failure), true)
+    return
+  end
 
   set_status(
     string.format(

@@ -854,6 +854,77 @@ do
   assert(#neural_json_encode(details) < 1024, "job file arrays must not escape in snapshot details")
   runtime.scan, runtime.cache_verify_session = scan, verify
 end
+-- Beta 13: the native loop owns drag release, not a late browser pointer-up.
+do
+  local saved, api = {}, {}
+  for _, key in ipairs({ "selected_path", "selected_index", "results", "region_start", "region_end",
+    "root_removal_session", "transfer_running", "persistence_read_only" }) do saved[key] = { runtime[key] } end
+  for _, key in ipairs({ "JS_Mouse_GetState", "JS_VKeys_GetState", "EnumProjects", "BR_GetMouseCursorContext",
+    "BR_GetMouseCursorContext_Position", "BR_GetMouseCursorContext_Track", "GetMediaTrackInfo_Value",
+    "CountTracks", "Undo_BeginBlock2", "Undo_EndBlock2", "PreventUIRefresh", "UpdateArrange" }) do api[key] = { reaper[key] } end
+  local original_insert = insert_asset_at
+  local held, escape, project, context = 1, false, "project-a", "arrange"
+  local refresh, undo, placements = 0, 0, {}
+  runtime.selected_path, runtime.selected_index, runtime.results = asset.path, 1, { asset }
+  runtime.root_removal_session, runtime.transfer_running, runtime.persistence_read_only = nil, false, false
+  reaper.JS_Mouse_GetState = function() return held end
+  reaper.JS_VKeys_GetState = function() return string.rep("\0", 26) .. (escape and "\1" or "\0") end
+  reaper.EnumProjects = function() return project end
+  reaper.BR_GetMouseCursorContext = function() return context end
+  reaper.BR_GetMouseCursorContext_Position = function() return 12.5 end
+  reaper.BR_GetMouseCursorContext_Track = function() return "track-3" end
+  reaper.GetMediaTrackInfo_Value = function() return 3 end
+  reaper.CountTracks = function() return 4 end
+  reaper.Undo_BeginBlock2 = function() undo = undo + 1 end
+  reaper.Undo_EndBlock2 = function() undo = undo - 1 end
+  reaper.PreventUIRefresh = function(delta) refresh = refresh + delta end
+  reaper.UpdateArrange = function() end
+  insert_asset_at = function(item, track, position, first, last)
+    placements[#placements + 1] = { item, track, position, first, last }
+    return true
+  end
+  local function begin(id)
+    held = 1
+    return WebUI.handlers["drag.begin"]({id=id or "gesture",path=asset.path,selection=true,start=0.2,finish=0.6})
+  end
+  assert(begin().started)
+  WebUI.process_arrange_drag()
+  assert(#placements == 0, "a held drag must never insert")
+  runtime.region_start, runtime.region_end = 0.7, 0.9
+  held = 0
+  webview_receive() -- No frontend drop message: simulate release outside the browser.
+  assert(#placements == 1 and placements[1][1] == asset and placements[1][2] == 2 and placements[1][3] == 12.5)
+  assert(placements[1][4] == 0.2 and placements[1][5] == 0.6, "preserve the range captured at pointer-down")
+  webview_receive()
+  assert(#placements == 1 and not runtime.external_drag and not WebUI.arrange_drag, "drop only once and release state")
+  assert(not WebUI.handlers["drag.begin"]({id="late",path=asset.path,selection=true,start=0,finish=1}).started,
+    "late RPC after mouse-up must not insert")
+  begin("new")
+  WebUI.handlers["drag.cancel"]({id="old"})
+  assert(WebUI.arrange_drag, "stale cancellation must not cancel a newer gesture")
+  WebUI.handlers["drag.cancel"]({id="new"})
+  held = 0
+  WebUI.process_arrange_drag()
+  assert(#placements == 1)
+  begin(); escape = true; WebUI.process_arrange_drag(); escape = false
+  assert(not WebUI.arrange_drag and not runtime.external_drag, "Esc cancels even outside the WebView")
+  begin(); project = "project-b"; WebUI.process_arrange_drag(); project = "project-a"
+  assert(not WebUI.arrange_drag, "a project switch must not place into the wrong project")
+  begin(); context = "unknown"; held = 0; WebUI.process_arrange_drag(); context = "arrange"
+  assert(#placements == 1, "drop over another window must not insert")
+  begin(); runtime.root_removal_session = {}; WebUI.process_arrange_drag(); runtime.root_removal_session = nil
+  assert(not WebUI.arrange_drag)
+  begin(); WebUI.arrange_drag.started = -100; WebUI.process_arrange_drag()
+  assert(not WebUI.arrange_drag, "abandoned gestures expire")
+  insert_asset_at = function() error("fixture insert failure") end
+  begin(); held = 0; WebUI.process_arrange_drag()
+  assert(refresh == 0 and undo == 0 and not runtime.external_drag, "insertion failure must balance UI refresh and undo")
+  reaper.JS_Mouse_GetState = nil
+  assert(not pcall(begin), "missing native input support must be reported before dragging")
+  insert_asset_at = original_insert
+  for key, value in pairs(api) do reaper[key] = value[1] end
+  for key, value in pairs(saved) do runtime[key] = value[1] end
+end
 if arg[3] then
   local file = assert(io.open(arg[3], "wb"))
   file:write(neural_json_encode(WebUI.handlers["settings.get"]().schema))

@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "39ba8e1028c0f72f85f084cb0c5041b32c2da0bdc2dae321590dc6d773ae1463",
+  source_sha256 = "ab647c6401e5566ced1264576a5068a9fc54bc41d66795468b477d82ba54844f",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -26919,17 +26919,19 @@ function drop_external_drag()
 
   local inserted = 0
 
-  for index, asset in ipairs(drag.assets) do
-    if insert_asset_at(
-      asset,
-      base_index + index - 1,
-      position,
-      drag.start_percent,
-      drag.end_percent
-    ) then
-      inserted = inserted + 1
+  local ok, failure = xpcall(function()
+    for index, asset in ipairs(drag.assets) do
+      if insert_asset_at(
+        asset,
+        base_index + index - 1,
+        position,
+        drag.start_percent,
+        drag.end_percent
+      ) then
+        inserted = inserted + 1
+      end
     end
-  end
+  end, debug.traceback)
 
   reaper.PreventUIRefresh(-1)
   reaper.UpdateArrange()
@@ -26938,6 +26940,11 @@ function drop_external_drag()
     "PsyReaSFX：拖拽素材到编排区",
     -1
   )
+
+  if not ok then
+    set_status("拖入素材失败：" .. tostring(failure), true)
+    return
+  end
 
   set_status(
     string.format(

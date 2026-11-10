@@ -471,5 +471,20 @@
   "柔纸灰底 · 细线排版": "Soft paper · Fine rules",
   "雾蓝灰底 · 轻浮工具栏": "Muted blue grays · Raised controls",
   "点击此处试听": "Audition here",
-  "点击波形任意位置试听；Ctrl / Shift 点击多选": "Click anywhere in the waveform to audition; Ctrl / Shift click to select multiple"
+  "点击波形任意位置试听；Ctrl / Shift 点击多选": "Click anywhere in the waveform to audition; Ctrl / Shift click to select multiple",
+  "对应 Codex 的全部主题；提供原有明暗版本，可自定义颜色。": "All Codex themes with their available light and dark variants. Colors remain customizable.",
+  "模式": "Mode",
+  "深色": "Dark",
+  "浅色": "Light",
+  "跟随系统": "System",
+  "深色 / 浅色": "Dark / Light",
+  "仅深色": "Dark only",
+  "仅浅色": "Light only",
+  "背景色": "Background",
+  "前景色": "Foreground",
+  "拖到 REAPER 编排区后松开；Esc 取消": "Release in the REAPER arrange view; Esc to cancel",
+  "已取消拖拽": "Drag cancelled",
+  "请先选择有效区间": "Select a valid range first",
+  "请等待当前任务完成后再拖入素材": "Wait for the current task before dragging audio",
+  "拖入选区需要 js_ReaScriptAPI": "Dragging a selection requires js_ReaScriptAPI"
 }

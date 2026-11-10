@@ -1948,3 +1948,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px soli
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* Detail crops use the same supplied, unedited WebView capture. */
+.library-detail { aspect-ratio: 1.25; overflow: hidden; }
+.library-detail img { width: 240%; max-width: none; height: auto; }
+.waveform-detail { aspect-ratio: 2.6; overflow: hidden; }
+.waveform-detail img { width: 100%; height: 100%; object-fit: cover; object-position: bottom; }
+.media-caption { margin: 12px 5px 0; color: var(--muted); font-size: 13px; }
