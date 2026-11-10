@@ -578,6 +578,81 @@ input = { neural_json_encode({ protocol = 1, id = "loading-write", method = "set
 webview_receive()
 assert(not neural_json_decode(messages[#messages]).ok and runtime.language == "zh")
 runtime.startup_session = nil
+-- Beta 9: source-equivalent actions, independent of stale browser snapshots.
+do
+  local play, stop, folder, transfer, queue, mark = play_preview, request_preview_stop, open_folder, run_transfer, queue_artwork, mark_asset_database_change
+  local saved_preview = runtime.preview
+  local toggles = {}
+  play_preview = function(item, position, selection)
+    assert(item == nil and position == nil and selection == true)
+    runtime.preview = "fixture-preview"
+    toggles[#toggles + 1] = "play"
+  end
+  request_preview_stop = function()
+    runtime.preview = nil
+    toggles[#toggles + 1] = "stop"
+  end
+  runtime.preview = nil
+  WebUI.handlers["preview.toggle"]({})
+  WebUI.handlers["preview.toggle"]({})
+  assert(table.concat(toggles, ",") == "play,stop", "toggle must read live host playback state")
+  WebUI.handlers["preview.region"]({ start = 0.2, finish = 0.6 })
+  runtime.active_region_index = 7
+  WebUI.handlers["preview.clearRegion"]({})
+  assert(runtime.region_start == 0 and runtime.region_end == 1 and runtime.active_region_index == 0)
+  runtime.preview = saved_preview
+  play_preview, request_preview_stop = play, stop
+
+  local opened = {}
+  open_folder = function(path) opened[#opened + 1] = path end
+  local roots = runtime.root_records
+  runtime.root_records = { { id = "open-fixture", path = "D:\\Library" } }
+  WebUI.handlers["management.action"]({ kind = "root", id = "open-fixture", action = "open", path = "D:\\Library\\Child" })
+  assert(opened[1] == "D:\\Library\\Child")
+  assert(not pcall(WebUI.handlers["management.action"], { kind = "root", id = "open-fixture", action = "open", path = "D:\\Outside" }))
+  assert(not pcall(WebUI.handlers["management.action"], { kind = "root", id = "open-fixture", action = "open", path = "D:\\Library\\..\\Outside" }))
+  WebUI.handlers["records.action"]({ action = "openCacheFolder" })
+  WebUI.handlers["records.action"]({ action = "backupFolder" })
+  assert(#opened == 3)
+  runtime.root_records = roots
+  open_folder = folder
+
+  local dirty = {}
+  mark_asset_database_change = function(item, mode) dirty[#dirty + 1] = { item, mode } end
+  queue_artwork = function(item, priority) assert(item == asset and priority) end
+  asset.artwork_path, asset.artwork_checked = "old.png", true
+  WebUI.handlers["asset.action"]({ path = asset.path, action = "clearArtwork" })
+  assert(asset.artwork_path == "-" and asset.artwork_checked)
+  WebUI.handlers["asset.action"]({ path = asset.path, action = "redetectArtwork" })
+  assert(asset.artwork_path == "" and not asset.artwork_checked and #dirty == 2)
+  queue_artwork, mark_asset_database_change = queue, mark
+  runtime.failed_tasks = { fixture = { path = asset.path, stage = "wave", reason = "fixture" } }
+  WebUI.handlers["records.action"]({ action = "clearFailed" })
+  assert(next(runtime.failed_tasks) == nil and runtime.failed_tasks_dirty)
+
+  runtime.results, runtime.selected_index, runtime.selected_path = { asset }, 1, asset.path
+  select_all_results()
+  local exports = {}
+  run_transfer = function(targets, batch) exports[#exports + 1] = { targets, batch } end
+  runtime.transfer_running = false
+  WebUI.handlers["transfer.start"]({ target = "current", path = asset.path })
+  WebUI.handlers["transfer.start"]({ target = "selected" })
+  assert(exports[1][1][1] == asset and exports[1][2] == false)
+  assert(exports[2][1][1] == asset and exports[2][2] == true)
+  assert(not pcall(WebUI.handlers["transfer.start"], { target = "current", path = "changed.wav" }))
+  run_transfer = transfer
+  assert(WebUI.handlers["diagnostics.overlay"]({ enabled = true }) and FrameStats.overlay)
+  assert(not WebUI.handlers["diagnostics.overlay"]({ enabled = false }))
+  assert(not pcall(WebUI.handlers["settings.ai"], { action = "deleteKey", id = "another-preset" }))
+  local catalog = WebUI.handlers["catalog.ucs"]({})
+  assert(#catalog > 50 and type(catalog[1].entries[1].synonyms) == "string")
+  assert(#neural_json_encode(catalog) < 900000, "searchable taxonomy must fit the native message budget")
+end
+if arg[3] then
+  local file = assert(io.open(arg[3], "wb"))
+  file:write(neural_json_encode(WebUI.handlers["settings.get"]().schema))
+  file:close()
+end
 print(
   "WebView headless startup, bounded paging, stale selection, DSP validation, read-only and metadata regressions passed"
 )

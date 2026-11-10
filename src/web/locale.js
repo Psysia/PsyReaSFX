@@ -37,6 +37,10 @@ export function createLocalizer() {
           (_, phase) => `Similar sounds · ${english[phase] || phase}`,
         )
         .replace(/^展开文件夹 /, "Expand folder ")
+        .replace(/^收起文件夹 /, "Collapse folder ")
+        .replace(/^打开文件夹 /, "Open folder ")
+        .replace(/^(\d+) 个分类$/, "$1 categories")
+        .replace(/^✓ (.+)$/, (_, value) => `✓ ${english[value] || value}`)
         .replace(/^已切换为音频特征分析：/, "Using acoustic analysis: ")
         .replace(
           /^应用 (.+)$/,

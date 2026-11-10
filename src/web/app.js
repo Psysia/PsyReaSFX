@@ -1,6 +1,6 @@
 import { connectHost } from "./host.js";
 import { createLocalizer } from "./locale.js";
-import { createSettings } from "./settings.js";
+import { createSettings, transferPresets } from "./settings.js";
 import { icon } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
@@ -22,6 +22,7 @@ const defaults = {
   waveformSelectionColor: "#c7b57f",
   navigationPanel: "libraries",
   navigation: {},
+  collapsedLibraries: [],
   fx: false,
   columns: {
     index: false,
@@ -95,6 +96,9 @@ let pageTask;
 let lastPageKey;
 let lastPageContent;
 const folderOpen = new Set();
+let ucsCatalog;
+let ucsLoading;
+const ucsOpen = new Set();
 const tabScroll = new Map();
 const metadataDrafts = new Map();
 const columnDefinitions = [
@@ -168,6 +172,13 @@ function command(method, params) {
     return saveSearch();
   if (["catalog.query", "catalog.sort", "tab.action"].includes(method))
     pageSequence++;
+  if (method === "diagnostics.get")
+    return host.request(method, params).then(async (text) => {
+      const keyboard = await host.keyboardState?.().catch((error) => ({
+        error: error.message,
+      }));
+      return `${text}\nWebView runtime: ${JSON.stringify(host.runtime || {})}\nWindow keyboard: ${JSON.stringify(keyboard || { transport: "desktop" })}`;
+    });
   return host.request(method, params);
 }
 
@@ -192,11 +203,6 @@ function persist() {
 function applyPreferences() {
   prefs.leftWidth = clamp(prefs.leftWidth, 140, 420);
   prefs.rightWidth = clamp(prefs.rightWidth, 220, 480);
-  prefs.auditionHeight = clamp(
-    prefs.auditionHeight,
-    220,
-    Math.max(220, innerHeight - 300),
-  );
   prefs.rowHeight = clamp(
     prefs.rowHeight,
     Math.max(24, prefs.fontSize + 10),
@@ -209,11 +215,7 @@ function applyPreferences() {
   const style = document.documentElement.style;
   style.setProperty("--sidebar-left", `${prefs.leftWidth}px`);
   style.setProperty("--sidebar-right", `${prefs.rightWidth}px`);
-  const playerHeight = prefs.fx
-    ? Math.max(prefs.auditionHeight, Math.min(390, innerHeight - 300))
-    : prefs.auditionHeight;
-  style.setProperty("--audition-height", `${playerHeight}px`);
-  style.setProperty("--fx-max-height", `${Math.max(60, playerHeight - 235)}px`);
+  layoutAudition();
   document.body.classList.toggle("fx-open", Boolean(prefs.fx));
   style.setProperty("--row-height", `${prefs.rowHeight}px`);
   style.setProperty("--font-size", `${prefs.fontSize}px`);
@@ -233,6 +235,20 @@ function applyPreferences() {
   renderRows();
   updateNavigation();
   requestAnimationFrame(drawDetail);
+}
+
+function layoutAudition() {
+  // Keep the waveform's saved height independent of temporary controls.
+  const extra = (prefs.fx ? 48 : 0) + ($("analysis-bar").hidden ? 0 : 28);
+  prefs.auditionHeight = clamp(
+    prefs.auditionHeight,
+    192,
+    Math.max(192, innerHeight - 300 - extra),
+  );
+  document.documentElement.style.setProperty(
+    "--audition-height",
+    `${prefs.auditionHeight + extra}px`,
+  );
 }
 
 function orderedColumns() {
@@ -583,9 +599,20 @@ function renderRows() {
         waveColor = appearance.played;
       if (asset.marked) waveColor = appearance?.marked || "#F0C85A";
       if (selected) waveColor = appearance?.selected || color;
-      drawPeaks(canvas, wave, waveColor, selected);
+      drawPeaks(canvas, wave, waveformInk(waveColor, color), selected);
     }
   });
+}
+
+function waveformInk(value, fallback) {
+  // Default pale inks belong to the dark native palette. Keep explicit custom
+  // colors, but use the paper theme's readable ink for those default values.
+  if (
+    prefs.theme === "paper" &&
+    ["#d7d8da", "#eaf3ff", "#dce8f3", "#f5faff"].includes(value?.toLowerCase())
+  )
+    return fallback;
+  return value || fallback;
 }
 
 function updateMiniPlayheads() {
@@ -750,14 +777,25 @@ function folderBranch(root, folder = root) {
   const summary = node("summary", "folder-row");
   branch.dataset.path = folder.path;
   branch.open = folderOpen.has(folder.path);
-  const toggle = node("button", "folder-toggle", "›");
-  toggle.setAttribute("aria-label", `展开文件夹 ${folder.name || folder.path}`);
-  toggle.setAttribute("aria-expanded", String(branch.open));
-  toggle.disabled = folder.children === false;
+  const toggle = node("button", "folder-toggle");
+  let expandable = folder.children !== false;
+  const updateIcon = () => {
+    toggle.replaceChildren(
+      icon(branch.open && expandable ? "folderOpen" : "folder"),
+    );
+    toggle.setAttribute(
+      "aria-label",
+      `${expandable ? (branch.open ? "收起文件夹" : "展开文件夹") : "打开文件夹"} ${folder.name || folder.path}`,
+    );
+    if (expandable) toggle.setAttribute("aria-expanded", String(branch.open));
+    else toggle.removeAttribute("aria-expanded");
+  };
+  updateIcon();
   toggle.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    branch.open = !branch.open;
+    if (expandable) branch.open = !branch.open;
+    else label.click();
   };
   const label = node("button", "nav-item");
   label.append(
@@ -774,11 +812,36 @@ function folderBranch(root, folder = root) {
   });
   label.dataset.literal = "true";
   label.classList.toggle("active", snapshot?.root === folder.path);
-  if (folder === root)
-    label.oncontextmenu = (event) => {
-      event.preventDefault();
+  label.oncontextmenu = (event) => {
+    event.preventDefault();
+    if (folder === root)
       managementMenu(event, "root", { ...root, name: root.path });
-    };
+    else
+      menu(pointerAnchor(event), [
+        [
+          "打开文件夹",
+          () =>
+            command("management.action", {
+              kind: "root",
+              id: root.id,
+              action: "open",
+              path: folder.path,
+            }),
+        ],
+        [
+          branch.open ? "折叠此层级" : "展开此层级",
+          () => {
+            branch.open = !branch.open;
+          },
+          "",
+          expandable,
+        ],
+      ]);
+  };
+  label.ondblclick = (event) => {
+    event.preventDefault();
+    if (expandable) branch.open = !branch.open;
+  };
   label.title = folder.path;
   if (folder.count !== undefined)
     label.append(node("small", "folder-count", folder.count));
@@ -821,7 +884,8 @@ function folderBranch(root, folder = root) {
         branch.append(more);
       }
       if (!offset && !result.total) {
-        toggle.disabled = true;
+        expandable = false;
+        updateIcon();
         message.textContent = "此文件夹没有已索引的子文件夹";
         branch.append(message);
       }
@@ -835,7 +899,7 @@ function folderBranch(root, folder = root) {
     }
   };
   branch.ontoggle = action(() => {
-    toggle.setAttribute("aria-expanded", String(branch.open));
+    updateIcon();
     if (branch.open) folderOpen.add(folder.path);
     else {
       folderOpen.delete(folder.path);
@@ -878,14 +942,18 @@ function renderSidebar() {
   );
   const libraries = [];
   for (const library of snapshot.libraries) {
+    const collapsed = prefs.collapsedLibraries?.includes(library.id);
     libraries.push(
       navItem(
-        `▱ ${library.name}`,
+        library.name,
         () => query({ libraryId: library.id }),
         snapshot.libraryId === library.id,
       ),
     );
     libraries[libraries.length - 1].dataset.libraryId = library.id;
+    libraries[libraries.length - 1].prepend(
+      icon(collapsed ? "folder" : "folderOpen"),
+    );
     libraries[libraries.length - 1].dataset.literal = "true";
     libraries[libraries.length - 1].oncontextmenu = (event) => {
       event.preventDefault();
@@ -894,7 +962,7 @@ function renderSidebar() {
     for (const root of snapshot.roots.filter(
       (root) => root.libraryId === library.id && root.enabled !== false,
     )) {
-      if (prefs.navigation?.folders !== false)
+      if (!collapsed && prefs.navigation?.folders !== false)
         libraries.push(folderBranch(root));
     }
   }
@@ -984,27 +1052,24 @@ function renderTabs() {
       );
       button.oncontextmenu = (event) => {
         event.preventDefault();
-        const items = [];
-        for (const [label, params] of [
+        const entries = [
           ["复制标签", { action: "new", duplicateId: tab.id }],
           ["重命名", { action: "rename", id: tab.id }],
           ["左移", { action: "move", id: tab.id, direction: -1 }],
           ["右移", { action: "move", id: tab.id, direction: 1 }],
           ["关闭其他标签", { action: "close", id: tab.id, mode: "others" }],
           ["关闭右侧标签", { action: "close", id: tab.id, mode: "right" }],
-        ]) {
-          const item = node("button", "menu-item", label);
-          item.onclick = action(async () => {
-            $("popover").hidePopover();
+        ].map(([label, params]) => [
+          label,
+          async () => {
             if (params.action === "rename") {
               params.name = await promptName("重命名标签页", tab.name);
               if (params.name === null) return;
             }
             await command("tab.action", params);
-          });
-          items.push(item);
-        }
-        popover(button, items);
+          },
+        ]);
+        menu(pointerAnchor(event), entries);
       };
       if (snapshot.tabs.length > 1) {
         const close = node("span", "tab-close", "×");
@@ -1031,15 +1096,17 @@ function applySnapshot(next) {
     pageSequence++;
   }
   snapshot = next;
+  $("performance-stats").hidden = !next.performance;
+  if (next.performance)
+    $("performance-stats").textContent =
+      `Lua ${next.performance.background.toFixed(1)} ms · UI ${next.performance.update.toFixed(1)} ms · Δ ${next.performance.interval.toFixed(1)} ms`;
   settings.update(next);
   updateTransferStatus();
   if (next.language && next.language !== prefs.language) {
     prefs.language = next.language;
     localizer.setLanguage(next.language);
     persist();
-    $("ucs-categories").replaceChildren();
-    if ($("ucs-directory").open)
-      $("ucs-directory").dispatchEvent(new Event("toggle"));
+    if (ucsCatalog) renderUcs();
   }
   const ready = !next.startup;
   if (next.sortMode) $("sort").value = next.sortMode;
@@ -1074,7 +1141,8 @@ function applySnapshot(next) {
     "drag-selection",
   ])
     $(id).disabled = !ready || !next.selected;
-  $("ai-search").disabled = !ready || Boolean(next.tasks?.ai);
+  $("ai-search").disabled = !ready;
+  $("ai-search").title = next.tasks?.ai ? "取消 AI 搜索" : "AI 语义搜索";
   renderFilterBar();
   updateNavigation();
   $("ai-more").hidden = next.view !== "ai_semantic" || !next.aiHasMore;
@@ -1308,6 +1376,7 @@ function renderLoudness() {
 function renderSimilarityProgress() {
   const progress = snapshot?.similarityProgress;
   $("analysis-bar").hidden = !progress && !snapshot?.tasks?.similar;
+  layoutAudition();
   $("similar-search").disabled ||= Boolean(snapshot?.tasks?.similar);
   const key = JSON.stringify(progress);
   if (key === similarityProgressKey) return;
@@ -1404,7 +1473,10 @@ function drawDetail() {
   const context = canvas.getContext("2d");
   context.scale(ratio, ratio);
   const palette = getComputedStyle(document.body);
-  const color = palette.getPropertyValue("--text").trim();
+  const color = waveformInk(
+    snapshot?.rowAppearance?.waveform,
+    palette.getPropertyValue("--text").trim(),
+  );
   const muted = palette.getPropertyValue("--muted").trim();
   const accent =
     prefs.waveformColorMode === "custom"
@@ -1794,9 +1866,30 @@ function renderInspector() {
     reveal.onclick = action(() => host.reveal(asset.path));
     const actions = node("div", "action-row");
     const artwork = node("button", null, "选择封面");
-    artwork.onclick = action(() =>
-      command("asset.action", { path: asset.path, action: "artwork" }),
-    );
+    artwork.onclick = () =>
+      menu(artwork, [
+        [
+          "选择封面",
+          () =>
+            command("asset.action", { path: asset.path, action: "artwork" }),
+        ],
+        [
+          "自动查找封面",
+          () =>
+            command("asset.action", {
+              path: asset.path,
+              action: "redetectArtwork",
+            }),
+        ],
+        [
+          "清除封面",
+          () =>
+            command("asset.action", {
+              path: asset.path,
+              action: "clearArtwork",
+            }),
+        ],
+      ]);
     actions.append(save, reveal, artwork);
     container.append(actions, node("p", "path-label", asset.path));
   } else if (inspectorTab === "regions") {
@@ -1949,6 +2042,20 @@ async function renderTransfer(container) {
       transferDraft[key] = value;
     },
   );
+  const presets = node("div", "action-row");
+  for (const [label, values] of transferPresets) {
+    const button = node("button", null, label);
+    button.onclick = action(async () => {
+      Object.assign(transferDraft, {
+        transfer_variants_enabled: true,
+        ...values,
+      });
+      container.replaceChildren();
+      await renderTransfer(container);
+    });
+    presets.append(button);
+  }
+  container.append(presets);
   const progress = node("p", "muted");
   progress.id = "transfer-progress";
   const summary = node("p", "muted");
@@ -1957,7 +2064,12 @@ async function renderTransfer(container) {
   error.id = "transfer-error";
   const submit = node("button", "primary", "导出所选声音");
   submit.id = "transfer-submit";
-  submit.onclick = action(async () => {
+  const single = node("button", null, "导出当前素材");
+  single.id = "transfer-current";
+  const cancel = node("button", null, "当前文件后停止");
+  cancel.id = "transfer-cancel";
+  cancel.onclick = action(() => command("tasks.cancel", { task: "transfer" }));
+  const exportAssets = async (target) => {
     for (const input of container.querySelectorAll("input"))
       if (!input.reportValidity()) return;
     if (!snapshot?.selectedCount) throw new Error("请先选择素材");
@@ -1969,7 +2081,12 @@ async function renderTransfer(container) {
       const advanced = Object.fromEntries(
         Object.entries(transferDraft).filter(([key]) => !controls[key]),
       );
-      await command("transfer.start", { ...values, values: advanced });
+      await command("transfer.start", {
+        ...values,
+        values: advanced,
+        target,
+        path: target === "current" ? snapshot.selected.path : undefined,
+      });
       transferDraft = { ...transferDraft, ...values };
     } catch (failure) {
       error.textContent = failure.message;
@@ -1977,8 +2094,25 @@ async function renderTransfer(container) {
     } finally {
       updateTransferStatus();
     }
-  });
-  container.append(progress, summary, error, submit);
+  };
+  submit.onclick = action(() => exportAssets("selected"));
+  single.onclick = action(() => exportAssets("current"));
+  const exports = node("div", "action-row");
+  exports.append(single, submit, cancel);
+  const output = node("p", "path-label");
+  output.id = "transfer-last-output";
+  const recent = node("button", null, "打开最近输出目录");
+  recent.id = "transfer-recent";
+  recent.onclick = action(() =>
+    command("transfer.directory", { action: "recent" }),
+  );
+  const report = node("button", null, "打开任务报告目录");
+  report.onclick = action(() =>
+    command("transfer.directory", { action: "report" }),
+  );
+  const recentActions = node("div", "action-row");
+  recentActions.append(recent, report);
+  container.append(progress, summary, error, exports, output, recentActions);
   updateTransferStatus();
 }
 function updateTransferStatus() {
@@ -1992,16 +2126,31 @@ function updateTransferStatus() {
     !snapshot?.selectedCount ||
     Boolean(snapshot?.tasks?.transfer) ||
     snapshot?.readOnly;
+  $("transfer-current").disabled = $("transfer-submit").disabled;
+  $("transfer-cancel").hidden = !snapshot?.tasks?.transfer;
+  $("transfer-last-output").textContent =
+    snapshot?.transferOutput || "尚未执行 Transfer";
+  $("transfer-recent").disabled = !snapshot?.transferOutput;
 }
 
-function popover(anchor, content) {
+let popoverAnchor;
+function positionPopover() {
   const pop = $("popover");
-  pop.replaceChildren(...content);
-  const rect = anchor.getBoundingClientRect();
-  if (!pop.matches(":popover-open")) pop.showPopover();
+  if (!popoverAnchor || !pop.matches(":popover-open")) return;
+  const rect = popoverAnchor.getBoundingClientRect();
   const size = pop.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - size.width - 8))}px`;
   pop.style.top = `${Math.max(8, Math.min(rect.bottom + 5, innerHeight - size.height - 8))}px`;
+}
+new ResizeObserver(positionPopover).observe($("popover"));
+function popover(anchor, content, actionMenu = false) {
+  const pop = $("popover");
+  popoverAnchor = anchor;
+  pop.classList.toggle("action-menu", actionMenu);
+  pop.replaceChildren(...content);
+  pop.scrollTop = 0;
+  if (!pop.matches(":popover-open")) pop.showPopover();
+  positionPopover();
 }
 
 function toggle(label, checked, callback) {
@@ -2014,8 +2163,19 @@ function toggle(label, checked, callback) {
   return wrapper;
 }
 
-function menu(anchor, entries) {
+function menu(anchor, entries, title, back) {
   const content = [];
+  if (title) {
+    const heading = node("h3", "menu-title", title);
+    heading.dataset.literal = "true";
+    heading.title = title;
+    content.push(heading);
+  }
+  if (back) {
+    const button = node("button", "menu-item menu-back", "‹ 返回");
+    button.onclick = back;
+    content.push(button, node("hr"));
+  }
   for (const entry of entries) {
     if (!entry) {
       content.push(node("hr"));
@@ -2025,15 +2185,32 @@ function menu(anchor, entries) {
     const item = node("button", "menu-item");
     item.type = "button";
     item.append(node("span", null, label));
-    if (shortcut) item.append(node("kbd", null, shortcut));
+    const submenu = Array.isArray(callback);
+    if (submenu) {
+      item.append(node("span", "submenu-arrow", "›"));
+      item.setAttribute("aria-haspopup", "menu");
+    } else if (shortcut) item.append(node("kbd", null, shortcut));
     item.disabled = !enabled;
     item.onclick = action(async () => {
+      if (submenu) {
+        menu(anchor, callback, undefined, () => {
+          menu(anchor, entries, title, back);
+          const items = [...$("popover").querySelectorAll(".menu-item")];
+          items[
+            entries.filter(Boolean).indexOf(entry) + (back ? 1 : 0)
+          ]?.focus();
+        });
+        $("popover")
+          .querySelector(".menu-item:not(.menu-back):not(:disabled)")
+          ?.focus();
+        return;
+      }
       $("popover").hidePopover();
       await callback();
     });
     content.push(item);
   }
-  popover(anchor, content);
+  popover(anchor, content, true);
 }
 function pointerAnchor(event) {
   return {
@@ -2059,9 +2236,11 @@ function managementMenu(event, kind, item) {
       ["添加来源", "add"],
       ["重命名", "rename"],
       ["扫描", "scan"],
+      ["展开或折叠来源", "toggleSources"],
       ["移除音效库", "remove"],
     ],
     root: [
+      ["打开来源文件夹", "open"],
       ["扫描来源", "scan"],
       ["重新链接", "relink"],
       ["指定封面", "artwork"],
@@ -2073,6 +2252,7 @@ function managementMenu(event, kind, item) {
       ["加入所选素材", "addSelection"],
       ["移除所选素材", "removeSelection"],
       ...(item.kind === "project" ? [["绑定当前工程", "bind"]] : []),
+      ...(item.kind === "project" ? [["查看当前工程已用素材", "used"]] : []),
       ["重命名", "rename"],
       ["删除集合", "remove"],
     ],
@@ -2293,6 +2473,10 @@ for (const button of document.querySelectorAll("[data-menu]"))
       ],
       help: [
         ["快捷键与使用说明", () => settingsDialog("about")],
+        [
+          "打开文档目录",
+          () => command("records.action", { action: "docsFolder" }),
+        ],
         ["AI 语义搜索", () => settingsDialog("ai")],
         [
           "复制诊断信息",
@@ -2304,6 +2488,19 @@ for (const button of document.querySelectorAll("[data-menu]"))
     menu(button, menus[button.dataset.menu]);
   };
 $("popover").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowLeft" && $("popover").querySelector(".menu-back")) {
+    event.preventDefault();
+    $("popover").querySelector(".menu-back").click();
+    return;
+  }
+  if (
+    event.key === "ArrowRight" &&
+    event.target.matches('[aria-haspopup="menu"]')
+  ) {
+    event.preventDefault();
+    event.target.click();
+    return;
+  }
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   const items = [
     ...$("popover").querySelectorAll("button:not(:disabled),input"),
@@ -2412,73 +2609,119 @@ function columnsMenu(anchor, layout = false) {
 }
 
 function rowMenu(event, asset) {
-  const content = [node("h3", null, asset.name)];
-  const operate = (operation, extra = {}) =>
-    command("asset.action", {
+  const operate = async (operation, extra = {}) => {
+    const result = await command("asset.action", {
       path: asset.path,
       action: operation,
       ...extra,
     });
-  for (const [label, callback] of [
-    [asset.favorite ? "取消收藏" : "收藏", () => operate("favorite")],
-    [
-      "查找相似声音",
-      async () => {
-        await selectAsset(asset, {}, false);
-        await command("search.similar", { scope: "all" });
-      },
-    ],
-    ["试听", () => operate("play")],
-    ["插入当前轨道", () => operate("insert")],
-    ["插入新轨道", () => operate("insert", { newTrack: true })],
-    [
-      "堆叠插入到新轨道",
-      async () => {
-        if (!asset.selected) await selectAsset(asset, {}, false);
-        await operate("stack");
-      },
-    ],
-    ["按 BWF 时间戳插入", () => operate("insert", { bwf: true })],
-    [asset.marked ? "取消标记" : "标记", () => operate("mark")],
-    ["从当前集合移除", () => operate("removeCollection")],
-    ["重新读取元数据", () => operate("metadata")],
-    [
-      "在当前结果中查找相似声音",
-      () => operate("similar", { scope: "current" }),
-    ],
-    ["定位所属产品音效库", () => operate("browseProduct")],
-    ["重新分析响度", () => operate("loudness")],
-    ["检测瞬态", () => operate("transients")],
-    ["撤销瞬态检测", () => operate("undoTransients")],
-    ["撤销 UCS 确认", () => operate("undoUcs")],
-    ["清除瞬态建议", () => operate("clearTransients")],
-    ["复制完整路径", () => navigator.clipboard.writeText(asset.path)],
-    ["显示文件", () => host.reveal(asset.path)],
-  ]) {
-    const item = node("button", "menu-item", label);
-    item.onclick = action(async () => {
-      $("popover").hidePopover();
-      await callback();
-      requestPage();
-    });
-    content.push(item);
-  }
-  for (const status of snapshot?.workflowStatuses || []) {
-    const button = node("button", "menu-item", `状态 · ${status.label}`);
-    button.onclick = action(async () => {
-      $("popover").hidePopover();
-      await operate("workflow", { status: status.id });
-      requestPage();
-    });
-    content.push(button);
-  }
-  const anchor = {
-    getBoundingClientRect: () => ({
-      left: event.clientX,
-      bottom: event.clientY,
-    }),
+    requestPage();
+    return result;
   };
-  popover(anchor, content);
+  const select = async () => {
+    if (!asset.selected) await selectAsset(asset, {}, false);
+  };
+  menu(
+    pointerAnchor(event),
+    [
+      ["试听", () => operate("play"), "Space"],
+      [asset.favorite ? "取消收藏" : "收藏", () => operate("favorite"), "F"],
+      [asset.marked ? "取消标记" : "标记", () => operate("mark"), "M"],
+      null,
+      [
+        "插入 REAPER",
+        [
+          ["插入当前轨道", () => operate("insert")],
+          ["插入新轨道", () => operate("insert", { newTrack: true })],
+          [
+            "堆叠插入到新轨道",
+            async () => {
+              await select();
+              await operate("stack");
+            },
+          ],
+          ["按 BWF 时间戳插入", () => operate("insert", { bwf: true })],
+        ],
+      ],
+      [
+        "集合",
+        [
+          ...(snapshot?.collections || []).map((collection) => [
+            collection.name,
+            async () => {
+              await select();
+              await command("collection.add", { id: collection.id });
+            },
+          ]),
+          null,
+          [
+            "新建播放列表",
+            async () => {
+              await select();
+              await createCollection("playlist");
+            },
+          ],
+          [
+            "新建项目素材箱",
+            async () => {
+              await select();
+              await createCollection("project");
+            },
+          ],
+          [
+            "从当前集合移除",
+            () => operate("removeCollection"),
+            "",
+            Boolean(snapshot?.collectionId),
+          ],
+        ],
+      ],
+      [
+        "查找相似声音",
+        [
+          [
+            "在当前结果中查找相似声音",
+            () => operate("similar", { scope: "current" }),
+          ],
+          [
+            "在全部音效库中查找相似声音",
+            () => operate("similar", { scope: "all" }),
+          ],
+          ["定位所属产品音效库", () => operate("browseProduct")],
+        ],
+      ],
+      [
+        "分析与元数据",
+        [
+          ["重新读取元数据", () => operate("metadata")],
+          ["重新分析响度", () => operate("loudness")],
+          ["检测瞬态", () => operate("transients")],
+          ["撤销瞬态检测", () => operate("undoTransients")],
+          ["清除瞬态建议", () => operate("clearTransients")],
+          ["撤销 UCS 确认", () => operate("undoUcs")],
+        ],
+      ],
+      [
+        "封面",
+        [
+          ["选择封面", () => operate("artwork")],
+          ["自动查找封面", () => operate("redetectArtwork")],
+          ["清除封面", () => operate("clearArtwork")],
+        ],
+      ],
+      [
+        "工作流状态",
+        (snapshot?.workflowStatuses || []).map((status) => [
+          status.label,
+          () => operate("workflow", { status: status.id }),
+        ]),
+      ],
+      null,
+      ["复制完整路径", () => navigator.clipboard.writeText(asset.path)],
+      ["显示文件", () => host.reveal(asset.path)],
+    ],
+    asset.name,
+  );
 }
 
 function appendSettings(container, settings, groupFilter, onChange) {
@@ -2643,6 +2886,19 @@ async function createCollection(kind) {
   return command("collection.create", { kind, name });
 }
 async function manageItem(kind, item, operation) {
+  if (operation === "toggleSources" && kind === "library") {
+    const collapsed = new Set(prefs.collapsedLibraries || []);
+    if (collapsed.has(item.id)) collapsed.delete(item.id);
+    else collapsed.add(item.id);
+    prefs.collapsedLibraries = [...collapsed];
+    renderSidebar();
+    persist();
+    return true;
+  }
+  if (operation === "used" && kind === "collection") {
+    openNavigation("all");
+    return query({ view: "project_used" });
+  }
   const params = { kind, id: item.id, action: operation };
   if (operation === "rename") {
     params.name = await promptName("重命名", item.name);
@@ -2833,15 +3089,14 @@ $("fx-toggle").onclick = () => {
   persist();
 };
 $("fx-panel").ontoggle = () => {
+  if (prefs.fx === $("fx-panel").open) return;
   prefs.fx = $("fx-panel").open;
-  $("fx-toggle").setAttribute("aria-expanded", String(prefs.fx));
+  applyPreferences();
   persist();
   drawDetail();
 };
 $("new-tab").onclick = action(() => command("tab.action", { action: "new" }));
-$("play").onclick = action(() =>
-  command(snapshot?.playing ? "preview.stop" : "preview.play"),
-);
+$("play").onclick = action(() => command("preview.toggle"));
 $("stop").onclick = action(() => command("preview.stop"));
 $("loop").onclick = action(() =>
   command("preview.parameters", { loop: !snapshot?.fx.loop }),
@@ -2862,6 +3117,82 @@ $("similar-search").onclick = () =>
     ],
     ["首次分析会建立缓存，可在后台运行", () => {}, "", false],
   ]);
+$("audition-more").onclick = action(async () => {
+  const { values } = await command("settings.get");
+  const checked = (key, label) => [
+    `${values[key] ? "✓ " : ""}${label}`,
+    () => command("settings.update", { values: { [key]: !values[key] } }),
+  ];
+  menu($("audition-more"), [
+    ["适应完整波形", () => $("zoom-reset").click()],
+    ["FX 面板", () => $("fx-toggle").click()],
+    [
+      "试听选项",
+      [
+        checked("loop_selection", "循环波形选区"),
+        checked("spectral_peaks_enabled", "频谱波形"),
+        checked("loudness_match", "响度匹配"),
+        checked("show_loudness_metrics", "显示响度读数"),
+        [
+          "保持音高",
+          () =>
+            command("preview.parameters", {
+              preserve_pitch: !snapshot?.fx.preserve_pitch,
+            }),
+        ],
+        [
+          "反向",
+          () =>
+            command("preview.parameters", { reverse: !snapshot?.fx.reverse }),
+        ],
+        ["循环", () => $("loop").click()],
+      ],
+    ],
+    ["保存当前选区为 Region", saveRegion, "", Boolean(snapshot?.selected)],
+    [
+      "清除波形选区",
+      () => command("preview.clearRegion"),
+      "",
+      Boolean(snapshot?.selected),
+    ],
+    [
+      "Region 列表",
+      () => {
+        prefs.right = true;
+        applyPreferences();
+        persist();
+        document.querySelector('[data-inspector="regions"]').click();
+      },
+    ],
+    [
+      "分析",
+      [
+        ...[
+          ["重新分析响度", "loudness"],
+          ["检测瞬态", "transients"],
+          ["撤销瞬态检测", "undoTransients"],
+          ["清除瞬态建议", "clearTransients"],
+        ].map(([label, operation]) => [
+          label,
+          () =>
+            command("asset.action", {
+              action: operation,
+              path: snapshot.selected.path,
+            }),
+          "",
+          Boolean(snapshot?.selected),
+        ]),
+        ["波形与分析设置", () => settingsDialog("waveform")],
+      ],
+    ],
+    [
+      "按 BWF 时间戳插入",
+      () => command("insert", { bwf: true }),
+      "",
+      Boolean(snapshot?.selected),
+    ],
+  ]);
+});
 $("analysis-cancel").onclick = action(() =>
   command("tasks.cancel", { task: "similar" }),
 );
@@ -2891,12 +3222,30 @@ for (const id of ["add-library", "empty-add"])
     persist();
   });
 $("new-collection").onclick = () => collectionCreateMenu($("new-collection"));
-$("ucs-directory").ontoggle = action(async () => {
-  if (!$("ucs-directory").open || $("ucs-categories").childElementCount) return;
-  const categories = await command("catalog.ucs");
+function renderUcs() {
+  if (!ucsCatalog) return;
+  const search = $("ucs-search").value.trim().toLocaleLowerCase();
+  const words = search.split(/\s+/).filter(Boolean);
   const fragment = document.createDocumentFragment();
-  for (const category of categories) {
+  let count = 0;
+  for (const category of ucsCatalog) {
+    const entries = category.entries.filter((entry) => {
+      const text = [
+        category.name,
+        category.label,
+        entry.catid,
+        entry.name,
+        entry.label,
+        entry.synonyms,
+      ]
+        .join(" ")
+        .toLocaleLowerCase();
+      return words.every((word) => text.includes(word));
+    });
+    if (!entries.length) continue;
+    count += entries.length;
     const details = node("details");
+    details.open = Boolean(search) || ucsOpen.has(category.name);
     details.append(
       node(
         "summary",
@@ -2906,25 +3255,54 @@ $("ucs-directory").ontoggle = action(async () => {
           : category.label || category.name,
       ),
     );
-    const all = navItem(
-      `${prefs.language === "en" ? "All" : "全部"} ${category.name}`,
-      () => query({ category: category.name }),
-      false,
+    details.ontoggle = () => {
+      if (search) return;
+      if (details.open) ucsOpen.add(category.name);
+      else ucsOpen.delete(category.name);
+    };
+    details.append(
+      navItem(
+        `${prefs.language === "en" ? "All" : "全部"} ${category.name}`,
+        () => query({ category: category.name }),
+        snapshot?.category === category.name,
+      ),
     );
-    details.append(all);
-    for (const entry of category.entries)
+    for (const entry of entries)
       details.append(
         navItem(
           `${entry.catid} · ${prefs.language === "en" ? entry.name : entry.label || entry.name}`,
           () => query({ catid: entry.catid }),
-          false,
+          snapshot?.catid === entry.catid,
           "root",
         ),
       );
     fragment.append(details);
   }
-  $("ucs-categories").append(fragment);
+  $("ucs-categories").replaceChildren(fragment);
+  $("ucs-search-clear").hidden = !search;
+  $("ucs-search-status").hidden = !search;
+  $("ucs-search-status").textContent = count
+    ? `${count} 个分类`
+    : "没有匹配的 UCS 分类";
+}
+async function loadUcs() {
+  if (!ucsCatalog) {
+    ucsLoading ||= command("catalog.ucs").finally(() => {
+      ucsLoading = null;
+    });
+    ucsCatalog = await ucsLoading;
+  }
+  renderUcs();
+}
+$("ucs-directory").ontoggle = action(async () => {
+  if ($("ucs-directory").open) await loadUcs();
 });
+$("ucs-search").oninput = action(loadUcs);
+$("ucs-search-clear").onclick = () => {
+  $("ucs-search").value = "";
+  renderUcs();
+  $("ucs-search").focus();
+};
 $("collection-menu").onclick = () => {
   const content = [node("h3", null, "将所选声音加入集合")];
   for (const collection of snapshot?.collections || []) {
@@ -2952,21 +3330,23 @@ $("collection-menu").onclick = () => {
   }
   popover($("collection-menu"), content);
 };
-for (const [label, key, values] of [
-  ["音高预设", "pitch", [-12, -6, -3, 0, 3, 6, 12]],
-  ["速度预设", "rate", [0.5, 0.75, 1, 1.25, 1.5, 2]],
-]) {
-  const presets = node("details", "settings-section");
-  presets.append(node("summary", null, label));
-  for (const value of values) {
-    const button = node("button", null, String(value));
-    button.onclick = action(() =>
-      command("preview.parameters", { [key]: value }),
-    );
-    presets.append(button);
-  }
-  $("fx-panel").append(presets);
-}
+$("fx-presets").onclick = () =>
+  menu($("fx-presets"), [
+    [
+      "音高预设",
+      [-12, -6, -3, 0, 3, 6, 12].map((pitch) => [
+        `${pitch > 0 ? "+" : ""}${pitch} st`,
+        () => command("preview.parameters", { pitch }),
+      ]),
+    ],
+    [
+      "速度预设",
+      [0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => [
+        `${rate}×`,
+        () => command("preview.parameters", { rate }),
+      ]),
+    ],
+  ]);
 let fxTimer;
 let pendingFx = {};
 for (const [label, key] of [
@@ -3153,14 +3533,57 @@ attachSplitter(
   -1,
 );
 attachSplitter($("audition-splitter"), "auditionHeight", "clientY", -1);
+// Capture Space before focused buttons perform their default click. One press
+// means one backend toggle, even while a previous state snapshot is in flight.
+let auditionSpaceDown = false;
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      !host ||
+      event.code !== "Space" ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      event.isComposing ||
+      event.keyCode === 229 ||
+      event.defaultPrevented ||
+      event.target.closest(
+        'input,textarea,select,[contenteditable]:not([contenteditable="false"]),dialog,#popover',
+      )
+    )
+      return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (auditionSpaceDown || event.repeat) return;
+    auditionSpaceDown = true;
+    command("preview.toggle").catch(report);
+  },
+  true,
+);
+window.addEventListener(
+  "keyup",
+  (event) => {
+    if (event.code !== "Space" || !auditionSpaceDown) return;
+    auditionSpaceDown = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  },
+  true,
+);
+window.addEventListener("blur", () => {
+  auditionSpaceDown = false;
+});
 document.addEventListener(
   "keydown",
   action(async (event) => {
     if (
       !host ||
       event.defaultPrevented ||
+      event.repeat ||
       event.isComposing ||
-      event.target.closest("dialog")
+      event.target.closest("dialog,#popover")
     )
       return;
     if (
@@ -3172,7 +3595,12 @@ document.addEventListener(
       await command("search.ai", { query: $("search").value });
       return;
     }
-    if (event.target.closest("input,textarea,select,dialog")) return;
+    if (
+      event.target.closest(
+        'input,textarea,select,dialog,[contenteditable]:not([contenteditable="false"])',
+      )
+    )
+      return;
     const ctrl = event.ctrlKey || event.metaKey;
     if (ctrl && event.key.toLowerCase() === "f") {
       event.preventDefault();
@@ -3211,10 +3639,6 @@ document.addEventListener(
         action: "mark",
         path: snapshot.selected.path,
       });
-    if (event.code === "Space") {
-      event.preventDefault();
-      await command(snapshot?.playing ? "preview.stop" : "preview.play");
-    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
       event.preventDefault();
       await command("selection.all");

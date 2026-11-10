@@ -25,6 +25,7 @@ const groupPage = {
   维护: "maintenance",
 };
 const operationLabels = {
+  open: "打开来源文件夹",
   add: "添加来源",
   rename: "重命名",
   scan: "扫描",
@@ -39,6 +40,36 @@ const operationLabels = {
   overwrite: "用当前条件覆盖",
   activate: "打开",
 };
+
+// Match draw_transfer_settings_content in the legacy UI. Empty lists mean the
+// current audition parameter, not a hard-coded zero/default.
+export const transferPresets = [
+  [
+    "当前参数",
+    {
+      transfer_variant_pitches: "",
+      transfer_variant_rates: "",
+      transfer_variant_gains: "",
+      transfer_variant_include_reverse: false,
+    },
+  ],
+  [
+    "Pitch ±3 / ±6",
+    {
+      transfer_variant_pitches: "-6,-3,0,3,6",
+      transfer_variant_rates: "",
+      transfer_variant_gains: "",
+    },
+  ],
+  [
+    "轻量变化",
+    {
+      transfer_variant_pitches: "-2,0,2",
+      transfer_variant_rates: "0.95,1,1.05",
+      transfer_variant_gains: "-1,0,1",
+    },
+  ],
+];
 
 export function createSettings({
   dialog,
@@ -64,6 +95,21 @@ export function createSettings({
     loaded = false,
     aiDraft = null,
     aiUnsaved = false;
+  const aiDrafts = new Map();
+  const anyAiUnsaved = () =>
+    aiUnsaved || [...aiDrafts.values()].some((item) => item.unsaved);
+  function stashAi() {
+    if (aiDraft && settings.ai_active_preset_id)
+      aiDrafts.set(settings.ai_active_preset_id, {
+        draft: structuredClone(aiDraft),
+        unsaved: aiUnsaved,
+      });
+  }
+  function restoreAi() {
+    const saved = aiDrafts.get(settings.ai_active_preset_id);
+    aiDraft = saved ? structuredClone(saved.draft) : null;
+    aiUnsaved = Boolean(saved?.unsaved);
+  }
   const body = dialog.querySelector("#settings-body");
   const status = dialog.querySelector("#dialog-status");
   const apply = dialog.querySelector("#settings-apply");
@@ -80,14 +126,14 @@ export function createSettings({
   }
   function updateDirty() {
     apply.disabled = !loaded || busy || settings?.loading || !changed();
-    discard.hidden = !changed() && !aiUnsaved;
+    discard.hidden = !changed() && !anyAiUnsaved();
     if (!busy)
       message(
         settings?.loading
           ? "素材库正在加载，设置将在加载完成后可用"
           : changed()
             ? "有未保存的更改"
-            : aiUnsaved
+            : anyAiUnsaved()
               ? "AI 预设有未保存的更改"
               : "所有更改已保存",
       );
@@ -245,7 +291,7 @@ export function createSettings({
         key: "auditionHeight",
         label: "试听区域高度",
         kind: "number",
-        minimum: 220,
+        minimum: 192,
         maximum: 700,
         integer: true,
       },
@@ -273,6 +319,15 @@ export function createSettings({
           localDraft[definition.key],
           (value) => {
             localDraft[definition.key] = value;
+            if (definition.key === "waveformSelectionColor") {
+              localDraft.waveformColorMode = "custom";
+              setDraft("selection_hex", value);
+            } else if (
+              definition.key === "waveformColorMode" &&
+              value === "custom"
+            ) {
+              setDraft("selection_hex", localDraft.waveformSelectionColor);
+            }
             updateDirty();
           },
           true,
@@ -281,6 +336,21 @@ export function createSettings({
     display.append(
       button("恢复默认布局", () => {
         localDraft = structuredClone(defaults);
+        render();
+        updateDirty();
+      }),
+    );
+    display.append(
+      button("恢复默认波形配色", async () => {
+        await command("records.action", { action: "resetWaveformColors" });
+        localDraft.waveformColorMode = defaults.waveformColorMode;
+        localDraft.waveformSelectionColor = defaults.waveformSelectionColor;
+        const refreshed = await command("settings.get");
+        for (const definition of refreshed.schema || []) {
+          if (definition.group !== "试听颜色") continue;
+          settings.values[definition.key] = refreshed.values[definition.key];
+          delete draft[definition.key];
+        }
         render();
         updateDirty();
       }),
@@ -417,15 +487,12 @@ export function createSettings({
     };
     presets.onchange = () =>
       run(async () => {
-        if (aiUnsaved) {
-          presets.value = settings.ai_active_preset_id;
-          message("请先保存当前 AI 预设", true);
-          return;
-        }
+        stashAi();
         await command("settings.ai", { action: "select", id: presets.value });
         settings = await command("settings.get");
-        aiDraft = null;
+        restoreAi();
         render();
+        updateDirty();
       });
     target.append(presets);
     for (const [key, label, value, type] of [
@@ -465,8 +532,27 @@ export function createSettings({
     provider.onchange = () => {
       aiDraft.provider = provider.value;
       dirtyAI();
+      renderModels();
     };
     target.append(provider);
+    const models = el("div", "action-row");
+    const renderModels = () => {
+      models.replaceChildren();
+      const choices =
+        {
+          deepseek: ["deepseek-flash", "deepseek-v4-pro"],
+          openai: ["gpt-4.1-mini", "gpt-4.1"],
+        }[provider.value] || [];
+      for (const model of choices)
+        models.append(
+          button(model, () => {
+            controls.model.value = aiDraft.model = model;
+            dirtyAI();
+          }),
+        );
+    };
+    renderModels();
+    target.append(models);
     const row = el("div", "action-row");
     for (const [label, action] of [
       ["新建预设", "new"],
@@ -478,10 +564,8 @@ export function createSettings({
         button(
           label,
           async () => {
-            if (aiUnsaved && ["new", "delete"].includes(action)) {
-              message("请先保存当前 AI 预设", true);
-              return;
-            }
+            stashAi();
+            const previousPreset = settings.ai_active_preset_id;
             const result = await command("settings.ai", {
               action,
               id: presets.value,
@@ -499,10 +583,12 @@ export function createSettings({
               return;
             }
             controls.key.value = "";
-            aiDraft = null;
-            aiUnsaved = false;
+            if (action === "save" || action === "delete")
+              aiDrafts.delete(previousPreset);
             settings = await command("settings.get");
+            restoreAi();
             render();
+            updateDirty();
             message("预设已保存");
           },
           action === "save" ? "primary" : "",
@@ -511,11 +597,39 @@ export function createSettings({
     }
     const result = el("p", "muted", settings.ai_status || "");
     result.id = "ai-connection-status";
+    row.append(
+      button("删除已保存 Key", async () => {
+        await command("settings.ai", {
+          action: "deleteKey",
+          id: settings.ai_active_preset_id,
+        });
+        controls.key.value = aiDraft.key = "";
+        settings.ai_key_saved = false;
+        stashAi();
+        render();
+        updateDirty();
+        message("已删除保存的 API Key");
+      }),
+    );
     target.append(row, warning, result);
   }
   function extra() {
     if (section === "appearance") appearance();
     if (section === "ai") ai();
+    if (section === "transfer") {
+      const target = card("变体预设", "选择后可继续修改参数，应用时保存。");
+      for (const [label, values] of transferPresets)
+        target.append(
+          button(label, () => {
+            for (const [key, value] of Object.entries({
+              transfer_variants_enabled: true,
+              ...values,
+            }))
+              setDraft(key, value);
+            render();
+          }),
+        );
+    }
     if (["libraries", "collections"].includes(section))
       management().catch((error) => message(error.message, true));
     if (section === "waveform")
@@ -523,6 +637,7 @@ export function createSettings({
         ["预生成波形", "precache"],
         ["预生成当前范围波形", "precacheCurrent"],
         ["取消波形预生成", "cancelPrecache"],
+        ["打开波形缓存目录", "openCacheFolder"],
         ["更改波形缓存目录", "cacheFolder"],
         ["恢复默认缓存目录", "cacheDefault"],
         ["清理波形缓存", "clearWaveforms"],
@@ -549,6 +664,8 @@ export function createSettings({
         ["确认重复文件", "verifyDuplicates"],
         ["恢复最近备份", "restoreBackup"],
         ["重试失败任务", "retryFailed"],
+        ["清除失败记录", "clearFailed"],
+        ["打开备份目录", "backupFolder"],
         ["重新发现封面", "clearArtwork"],
         ["打开数据目录", "dataFolder"],
         ["绑定当前工程素材箱", "currentProject"],
@@ -616,6 +733,14 @@ export function createSettings({
         help.append(row);
       }
       help.append(
+        button("显示 / 隐藏帧耗时", () =>
+          command("diagnostics.overlay", {
+            enabled: !getSnapshot()?.performance,
+          }),
+        ),
+        button("打开文档目录", () =>
+          command("records.action", { action: "docsFolder" }),
+        ),
         button("复制诊断信息", async () => {
           await navigator.clipboard.writeText(await command("diagnostics.get"));
           message("诊断信息已复制");
@@ -642,6 +767,8 @@ export function createSettings({
     );
     const groups = new Map();
     for (const definition of settings.schema || []) {
+      // One control owns this color, shared with the legacy backend palette.
+      if (definition.key === "selection_hex" && !filter) continue;
       if (
         filter
           ? !`${definition.label} ${definition.group} ${definition.key}`
@@ -659,7 +786,13 @@ export function createSettings({
         control(
           definition,
           draft[definition.key] ?? settings.values[definition.key],
-          (value) => setDraft(definition.key, value),
+          (value) => {
+            setDraft(definition.key, value);
+            if (definition.key === "selection_hex") {
+              localDraft.waveformSelectionColor = value;
+              localDraft.waveformColorMode = "custom";
+            }
+          },
         ),
       );
     }
@@ -731,7 +864,7 @@ export function createSettings({
   });
   const requestClose = () => {
     if (busy) return;
-    if (changed() || aiUnsaved) {
+    if (changed() || anyAiUnsaved()) {
       discard.hidden = false;
       message("更改尚未保存。请保存更改，或点击“放弃更改”后关闭。", true);
       return;
@@ -750,6 +883,7 @@ export function createSettings({
     draft = {};
     aiDraft = null;
     aiUnsaved = false;
+    aiDrafts.clear();
     localDraft = structuredClone(localOriginal);
     render();
     updateDirty();
@@ -764,9 +898,9 @@ export function createSettings({
       draft = {};
       setPreferences(structuredClone(localDraft));
       localOriginal = structuredClone(localDraft);
-      discard.hidden = !aiUnsaved;
+      discard.hidden = !anyAiUnsaved();
       afterChange();
-      message(aiUnsaved ? "AI 预设有未保存的更改" : "所有更改已保存");
+      message(anyAiUnsaved() ? "AI 预设有未保存的更改" : "所有更改已保存");
     });
   return {
     open(target = section) {
@@ -778,6 +912,7 @@ export function createSettings({
       draft = {};
       aiDraft = null;
       aiUnsaved = false;
+      aiDrafts.clear();
       localOriginal = getPreferences();
       localDraft = structuredClone(localOriginal);
       filter = "";

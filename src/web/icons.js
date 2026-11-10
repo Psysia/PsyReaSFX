@@ -1,6 +1,7 @@
 // Small, consistent line icons; no fonts or network resources are required.
 const paths = {
   folder: "M3 6h6l2 2h10v12H3z M3 10h18",
+  folderOpen: "M3 19V6h6l2 2h9v3 M3 19l3-8h16l-3 8z",
   list: "M8 6h13 M8 12h13 M8 18h13 M3 6h1 M3 12h1 M3 18h1",
   star: "m12 3 3 6 6.5 1-4.7 4.5 1.1 6.5-5.9-3.1L6.1 21l1.1-6.5L2.5 10 6 9z",
   clock: "M12 8v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",

@@ -1,0 +1,1577 @@
+{
+  "baseline": "v0.9.2-beta4 native UI plus shared source at 47daf9da8cf26815c319ccf31188098cbe2c73c3",
+  "version": "0.9.3-beta9",
+  "features": [
+    {
+      "feature": "导航图标对应面板",
+      "entry": "左侧文件夹、列表、星标、时钟、UCS、集合图标",
+      "rpc": "local",
+      "acceptance": "逐个点击，只显示对应分组；切回后筛选不乱跳。",
+      "id": "F001",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "显示、隐藏及调整面板",
+      "entry": "左上侧栏按钮、右上检查器按钮、分隔线；F9/F10/F11",
+      "rpc": "local",
+      "acceptance": "收起/恢复、拖拽和专注模式均可用，底部波形保持全宽。",
+      "id": "F002",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "创建音效库",
+      "entry": "音效库菜单 → 添加音效库；左侧音效库旁 +",
+      "rpc": "library.add",
+      "acceptance": "选择临时素材目录后生成音效库，任务完成后出现素材。",
+      "id": "F003",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "增加来源路径",
+      "entry": "音效库右键 → 添加来源",
+      "rpc": "management.action",
+      "acceptance": "同一逻辑音效库下出现新来源，已有来源仍可访问。",
+      "id": "F004",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "重命名音效库",
+      "entry": "音效库右键 → 重命名",
+      "rpc": "management.action",
+      "acceptance": "修改逻辑名称，重新打开脚本仍保留。",
+      "id": "F005",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "扫描音效库/来源",
+      "entry": "音效库或来源右键 → 扫描",
+      "rpc": "management.action",
+      "acceptance": "只扫描指定范围，显示任务进度。",
+      "id": "F006",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "展开/折叠库内来源",
+      "entry": "音效库右键 → 展开或折叠来源",
+      "rpc": "local",
+      "acceptance": "隐藏或恢复这个库的来源；不改变其他库。",
+      "id": "F007",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "移除音效库",
+      "entry": "音效库右键 → 移除音效库",
+      "rpc": "management.action",
+      "acceptance": "确认后移除库记录，磁盘源音频仍在。",
+      "id": "F008",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "逐层文件夹导航",
+      "entry": "点击文件夹图标展开/收起；点击名称筛选；双击名称展开",
+      "rpc": "catalog.folders,catalog.query",
+      "acceptance": "每一级显示真实索引子目录；闭合/打开使用不同文件夹图标。",
+      "id": "F009",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "文件夹上下文操作",
+      "entry": "文件夹名称右键 → 打开文件夹、展开/折叠此层级",
+      "rpc": "management.action",
+      "acceptance": "资源管理器打开对应子目录；叶子目录仍可点选。",
+      "id": "F010",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "根目录/层级浏览",
+      "entry": "来源名称筛选根目录；文件夹图标展开层级",
+      "rpc": "catalog.query,catalog.folders",
+      "acceptance": "根目录与嵌套目录都能独立筛选，路径条件显示正确。",
+      "id": "F011",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "重新定位来源",
+      "entry": "来源右键 → 重新链接",
+      "rpc": "management.action",
+      "acceptance": "旧目录离线时重连到临时迁移目录；预览/取消不破坏原索引。",
+      "id": "F012",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "移除来源路径",
+      "entry": "来源右键 → 移除来源",
+      "rpc": "management.action",
+      "acceptance": "只移除所选来源记录；可取消正在进行的移除任务。",
+      "id": "F013",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "指定来源封面",
+      "entry": "来源右键 → 指定封面",
+      "rpc": "management.action",
+      "acceptance": "这个来源的素材显示指定封面。",
+      "id": "F014",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "重新发现/清除来源封面",
+      "entry": "来源右键 → 重新发现封面 / 清除封面",
+      "rpc": "management.action",
+      "acceptance": "分别恢复自动发现或清除该来源封面。",
+      "id": "F015",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "拖入一个/多个来源目录",
+      "entry": "资源管理器拖到工作区或音效库",
+      "rpc": "library.drop",
+      "acceptance": "一个目录可直接导入；多个目录可分别建库或合并；拖到库上归入该库。",
+      "id": "F016",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "增量扫描、取消与启动恢复",
+      "entry": "音效库菜单 → 扫描来源；底部任务菜单；设置 → 常规",
+      "rpc": "maintenance,tasks.cancel,settings.update",
+      "acceptance": "添加一个测试音频后扫描发现；取消任务能结束；启用恢复后重开可续接中断扫描。",
+      "id": "F017",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "Watch Folder",
+      "entry": "设置 → 常规与插入 → 监视已导入来源文件夹",
+      "rpc": "settings.update",
+      "acceptance": "关闭后不再发起新监视扫描；开启后按所设间隔检查。",
+      "id": "F018",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "导航模块可见性",
+      "entry": "设置 → 外观与布局 → 导航模块",
+      "rpc": "local",
+      "acceptance": "隐藏/恢复文件夹、UCS、集合、保存搜索、工作流模块，偏好在重开后保留。",
+      "id": "F019",
+      "group": "导航、音效库与文件夹",
+      "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
+    },
+    {
+      "feature": "普通搜索与清空",
+      "entry": "顶部搜索框，Enter；条件标签的 ×",
+      "rpc": "catalog.query",
+      "acceptance": "按文件名/描述/关键词搜索；移除条件后恢复相应范围。",
+      "id": "F020",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "来源/库/产品范围筛选",
+      "entry": "顶部库选择器、左侧来源、素材右键 → 查找相似声音 → 定位所属产品音效库",
+      "rpc": "catalog.query,asset.action",
+      "acceptance": "结果限定在所选范围，返回全部声音可清除范围。",
+      "id": "F021",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "字段搜索与组合条件",
+      "entry": "顶部搜索框及检查器字段旁“按此字段筛选”",
+      "rpc": "catalog.query,asset.action",
+      "acceptance": "输入 catid:CMPTDriv 或点击字段筛选，结果与旧版查询规则一致。",
+      "id": "F022",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "UCS 中英文分类树",
+      "entry": "左侧 UCS → 分类/子类",
+      "rpc": "catalog.ucs,catalog.query",
+      "acceptance": "分类和 CatID 均能筛选；展开后的字号与普通导航一致。",
+      "id": "F023",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "UCS 独立搜索（新增）",
+      "entry": "UCS 面板顶部搜索框",
+      "rpc": "catalog.ucs",
+      "acceptance": "输入硬盘、drive、CMPTDriv、磁盘均可找到类别；无结果有提示；清空恢复先前展开状态。",
+      "id": "F024",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "UCS 搜索联想",
+      "entry": "顶部搜索框输入 UCS 词；方向键/Enter 或点建议",
+      "rpc": "catalog.suggestions,catalog.query",
+      "acceptance": "建议转换为 CatID 条件；Escape 关闭建议，不污染原查询。",
+      "id": "F025",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "收藏/最近插入/试听历史",
+      "entry": "左侧星标、时钟或列表图标下的相应视图",
+      "rpc": "catalog.query",
+      "acceptance": "对应视图只显示符合条件的素材。",
+      "id": "F026",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "当前工程已用素材",
+      "entry": "左侧列表 → 当前工程；项目素材箱右键 → 查看当前工程已用素材",
+      "rpc": "catalog.query",
+      "acceptance": "插入测试素材后在对应工程使用记录中出现。",
+      "id": "F027",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "缺失、重复、UCS 待确认视图",
+      "entry": "左侧列表 → 缺失素材 / 重复检查 / UCS 待确认",
+      "rpc": "catalog.query",
+      "acceptance": "检查或分类完成后能直接查看相应素材。",
+      "id": "F028",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "工作流状态筛选",
+      "entry": "左侧列表 → 工作流筛选",
+      "rpc": "catalog.query",
+      "acceptance": "未标记、候选、已采用、已排除可分别筛选。",
+      "id": "F029",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "新建播放列表/工程素材箱",
+      "entry": "左侧集合 +；素材箱菜单；音效库菜单",
+      "rpc": "collection.create",
+      "acceptance": "命名后新增独立集合。",
+      "id": "F030",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "加入/移除集合素材",
+      "entry": "顶部素材箱；素材右键 → 集合；集合右键",
+      "rpc": "collection.add,asset.action,management.action",
+      "acceptance": "多选素材加入一次，无重复；从当前集合移除不删源文件。",
+      "id": "F031",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "集合重命名/删除",
+      "entry": "集合右键；设置 → 集合与搜索",
+      "rpc": "management.action",
+      "acceptance": "名称保存；删除确认只移除集合。",
+      "id": "F032",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "绑定当前工程素材箱",
+      "entry": "项目集合右键 → 绑定当前工程；新建菜单 → 绑定当前工程素材箱",
+      "rpc": "management.action,records.action",
+      "acceptance": "切换测试工程时素材箱归属正确。",
+      "id": "F033",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "保存搜索",
+      "entry": "保存的搜索旁 +；设置 → 集合与搜索",
+      "rpc": "records.action",
+      "acceptance": "保存名称、搜索条件与范围，重新载入一致。",
+      "id": "F034",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "载入/覆盖/重命名/删除保存搜索",
+      "entry": "保存搜索右键；设置 → 集合与搜索",
+      "rpc": "management.action",
+      "acceptance": "各入口分别执行对应动作，覆盖前保留命名。",
+      "id": "F035",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "新建/复制标签页",
+      "entry": "标签栏 +；标签右键；Ctrl+N/Ctrl+Shift+N",
+      "rpc": "tab.action",
+      "acceptance": "新标签与复制标签的查询状态正确。",
+      "id": "F036",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "标签切换及工作区恢复",
+      "entry": "点击标签；Ctrl+Tab；重开脚本",
+      "rpc": "tab.action",
+      "acceptance": "各标签恢复筛选、选中行与滚动位置；波形缩放不串页。",
+      "id": "F037",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "重命名/移动标签",
+      "entry": "标签右键 → 重命名 / 左移 / 右移",
+      "rpc": "tab.action",
+      "acceptance": "名称与顺序在切换后保留。",
+      "id": "F038",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "关闭标签/其他/右侧",
+      "entry": "标签 ×；Ctrl+W；标签右键",
+      "rpc": "tab.action",
+      "acceptance": "只关闭指定标签，至少保留一个可用标签。",
+      "id": "F039",
+      "group": "搜索、筛选、集合与标签页",
+      "source": "draw_toolbar;draw_sub_toolbar;draw_ucs_sidebar_tree;draw_ucs_search_suggestion_popup;draw_workspace_tabs"
+    },
+    {
+      "feature": "单选/Ctrl 多选/Shift 范围/全选",
+      "entry": "点击行；Ctrl/Shift；Ctrl+A；编辑菜单 → 全选",
+      "rpc": "selection.set,selection.all",
+      "acceptance": "选择数量、行高亮与检查器一致；过期响应不会选择错误文件。",
+      "id": "F040",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "方向键移动",
+      "entry": "列表获得焦点后按上/下",
+      "rpc": "selection.move",
+      "acceptance": "跨越当前可见页继续选中下一条，并滚动到对应行。",
+      "id": "F041",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "名称/时长/音效库排序及方向",
+      "entry": "列表顶部排序选择及 ↑/↓",
+      "rpc": "catalog.sort",
+      "acceptance": "切换排序字段与升降序，选中素材身份正确。",
+      "id": "F042",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "显示列、列顺序与列宽",
+      "entry": "列表右上列按钮；列标题分隔线",
+      "rpc": "local",
+      "acceptance": "20 个列项可显示/隐藏；上移下移、拖宽及重置有效。",
+      "id": "F043",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "虚拟滚动与可见波形",
+      "entry": "滚动结果列表",
+      "rpc": "catalog.page",
+      "acceptance": "大量结果保持有限 DOM；后排缓存波形不会永久空白。",
+      "id": "F044",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "收藏与批量收藏切换",
+      "entry": "行星标；F；素材右键 → 收藏",
+      "rpc": "favorite.toggle,asset.action",
+      "acceptance": "单选与多选均作用于正确目标，收藏视图随之更新。",
+      "id": "F045",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "标记与批量标记切换",
+      "entry": "M；素材右键 → 标记",
+      "rpc": "asset.action",
+      "acceptance": "全部所选标记状态一致，波形标记颜色生效。",
+      "id": "F046",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "素材工作流状态",
+      "entry": "素材右键 → 工作流状态",
+      "rpc": "asset.action",
+      "acceptance": "多选设定状态后在相应筛选中出现。",
+      "id": "F047",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "重新读取元数据",
+      "entry": "素材右键 → 分析与元数据 → 重新读取元数据",
+      "rpc": "asset.action",
+      "acceptance": "重新排入读取任务，更新显示且不阻塞列表。",
+      "id": "F048",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "复制路径/显示文件",
+      "entry": "素材右键；检查器 → 显示文件；编辑菜单 → 复制完整路径",
+      "rpc": "local",
+      "acceptance": "复制完整 Unicode 路径，资源管理器定位正确素材。",
+      "id": "F049",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "自适应上下文菜单（修复）",
+      "entry": "素材右键",
+      "rpc": "local",
+      "acceptance": "长文件名省略；中文与英文菜单宽度按命令变化；分组可点开；左右方向键返回/进入。",
+      "id": "F050",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "已试听高亮与历史恢复",
+      "entry": "设置 → 外观与布局 → 试听颜色/浏览记录",
+      "rpc": "records.action,settings.update",
+      "acceptance": "恢复上次、清除本次、清除保存记录分别生效；文字和波形颜色可分别开关。",
+      "id": "F051",
+      "group": "列表与素材操作",
+      "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
+    },
+    {
+      "feature": "播放/停止与空格（修复）",
+      "entry": "底部播放/停止；空格",
+      "rpc": "preview.toggle,preview.stop",
+      "acceptance": "在 PsyReaSFX 按空格切换试听，长按仅一次；搜索框可输入空格；REAPER 主工程不启动。",
+      "id": "F052",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "选择即试听",
+      "entry": "底部“选择即试听”",
+      "rpc": "preview.parameters",
+      "acceptance": "开启后选行即播；关闭后选行只更新素材。",
+      "id": "F053",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "波形点选、选区与读数",
+      "entry": "大波形单击/拖拽；左侧时间读数",
+      "rpc": "preview.play,preview.region",
+      "acceptance": "当前位置、入点、出点、选区时长正确；拖完按旧版规则试听选区。",
+      "id": "F054",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "清除波形选区",
+      "entry": "波形标题 ••• → 清除波形选区",
+      "rpc": "preview.clearRegion",
+      "acceptance": "恢复完整文件范围，同时取消当前 Region 激活标记。",
+      "id": "F055",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "波形缩放/平移/复位",
+      "entry": "滚轮；Shift+滚轮；中键拖动；双击；适应按钮",
+      "rpc": "local",
+      "acceptance": "以鼠标位置缩放；平移边界不越界；复位显示完整文件。",
+      "id": "F056",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "右键擦播",
+      "entry": "设置启用后在波形按住右键移动",
+      "rpc": "preview.play",
+      "acceptance": "按限频连续从相应时间试听；不打开上下文菜单。",
+      "id": "F057",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "波形缓存读取与错误重试",
+      "entry": "列表/大波形自动加载；失败后的重试按钮",
+      "rpc": "catalog.page,waveform.get",
+      "acceptance": "已有缓存快速恢复；读取失败显示原因，可重试；多声道响应不超消息上限。",
+      "id": "F058",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "紧凑 FX 展开/缩小（修复）",
+      "entry": "底部 FX；上沿水平分隔线",
+      "rpc": "local",
+      "acceptance": "展开只增加 48 px 控制条，波形不放大；继续拖窄时播放条始终可见。",
+      "id": "F059",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "Pitch / Rate / Gain 参数",
+      "entry": "FX 滑条与数值框",
+      "rpc": "preview.parameters",
+      "acceptance": "试听中修改可听出变化；输入越界被拒绝且其他参数不被部分写入。",
+      "id": "F060",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "音高/速度预设及复位",
+      "entry": "FX → 预设；复位",
+      "rpc": "preview.parameters",
+      "acceptance": "±12/6/3、0 st 与 0.5–2 倍速按所选值应用；复位恢复默认。",
+      "id": "F061",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "保持音高/反向/循环",
+      "entry": "FX 复选框；底部循环；••• → 试听选项",
+      "rpc": "preview.parameters",
+      "acceptance": "三种开关独立生效，播放中的反向调整重新定位正确。",
+      "id": "F062",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "自动循环选区/频谱峰值/响度匹配",
+      "entry": "••• → 试听选项；设置 → 波形与分析",
+      "rpc": "settings.update",
+      "acceptance": "快捷入口和设置值一致，修改后对应处理生效。",
+      "id": "F063",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "单声道/立体声试听模式",
+      "entry": "检查器 → 试听声道",
+      "rpc": "asset.action",
+      "acceptance": "原始、Mono、左、右按素材声道数显示可用选项。",
+      "id": "F064",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "多声道选择及全部声道",
+      "entry": "检查器 → 试听声道，Ctrl/Shift/全部",
+      "rpc": "asset.action",
+      "acceptance": "多声道可组合选择；选区插入/交付沿用原声道处理规则。",
+      "id": "F065",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "保存/激活/试听/删除 Region",
+      "entry": "＋ Region；右侧 Region 页；••• → Region 列表",
+      "rpc": "region.action",
+      "acceptance": "命名保存有效选区；点击激活，试听及删除作用于指定 Region。",
+      "id": "F066",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "检测瞬态与参数",
+      "entry": "素材右键 → 分析与元数据 → 检测瞬态；设置 → 波形与分析",
+      "rpc": "asset.action,settings.update",
+      "acceptance": "按照阈值、平滑、间隔、前后长度、数量等参数生成建议。",
+      "id": "F067",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "撤销/清除/取消瞬态",
+      "entry": "素材右键分析分组；••• → 分析；底部任务菜单",
+      "rpc": "asset.action,tasks.cancel",
+      "acceptance": "撤销最后一次，清除全部建议；取消等待任务不影响其他任务。",
+      "id": "F068",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "响度读数与重分析",
+      "entry": "波形下方固定响度条 → 重新分析；右键分析分组",
+      "rpc": "asset.action",
+      "acceptance": "显示启用的 LUFS-I/M/S 与 True Peak；关闭总开关隐藏；重分析后更新。",
+      "id": "F069",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "当前范围/全库相似检索",
+      "entry": "波形标题相似声音；素材右键 → 查找相似声音",
+      "rpc": "search.similar,asset.action",
+      "acceptance": "两个范围明确；建立缓存有进度，可取消；神经组件启动不弹控制台。",
+      "id": "F070",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "试听配色与默认色恢复",
+      "entry": "设置 → 外观与布局",
+      "rpc": "settings.update,records.action",
+      "acceptance": "选区默认随主题；可自定义；恢复默认配色后颜色及预览恢复一致。",
+      "id": "F071",
+      "group": "波形、试听、FX 与分析",
+      "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
+    },
+    {
+      "feature": "单文件元数据编辑",
+      "entry": "检查器 → 元数据 → 保存元数据",
+      "rpc": "metadata.get,metadata.save",
+      "acceptance": "编辑描述/关键词/分类/CatID/Library/Notes/封面路径等已开放字段，切换回来仍保留。",
+      "id": "F072",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "批量元数据与冲突保护",
+      "entry": "多选后检查器；编辑菜单 → 批量元数据",
+      "rpc": "metadata.selection,metadata.batch",
+      "acceptance": "仅勾选字段应用到所选；混合值有提示；选择已变时拒绝过期批量写入。",
+      "id": "F073",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "长字段完整编辑",
+      "entry": "检查器编辑长描述等字段",
+      "rpc": "metadata.get,metadata.save",
+      "acceptance": "显示完整可编辑文本；超出安全上限的摘要只读，不能覆盖原内容。",
+      "id": "F074",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "元数据字段筛选",
+      "entry": "字段旁“按此字段筛选”",
+      "rpc": "asset.action",
+      "acceptance": "按所点字段和值筛选结果。",
+      "id": "F075",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "封面选择/自动发现/清除",
+      "entry": "检查器“选择封面”菜单；素材右键 → 封面",
+      "rpc": "asset.action",
+      "acceptance": "分别指定、重新查找、清除当前素材封面，索引显示同步更新。",
+      "id": "F076",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "封面滚动与显示顺序",
+      "entry": "滚动右侧元数据；设置 → 外观与布局",
+      "rpc": "settings.update",
+      "acceptance": "封面跟随内容滚动；置前/后选项改变顺序，不悬浮遮挡字段。",
+      "id": "F077",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "UCS 候选确认与撤销",
+      "entry": "待确认素材检查器候选按钮；素材右键 → 分析与元数据 → 撤销 UCS 确认",
+      "rpc": "asset.action",
+      "acceptance": "确认指定 CatID，撤销恢复原分类信息。",
+      "id": "F078",
+      "group": "元数据与封面",
+      "source": "draw_metadata_inspector;draw_inspector_artwork_header;draw_ucs_candidate_actions"
+    },
+    {
+      "feature": "插入当前轨道/新轨道",
+      "entry": "底部插入；Transfer 菜单；素材右键 → 插入 REAPER",
+      "rpc": "insert,asset.action",
+      "acceptance": "在测试工程插入正确素材、位置和范围；新轨道入口确实新建轨道。",
+      "id": "F079",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "多选分轨插入",
+      "entry": "素材右键 → 插入 REAPER → 堆叠插入到新轨道；启用后多选 Enter",
+      "rpc": "asset.action",
+      "acceptance": "多个所选素材分轨插入，顺序与旧版一致。",
+      "id": "F080",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "按 BWF 时间戳插入",
+      "entry": "素材右键插入分组；•••；Transfer 菜单",
+      "rpc": "insert,asset.action",
+      "acceptance": "含 BWF 时间戳的测试素材落在预期工程时间。",
+      "id": "F081",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "Enter / Ctrl+Enter 快捷插入",
+      "entry": "设置 → 常规与插入启用后，在列表按键",
+      "rpc": "insert,asset.action",
+      "acceptance": "默认不抢占文本 Enter；启用后分别当前轨道/新轨道。",
+      "id": "F082",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "拖出原文件/拖出选区",
+      "entry": "Alt+拖动列表行；底部拖入选区",
+      "rpc": "drag.drop",
+      "acceptance": "放到 REAPER 对应轨道/时间位置；窗口外松开有清理；源文件不被改写。",
+      "id": "F083",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "插入命名与淡化",
+      "entry": "设置 → 常规与插入",
+      "rpc": "settings.update",
+      "acceptance": "前后缀、小写及淡化时长体现在新建 Take/Item。",
+      "id": "F084",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "输出目录选择/打开/默认",
+      "entry": "检查器 → 交付 → 目录按钮",
+      "rpc": "transfer.directory",
+      "acceptance": "目录按钮正确更新/打开/恢复默认目录。",
+      "id": "F085",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "导出当前素材",
+      "entry": "检查器 → 交付 → 导出当前素材",
+      "rpc": "transfer.start",
+      "acceptance": "即使多选，也只导出当前主选素材；选择改变时拒绝过期请求。",
+      "id": "F086",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "导出所选声音",
+      "entry": "检查器 → 交付 → 导出所选声音",
+      "rpc": "transfer.start",
+      "acceptance": "导出全部所选，显示成功/失败汇总。",
+      "id": "F087",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "Transfer 格式/采样率/声道/范围",
+      "entry": "检查器交付；设置 → Transfer 交付",
+      "rpc": "settings.update,transfer.start",
+      "acceptance": "WAV 16/24/32 PCM、FLAC、源采样率或指定采样率、Mono/Stereo/源声道及完整/选区输出正确。",
+      "id": "F088",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "命名模板与重名策略",
+      "entry": "检查器交付；设置 → Transfer 交付",
+      "rpc": "settings.update,transfer.start",
+      "acceptance": "模板字段展开；递增、跳过、覆盖分别按配置处理临时输出。",
+      "id": "F089",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "标准化、抖动、元数据与尾音",
+      "entry": "交付高级参数；设置 → Transfer 交付",
+      "rpc": "settings.update,transfer.start",
+      "acceptance": "峰值/真峰值/RMS/LUFS、抖动/噪声整形、淡化、尾音和元数据保留应用到输出。",
+      "id": "F090",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "批量变体与三个快捷预设",
+      "entry": "交付 → 当前参数 / Pitch ±3 / ±6 / 轻量变化；设置 → Transfer 交付",
+      "rpc": "settings.update,transfer.start",
+      "acceptance": "Pitch/Rate/Gain 组合、反向组合和安全后缀与旧版一致。",
+      "id": "F091",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "导出后动作",
+      "entry": "设置 → Transfer 交付",
+      "rpc": "settings.update,transfer.start",
+      "acceptance": "可选导出后插入 REAPER 或打开输出目录。",
+      "id": "F092",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "停止当前交付任务",
+      "entry": "交付 → 当前文件后停止；底部任务菜单",
+      "rpc": "tasks.cancel",
+      "acceptance": "当前文件处理完后停止后续文件，保留已成功输出。",
+      "id": "F093",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "最近输出与任务报告",
+      "entry": "交付底部 → 打开最近输出目录 / 打开任务报告目录",
+      "rpc": "transfer.directory",
+      "acceptance": "打开实际最近输出和报告所在目录；无报告时给出明确提示。",
+      "id": "F094",
+      "group": "插入 REAPER 与 Transfer",
+      "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
+    },
+    {
+      "feature": "新建/切换/保存/删除独立预设",
+      "entry": "设置 → AI 语义搜索",
+      "rpc": "settings.ai",
+      "acceptance": "每个预设独立保存名称、服务商、地址和模型；删除需确认。",
+      "id": "F095",
+      "group": "AI 语义搜索",
+      "source": "draw_settings_ai;draw_ai_preset_delete_popup;draw_toolbar"
+    },
+    {
+      "feature": "各预设编辑草稿",
+      "entry": "AI 设置修改后切换预设，再切回",
+      "rpc": "settings.ai",
+      "acceptance": "未保存草稿保留；关闭设置提示保存或放弃，不静默丢失其他预设草稿。",
+      "id": "F096",
+      "group": "AI 语义搜索",
+      "source": "draw_settings_ai;draw_ai_preset_delete_popup;draw_toolbar"
+    },
+    {
+      "feature": "服务商与模型快捷选择",
+      "entry": "AI 设置 → 服务商；常用模型按钮",
+      "rpc": "settings.ai",
+      "acceptance": "只修改当前预设类型；不覆盖已有接口；模型按钮填入源码提供的模型 ID。",
+      "id": "F097",
+      "group": "AI 语义搜索",
+      "source": "draw_settings_ai;draw_ai_preset_delete_popup;draw_toolbar"
+    },
+    {
+      "feature": "密钥加密保存/单独删除",
+      "entry": "AI 预设密码输入框 → 保存预设；删除已保存 Key",
+      "rpc": "settings.ai",
+      "acceptance": "密钥交给原 DPAPI 存储；快照与诊断不返回明文；删除只作用于当前预设。",
+      "id": "F098",
+      "group": "AI 语义搜索",
+      "source": "draw_settings_ai;draw_ai_preset_delete_popup;draw_toolbar"
+    },
+    {
+      "feature": "连接测试与状态",
+      "entry": "AI 设置 → 测试连接",
+      "rpc": "settings.ai",
+      "acceptance": "异步显示结果；失败仍可修正配置；不上传音频。",
+      "id": "F099",
+      "group": "AI 语义搜索",
+      "source": "draw_settings_ai;draw_ai_preset_delete_popup;draw_toolbar"
+    },
+    {
+      "feature": "语义搜索/取消/继续取结果",
+      "entry": "顶部 AI；Ctrl+Shift+F；AI 更多结果",
+      "rpc": "search.ai,search.more,tasks.cancel",
+      "acceptance": "调用已配置服务；再次按 AI 可取消；继续请求追加结果；回到普通搜索退出 AI 排序。",
+      "id": "F100",
+      "group": "AI 语义搜索",
+      "source": "draw_settings_ai;draw_ai_preset_delete_popup;draw_toolbar"
+    },
+    {
+      "feature": "全库/当前范围波形预生成",
+      "entry": "设置 → 波形与分析 → 波形缓存",
+      "rpc": "records.action",
+      "acceptance": "两个范围分别建立缓存；取消后任务结束，已完成缓存仍可复用。",
+      "id": "F101",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "缓存目录修改/打开/恢复默认",
+      "entry": "设置 → 波形与分析 → 波形缓存",
+      "rpc": "records.action",
+      "acceptance": "修改后读写新位置；打开目录正确；恢复默认有效。",
+      "id": "F102",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "波形缓存完整性检查",
+      "entry": "设置 → 维护与恢复 → 校验缓存",
+      "rpc": "maintenance",
+      "acceptance": "损坏缓存移入隔离目录，可重新生成。",
+      "id": "F103",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "清理波形/相似/封面缓存",
+      "entry": "设置 → 波形与分析 / 维护与恢复",
+      "rpc": "records.action",
+      "acceptance": "只清理指定缓存并重建运行状态，源音频不受影响。",
+      "id": "F104",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "UCS 分类预览/应用/丢弃/取消",
+      "entry": "设置 → 维护与恢复 → UCS 自动分类；底部任务菜单",
+      "rpc": "maintenance,tasks.cancel",
+      "acceptance": "先看预览摘要，再应用或丢弃；取消不会应用半成品。",
+      "id": "F105",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "检查缺失素材与重连",
+      "entry": "设置 → 维护与恢复 → 检查缺失；来源 → 重新链接",
+      "rpc": "maintenance,management.action",
+      "acceptance": "离线来源与缺失文件有明确记录；重连不把旧路径错误匹配到其他素材。",
+      "id": "F106",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "重复候选与完整确认",
+      "entry": "设置 → 维护与恢复 → 检查重复 / 确认重复文件",
+      "rpc": "maintenance,records.action",
+      "acceptance": "候选检查与完整比对分开；结果可在重复视图查看。",
+      "id": "F107",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "失败记录、重试与清除",
+      "entry": "底部任务状态；设置 → 维护与恢复",
+      "rpc": "records.action",
+      "acceptance": "重试重新入队；清除只清记录，不假称任务已成功。",
+      "id": "F108",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "手动/自动备份与保留数量",
+      "entry": "设置 → 维护与恢复",
+      "rpc": "maintenance,settings.update",
+      "acceptance": "临时数据可生成备份；自动策略和保留数量可设置。",
+      "id": "F109",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "打开备份目录/恢复最近备份",
+      "entry": "设置 → 维护与恢复",
+      "rpc": "records.action",
+      "acceptance": "可定位备份并确认恢复；恢复失败仍可看到原因。",
+      "id": "F110",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "数据/文档目录与诊断复制",
+      "entry": "设置 → 维护与恢复 / 帮助；帮助菜单",
+      "rpc": "records.action,diagnostics.get",
+      "acceptance": "打开安装后的目录；诊断信息含运行版本和任务状态，不含密钥。",
+      "id": "F111",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "帧耗时显示",
+      "entry": "设置 → 帮助与诊断 → 显示 / 隐藏帧耗时",
+      "rpc": "diagnostics.overlay",
+      "acceptance": "仅本次会话显示 Lua 后台、宿主更新与帧间隔；重开不默认显示。",
+      "id": "F112",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "重置界面/重建数据库/恢复出厂",
+      "entry": "设置 → 维护与恢复 → 重置与恢复",
+      "rpc": "records.action",
+      "acceptance": "分别执行原重置函数；危险项再次确认；源音频不被删除。",
+      "id": "F113",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "全部后台任务状态与单独取消",
+      "entry": "底部任务菜单与进度条",
+      "rpc": "tasks.cancel",
+      "acceptance": "扫描、导入、波形、相似、AI、Transfer、重连、移除、校验、分类、瞬态、响度可区分并取消。",
+      "id": "F114",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "主题/字体/字号/密度与布局恢复",
+      "entry": "设置 → 外观与布局",
+      "rpc": "local",
+      "acceptance": "中英文风格一致；字号、行高、主题、强调色、框架色及面板尺寸保存；恢复默认布局生效。",
+      "id": "F115",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "设置分组、搜索、应用与放弃",
+      "entry": "设置的九个分组、顶部搜索、底部按钮",
+      "rpc": "settings.get,settings.update",
+      "acceptance": "跨分组保留草稿；失败可重试；关闭前提示未保存内容；输入 Enter 不误关对话框。",
+      "id": "F116",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    },
+    {
+      "feature": "中文/英文与运行版本",
+      "entry": "设置 → 常规与插入 → 语言；标题/帮助运行环境",
+      "rpc": "settings.update",
+      "acceptance": "界面文本切换，文件名/路径/用户命名不翻译；显示真实运行时版本。",
+      "id": "F117",
+      "group": "缓存、维护、诊断与设置",
+      "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
+    }
+  ],
+  "settings": [
+    {
+      "group": "常规",
+      "key": "watch_enabled",
+      "kind": "boolean",
+      "label": "监视已导入来源文件夹"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_dir",
+      "kind": "string",
+      "label": "输出目录"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_template",
+      "kind": "string",
+      "label": "文件名模板"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_format",
+      "kind": "choice",
+      "label": "格式",
+      "options": [
+        "wav16",
+        "wav24",
+        "wav32",
+        "flac"
+      ]
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_sample_rate",
+      "kind": "choice",
+      "label": "采样率",
+      "options": [
+        "source",
+        "44100",
+        "48000",
+        "96000",
+        "192000"
+      ]
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_channels",
+      "kind": "choice",
+      "label": "声道",
+      "options": [
+        "source",
+        "mono",
+        "stereo"
+      ]
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_scope",
+      "kind": "choice",
+      "label": "范围",
+      "options": [
+        "selection",
+        "full"
+      ]
+    },
+    {
+      "group": "常规",
+      "key": "language",
+      "kind": "choice",
+      "label": "语言",
+      "options": [
+        "zh",
+        "en"
+      ]
+    },
+    {
+      "group": "外观",
+      "key": "artwork_enabled",
+      "kind": "boolean",
+      "label": "启用封面"
+    },
+    {
+      "group": "外观",
+      "key": "inspector_artwork_pinned",
+      "kind": "boolean",
+      "label": "封面置于详细信息前"
+    },
+    {
+      "group": "试听颜色",
+      "key": "selection_hex",
+      "kind": "color",
+      "label": "选区颜色"
+    },
+    {
+      "group": "试听颜色",
+      "key": "playhead_hex",
+      "kind": "color",
+      "label": "播放指针颜色"
+    },
+    {
+      "group": "试听颜色",
+      "key": "region_hex",
+      "kind": "color",
+      "label": "Region 颜色"
+    },
+    {
+      "group": "波形与分析",
+      "integer": true,
+      "key": "mini_wave_points",
+      "kind": "number",
+      "label": "列表波形采样点数",
+      "maximum": 512,
+      "minimum": 256
+    },
+    {
+      "group": "波形与分析",
+      "integer": true,
+      "key": "precache_points",
+      "kind": "number",
+      "label": "高精度波形采样点数",
+      "maximum": 4096,
+      "minimum": 2048
+    },
+    {
+      "group": "波形与分析",
+      "key": "transient_threshold",
+      "kind": "number",
+      "label": "瞬态阈值（线性振幅）",
+      "maximum": 0.8913,
+      "minimum": 0.001
+    },
+    {
+      "group": "维护",
+      "key": "auto_backup",
+      "kind": "boolean",
+      "label": "自动备份"
+    },
+    {
+      "group": "维护",
+      "integer": true,
+      "key": "backup_keep_count",
+      "kind": "number",
+      "label": "备份保留数",
+      "maximum": 100,
+      "minimum": 1
+    },
+    {
+      "group": "维护",
+      "key": "auto_collect_project_usage",
+      "kind": "boolean",
+      "label": "自动收集工程使用记录"
+    },
+    {
+      "group": "波形与分析",
+      "key": "multichannel_waveform",
+      "kind": "boolean",
+      "label": "多声道波形"
+    },
+    {
+      "group": "波形与分析",
+      "key": "spectral_peaks_enabled",
+      "kind": "boolean",
+      "label": "频谱峰值着色"
+    },
+    {
+      "group": "常规",
+      "key": "watch_interval",
+      "kind": "number",
+      "label": "检查间隔",
+      "maximum": 600.0,
+      "minimum": 15.0
+    },
+    {
+      "group": "常规",
+      "key": "watch_silent",
+      "kind": "boolean",
+      "label": "静默后台检查（仅显示工具栏动态状态）"
+    },
+    {
+      "group": "常规",
+      "key": "resume_scan_on_start",
+      "kind": "boolean",
+      "label": "启动时恢复中断的扫描"
+    },
+    {
+      "group": "常规",
+      "key": "enter_insert_shortcuts",
+      "kind": "boolean",
+      "label": "启用 Enter / Ctrl+Enter 快速插入 REAPER"
+    },
+    {
+      "group": "常规",
+      "key": "insert_prefix",
+      "kind": "string",
+      "label": "前缀"
+    },
+    {
+      "group": "常规",
+      "key": "insert_suffix",
+      "kind": "string",
+      "label": "后缀"
+    },
+    {
+      "group": "常规",
+      "key": "insert_lowercase",
+      "kind": "boolean",
+      "label": "Take 名称转为小写"
+    },
+    {
+      "group": "常规",
+      "key": "insert_fade_ms",
+      "kind": "number",
+      "label": "插入淡化",
+      "maximum": 100.0,
+      "minimum": 0.0
+    },
+    {
+      "group": "试听颜色",
+      "key": "played_text_enabled",
+      "kind": "boolean",
+      "label": "已播放文字高亮"
+    },
+    {
+      "group": "试听颜色",
+      "key": "played_waveform_enabled",
+      "kind": "boolean",
+      "label": "已播放波形高亮"
+    },
+    {
+      "group": "试听颜色",
+      "key": "restore_played_on_start",
+      "kind": "boolean",
+      "label": "启动时自动恢复上次浏览高亮"
+    },
+    {
+      "group": "波形与分析",
+      "key": "wave_scrub_enabled",
+      "kind": "boolean",
+      "label": "启用右键擦播"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loop_selection",
+      "kind": "boolean",
+      "label": "选区完成后自动循环"
+    },
+    {
+      "group": "波形与分析",
+      "key": "transient_smoothing_ms",
+      "kind": "number",
+      "label": "平滑时间",
+      "maximum": 80.0,
+      "minimum": 0.0
+    },
+    {
+      "group": "波形与分析",
+      "key": "transient_min_gap_ms",
+      "kind": "number",
+      "label": "最小间隔",
+      "maximum": 2000.0,
+      "minimum": 20.0
+    },
+    {
+      "group": "波形与分析",
+      "key": "transient_pre_ms",
+      "kind": "number",
+      "label": "Region 前置",
+      "maximum": 1000.0,
+      "minimum": 0.0
+    },
+    {
+      "group": "波形与分析",
+      "key": "transient_post_ms",
+      "kind": "number",
+      "label": "Region 后置",
+      "maximum": 5000.0,
+      "minimum": 20.0
+    },
+    {
+      "group": "波形与分析",
+      "integer": true,
+      "key": "transient_max_regions",
+      "kind": "number",
+      "label": "最大 Region 数",
+      "maximum": 256.0,
+      "minimum": 1.0
+    },
+    {
+      "group": "波形与分析",
+      "key": "transient_replace_existing",
+      "kind": "boolean",
+      "label": "替换已有瞬态建议"
+    },
+    {
+      "group": "波形与分析",
+      "key": "show_loudness_metrics",
+      "kind": "boolean",
+      "label": "显示响度统计"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loudness_show_i",
+      "kind": "boolean",
+      "label": "LUFS-I"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loudness_show_m",
+      "kind": "boolean",
+      "label": "LUFS-M max"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loudness_show_s",
+      "kind": "boolean",
+      "label": "LUFS-S max"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loudness_show_tp",
+      "kind": "boolean",
+      "label": "True Peak"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loudness_match",
+      "kind": "boolean",
+      "label": "启用估算响度匹配"
+    },
+    {
+      "group": "波形与分析",
+      "key": "loudness_target_db",
+      "kind": "number",
+      "label": "目标响度",
+      "maximum": -6.0,
+      "minimum": -30.0
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_lowercase",
+      "kind": "boolean",
+      "label": "文件名转为小写"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_preserve_metadata",
+      "kind": "boolean",
+      "label": "尽可能保留源文件元数据"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_dither",
+      "kind": "boolean",
+      "label": "启用抖动"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_noise_shaping",
+      "kind": "boolean",
+      "label": "噪声整形"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_fade_in_ms",
+      "kind": "number",
+      "label": "淡入",
+      "maximum": 500.0,
+      "minimum": 0.0
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_fade_out_ms",
+      "kind": "number",
+      "label": "淡出",
+      "maximum": 2000.0,
+      "minimum": 0.0
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_smart_tail",
+      "kind": "boolean",
+      "label": "智能保留选区尾音"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_tail_threshold_db",
+      "kind": "number",
+      "label": "尾音阈值",
+      "maximum": -18.0,
+      "minimum": -96.0
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_tail_max_ms",
+      "kind": "number",
+      "label": "最大尾音",
+      "maximum": 30000.0,
+      "minimum": 100.0
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_tail_hold_ms",
+      "kind": "number",
+      "label": "尾音留白",
+      "maximum": 2000.0,
+      "minimum": 0.0
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_variants_enabled",
+      "kind": "boolean",
+      "label": "启用批量变体"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_variant_pitches",
+      "kind": "string",
+      "label": "Pitch 列表"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_variant_rates",
+      "kind": "string",
+      "label": "Rate 列表"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_variant_gains",
+      "kind": "string",
+      "label": "Gain 列表"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_variant_include_reverse",
+      "kind": "boolean",
+      "label": "同时生成正向与反向"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_variant_auto_suffix",
+      "kind": "boolean",
+      "label": "模板未含变体字段时自动追加安全后缀"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_insert_after",
+      "kind": "boolean",
+      "label": "导出后插入 REAPER"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_open_dir_after",
+      "kind": "boolean",
+      "label": "导出完成后打开输出目录"
+    },
+    {
+      "group": "试听颜色",
+      "key": "played_text_hex",
+      "kind": "color",
+      "label": "已试听文字颜色"
+    },
+    {
+      "group": "试听颜色",
+      "key": "waveform_hex",
+      "kind": "color",
+      "label": "普通波形颜色"
+    },
+    {
+      "group": "试听颜色",
+      "key": "waveform_played_hex",
+      "kind": "color",
+      "label": "已试听波形颜色"
+    },
+    {
+      "group": "试听颜色",
+      "key": "waveform_marked_hex",
+      "kind": "color",
+      "label": "标记波形颜色"
+    },
+    {
+      "group": "试听颜色",
+      "key": "waveform_selected_hex",
+      "kind": "color",
+      "label": "选中波形颜色"
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_normalize",
+      "kind": "choice",
+      "label": "标准化",
+      "options": [
+        "off",
+        "peak",
+        "true_peak",
+        "rms_i",
+        "lufs_i"
+      ]
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_normalize_target",
+      "kind": "number",
+      "label": "标准化目标",
+      "maximum": 0,
+      "minimum": -36
+    },
+    {
+      "group": "Transfer",
+      "key": "transfer_collision",
+      "kind": "choice",
+      "label": "重名策略",
+      "options": [
+        "increment",
+        "skip",
+        "overwrite"
+      ]
+    }
+  ]
+}
