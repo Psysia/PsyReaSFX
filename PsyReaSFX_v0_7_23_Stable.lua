@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "f94b24e483f32b8d5d04cd2af8604910e1583289bed5e408350ea128368b54cc",
+  source_sha256 = "8e2048f31a1605f5d8894a11716998e7359f6a773d74ca8c97f13574cc16c73f",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -23084,6 +23084,20 @@ end
 function process_wave_queue()
   if state.import_session
     or state.precache_session then
+    -- Cache reads do not open audio sources. Keep existing waves visible while
+    -- exclusive import/precache work owns decoding; inspect only one per tick.
+    for index, job in ipairs(state.wave_queue) do
+      if job.probe_disk and not state.wave_checked[job.key] then
+        state.wave_checked[job.key] = true
+        local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+        if cached then
+          store_wave_memory(job.key, cached)
+          table.remove(state.wave_queue, index)
+          state.wave_queued[job.key] = nil
+        end
+        break
+      end
+    end
     return
   end
 

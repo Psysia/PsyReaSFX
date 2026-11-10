@@ -537,7 +537,13 @@ do
   end
   WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
   assert(reads == 0 and #runtime.wave_queue == 32, "all visible waves must enqueue without blocking RPC on disk reads")
-  for _ = 1, 32 do process_wave_queue() end
+  runtime.import_session = { phase = "index" }
+  process_wave_queue()
+  runtime.import_session, runtime.precache_session = nil, { phase = "collect" }
+  process_wave_queue()
+  assert(reads == 2 and #runtime.wave_queue == 30, "existing disk waves must remain readable during import and precache")
+  runtime.precache_session = nil
+  for _ = 1, 30 do process_wave_queue() end
   local cached_page = WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
   assert(reads == 32 and #runtime.wave_queue == 0)
   for _, row in ipairs(cached_page.items) do assert(row.waveform and row.waveform.peaks[2] == 0.8, "later rows must not starve") end

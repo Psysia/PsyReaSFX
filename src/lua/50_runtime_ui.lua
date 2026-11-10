@@ -5959,6 +5959,20 @@ end
 function process_wave_queue()
   if state.import_session
     or state.precache_session then
+    -- Cache reads do not open audio sources. Keep existing waves visible while
+    -- exclusive import/precache work owns decoding; inspect only one per tick.
+    for index, job in ipairs(state.wave_queue) do
+      if job.probe_disk and not state.wave_checked[job.key] then
+        state.wave_checked[job.key] = true
+        local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+        if cached then
+          store_wave_memory(job.key, cached)
+          table.remove(state.wave_queue, index)
+          state.wave_queued[job.key] = nil
+        end
+        break
+      end
+    end
     return
   end
 
