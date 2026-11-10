@@ -37,6 +37,16 @@ function Resolve-Payload([string]$Url) {
         if ($Url.StartsWith($prefix, [StringComparison]::Ordinal)) {
             $relative = $Url.Substring($prefix.Length)
             if ($relative -match '(^|/)\.\.(/|$)' -or $relative.Contains(':')) { throw 'Unsafe repository source path.' }
+            if ($Online -and $relative -ceq 'dependencies/reawebapi/windows-x64.lock.json') {
+                # Release tags are immutable. Changing build download mirrors on main
+                # must not change the expected provenance of an already released lock.
+                $pinnedTag = $prefix.TrimEnd('/').Split('/')[-1]
+                $pinnedLock = & git -C $repoRoot show "${pinnedTag}:$relative"
+                if ($LASTEXITCODE -ne 0) { throw "Fetch release tag $pinnedTag before checking its published lock." }
+                $expected = Join-Path $FixtureDirectory "$pinnedTag-expected-runtime-lock.json"
+                [IO.File]::WriteAllText($expected, (($pinnedLock -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+                return $expected
+            }
             return Join-Path $repoRoot $relative
         }
     }

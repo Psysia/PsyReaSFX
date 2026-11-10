@@ -2,6 +2,8 @@
 
 正式构建读取 `windows-x64.lock.json`。依赖下载统一走 [Psysia/ReaWebAPI](https://github.com/Psysia/ReaWebAPI)，锁定 tag 对应的完整 commit、Windows 发行压缩包、原生 DLL 和匹配源码的 SHA-256。运行时、许可证和匹配源码一起进入离线安装包。历史发行 tag 保持原样。
 
+验证历史 ReaPack 在线载荷时，`Test-ReaPackWebView.ps1 -Online` 从对应发行 tag 读取原始锁定清单；浅克隆需先获取这些 tag，避免将主分支新的镜像地址误认为历史载荷被修改。
+
 当前锁定 0.3.9.30，状态为 `native_acceptance_pending`，需要完成 REAPER 实机验收。
 
 安装器默认拒绝新增或替换尚未通过实机验收的运行时。维护者在独立 REAPER 资源目录进行候选测试时，可显式传入 `-AllowUnverifiedRuntime`。正式发行需要将验收结果记录完整并晋升为 `native_accepted`。
