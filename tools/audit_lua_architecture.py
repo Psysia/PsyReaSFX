@@ -19,16 +19,23 @@ HOST_BOUNDARY_MODULES = (
 # Existing UI/runtime writes are migrated gradually. This baseline makes the
 # debt monotonic: new work cannot add more direct writes outside AppState.
 STATE_WRITE_CEILINGS = {
-    "10_ui_core.lua": 54,
-    "20_jobs_storage.lua": 45,
-    "30_catalog.lua": 107,
-    "40_analysis.lua": 49,
-    "50_runtime_ui.lua": 1233,
+    "10_ui_core.lua": 50,
+    "20_jobs_storage.lua": 36,
+    "30_catalog.lua": 104,
+    "40_analysis.lua": 41,
+    "50_runtime_ui.lua": 1076,
 }
 
 DIRECT_STATE_WRITE = re.compile(
-    r"\bstate(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]\r\n]+\])\s*="
+    r"\bstate(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]\r\n]+\])\s*=(?!=)"
 )
+
+# An equality read must not be counted as an assignment. This previously
+# rejected `state.language == "en"` in the read-only WebView adapter.
+assert DIRECT_STATE_WRITE.search('state.language = "en"')
+assert DIRECT_STATE_WRITE.search('state["language"]\n = "en"')
+assert not DIRECT_STATE_WRITE.search('state.language == "en"')
+assert not DIRECT_STATE_WRITE.search('state["language"] == "en"')
 
 
 def fail(message: str) -> None:
