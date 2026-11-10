@@ -117,6 +117,36 @@ export async function connectHost() {
     connection.dispose = await window.reaper.events.on("message", (raw) =>
       connection.receive(raw),
     );
+    // A reused/native window may retain routing from its previous document.
+    // Configure the window itself; app.json and DOM preventDefault alone do
+    // not disable the runtime's document-start Main/Space forwarding handlers.
+    try {
+      const keyboard = window.reaper.window;
+      for (const [method, value] of [
+        ["setDawKeyboard", false],
+        ["setShortcutRouting", false],
+        ["setKeyboardCapture", true],
+      ]) {
+        if (typeof keyboard?.[method] !== "function")
+          throw new Error(
+            "当前 ReaWebAPI 缺少窗口键盘控制，请更新随包运行时。",
+          );
+        await keyboard[method](value);
+      }
+      connection.keyboardState = () => keyboard.getState();
+      const state = await connection.keyboardState();
+      if (
+        state.dawKeyboard !== false ||
+        state.shortcutRouting !== false ||
+        state.keyboardCapture !== true
+      )
+        throw new Error(
+          "窗口未能启用本地试听键盘控制，请关闭此窗口后重新打开。",
+        );
+    } catch (error) {
+      connection.close();
+      throw error;
+    }
     connection.subscribeDrops = async (callback) => {
       const dispose = await window.reaper.events.on("native-drop", callback);
       if (connection.closed) {

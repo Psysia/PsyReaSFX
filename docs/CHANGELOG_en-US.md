@@ -1,3 +1,12 @@
+## 0.9.3 Beta 9 (0.9.a WebView) — 2026-11-10
+
+- Size Chinese/English context menus to their commands, truncate long file titles and group secondary actions with keyboard navigation.
+- Add independent UCS search for translated names, English names, CatIDs and explanations; replace folder arrows with open/closed folder icons.
+- Expand FX into a single 48 px row without changing saved waveform height; keep resizing available and move presets into a popover.
+- Handle Space before button defaults, suppress held-key repeats and use live backend playback state. Set and read back native window keyboard routing; include it in diagnostics. Native REAPER keyboard/audio acceptance remains pending.
+- Restore artwork reset/discovery, current-file export, variant presets, report/cache/backup/docs folders, failed-record cleanup, frame timings and API-key deletion. Preserve AI preset drafts when switching.
+- Add a source-mapped checklist covering 117 workflows and 73 settings. Check UI entries, unique RPC handlers and source references in CI; distinguish automated coverage from native acceptance.
+
 ## 0.9.3 Beta 8 (0.9.a WebView) — 2026-11-10
 
 - Repair waveform cache queue starvation, selection rejection during background refresh, failed-waveform retries and oversized multichannel responses.

@@ -114,8 +114,10 @@ jobs:
         shell: pwsh
         run: |
           $webTestTools = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-tools'
-          npm install --prefix $webTestTools --no-save --ignore-scripts playwright@1.56.1
+          npm install --prefix $webTestTools --no-save --ignore-scripts playwright@1.56.1 eslint@9.39.1 globals@16.5.0
           if ($LASTEXITCODE -ne 0) { throw 'Browser test tooling installation failed.' }
+          node tools/check_webview_code.cjs (Join-Path $webTestTools 'node_modules')
+          if ($LASTEXITCODE -ne 0) { throw 'WebView entry or source parity check failed.' }
           node tools/webview_ui_selftest.cjs (Join-Path $webTestTools 'node_modules/playwright') (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView/web')
           if ($LASTEXITCODE -ne 0) { throw 'WebView layout regression failed.' }
 

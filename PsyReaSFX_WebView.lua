@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.3-beta8
+-- @version 0.9.3-beta9
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 8"
+local VERSION = "0.9.3 Beta 9"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta8",
-  source_sha256 = "3e3320b899bc785de57809b9e67254409b069a064e603e80e7555cfae2cb51cb",
+  release_id = "PsyReaSFX/0.9.3-beta9",
+  source_sha256 = "6392a406c6ddcdaaea9b0baf6d0243106018bad7967800781434320ed4d03132",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -17371,6 +17371,9 @@ function webview_open()
     return false
   end
   WebUI.window = id
+  if type(reaper.ReaWeb_SetShortcutRouting) == "function" then
+    reaper.ReaWeb_SetShortcutRouting(id, false)
+  end
   reaper.SetExtState("PsyReaSFX.Web", WebUI.key, tostring(id), false)
   return true
 end
@@ -17551,7 +17554,8 @@ WebUI.handlers["catalog.ucs"] = function()
     local entries = {}
     for _, entry in ipairs(category.entries) do
       entries[#entries + 1] =
-        { catid = entry.catid, name = entry.subcategory, label = entry.subcategory_zh }
+        { catid = entry.catid, name = entry.subcategory, label = entry.subcategory_zh,
+          synonyms = text(entry.synonyms_zh) .. " " .. text(entry.explanation) }
     end
     categories[#categories + 1] =
       { name = category.name, label = category.name_zh, entries = entries }
@@ -17632,7 +17636,12 @@ WebUI.handlers["preview.play"] = function(params)
   return true
 end
 WebUI.handlers["preview.stop"] = function()
-  stop_preview()
+  request_preview_stop()
+  return true
+end
+WebUI.handlers["preview.toggle"] = function()
+  if state.preview then request_preview_stop()
+  else play_preview(nil, nil, true) end
   return true
 end
 WebUI.handlers["preview.parameters"] = function(params)
@@ -17661,10 +17670,14 @@ end
 WebUI.handlers["preview.region"] = function(params)
   local first = number(params.start, 0, 1)
   local last = number(params.finish, first, 1)
-  AppState.apply({ region_start = first, region_end = last })
+  AppState.apply({ region_start = first, region_end = last, active_region_index = 0 })
   if state.loop_selection and last > first then
     AppState.set("loop", true)
   end
+  return true
+end
+WebUI.handlers["preview.clearRegion"] = function()
+  AppState.apply({ region_start = 0, region_end = 1, active_region_index = 0 })
   return true
 end
 WebUI.handlers["favorite.toggle"] = function(params)
@@ -17886,13 +17899,24 @@ WebUI.handlers["transfer.directory"] = function(params)
     local path = text(params.path or state.transfer_dir)
     assert(path ~= "", "请先设置输出目录")
     open_folder(path)
+  elseif params.action == "recent" then
+    assert(state.transfer_last_output and state.transfer_last_output ~= "", "尚未执行 Transfer")
+    open_folder(dirname(state.transfer_last_output))
+  elseif params.action == "report" then
+    assert(reaper.file_exists(TRANSFER_REPORT_FILE), "尚无任务报告")
+    open_folder(dirname(TRANSFER_REPORT_FILE))
   else error("未知输出目录操作") end
   return state.transfer_dir
 end
 WebUI.handlers["transfer.start"] = function(params)
   writable()
   assert(not state.transfer_running, "正在交付，请等待当前任务完成")
-  local targets = selected_assets()
+  assert(params.target == nil or params.target == "selected" or params.target == "current", "未知交付范围")
+  local current = selected_asset()
+  if params.target == "current" and params.path then
+    assert(current and current.path == params.path, "选择已改变，请重新导出")
+  end
+  local targets = params.target == "current" and (current and { current } or {}) or selected_assets()
   assert(#targets > 0, "请先选择素材")
   local choices = {
     transfer_format = { wav16 = true, wav24 = true, wav32 = true, flac = true },
@@ -17921,7 +17945,7 @@ WebUI.handlers["transfer.start"] = function(params)
   end
   if params.values then WebUI.handlers["settings.update"]({ values = params.values }) end
   AppState.apply(updates)
-  run_transfer(targets, #targets > 1)
+  run_transfer(targets, params.target ~= "current")
   return true
 end
 WebUI.handlers["region.action"] = function(params)
@@ -17947,7 +17971,8 @@ WebUI.handlers["region.action"] = function(params)
   return true
 end
 WebUI.handlers["search.ai"] = function(params)
-  start_ai_semantic_search(text(params.query))
+  if state.ai_semantic_session then ai_semantic_cancel()
+  else start_ai_semantic_search(text(params.query)) end
   return true
 end
 WebUI.handlers["search.more"] = function()
@@ -18420,6 +18445,7 @@ WebUI.handlers["settings.get"] = function()
     ai_presets = presets,
     loading = state.startup_session ~= nil,
     wave_cache_dir = state.wave_cache_dir,
+    transfer_has_report = reaper.file_exists(TRANSFER_REPORT_FILE),
     schema = settings_schema,
     values = values,
     ai_active_preset_id = state.ai_active_preset_id,
@@ -18561,6 +18587,18 @@ WebUI.handlers["asset.action"] = function(params)
     artwork = function()
       choose_artwork_for_asset(asset)
     end,
+    redetectArtwork = function()
+      asset.artwork_path = ""
+      asset.artwork_checked = false
+      AppState.apply({ artwork_folder_cache = {}, artwork_dimension_cache = {} })
+      queue_artwork(asset, true)
+      mark_asset_database_change(asset, "display")
+    end,
+    clearArtwork = function()
+      asset.artwork_path = "-"
+      asset.artwork_checked = true
+      mark_asset_database_change(asset, "display")
+    end,
     filter = function()
       local fields = {
         description = true,
@@ -18630,6 +18668,11 @@ end
 WebUI.handlers["diagnostics.get"] = function()
   return build_diagnostics_text()
 end
+WebUI.handlers["diagnostics.overlay"] = function(params)
+  assert(type(params.enabled) == "boolean", "无效性能显示设置")
+  FrameStats.overlay = params.enabled
+  return FrameStats.overlay
+end
 
 WebUI.handlers["management.get"] = function()
   local groups = {
@@ -18643,7 +18686,7 @@ WebUI.handlers["management.get"] = function()
       kind = "root",
       label = "来源文件夹",
       items = {},
-      actions = { "scan", "relink", "artwork", "redetectArtwork", "clearArtwork", "remove" },
+      actions = { "open", "scan", "relink", "artwork", "redetectArtwork", "clearArtwork", "remove" },
     },
     {
       kind = "collection",
@@ -18706,6 +18749,12 @@ WebUI.handlers["management.action"] = function(params)
       end,
     },
     root = {
+      open = function()
+        local path = params.path and canonical_source_path(text(params.path)) or target.path
+        assert(path_key(path) == path_key(target.path) or path_is_inside(path, target.path), "目录超出来源范围")
+        for segment in path:gmatch("[^\\/]+") do assert(segment ~= ".." and segment ~= ".", "无效文件夹路径") end
+        open_folder(path)
+      end,
       scan = function()
         start_scan("手动扫描", { target.path })
       end,
@@ -18783,6 +18832,11 @@ WebUI.handlers["records.action"] = function(params)
     clearWaveforms = clear_wave_cache,
     clearArtwork = clear_artwork_cache,
     retryFailed = retry_failed_tasks,
+    clearFailed = function()
+      AppState.apply({ failed_tasks = {}, failed_tasks_dirty = true, last_save = 0 })
+      schedule_auxiliary_save()
+      set_status("失败任务记录已清除")
+    end,
     currentProject = function()
       refresh_current_project_binding()
       ensure_current_project_bin(true)
@@ -18790,6 +18844,17 @@ WebUI.handlers["records.action"] = function(params)
     dataFolder = function()
       open_folder(DATA_DIR)
     end,
+    openCacheFolder = function()
+      open_folder(state.wave_cache_dir or WAVE_CACHE_DIR)
+    end,
+    backupFolder = function()
+      open_folder(BACKUP_DIR)
+    end,
+    docsFolder = function()
+      assert(directory_exists(DOCS_DIR), "文档目录不存在：" .. DOCS_DIR)
+      open_folder(DOCS_DIR)
+    end,
+    resetWaveformColors = reset_waveform_palette_defaults,
     cacheFolder = prompt_wave_cache_directory,
     cacheDefault = restore_default_wave_cache_directory,
     resetInterface = reset_interface_settings,
@@ -18824,6 +18889,12 @@ end
 WebUI.handlers["settings.ai"] = function(params)
   writable()
   assert(not state.ai_semantic_session, "请等待 AI 请求结束后修改设置")
+  if params.action == "deleteKey" then
+    assert(params.id == state.ai_active_preset_id, "预设已改变，请重新操作")
+    local ok, reason = ai_semantic_delete_api_key()
+    assert(ok, reason)
+    return true
+  end
   if params.action == "select" then
     local ok, reason = ai_semantic_select_preset(text(params.id, 80))
     assert(ok, reason)
@@ -19041,6 +19112,11 @@ function webview_publish()
     artworkPinned = state.inspector_artwork_pinned,
     previewPath = state.preview_path,
     enterInsertShortcuts = state.enter_insert_shortcuts,
+    performance = FrameStats.overlay and {
+      background = (FrameStats.background or 0) * 1000,
+      update = (FrameStats.draw or 0) * 1000,
+      interval = (FrameStats.interval or 0) * 1000,
+    } or nil,
     playedCount = session_played_count(),
     rowAppearance = {
       textEnabled = state.played_text_enabled,

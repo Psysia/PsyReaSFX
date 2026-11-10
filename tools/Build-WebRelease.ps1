@@ -38,6 +38,9 @@ foreach ($directory in $assetDirectories) {
     Copy-Item -Path (Join-Path $repoRoot "assets/$directory/*") -Destination $destination -Recurse -Force
 }
 if ($Target -eq 'reaper') {
+    $documentation = Join-Path $OutputPath 'docs'
+    [IO.Directory]::CreateDirectory($documentation) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md') -Destination $documentation
     $prefix = $OutputPath.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $files = @(Get-ChildItem -LiteralPath $OutputPath -File -Recurse | Sort-Object FullName | ForEach-Object {
         [ordered]@{

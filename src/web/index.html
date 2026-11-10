@@ -80,6 +80,11 @@
           <button id="new-tab" title="新建标签页" aria-label="新建标签页">
             ＋</button
           ><span class="workspace-spacer"></span
+          ><span
+            id="performance-stats"
+            hidden
+            title="后台 / 宿主更新 / 帧间隔"
+          ></span
           ><span id="host-label">正在连接…</span
           ><button
             id="right-toggle"
@@ -138,6 +143,23 @@
           <section data-source-panel="ucs">
             <details id="ucs-directory">
               <summary class="section-label">UCS 分类</summary>
+              <div class="ucs-search-row">
+                <input
+                  id="ucs-search"
+                  type="search"
+                  placeholder="搜索分类、CatID、中英文…"
+                  aria-label="搜索 UCS 分类"
+                />
+                <button
+                  id="ucs-search-clear"
+                  title="清除 UCS 搜索"
+                  aria-label="清除 UCS 搜索"
+                  hidden
+                >
+                  ×
+                </button>
+              </div>
+              <p id="ucs-search-status" class="muted" role="status" hidden></p>
               <div id="ucs-categories"></div>
             </details>
           </section>
@@ -255,6 +277,12 @@
           ><button id="similar-search" title="查找相似声音">相似声音</button
           ><button id="save-region" title="保存当前波形选区为 Region">
             ＋ Region</button
+          ><button
+            id="audition-more"
+            title="更多试听操作"
+            aria-label="更多试听操作"
+          >
+            •••</button
           ><span id="range-label"></span>
         </div>
         <div id="analysis-bar" hidden role="status">
@@ -263,25 +291,6 @@
           <span id="analysis-count"></span
           ><button id="analysis-cancel">取消分析</button>
         </div>
-        <div id="wave-area">
-          <div id="wave-readouts">
-            <label>当前位置 <output id="current-time">00:00.000</output></label
-            ><label>入点 <output id="in-time">00:00.000</output></label
-            ><label>出点 <output id="out-time">00:00.000</output></label
-            ><label>选区时长 <output id="range-time">00:00.000</output></label>
-          </div>
-          <div id="detail-wave-wrap">
-            <canvas
-              id="detail-wave"
-              aria-label="详细波形，拖动选择区间，双击试听，滚轮缩放"
-              tabindex="0"
-            ></canvas
-            ><span id="detail-playhead" hidden></span
-            ><span id="wave-status">等待选择素材</span>
-            <button id="wave-retry" hidden>重试波形</button>
-          </div>
-        </div>
-        <div id="loudness-strip" aria-label="响度读数" hidden></div>
         <details id="fx-panel">
           <summary>FX <span>变调 · 变速 · 增益</span></summary>
           <div class="fx-controls">
@@ -343,9 +352,29 @@
                 checked
               />保持音高</label
             ><label><input id="reverse" type="checkbox" />反向</label
+            ><button id="fx-presets">预设</button
             ><button id="fx-reset">复位</button>
           </div>
         </details>
+        <div id="wave-area">
+          <div id="wave-readouts">
+            <label>当前位置 <output id="current-time">00:00.000</output></label
+            ><label>入点 <output id="in-time">00:00.000</output></label
+            ><label>出点 <output id="out-time">00:00.000</output></label
+            ><label>选区时长 <output id="range-time">00:00.000</output></label>
+          </div>
+          <div id="detail-wave-wrap">
+            <canvas
+              id="detail-wave"
+              aria-label="详细波形，拖动选择区间，双击试听，滚轮缩放"
+              tabindex="0"
+            ></canvas
+            ><span id="detail-playhead" hidden></span
+            ><span id="wave-status">等待选择素材</span>
+            <button id="wave-retry" hidden>重试波形</button>
+          </div>
+        </div>
+        <div id="loudness-strip" aria-label="响度读数" hidden></div>
         <div class="transport">
           <button id="stop" title="停止" aria-label="停止">■</button
           ><button

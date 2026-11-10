@@ -66,6 +66,7 @@ async function main() {
       let playedText = true;
       let playingPath = null;
       let language = "zh";
+      let aiPreset = "fixture-ai-one";
       const calls = [];
       let stateOverrides = {};
       window.testSetState = (patch) => {
@@ -107,7 +108,9 @@ async function main() {
         ];
         return {
           path: `D:\\Mechanical Motion\\${index}.wav`,
-          name: `${names[(index - 1) % names.length]} ${String(index).padStart(2, "0")}.wav`,
+          name:
+            window.testLongName ||
+            `${names[(index - 1) % names.length]} ${String(index).padStart(2, "0")}.wav`,
           index,
           duration: 8.24 + (index % 4),
           channels: 2,
@@ -246,7 +249,12 @@ async function main() {
                   name: "COMPUTERS",
                   label: "电脑",
                   entries: [
-                    { catid: "CMPTDriv", name: "Drive", label: "硬盘" },
+                    {
+                      catid: "CMPTDriv",
+                      name: "Drive",
+                      label: "硬盘",
+                      synonyms: "disk 磁盘",
+                    },
                     { catid: "CMPTKey", name: "Keyboard", label: "键盘" },
                   ],
                 },
@@ -319,6 +327,10 @@ async function main() {
               playingPath = selected.path;
             }
             if (request.method === "preview.stop") playingPath = null;
+            if (request.method === "preview.toggle" && selected) {
+              playingPath = playingPath ? null : selected.path;
+              if (playingPath) played.add(selected.index);
+            }
             if (request.method === "settings.update")
               playedText =
                 request.params.values.played_text_enabled ?? playedText;
@@ -364,8 +376,24 @@ async function main() {
             }
             if (request.method === "preview.parameters")
               fx = { ...fx, ...request.params };
+            if (
+              request.method === "settings.ai" &&
+              request.params.action === "select"
+            )
+              aiPreset = request.params.id;
             if (request.method === "settings.get")
               result = {
+                ai_active_preset_id: aiPreset,
+                ai_presets: [
+                  { id: "fixture-ai-one", name: "Preset One" },
+                  { id: "fixture-ai-two", name: "Preset Two" },
+                ],
+                ai_preset_name:
+                  aiPreset === "fixture-ai-one" ? "Preset One" : "Preset Two",
+                ai_provider: "custom",
+                ai_url: "https://example.invalid/v1/chat/completions",
+                ai_model: "fixture-model",
+                ai_key_saved: true,
                 loading: Boolean(stateOverrides.startup),
                 schema: [
                   {
@@ -635,6 +663,55 @@ async function main() {
       "Unsaved preset",
       "AI draft must survive navigation",
     );
+    await page
+      .getByRole("combobox", { name: "AI 预设", exact: true })
+      .selectOption("fixture-ai-two");
+    assert.equal(
+      await page
+        .locator('#settings-body input[data-field="name"]')
+        .inputValue(),
+      "Preset Two",
+    );
+    await page
+      .getByRole("combobox", { name: "AI 预设", exact: true })
+      .selectOption("fixture-ai-one");
+    assert.equal(
+      await page
+        .locator('#settings-body input[data-field="name"]')
+        .inputValue(),
+      "Unsaved preset",
+      "switching AI presets must retain each preset's draft",
+    );
+    await page
+      .getByRole("combobox", { name: "服务商", exact: true })
+      .selectOption("openai");
+    await page
+      .getByRole("button", { name: "gpt-4.1-mini", exact: true })
+      .click();
+    assert.equal(
+      await page
+        .locator('#settings-body input[data-field="model"]')
+        .inputValue(),
+      "gpt-4.1-mini",
+    );
+    await page
+      .getByRole("button", { name: "删除已保存 Key", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "settings.ai" &&
+          call.params.action === "deleteKey" &&
+          call.params.id === "fixture-ai-one",
+      ),
+    );
+    assert.equal(
+      await page
+        .locator('#settings-body input[data-field="name"]')
+        .inputValue(),
+      "Unsaved preset",
+      "deleting a saved key must not discard other draft fields",
+    );
     await page.locator("#settings-close").click();
     assert(
       await page
@@ -827,8 +904,25 @@ async function main() {
       "sidebar resize must keep waveform horizontal origin",
     );
     await page.waitForSelector("#inspector-body textarea");
+    const closedWaveHeight = (await page.locator("#detail-wave").boundingBox())
+      .height;
+    const closedPlayerHeight = (await page.locator("#audition").boundingBox())
+      .height;
     await page.locator("#fx-toggle").click();
     await page.waitForSelector("#fx-pitch:visible");
+    assert(
+      Math.abs(
+        (await page.locator("#detail-wave").boundingBox()).height -
+          closedWaveHeight,
+      ) < 2,
+      "opening FX must not enlarge or shrink the waveform",
+    );
+    assert.equal(
+      (await page.locator("#audition").boundingBox()).height -
+        closedPlayerHeight,
+      48,
+      "opening FX adds only the compact toolbar",
+    );
     const fxWidth = await page.locator("#detail-wave").boundingBox();
     assert.equal(
       fxWidth.width,
@@ -915,6 +1009,94 @@ async function main() {
     await page.screenshot({ path: path.join(output, "optional-paper.png") });
     await page.setViewportSize({ width: 1000, height: 720 });
     await page.screenshot({ path: path.join(output, "compact-window.png") });
+    // Beta 9: local audition keys, compact translated menus and submenu navigation.
+    await page.locator(".result-cell.name").first().click();
+    await page.locator("#stop").click();
+    const toggles = await page.evaluate(
+      () =>
+        window.testCalls.filter((c) => c.method === "preview.toggle").length,
+    );
+    await page.locator("#play").focus();
+    await page.keyboard.down("Space");
+    await page.keyboard.down("Space");
+    await page.keyboard.up("Space");
+    await page.waitForFunction(
+      (n) =>
+        window.testCalls.filter((c) => c.method === "preview.toggle").length ===
+        n + 1,
+      toggles,
+    );
+    await page.keyboard.press("Space");
+    await page.waitForFunction(
+      (n) =>
+        window.testCalls.filter((c) => c.method === "preview.toggle").length ===
+        n + 2,
+      toggles,
+    );
+    await page.locator("#search").fill("edit");
+    await page.keyboard.press("Space");
+    assert.equal(await page.locator("#search").inputValue(), "edit ");
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((c) => c.method === "preview.toggle").length,
+      ),
+      toggles + 2,
+      "text entry must not control audition",
+    );
+    await page.locator("#search").fill("");
+    await page.evaluate(() => {
+      window.testLongName =
+        "AEROHeli_" + "Helicopter Maneuvers Approach ".repeat(12) + ".wav";
+      window.testSetState({ revision: 9001 });
+    });
+    await page.waitForFunction(() =>
+      document
+        .querySelector(".result-cell.name")
+        .textContent.includes("AEROHeli_"),
+    );
+    await page.locator(".result-cell.name").first().click({ button: "right" });
+    const zhMenu = await page.locator("#popover").boundingBox();
+    assert(
+      zhMenu.width < 280,
+      "a long filename must not stretch the Chinese menu",
+    );
+    assert(
+      (await page.locator("#popover .menu-item").count()) < 15,
+      "secondary actions belong to groups",
+    );
+    await page.screenshot({ path: path.join(output, "beta9-menu-zh.png") });
+    await page
+      .locator("#popover")
+      .getByRole("button", { name: "插入 REAPER", exact: false })
+      .focus();
+    await page.keyboard.press("ArrowRight");
+    await page
+      .getByRole("button", { name: "插入新轨道", exact: true })
+      .waitFor();
+    await page.keyboard.press("ArrowLeft");
+    assert(
+      await page
+        .getByRole("button", { name: "分析与元数据", exact: false })
+        .isVisible(),
+    );
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => window.testSetState({ language: "en" }));
+    await page.locator(".result-cell.name").first().click({ button: "right" });
+    await page
+      .getByRole("button", { name: "Analysis and metadata", exact: false })
+      .waitFor();
+    const enMenu = await page.locator("#popover").boundingBox();
+    assert(
+      enMenu.width > zhMenu.width && enMenu.width < 340,
+      "menu width adapts to translated commands",
+    );
+    await page.screenshot({ path: path.join(output, "beta9-menu-en.png") });
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => {
+      window.testLongName = undefined;
+      window.testSetState({ language: undefined, revision: undefined });
+    });
     // Real reported failures: nested navigation, late cache results, scrolling
     // artwork, stale row identity, loudness visibility and constrained FX layout.
     await page.setViewportSize({ width: 1600, height: 1000 });
@@ -970,6 +1152,14 @@ async function main() {
     const rootLabel = page.locator(
       "#libraries > .folder-branch > summary > .nav-item",
     );
+    await rootLabel.dblclick({ delay: 100 });
+    await page.waitForFunction(
+      () => !document.querySelector("#libraries > .folder-branch").open,
+    );
+    await rootLabel.dblclick({ delay: 100 });
+    await page.waitForFunction(
+      () => document.querySelector("#libraries > .folder-branch").open,
+    );
     const rootArrow = page.locator(
       "#libraries > .folder-branch > summary > .folder-toggle",
     );
@@ -1003,6 +1193,30 @@ async function main() {
       navFont,
       "expanded UCS typography must match ordinary navigation",
     );
+    for (const term of ["硬盘", "drive", "cmptdriv", "磁盘", "computer disk"]) {
+      await page.locator("#ucs-search").fill(term);
+      assert.equal(
+        await page.locator("#ucs-categories .root").count(),
+        1,
+        `UCS search: ${term}`,
+      );
+      assert(
+        await ucsItem.isVisible(),
+        "search results expand without requiring another click",
+      );
+    }
+    await page.locator("#ucs-search").fill("no_such_category");
+    assert.equal(await page.locator("#ucs-categories .nav-item").count(), 0);
+    assert.match(
+      await page.locator("#ucs-search-status").textContent(),
+      /没有匹配/,
+    );
+    await page.locator("#ucs-search-clear").click();
+    assert(
+      await ucsItem.isVisible(),
+      "clearing search restores the previously expanded group",
+    );
+    assert.equal(await page.locator("#ucs-categories .root").count(), 2);
     await ucsItem.click();
     await page.waitForFunction(() =>
       window.testCalls.some(
@@ -1155,8 +1369,8 @@ async function main() {
         "FX must leave a usable waveform",
       );
       assert(
-        boxes["detail-wave"].bottom <= boxes["fx-panel"].top + 1,
-        "FX must never overlap the waveform",
+        boxes["fx-panel"].bottom <= boxes["detail-wave"].top + 1,
+        "FX toolbar must precede and never overlap the waveform",
       );
       assert(
         boxes["wave-readouts"].bottom <= boxes["loudness-strip"].top + 1,
@@ -1190,9 +1404,43 @@ async function main() {
         });
       }
       await page.screenshot({
-        path: path.join(output, `beta8-fx-${size.width}.png`),
+        path: path.join(output, `beta9-fx-${size.width}.png`),
       });
     }
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    const playerGrip = await page.locator("#audition-splitter").boundingBox();
+    await page.mouse.move(playerGrip.x + 50, playerGrip.y + 2);
+    await page.mouse.down();
+    await page.mouse.move(playerGrip.x + 50, playerGrip.y + 320, { steps: 8 });
+    await page.mouse.up();
+    assert(
+      (await page.locator("#audition").boundingBox()).height < 300,
+      "FX player must shrink below the previous 390px floor",
+    );
+    assert((await page.locator("#detail-wave").boundingBox()).height >= 60);
+    const transportBox = await page.locator(".transport").boundingBox();
+    const smallPlayer = await page.locator("#audition").boundingBox();
+    assert(
+      transportBox.y + transportBox.height <=
+        smallPlayer.y + smallPlayer.height,
+      "minimum height keeps transport accessible",
+    );
+    await page.screenshot({ path: path.join(output, "beta9-compact-fx.png") });
+    await page.locator("#fx-presets").click();
+    await page.getByRole("button", { name: "音高预设", exact: false }).click();
+    await page.getByRole("button", { name: "+6 st", exact: true }).click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (c) => c.method === "preview.parameters" && c.params.pitch === 6,
+      ),
+    );
+    await page.locator("#audition-more").click();
+    await page
+      .getByRole("button", { name: "清除波形选区", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some((c) => c.method === "preview.clearRegion"),
+    );
     await page.locator("#fx-toggle").click();
     await page.evaluate(() =>
       window.testSetState({ tasks: {}, similarityProgress: undefined }),
@@ -1216,6 +1464,31 @@ async function main() {
               },
               webRuntime: { contract: 1 },
             }),
+          },
+          window: {
+            getState: async () => ({
+              dawKeyboard: window.testKeyboardPolicy.findLast(
+                ([key]) => key === "daw",
+              )?.[1],
+              shortcutRouting: window.testKeyboardPolicy.findLast(
+                ([key]) => key === "shortcuts",
+              )?.[1],
+              keyboardCapture: window.testKeyboardPolicy.findLast(
+                ([key]) => key === "capture",
+              )?.[1],
+            }),
+            setDawKeyboard: async (value) => {
+              (window.testKeyboardPolicy ||= []).push(["daw", value]);
+              return value;
+            },
+            setShortcutRouting: async (value) => {
+              (window.testKeyboardPolicy ||= []).push(["shortcuts", value]);
+              return value;
+            },
+            setKeyboardCapture: async (value) => {
+              (window.testKeyboardPolicy ||= []).push(["capture", value]);
+              return value;
+            },
           },
           host: {
             send(message) {
@@ -1261,6 +1534,15 @@ async function main() {
       await page.locator("#host-label").textContent(),
       /ReaWebAPI 0.3.9.30/,
       "ReaWebAPI transport must connect",
+    );
+    assert.deepEqual(
+      await page.evaluate(() => window.testKeyboardPolicy),
+      [
+        ["daw", false],
+        ["shortcuts", false],
+        ["capture", true],
+      ],
+      "native Space/Main routing must be explicitly disabled on every connection",
     );
     await page.waitForFunction(
       () => typeof window.testNativeDrop === "function",
