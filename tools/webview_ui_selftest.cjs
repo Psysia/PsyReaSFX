@@ -1317,10 +1317,21 @@ async function main() {
     await page.locator("#settings-close").click();
     await page.setViewportSize({ width: 1000, height: 720 });
     await page.screenshot({ path: path.join(output, "compact-window.png") });
-    // Capture seek coordinates before selection replaces the virtualized row.
+    // Await an actionable canvas after the settled resize refresh. Capture the
+    // relative seek point before selection replaces the virtualized row.
+    const miniBounds = async () => {
+      const result = await page.waitForFunction(() => {
+        const rect = document
+          .querySelectorAll(".result-cell.waveform canvas")[2]
+          ?.getBoundingClientRect();
+        return rect?.width && rect.height ? rect.toJSON() : false;
+      });
+      const rect = await result.jsonValue();
+      await result.dispose();
+      return rect;
+    };
     for (const fraction of [0.15, 0.55, 0.85]) {
-      const canvas = page.locator(".result-cell.waveform canvas").nth(2);
-      const box = await canvas.boundingBox();
+      const box = await miniBounds();
       const before = await page.evaluate(
         () =>
           window.testCalls.filter((c) => c.method === "preview.play").length,
@@ -1340,14 +1351,11 @@ async function main() {
       );
       assert(
         Math.abs(call.params.position - fraction) < 0.01,
-        "mini waveform must seek to the actual canvas position after row refresh",
+        `mini waveform must seek to the actual canvas position after row refresh: ${JSON.stringify({ fraction, box, params: call.params })}`,
       );
       assert.equal(call.params.selection, false);
     }
-    const doubleBox = await page
-      .locator(".result-cell.waveform canvas")
-      .nth(2)
-      .boundingBox();
+    const doubleBox = await miniBounds();
     const doubleBefore = await page.evaluate(
       () => window.testCalls.filter((c) => c.method === "preview.play").length,
     );
