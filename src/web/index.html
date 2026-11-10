@@ -49,15 +49,6 @@
               AI
             </button>
           </form>
-          <button
-            id="tasks-menu"
-            class="tasks-button"
-            title="查看后台任务"
-            aria-controls="task-panel"
-            aria-expanded="false"
-          >
-            <span>任务</span><span id="task-count" class="count" hidden>0</span>
-          </button>
           <button id="settings-open" title="设置与维护" aria-label="设置与维护">
             ⚙
           </button>
@@ -79,7 +70,6 @@
             hidden
             title="后台 / 宿主更新 / 帧间隔"
           ></span
-          ><span id="host-label">正在连接…</span
           ><button
             id="right-toggle"
             title="展开或收起检查器"
@@ -387,7 +377,17 @@
               type="checkbox"
               checked
             />选择即试听</label
-          ><span class="workspace-spacer"></span
+          ><button
+            id="activity-status"
+            class="activity-status"
+            popovertarget="task-panel"
+            aria-label="当前活动与后台任务"
+            aria-controls="task-panel"
+            aria-expanded="false"
+          >
+            <span class="activity-dot" aria-hidden="true"></span
+            ><span id="activity-text" role="status">正在连接宿主…</span
+            ><span id="task-count" class="count" hidden>0</span></button
           ><button id="zoom-reset" title="复位缩放">适应</button
           ><button id="fx-toggle" aria-expanded="false">FX⌄</button
           ><button id="drag-selection" title="按住并拖到 REAPER 编排区">

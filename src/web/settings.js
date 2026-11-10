@@ -14,7 +14,7 @@ const pages = [
   ["transfer", "Transfer 交付", "输出格式、命名、处理与交付动作"],
   ["ai", "AI 语义搜索", "连接服务商并管理独立预设"],
   ["maintenance", "维护与恢复", "检查素材、分类、备份与任务"],
-  ["about", "帮助与诊断", "快捷键、运行环境与诊断信息"],
+  ["about", "关于与帮助", "项目主页、版本、快捷键与诊断信息"],
 ];
 const groupPage = {
   常规: "general",
@@ -40,6 +40,24 @@ const operationLabels = {
   overwrite: "用当前条件覆盖",
   activate: "打开",
 };
+
+export const themePresets = [
+  { id: "dark", label: "经典金灰", colors: ["#1b1c1e", "#222426", "#c7b57f"] },
+  {
+    id: "graphite",
+    label: "石墨蓝",
+    colors: ["#16181c", "#202329", "#8aafff"],
+  },
+  { id: "slate", label: "深海青", colors: ["#101c26", "#192b38", "#6ad4ce"] },
+  {
+    id: "amethyst",
+    label: "暮色紫",
+    colors: ["#1b1824", "#272333", "#c2a3f7"],
+  },
+  { id: "forest", label: "松林绿", colors: ["#151e1b", "#202e28", "#9dcbb2"] },
+  { id: "paper", label: "纸白墨绿", colors: ["#eeede8", "#e4e4de", "#3d6b64"] },
+  { id: "frost", label: "雾白蓝", colors: ["#f3f5f9", "#e8edf5", "#345d9d"] },
+];
 
 // Match draw_transfer_settings_content in the legacy UI. Empty lists mean the
 // current audition parameter, not a hard-coded zero/default.
@@ -174,7 +192,7 @@ export function createSettings({
       row.append(
         button(label, async () => {
           await command(method, { action });
-          message("操作已提交，可在底部任务栏查看进度");
+          message("操作已提交，可在走带栏查看进度，悬停查看详情");
           afterChange();
         }),
       );
@@ -235,10 +253,55 @@ export function createSettings({
             : input.value,
       );
     };
-    row.append(input);
+    if (definition.key === "transfer_dir") {
+      const entry = el("span", "path-control");
+      const browse = button("浏览…", async () => {
+        const result = await command("path.choose", {
+          kind: "folder",
+          initial: input.value,
+        });
+        if (!result.cancelled && input.isConnected) {
+          input.value = result.path;
+          onChange(result.path);
+        }
+      });
+      browse.setAttribute("aria-label", "浏览输出目录");
+      entry.append(input, browse);
+      row.append(entry);
+    } else row.append(input);
     return row;
   }
   function appearance() {
+    const palette = card(
+      "配色预设",
+      "选择整套配色后应用；也可继续调整强调色和框架底色。",
+    );
+    const swatches = el("div", "theme-presets");
+    for (const theme of themePresets) {
+      const item = button(
+        theme.label,
+        () => {
+          localDraft.theme = theme.id;
+          localDraft.accentColor = theme.colors[2];
+          localDraft.surfaceColor = theme.colors[1];
+          render();
+          updateDirty();
+        },
+        "theme-preset",
+      );
+      item.dataset.themePreset = theme.id;
+      item.setAttribute("aria-pressed", String(localDraft.theme === theme.id));
+      const preview = el("span", "theme-swatches");
+      preview.setAttribute("aria-hidden", "true");
+      for (const color of theme.colors) {
+        const dot = el("i");
+        dot.style.background = color;
+        preview.append(dot);
+      }
+      item.prepend(preview);
+      swatches.append(item);
+    }
+    palette.append(swatches);
     const display = card(
       "工作区外观",
       "默认使用波形优先布局；调整面板不改变底部波形宽度。",
@@ -248,10 +311,7 @@ export function createSettings({
         key: "theme",
         label: "主题",
         kind: "choice",
-        options: [
-          ["dark", "暗黑"],
-          ["paper", "纸白墨绿"],
-        ],
+        options: themePresets.map(({ id, label }) => [id, label]),
       },
       { key: "fontFamily", label: "字体", kind: "string" },
       {
@@ -321,7 +381,12 @@ export function createSettings({
           localDraft[definition.key],
           (value) => {
             localDraft[definition.key] = value;
-            if (definition.key === "waveformSelectionColor") {
+            if (definition.key === "theme") {
+              const theme = themePresets.find((item) => item.id === value);
+              localDraft.accentColor = theme.colors[2];
+              localDraft.surfaceColor = theme.colors[1];
+              render();
+            } else if (definition.key === "waveformSelectionColor") {
               localDraft.waveformColorMode = "custom";
               setDraft("selection_hex", value);
             } else if (
@@ -737,7 +802,22 @@ export function createSettings({
     }
     if (section === "about") {
       const runtime = getHost()?.runtime;
-      card("PsyReaSFX", `WebView · ${getHost()?.session?.version || "0.9.a"}`);
+      const session = getHost()?.session;
+      const project = card(
+        "PsyReaSFX",
+        `WebView · ${session?.version || ""} · ${session?.author || "Psysia"}`,
+      );
+      if (session?.copyright)
+        project.append(el("p", "muted", session.copyright));
+      const links = el("div", "action-row");
+      for (const [label, target] of [
+        ["GitHub 项目主页", "project"],
+        ["更新日志与下载", "releases"],
+        ["反馈问题", "issues"],
+        ["在线使用说明", "docs"],
+      ])
+        links.append(button(label, () => command("app.link", { target })));
+      project.append(links);
       if (runtime)
         card("运行环境", `ReaWebAPI ${runtime.version} · ${runtime.notice}`);
       const help = card("快捷键与使用说明");
@@ -915,10 +995,10 @@ export function createSettings({
     render();
     updateDirty();
   };
-  apply.onclick = () =>
-    run(async () => {
-      for (const input of body.querySelectorAll("input"))
-        if (!input.reportValidity()) return;
+  apply.onclick = () => {
+    for (const input of body.querySelectorAll("input"))
+      if (!input.reportValidity()) return;
+    return run(async () => {
       if (Object.keys(draft).length)
         await command("settings.update", { values: draft });
       Object.assign(settings.values, draft);
@@ -929,6 +1009,7 @@ export function createSettings({
       afterChange();
       message(anyAiUnsaved() ? "AI 预设有未保存的更改" : "所有更改已保存");
     });
+  };
   return {
     open(target = section) {
       if (dialog.open) return;

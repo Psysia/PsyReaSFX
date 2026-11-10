@@ -59,6 +59,10 @@ jobs:
         shell: pwsh
         run: ./tools/Test-NeuralHiddenLauncher.ps1
 
+      - name: Verify native floating-window ownership
+        shell: pwsh
+        run: ./tools/Test-WebViewWindowContract.ps1
+
       - name: Parse Lua 5.3 source
         shell: pwsh
         run: |

@@ -148,7 +148,7 @@
     },
     {
       "feature": "增量扫描、取消与启动恢复",
-      "entry": "音效库菜单 → 扫描来源；右上任务面板；设置 → 常规",
+      "entry": "音效库菜单 → 扫描来源；走带栏活动详情；设置 → 常规",
       "rpc": "maintenance,tasks.cancel,settings.update",
       "acceptance": "添加一个测试音频后扫描发现；取消任务能结束；启用恢复后重开可续接中断扫描。",
       "id": "F017",
@@ -607,7 +607,7 @@
     },
     {
       "feature": "撤销/清除/取消瞬态",
-      "entry": "素材右键分析分组；••• → 分析；右上任务面板",
+      "entry": "素材右键分析分组；••• → 分析；走带栏活动详情",
       "rpc": "asset.action,tasks.cancel",
       "acceptance": "撤销最后一次，清除全部建议；取消等待任务不影响其他任务。",
       "id": "F068",
@@ -832,7 +832,7 @@
     },
     {
       "feature": "停止当前交付任务",
-      "entry": "交付 → 当前文件后停止；右上任务面板",
+      "entry": "交付 → 当前文件后停止；走带栏活动详情",
       "rpc": "tasks.cancel",
       "acceptance": "当前文件处理完后停止后续文件，保留已成功输出。",
       "id": "F093",
@@ -940,7 +940,7 @@
     },
     {
       "feature": "UCS 分类预览/应用/丢弃/取消",
-      "entry": "设置 → 维护与恢复 → UCS 自动分类；右上任务面板",
+      "entry": "设置 → 维护与恢复 → UCS 自动分类；走带栏活动详情",
       "rpc": "maintenance,tasks.cancel",
       "acceptance": "先看预览摘要，再应用或丢弃；取消不会应用半成品。",
       "id": "F105",
@@ -1003,7 +1003,7 @@
     },
     {
       "feature": "帧耗时显示",
-      "entry": "设置 → 帮助与诊断 → 显示 / 隐藏帧耗时",
+      "entry": "设置 → 关于与帮助 → 显示 / 隐藏帧耗时",
       "rpc": "diagnostics.overlay",
       "acceptance": "仅本次会话显示 Lua 后台、宿主更新与帧间隔；重开不默认显示。",
       "id": "F112",
@@ -1021,9 +1021,9 @@
     },
     {
       "feature": "全部后台任务状态与单独取消",
-      "entry": "右上任务面板",
+      "entry": "走带栏活动详情",
       "rpc": "tasks.cancel",
-      "acceptance": "任务数量、状态、等待原因及取消集中显示；等待相似搜索可独立取消；错误仍以通知显示，底部不再占用任务状态栏。",
+      "acceptance": "任务数量、状态、等待原因及取消集中显示；等待相似搜索可独立取消；错误仍以通知显示，悬停查看详情，不额外增加一行。",
       "id": "F114",
       "group": "缓存、维护、诊断与设置",
       "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"
