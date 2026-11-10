@@ -234,7 +234,8 @@ function webview_open()
       return false
     end
   end
-  WebUI.key = SCRIPT_FILE
+  WebUI.key = SCRIPT_FILE:gsub("\\", "/")
+  if reaper.GetOS():match("^Win") then WebUI.key = WebUI.key:lower() end
   local id = reaper.ReaWeb_Open(SCRIPT_DIR .. "web/index.html", WebUI.key)
   if not id or id == 0 then
     local failure = reaper.ReaWeb_GetLastError and reaper.ReaWeb_GetLastError()
@@ -261,6 +262,38 @@ function webview_close()
     reaper.DeleteExtState("PsyReaSFX.Web", WebUI.key, false)
     reaper.ReaWeb_Close(WebUI.window)
   end
+end
+
+function WebUI.update_taskbar(now)
+  if WebUI.next_taskbar and now < WebUI.next_taskbar then return end
+  WebUI.next_taskbar = now + 1
+  if not reaper.GetOS():match("^Win") then return end
+  for _, name in ipairs({ "JS_Window_Find", "JS_Window_GetClassName", "JS_Window_GetParent",
+    "JS_Window_GetLong", "JS_Window_SetLong", "JS_Window_Show", "JS_Window_IsVisible" }) do
+    if type(reaper[name]) ~= "function" then WebUI.taskbar_status = "js_api_unavailable"; return end
+  end
+  local hwnd = reaper.JS_Window_Find("PsyReaSFX " .. VERSION, true)
+  if not hwnd or reaper.JS_Window_GetClassName(hwnd) ~= "ReaWebAPI.Window" then return end
+  local style = math.floor(reaper.JS_Window_GetLong(hwnd, "STYLE"))
+  local extended = math.floor(reaper.JS_Window_GetLong(hwnd, "EXSTYLE"))
+  if (style & 0x40000000) ~= 0 then
+    -- A docked child must never acquire a separate taskbar entry.
+    if WebUI.taskbar_hwnd == hwnd and (extended & 0x40000) ~= 0 then
+      reaper.JS_Window_SetLong(hwnd, "EXSTYLE", extended & ~0x40000)
+    end
+    WebUI.taskbar_status = "docked"
+    return
+  end
+  if reaper.JS_Window_GetParent(hwnd) ~= reaper.GetMainHwnd() then return end
+  local desired = (extended | 0x40000) & ~0x80 -- APPWINDOW, without TOOLWINDOW
+  if desired ~= extended then
+    local visible = reaper.JS_Window_IsVisible(hwnd)
+    if visible then reaper.JS_Window_Show(hwnd, "HIDE") end
+    reaper.JS_Window_SetLong(hwnd, "EXSTYLE", desired)
+    if visible then reaper.JS_Window_Show(hwnd, (style & 0x20000000) ~= 0 and "SHOWMINIMIZED" or "SHOWNA") end
+  end
+  WebUI.taskbar_hwnd = hwnd
+  WebUI.taskbar_status = (math.floor(reaper.JS_Window_GetLong(hwnd, "EXSTYLE")) & 0x40000) ~= 0 and "enabled" or "unavailable"
 end
 
 WebUI.handlers["session.ready"] = function()
@@ -393,12 +426,31 @@ WebUI.handlers["catalog.sort"] = function(params)
 end
 
 WebUI.handlers["catalog.folders"] = function(params)
+  local root
+  for _, item in ipairs(state.root_records) do if item.id == params.rootId then root = item; break end end
+  assert(root, "来源已移除")
+  local requested = canonical_source_path(text(params.path))
+  assert(path_key(requested) == path_key(root.path) or path_is_inside(requested, root.path), "目录超出来源范围")
+  for segment in requested:gmatch("[^\\/]+") do assert(segment ~= "." and segment ~= "..", "无效文件夹路径") end
+  local offset = math.floor(number(params.offset or 0, 0, 10000000))
   ensure_folder_navigation_build()
   if not state.folder_navigation_ready then
+    -- Scanning deliberately suspends the derived catalog index. Allow bounded
+    -- disk navigation meanwhile; do not make the whole tree wait for a scan.
+    if type(reaper.EnumerateSubdirectories) == "function" and directory_exists(requested) then
+      local items = {}
+      for index = offset, offset + 99 do
+        local name = reaper.EnumerateSubdirectories(requested, index)
+        if not name then break end
+        items[#items + 1] = { name = name, path = join_path(requested, name) }
+      end
+      local more = reaper.EnumerateSubdirectories(requested, offset + #items) ~= nil
+      return { pending = false, items = items, offset = offset,
+        total = offset + #items + (more and 1 or 0), fromDisk = true }
+    end
     return { pending = true, items = {} }
   end
   local node = assert(state.folder_navigation_trees[params.rootId], "来源已移除")
-  local requested = canonical_source_path(text(params.path))
   assert(
     path_is_inside(requested, node.path) or path_key(requested) == node.key,
     "目录超出来源范围"
@@ -408,7 +460,6 @@ WebUI.handlers["catalog.folders"] = function(params)
     node =
       assert(node.children_by_key[path_key(join_path(node.path, segment))], "文件夹已改变")
   end
-  local offset = math.floor(number(params.offset or 0, 0, 10000000))
   local items = {}
   for index = offset + 1, math.min(#node.children, offset + 100) do
     local child = node.children[index]
@@ -503,6 +554,10 @@ WebUI.handlers["waveform.get"] = function(params)
   }
 end
 WebUI.handlers["preview.play"] = function(params)
+  if params.selection == true and params.path then
+    assert(selected_asset() == asset_for(params.path), "素材已切换，请重新选择区间")
+  end
+  WebUI.paused_preview = nil
   play_preview(
     params.path and asset_for(params.path) or selected_asset(),
     number(params.position or state.region_start or 0, 0, 1),
@@ -511,12 +566,37 @@ WebUI.handlers["preview.play"] = function(params)
   return true
 end
 WebUI.handlers["preview.stop"] = function()
+  WebUI.paused_preview = nil
   request_preview_stop()
   return true
 end
-WebUI.handlers["preview.toggle"] = function()
-  if state.preview then request_preview_stop()
-  else play_preview(nil, nil, true) end
+WebUI.handlers["preview.toggle"] = function(params)
+  local behavior = params.behavior or "pause"
+  assert(behavior == "pause" or behavior == "stop", "无效试听切换方式")
+  if state.preview then
+    local bookmark
+    if behavior == "pause" then
+      poll_preview()
+      if state.preview then
+        bookmark = { path = state.preview_path, position = state.preview_position or 0,
+          percent = state.preview_percent or 0, region_start = state.region_start,
+          region_end = state.region_end, reverse = state.reverse,
+          map_start = state.preview_map_start, map_span = state.preview_map_span }
+      end
+    end
+    request_preview_stop()
+    WebUI.paused_preview = bookmark
+  else
+    local bookmark, asset = WebUI.paused_preview, selected_asset()
+    local resume = behavior == "pause" and bookmark and asset and bookmark.path == asset.path
+      and bookmark.region_start == state.region_start and bookmark.region_end == state.region_end
+      and bookmark.reverse == state.reverse
+    -- A full-file click preview must resume as a full-file preview even if a
+    -- Region is still selected in the UI.
+    local selection = not resume or not (bookmark.map_start == 0 and bookmark.map_span == 1)
+    play_preview(asset, nil, selection, resume and bookmark.position or nil)
+    if state.preview or not resume then WebUI.paused_preview = nil end
+  end
   return true
 end
 WebUI.handlers["preview.parameters"] = function(params)
@@ -543,6 +623,11 @@ WebUI.handlers["preview.parameters"] = function(params)
   return true
 end
 WebUI.handlers["preview.region"] = function(params)
+  if params.path then
+    local asset = selected_asset()
+    assert(asset and path_key(asset.path) == path_key(text(params.path)), "所选素材已改变，请重新设置选区")
+  end
+  WebUI.paused_preview = nil
   local first = number(params.start, 0, 1)
   local last = number(params.finish, first, 1)
   AppState.apply({ region_start = first, region_end = last, active_region_index = 0 })
@@ -552,6 +637,7 @@ WebUI.handlers["preview.region"] = function(params)
   return true
 end
 WebUI.handlers["preview.clearRegion"] = function()
+  WebUI.paused_preview = nil
   AppState.apply({ region_start = 0, region_end = 1, active_region_index = 0 })
   return true
 end
@@ -854,10 +940,60 @@ WebUI.handlers["search.more"] = function()
   start_ai_semantic_next_page()
   return true
 end
+local function similarity_blocker()
+  for _, entry in ipairs({ {"scan", "扫描"}, {"import_session", "导入"},
+    {"precache_session", "波形预生成"}, {"root_removal_session", "来源移除"},
+    {"relink_plan_session", "重新链接"}, {"transfer_running", "交付"},
+    {"startup_session", "素材库加载"} }) do
+    if state[entry[1]] then return entry[2] end
+  end
+  for kind, token in pairs(Jobs.active) do
+    if kind ~= "similarity" and token.resource == "catalog_exclusive"
+      and token.state ~= "completed" and token.state ~= "failed" then return "目录维护" end
+  end
+end
+local function request_similarity(asset, scope)
+  assert(asset, "请先选择素材")
+  if state.similarity_session then return { running = true } end
+  scope = scope == "current" and "current" or "all"
+  local blocker = similarity_blocker()
+  if blocker then
+    local context = {}
+    for _, key in ipairs({ "workspace_tab_active", "search", "library_filter_id", "root_filter",
+      "view", "active_collection_id", "ucs_filter_category", "ucs_filter_catid", "status_filter" }) do
+      context[key] = { state[key] }
+    end
+    WebUI.pending_similarity = { path = asset.path, name = asset.name, scope = scope,
+      blocker = blocker, context = context }
+    set_status("相似声音已排队，等待" .. blocker .. "完成，可取消等待")
+    return { queued = true }
+  end
+  WebUI.pending_similarity = nil
+  if not start_similarity_search(asset, scope) then error(state.status, 0) end
+  return { started = true }
+end
+function WebUI.process_pending_similarity()
+  local pending = WebUI.pending_similarity
+  if not pending or state.similarity_session then return end
+  if pending.scope == "current" then
+    for key, expected in pairs(pending.context) do
+      local value = state[key]
+      if value ~= expected[1] then
+        WebUI.pending_similarity = nil
+        set_status("筛选已改变，已取消等待的相似检索")
+        return
+      end
+    end
+  end
+  pending.blocker = similarity_blocker()
+  if pending.blocker then return end
+  WebUI.pending_similarity = nil
+  local asset = state.by_path[path_key(pending.path)]
+  if not asset then set_status("参考素材已移除，已取消等待的相似检索"); return end
+  start_similarity_search(asset, pending.scope)
+end
 WebUI.handlers["search.similar"] = function(params)
-  assert(selected_asset(), "请先选择素材")
-  assert(start_similarity_search(selected_asset(), params.scope == "current" and "current" or "all"), state.status)
-  return true
+  return request_similarity(selected_asset(), params.scope)
 end
 WebUI.handlers["maintenance"] = function(params)
   writable()
@@ -897,6 +1033,10 @@ WebUI.handlers["tasks.cancel"] = function(params)
   end
   if cancel("similar") and state.similarity_session then
     cancel_similarity_search()
+  end
+  if cancel("similar") and WebUI.pending_similarity then
+    WebUI.pending_similarity = nil
+    set_status("已取消等待的相似检索")
   end
   if cancel("ai") then ai_semantic_cancel() end
   if cancel("transfer") then AppState.set("transfer_cancel_requested", true) end
@@ -1451,7 +1591,7 @@ WebUI.handlers["asset.action"] = function(params)
       remove_assets_from_collection(collection, targets)
     end,
     similar = function()
-      assert(start_similarity_search(asset, params.scope == "current" and "current" or "all"), state.status)
+      request_similarity(asset, params.scope)
     end,
     loudness = function()
       request_loudness_analysis(asset, true)
@@ -1541,7 +1681,8 @@ WebUI.handlers["asset.action"] = function(params)
 end
 
 WebUI.handlers["diagnostics.get"] = function()
-  return build_diagnostics_text()
+  return build_diagnostics_text() .. "\nStartup: " .. neural_json_encode(state.startup_metrics or {})
+    .. "\nTaskbar: " .. tostring(WebUI.taskbar_status or "pending")
 end
 WebUI.handlers["diagnostics.overlay"] = function(params)
   assert(type(params.enabled) == "boolean", "无效性能显示设置")
@@ -1763,6 +1904,7 @@ end
 
 WebUI.handlers["settings.ai"] = function(params)
   writable()
+  assert(not state.ai_key_save_session, "密钥正在加密保存，请稍候")
   assert(not state.ai_semantic_session, "请等待 AI 请求结束后修改设置")
   if params.action == "deleteKey" then
     assert(params.id == state.ai_active_preset_id, "预设已改变，请重新操作")
@@ -1813,7 +1955,7 @@ WebUI.handlers["settings.ai"] = function(params)
   local ok, failure = ai_semantic_save_preset()
   AppState.set("ai_api_key_input", "")
   assert(ok, failure)
-  return true
+  return failure == "pending" and state.ai_key_save_session or true
 end
 
 function webview_receive()
@@ -1846,7 +1988,13 @@ function webview_receive()
       else
         response.error = ai_semantic_redact(tostring(result))
       end
-      send(response)
+      if ok and state.ai_key_save_session and result == state.ai_key_save_session then
+        -- Hold this response until DPAPI and the preset commit finish. Never
+        -- serialize the job object: it holds the in-memory credential.
+        WebUI.pending_key_response = { id = request.id, job = result }
+      else
+        send(response)
+      end
       if request.method ~= "catalog.page" and request.method ~= "waveform.get"
         and request.method ~= "settings.get" and request.method ~= "catalog.folders"
         and request.method ~= "catalog.suggestions" then WebUI.next_publish = 0 end
@@ -1856,6 +2004,13 @@ function webview_receive()
 end
 
 function webview_publish()
+  local pending = WebUI.pending_key_response
+  if pending and pending.job.complete then
+    local job = pending.job
+    send({ id = pending.id, protocol = WebUI.protocol, ok = job.ok,
+      result = job.ok and true or nil, error = not job.ok and job.reason or nil })
+    WebUI.pending_key_response = nil
+  end
   if not reaper.ReaWeb_IsReady(WebUI.window) then
     return
   end
@@ -1870,6 +2025,9 @@ function webview_publish()
     return
   end
   WebUI.next_publish = now + 0.15
+  local taskbar_ok = pcall(WebUI.update_taskbar, now)
+  if not taskbar_ok then WebUI.taskbar_status = "unavailable" end
+  WebUI.process_pending_similarity()
   refresh_revision()
   local libraries, collections, tabs, roots, searches = {}, {}, {}, {}, {}
   for _, saved in ipairs(state.saved_searches) do
@@ -1894,6 +2052,13 @@ function webview_publish()
       name = root.alias ~= "" and root.alias or basename(root.path), enabled = root.enabled ~= false }
   end
   local asset = selected_asset()
+  local paused = WebUI.paused_preview
+  if paused and (state.preview or not asset or paused.path ~= asset.path
+    or paused.region_start ~= state.region_start or paused.region_end ~= state.region_end
+    or paused.reverse ~= state.reverse) then
+    WebUI.paused_preview = nil
+    paused = nil
+  end
   local selected = asset_data(asset)
   if selected then
     selected.regions = asset_regions(asset)
@@ -1927,7 +2092,11 @@ function webview_publish()
       reference = text(state.similarity_session.reference and state.similarity_session.reference.name or "", 160),
       engine = state.similarity_session.neural_attempted and not state.similarity_session.neural_failure and "neural" or "acoustic",
       failure = state.similarity_session.neural_failure,
-    } or nil,
+    } or (WebUI.pending_similarity and {
+      phase = "waiting", completed = 0, total = 0,
+      reference = text(WebUI.pending_similarity.name, 160),
+      waitingFor = WebUI.pending_similarity.blocker,
+    }) or nil,
     workflowStatuses = statuses,
     language = state.language,
     statusFilter = state.status_filter,
@@ -1944,6 +2113,7 @@ function webview_publish()
     startup = state.startup_session and {
       phase = state.startup_session.phase,
       failure = state.startup_session.failure,
+      elapsed = now - (state.startup_session.started_at or now),
     } or nil,
     status = text(translate_ui_text(state.status)),
     error = state.status_error,
@@ -1962,7 +2132,8 @@ function webview_publish()
     selected = selected,
     selectedCount = selected_count(),
     playing = state.preview ~= nil,
-    position = state.preview_percent or 0,
+    paused = paused ~= nil,
+    position = paused and paused.percent or state.preview_percent or 0,
     regionStart = state.region_start,
     regionEnd = state.region_end,
     autoPreview = state.auto_preview,
@@ -2017,7 +2188,7 @@ function webview_publish()
       scan = state.scan ~= nil,
       import = state.import_session ~= nil,
       transfer = state.transfer_running,
-      similar = state.similarity_session ~= nil,
+      similar = state.similarity_session ~= nil or WebUI.pending_similarity ~= nil,
       ai = state.ai_semantic_session ~= nil,
       precache = state.precache_session ~= nil,
       classify = state.ucs_reclassification_session ~= nil,

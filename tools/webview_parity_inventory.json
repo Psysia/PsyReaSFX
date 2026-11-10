@@ -1,6 +1,6 @@
 {
   "baseline": "v0.9.2-beta4 native UI plus shared source at 47daf9da8cf26815c319ccf31188098cbe2c73c3",
-  "version": "0.9.3-beta9",
+  "version": "0.9.3-beta10",
   "features": [
     {
       "feature": "导航图标对应面板",
@@ -33,7 +33,7 @@
       "feature": "增加来源路径",
       "entry": "音效库右键 → 添加来源",
       "rpc": "management.action",
-      "acceptance": "同一逻辑音效库下出现新来源，已有来源仍可访问。",
+      "acceptance": "同一逻辑音效库下显示新增来源及其子目录；已存在的同库来源不重复添加。",
       "id": "F004",
       "group": "导航、音效库与文件夹",
       "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
@@ -139,16 +139,16 @@
     },
     {
       "feature": "拖入一个/多个来源目录",
-      "entry": "资源管理器拖到工作区或音效库",
+      "entry": "资源管理器拖到库名、来源/子目录或工作区",
       "rpc": "library.drop",
-      "acceptance": "一个目录可直接导入；多个目录可分别建库或合并；拖到库上归入该库。",
+      "acceptance": "拖到库内任意层级，均给所属库新增来源；空白处优先使用当前库，无当前库才新建；不复制或移动磁盘目录。",
       "id": "F016",
       "group": "导航、音效库与文件夹",
       "source": "draw_sidebar;draw_library_manager_popup;draw_folder_sidebar"
     },
     {
       "feature": "增量扫描、取消与启动恢复",
-      "entry": "音效库菜单 → 扫描来源；底部任务菜单；设置 → 常规",
+      "entry": "音效库菜单 → 扫描来源；右上任务面板；设置 → 常规",
       "rpc": "maintenance,tasks.cancel,settings.update",
       "acceptance": "添加一个测试音频后扫描发现；取消任务能结束；启用恢复后重开可续接中断扫描。",
       "id": "F017",
@@ -265,7 +265,7 @@
     },
     {
       "feature": "新建播放列表/工程素材箱",
-      "entry": "左侧集合 +；素材箱菜单；音效库菜单",
+      "entry": "左侧集合 +；音效库菜单；素材右键 → 集合",
       "rpc": "collection.create",
       "acceptance": "命名后新增独立集合。",
       "id": "F030",
@@ -274,7 +274,7 @@
     },
     {
       "feature": "加入/移除集合素材",
-      "entry": "顶部素材箱；素材右键 → 集合；集合右键",
+      "entry": "素材右键 → 集合；集合右键",
       "rpc": "collection.add,asset.action,management.action",
       "acceptance": "多选素材加入一次，无重复；从当前集合移除不删源文件。",
       "id": "F031",
@@ -382,9 +382,9 @@
     },
     {
       "feature": "显示列、列顺序与列宽",
-      "entry": "列表右上列按钮；列标题分隔线",
+      "entry": "列表表头右键；视图 → 显示列；列标题分隔线",
       "rpc": "local",
-      "acceptance": "20 个列项可显示/隐藏；上移下移、拖宽及重置有效。",
+      "acceptance": "20 个列项可显示/隐藏；上移下移、拖宽及重置有效；不再重复占用右上工具栏。",
       "id": "F043",
       "group": "列表与素材操作",
       "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
@@ -447,7 +447,7 @@
       "feature": "自适应上下文菜单（修复）",
       "entry": "素材右键",
       "rpc": "local",
-      "acceptance": "长文件名省略；中文与英文菜单宽度按命令变化；分组可点开；左右方向键返回/进入。",
+      "acceptance": "中英文按命令自适应宽度；悬停自动展开侧边子菜单且父菜单保留，靠边翻转；点击和左右方向键仍可操作。",
       "id": "F050",
       "group": "列表与素材操作",
       "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
@@ -462,10 +462,10 @@
       "source": "draw_results;draw_column_visibility_popup;row_popup;keyboard"
     },
     {
-      "feature": "播放/停止与空格（修复）",
-      "entry": "底部播放/停止；空格",
+      "feature": "播放/暂停/继续与空格",
+      "entry": "底部播放/停止；空格；设置 → 常规 → 试听控制",
       "rpc": "preview.toggle,preview.stop",
-      "acceptance": "在 PsyReaSFX 按空格切换试听，长按仅一次；搜索框可输入空格；REAPER 主工程不启动。",
+      "acceptance": "默认暂停后从原位置继续，选区和反向试听位置正确；可切回停止/重新播放；独立停止结束试听，搜索输入与 REAPER 主工程不受影响。",
       "id": "F052",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -480,10 +480,10 @@
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
     },
     {
-      "feature": "波形点选、选区与读数",
-      "entry": "大波形单击/拖拽；左侧时间读数",
+      "feature": "波形点选、选区与精确编辑",
+      "entry": "大波形单击/拖拽；标题选区摘要；••• → 精确设置选区",
       "rpc": "preview.play,preview.region",
-      "acceptance": "当前位置、入点、出点、选区时长正确；拖完按旧版规则试听选区。",
+      "acceptance": "播放位置在走带时间显示；仅有选区时显示时长摘要，悬停查看起止；可输入起止秒数，拒绝倒置区间或过期素材。",
       "id": "F054",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -519,7 +519,7 @@
       "feature": "波形缓存读取与错误重试",
       "entry": "列表/大波形自动加载；失败后的重试按钮",
       "rpc": "catalog.page,waveform.get",
-      "acceptance": "已有缓存快速恢复；读取失败显示原因，可重试；多声道响应不超消息上限。",
+      "acceptance": "首次选中先显示可用概览，再替换详细波形；切回近期素材立即复用缓存，无固定 850 毫秒重试等待；失败显示重试且旧响应不覆盖新素材。",
       "id": "F058",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -534,10 +534,10 @@
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
     },
     {
-      "feature": "Pitch / Rate / Gain 参数",
-      "entry": "FX 滑条与数值框",
+      "feature": "Pitch / Rate / 音量参数",
+      "entry": "FX 中调 Pitch/Rate；走带按钮旁常驻音量",
       "rpc": "preview.parameters",
-      "acceptance": "试听中修改可听出变化；输入越界被拒绝且其他参数不被部分写入。",
+      "acceptance": "滑条和数值框同步；收起 FX 后音量可用，双击音量滑块回到 0 dB；零值不能变成最小值。",
       "id": "F060",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -546,7 +546,7 @@
       "feature": "音高/速度预设及复位",
       "entry": "FX → 预设；复位",
       "rpc": "preview.parameters",
-      "acceptance": "±12/6/3、0 st 与 0.5–2 倍速按所选值应用；复位恢复默认。",
+      "acceptance": "±12/6/3、0 st 与 0.5–2 倍速按所选值应用；FX 复位保留独立音量。",
       "id": "F061",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -607,7 +607,7 @@
     },
     {
       "feature": "撤销/清除/取消瞬态",
-      "entry": "素材右键分析分组；••• → 分析；底部任务菜单",
+      "entry": "素材右键分析分组；••• → 分析；右上任务面板",
       "rpc": "asset.action,tasks.cancel",
       "acceptance": "撤销最后一次，清除全部建议；取消等待任务不影响其他任务。",
       "id": "F068",
@@ -616,9 +616,9 @@
     },
     {
       "feature": "响度读数与重分析",
-      "entry": "波形下方固定响度条 → 重新分析；右键分析分组",
+      "entry": "波形标题格式信息旁的响度摘要与刷新按钮；右键分析分组",
       "rpc": "asset.action",
-      "acceptance": "显示启用的 LUFS-I/M/S 与 True Peak；关闭总开关隐藏；重分析后更新。",
+      "acceptance": "显示启用的 LUFS-I/M/S 与 True Peak；关闭总开关隐藏；不再单独占用波形下方一行。",
       "id": "F069",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -627,7 +627,7 @@
       "feature": "当前范围/全库相似检索",
       "entry": "波形标题相似声音；素材右键 → 查找相似声音",
       "rpc": "search.similar,asset.action",
-      "acceptance": "两个范围明确；建立缓存有进度，可取消；神经组件启动不弹控制台。",
+      "acceptance": "两个范围明确；遇到扫描等互斥任务自动排队，完成后开始且可取消；当前范围等待时改变筛选会取消；神经组件启动不弹控制台。",
       "id": "F070",
       "group": "波形、试听、FX 与分析",
       "source": "draw_large_wave;draw_action_strip;draw_preview_presets_popup;draw_inline_channel_selector;draw_regions_popup;draw_more_actions_popup;draw_loudness_summary;keyboard"
@@ -832,7 +832,7 @@
     },
     {
       "feature": "停止当前交付任务",
-      "entry": "交付 → 当前文件后停止；底部任务菜单",
+      "entry": "交付 → 当前文件后停止；右上任务面板",
       "rpc": "tasks.cancel",
       "acceptance": "当前文件处理完后停止后续文件，保留已成功输出。",
       "id": "F093",
@@ -940,7 +940,7 @@
     },
     {
       "feature": "UCS 分类预览/应用/丢弃/取消",
-      "entry": "设置 → 维护与恢复 → UCS 自动分类；底部任务菜单",
+      "entry": "设置 → 维护与恢复 → UCS 自动分类；右上任务面板",
       "rpc": "maintenance,tasks.cancel",
       "acceptance": "先看预览摘要，再应用或丢弃；取消不会应用半成品。",
       "id": "F105",
@@ -1021,9 +1021,9 @@
     },
     {
       "feature": "全部后台任务状态与单独取消",
-      "entry": "底部任务菜单与进度条",
+      "entry": "右上任务面板",
       "rpc": "tasks.cancel",
-      "acceptance": "扫描、导入、波形、相似、AI、Transfer、重连、移除、校验、分类、瞬态、响度可区分并取消。",
+      "acceptance": "任务数量、状态、等待原因及取消集中显示；等待相似搜索可独立取消；错误仍以通知显示，底部不再占用任务状态栏。",
       "id": "F114",
       "group": "缓存、维护、诊断与设置",
       "source": "draw_settings_waveforms;draw_settings_maintenance;draw_help_popup;draw_settings_workspace;draw_settings_appearance"

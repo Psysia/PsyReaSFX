@@ -76,7 +76,8 @@ Add-Type -AssemblyName System.Security
 function Write-Utf8Atomic([string]$Path, [string]$Content) {
   $Temporary = "$Path.tmp"
   [IO.File]::WriteAllText($Temporary, $Content, $Utf8NoBom)
-  Move-Item -LiteralPath $Temporary -Destination $Path -Force
+  if ([IO.File]::Exists($Path)) { [IO.File]::Replace($Temporary, $Path, [NullString]::Value) }
+  else { [IO.File]::Move($Temporary, $Path) }
 }
 
 function Write-Status([string]$Path, [hashtable]$Value) {
@@ -87,16 +88,34 @@ $Request = Get-Content -LiteralPath $RequestPath -Raw -Encoding UTF8 | ConvertFr
 try {
   Write-Status ([string]$Request.statusPath) @{ state = 'running'; pid = $PID }
   if ($Request.operation -eq 'protect-key') {
-    $Plain = [IO.File]::ReadAllText([string]$Request.plaintextPath, [Text.Encoding]::UTF8)
-    $PlainBytes = [Text.Encoding]::UTF8.GetBytes($Plain)
+    # Credentials only cross a current-user named pipe; no plaintext file or
+    # command-line argument is created, including on crash or timeout.
+    $Security = New-Object IO.Pipes.PipeSecurity
+    $Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $Security.SetAccessRuleProtection($true, $false)
+    $Security.AddAccessRule((New-Object IO.Pipes.PipeAccessRule($Sid, 'FullControl', 'Allow')))
+    $Pipe = New-Object IO.Pipes.NamedPipeServerStream(
+      [string]$Request.pipeName, [IO.Pipes.PipeDirection]::In, 1,
+      [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous,
+      16384, 16384, $Security)
     try {
+      $Connection = $Pipe.BeginWaitForConnection($null, $null)
+      Write-Status ([string]$Request.statusPath) @{ state = 'ready'; pid = $PID }
+      if (-not $Connection.AsyncWaitHandle.WaitOne(12000)) { throw 'Credential transfer timed out.' }
+      $Pipe.EndWaitForConnection($Connection)
+      $Reader = New-Object IO.BinaryReader($Pipe, [Text.Encoding]::UTF8, $true)
+      $Length = $Reader.ReadInt32()
+      if ($Length -lt 1 -or $Length -gt 8192) { throw 'Invalid credential length.' }
+      $PlainBytes = $Reader.ReadBytes($Length)
+      if ($PlainBytes.Length -ne $Length) { throw 'Incomplete credential transfer.' }
       $EncryptedBytes = [System.Security.Cryptography.ProtectedData]::Protect(
         $PlainBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
       Write-Utf8Atomic ([string]$Request.secretPath) ([Convert]::ToBase64String($EncryptedBytes))
     } finally {
       if ($PlainBytes) { [Array]::Clear($PlainBytes, 0, $PlainBytes.Length) }
       if ($EncryptedBytes) { [Array]::Clear($EncryptedBytes, 0, $EncryptedBytes.Length) }
-      $Plain = $null
+      if ($Reader) { $Reader.Dispose() }
+      $Pipe.Dispose()
     }
     Write-Status ([string]$Request.statusPath) @{ state = 'complete' }
     exit 0
@@ -139,10 +158,6 @@ try {
   $Message = $Message -replace '\bsk-[A-Za-z0-9_-]{8,}', 'sk-[redacted]'
   Write-Status ([string]$Request.statusPath) @{ state = 'error'; message = $Message }
   exit 1
-} finally {
-  if ($Request.plaintextPath) {
-    Remove-Item -LiteralPath ([string]$Request.plaintextPath) -Force -ErrorAction SilentlyContinue
-  }
 }]=]
 end
 
@@ -252,6 +267,7 @@ function ai_semantic_preset_stash()
 end
 
 function ai_semantic_select_preset(id)
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   local preset = ai_semantic_preset_by_id(id)
   if not preset then return false, "预设不存在" end
   ai_semantic_preset_stash()
@@ -363,6 +379,7 @@ function ai_semantic_clear_active_preset()
 end
 
 function ai_semantic_new_preset(provider)
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   if not state.ai_presets_loaded then return false, "预设数据不可用" end
   if #(state.ai_presets or {}) >= 32 then return false, "最多保存 32 组预设" end
   if provider ~= "deepseek" and provider ~= "openai" then provider = "custom" end
@@ -423,6 +440,7 @@ function ai_semantic_invalidate_preset_test()
 end
 
 function ai_semantic_save_preset()
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
   local function fail(reason)
     AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
@@ -439,6 +457,16 @@ function ai_semantic_save_preset()
   if trim(state.ai_api_key_input) ~= "" then
     local key_ok, key_reason = ai_semantic_save_api_key(state.ai_api_key_input)
     if not key_ok then return fail(key_reason) end
+    if key_reason == "pending" then
+      state.ai_key_save_session.preset = preset
+      state.ai_key_save_session.fields = {
+        name = name, provider = state.ai_provider,
+        url = trim(state.ai_api_url), model = trim(state.ai_model),
+      }
+      AppState.set("ai_api_key_input", "")
+      AppState.set("ai_preset_status", "密钥正在加密保存，请稍候")
+      return true, "pending"
+    end
   end
   local old = { name = preset.name, provider = preset.provider, url = preset.url, model = preset.model, saved = preset.saved }
   preset.name, preset.provider = name, state.ai_provider
@@ -457,6 +485,7 @@ function ai_semantic_save_preset()
 end
 
 function ai_semantic_delete_preset(id)
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   local function fail(reason)
     AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
     return false, reason
@@ -513,6 +542,7 @@ function ai_semantic_save_settings()
 end
 
 function ai_semantic_reset_presets()
+  ai_semantic_cancel_key_save()
   for _, preset in ipairs(state.ai_presets or {}) do
     local path = ai_semantic_preset_secret_path(preset.id)
     if path then os.remove(path) os.remove(path .. ".bak") os.remove(path .. ".tmp") end
@@ -582,12 +612,16 @@ function ai_semantic_launch_bridge(request, synchronous)
     neural_json_encode(request)
   )
   if not ok then return nil, tostring(reason or "request_write_failed") end
-  local command = table.concat({
-    neural_windows_quote_argument("powershell.exe"),
-    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-    "-File", neural_windows_quote_argument(state.ai_semantic_paths.bridge),
-    neural_windows_quote_argument(request_path),
-  }, " ")
+  local arguments = { "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+    "-ExecutionPolicy", "Bypass", "-File", state.ai_semantic_paths.bridge, request_path }
+  local command
+  if synchronous then
+    local quoted = {}
+    for index, value in ipairs(arguments) do quoted[index] = neural_windows_quote_argument(value) end
+    command = table.concat(quoted, " ")
+  else
+    command = neural_windows_hidden_command(arguments)
+  end
   local launched, result = pcall(
     host.ExecProcess,
     command,
@@ -631,15 +665,14 @@ function ai_semantic_stop_job_process(job)
   if not job then return end
   local status = ai_semantic_read_status(job)
   local pid = status and math.floor(tonumber(status.pid) or 0) or 0
-  if pid <= 0 then return end
-  pcall(
-    Host.ExecProcess,
-    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command "
-      .. neural_windows_quote_argument(
-        "Stop-Process -Id " .. tostring(pid) .. " -Force -ErrorAction SilentlyContinue"
-      ),
-    -1
-  )
+  if pid <= 0 or not job.request_path or job.request_path == "" then return end
+  local script = "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = " .. tostring(pid)
+    .. "'; if ($p.Name -ieq 'powershell.exe' -and $p.CommandLine -and $p.CommandLine.Contains('"
+    .. tostring(job.request_path):gsub("'", "''")
+    .. "')) { Stop-Process -Id " .. tostring(pid) .. " -Force -ErrorAction SilentlyContinue }"
+  pcall(Host.ExecProcess, neural_windows_hidden_command({
+    "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script,
+  }), -2)
 end
 
 function ai_semantic_save_api_key(value)
@@ -668,45 +701,99 @@ function ai_semantic_save_api_key(value)
     ai_api_key_status = "正在使用 Windows DPAPI 加密保存…",
     ai_api_key_status_error = false,
   })
-  local plaintext_path = state.ai_semantic_paths.plaintext
-  os.remove(plaintext_path)
-  local ok, reason = ai_semantic_write_atomic(plaintext_path, value)
-  if not ok then return fail(reason or "key_write_failed") end
-  local job, launch_reason = ai_semantic_launch_bridge({
-    operation = "protect-key",
-    plaintextPath = plaintext_path,
+  if state.ai_key_save_session then return fail("密钥正在加密保存，请稍候") end
+  if #value > 8192 then return fail("API Key 过长") end
+  local nonce = Host.genGuid and Host.genGuid("") or
+    (tostring(Host.time_precise()) .. "-" .. tostring(math.random(1, 2147483647)))
+  local pipe_name = "PsyReaSFX-Key-" .. nonce:gsub("[^%w%-]", "")
+  local job, reason = ai_semantic_launch_bridge({
+    operation = "protect-key", pipeName = pipe_name,
     secretPath = state.ai_semantic_paths.secret,
-  }, true)
-  if not job then
-    os.remove(plaintext_path)
-    return fail(launch_reason)
+  }, false)
+  if not job then return fail(reason) end
+  job.pipe_name, job.value = pipe_name, value
+  job.secret_path = state.ai_semantic_paths.secret
+  job.preset_id, job.key_url = state.ai_active_preset_id, trim(state.ai_api_url)
+  job.started = Host.time_precise()
+  AppState.set("ai_api_key_input", "")
+  AppState.set("ai_key_save_session", job)
+  return true, "pending"
+end
+
+function ai_semantic_finish_key_save(job, ok, reason)
+  job.value = nil
+  if ok then
+    local encrypted = ai_semantic_read_file(job.secret_path, 64 * 1024)
+    if not encrypted or trim(encrypted) == "" then
+      ok, reason = false, "加密文件未生成，请检查 REAPER 对脚本目录的写入权限"
+    end
   end
-  job.plaintext_path = plaintext_path
-  local status = ai_semantic_read_status(job)
-  ai_semantic_cleanup_job(job)
-  os.remove(plaintext_path)
-  if not status or status.state ~= "complete" then
-    return fail(status and status.message or "无法加密保存 API Key")
-  end
-  local encrypted = ai_semantic_read_file(state.ai_semantic_paths.secret, 64 * 1024)
-  if not encrypted or trim(encrypted) == "" then
-    return fail("加密文件未生成，请检查 REAPER 对脚本目录的写入权限")
-  end
-  AppState.apply({
-    ai_api_key_saved = true,
-    ai_api_key_input = "",
-    ai_api_key_status = "API Key 已安全保存",
-    ai_api_key_status_error = false,
-  })
-  if preset then
-    preset.key_url = trim(state.ai_api_url)
+  local preset = job.preset or ai_semantic_preset_by_id(job.preset_id)
+  if ok and preset then
+    local old = {}
+    for _, key in ipairs({ "name", "provider", "url", "model", "key_url", "saved" }) do old[key] = preset[key] end
+    preset.key_url = job.key_url
+    if job.fields then
+      for key, value in pairs(job.fields) do preset[key] = value end
+      preset.saved = true
+    end
     AppState.set("config_dirty", true)
-    ai_semantic_invalidate_preset_test()
+    if save_config() ~= true then
+      for _, key in ipairs({ "name", "provider", "url", "model", "key_url", "saved" }) do preset[key] = old[key] end
+      ok, reason = false, "预设保存失败，请检查配置写入权限"
+    end
   end
-  return true
+  ai_semantic_cleanup_job(job)
+  AppState.set("ai_key_save_session", nil)
+  local message = ok and "API Key 已安全保存" or ("保存失败：" .. ai_semantic_redact(reason or "无法加密保存 API Key"))
+  if job.preset_id == state.ai_active_preset_id then
+    AppState.apply({ ai_api_key_status = message, ai_api_key_status_error = not ok,
+      ai_preset_status = ok and "预设已保存" or message, ai_preset_status_error = not ok })
+    if ok then
+      AppState.set("ai_api_key_saved", true)
+      ai_semantic_invalidate_preset_test()
+      if preset then ai_semantic_preset_stash() end
+    end
+  end
+  job.complete, job.ok, job.reason = true, ok, message
+end
+
+function ai_semantic_cancel_key_save()
+  local job = state.ai_key_save_session
+  if not job then return end
+  ai_semantic_stop_job_process(job)
+  ai_semantic_finish_key_save(job, false, "密钥保存已取消")
+end
+
+function process_ai_key_save()
+  local job = state.ai_key_save_session
+  if not job then return end
+  if Host.time_precise() - job.started > 15 then
+    ai_semantic_stop_job_process(job)
+    ai_semantic_finish_key_save(job, false, "密钥加密超时，请重试")
+    return
+  end
+  local status = ai_semantic_read_status(job)
+  if not status then return end
+  if status.state == "ready" and job.value then
+    local pipe = io.open("\\\\.\\pipe\\" .. job.pipe_name, "wb")
+    if not pipe then return end
+    local written = pipe:write(string.pack("<I4", #job.value), job.value)
+    local flushed = pipe:flush()
+    local closed = pipe:close()
+    job.value = nil
+    if not written or not flushed or not closed then
+      ai_semantic_finish_key_save(job, false, "密钥传输失败，请重试")
+    end
+  elseif status.state == "complete" then
+    ai_semantic_finish_key_save(job, true)
+  elseif status.state == "error" then
+    ai_semantic_finish_key_save(job, false, status.message)
+  end
 end
 
 function ai_semantic_delete_api_key()
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   if state.ai_semantic_session then return false, "请等待当前 AI 请求结束后再修改密钥" end
   if not state.ai_semantic_paths then return false end
   local path = state.ai_semantic_paths.secret
@@ -786,6 +873,7 @@ function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens, confi
 end
 
 function ai_semantic_start_api_job(kind, system_prompt, user_prompt, maximum_tokens, config)
+  if state.ai_key_save_session then return nil, "密钥正在加密保存，请稍候" end
   if state.ai_presets_error and state.ai_presets_error ~= "" then return nil, state.ai_presets_error end
   if not config and trim(state.ai_api_key_input) ~= "" then
     return nil, "请先保存输入的新密钥，再测试或搜索"
@@ -1384,6 +1472,7 @@ function ai_semantic_poll_api(session)
 end
 
 function process_ai_semantic_search()
+  process_ai_key_save()
   local session = state.ai_semantic_session
   if not session or not Jobs.is_current(session.job_token) then return end
   if session.phase == "test_wait" then
@@ -1445,6 +1534,7 @@ function process_ai_semantic_search()
 end
 
 function start_ai_semantic_connection_test()
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   if state.ai_semantic_session then return false, "已有 AI 请求正在运行" end
   local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then return false, reason end

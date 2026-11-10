@@ -3,8 +3,16 @@
 function startup_checkpoint(phase)
   local session = state.startup_session
   if not session then return end
-  if phase then session.phase = phase end
-  if reaper.time_precise() >= session.deadline then
+  local now = reaper.time_precise()
+  if phase and phase ~= session.phase then
+    session.phases = session.phases or {}
+    if session.phase then
+      session.phases[session.phase] = (session.phases[session.phase] or 0)
+        + now - (session.phase_started or session.started_at or now)
+    end
+    session.phase, session.phase_started = phase, now
+  end
+  if now >= session.deadline then
     coroutine.yield()
   end
 end
@@ -7208,7 +7216,8 @@ end
 function play_preview(
   asset,
   start_percent,
-  use_selection
+  use_selection,
+  resume_position
 )
   if state.root_removal_session then
     set_status("请等待来源移除完成后再试听", true)
@@ -7372,7 +7381,10 @@ function play_preview(
     or duration
   local seek_position = 0
 
-  if not selection
+  if resume_position ~= nil then
+    -- Resume in source/SECTION time, independent of audition rate and direction.
+    seek_position = clamp(resume_position, 0, math.max(0, preview_length - 0.001))
+  elseif not selection
     and start_percent
     and start_percent > 0 then
     seek_position = preview_position_from_percent(
@@ -10054,6 +10066,7 @@ function start_root_removal(records, library_id)
   end
   if #roots == 0 and not library_id then return false end
 
+  cancel_config_save()
   cancel_auxiliary_save("catalog changed")
   cancel_database_snapshot("catalog changed")
   local job_token, job_error = Jobs.begin(
@@ -10943,9 +10956,15 @@ function commit_relink_plan(plan)
     state.root_filter = old_root_filter
     state.libraries_dirty = true
     mark_database_snapshot_dirty()
-    save_libraries()
-    save_database()
-    set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    local rollback_libraries = save_libraries()
+    local rollback_database = save_database()
+    if rollback_libraries and rollback_database then
+      set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    else
+      AppState.apply({ persistence_read_only = true,
+        persistence_read_only_reason = "来源重定位回滚写入失败，请从重定位前备份恢复" })
+      set_status(state.persistence_read_only_reason, true)
+    end
     Jobs.finish(plan.job_token, false, "commit failed")
     return false
   end
@@ -11014,6 +11033,7 @@ function relink_root(record, supplied_path)
     return false
   end
 
+  cancel_config_save()
   cancel_auxiliary_save("source relink")
 
   local job_token = Jobs.begin(
@@ -11732,6 +11752,8 @@ function reset_interface_settings()
 end
 
 function cancel_catalog_jobs(reason)
+  cancel_config_save()
+  ai_semantic_cancel_key_save()
   if state.similarity_session then
     cancel_similarity_search()
   end
@@ -22020,7 +22042,8 @@ function draw_settings_ai()
   if dark_button("加密保存 Key", 132) then
     local ok, reason = false, "API Key 不能为空"
     if trim(state.ai_api_key_input) ~= "" then ok, reason = ai_semantic_save_preset() end
-    set_status(ok and "API Key 已安全保存" or ("保存 API Key 失败：" .. tostring(reason)), not ok)
+    set_status(ok and (reason == "pending" and "密钥正在加密保存，请稍候" or "API Key 已安全保存")
+      or ("保存 API Key 失败：" .. tostring(reason)), not ok)
   end
 
   ImGui.SameLine(ctx)
@@ -22036,7 +22059,7 @@ function draw_settings_ai()
   end
 
   local test = (state.ai_preset_tests or {})[state.ai_active_preset_id]
-  local running = state.ai_semantic_session
+  local running = state.ai_semantic_session or state.ai_key_save_session
   if running and running.phase == "test_wait" and running.api_config then
     local testing_preset = ai_semantic_preset_by_id(running.api_config.preset_id)
     ImGui.TextWrapped(ctx, "正在测试预设：" .. (testing_preset and testing_preset.name or "—"))
@@ -25834,7 +25857,7 @@ function autosave()
   end
 
   if state.config_dirty then
-    save_config()
+    start_config_save()
   end
 
   if state.libraries_dirty then
@@ -25907,6 +25930,8 @@ function cleanup()
     -- Never persist a partially loaded catalog on close or initialization error.
     return
   end
+  ai_semantic_cancel_key_save()
+  cancel_config_save()
   Jobs.stop_accepting()
   if state.ai_semantic_session then
     ai_semantic_cancel()
@@ -26108,14 +26133,15 @@ startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
 ai_semantic_initialize_presets()
 state.next_watch = reaper.time_precise() + state.watch_interval
-load_or_migrate_libraries()
 startup_checkpoint("读取音效库")
+load_or_migrate_libraries()
 apply_unified_interface(false, false)
 apply_wave_cache_directory(
   state.wave_cache_dir
     or DEFAULT_WAVE_CACHE_DIR
 )
 install_i18n_wrappers()
+startup_checkpoint("读取素材索引")
 load_database()
 startup_checkpoint("恢复素材库视图")
 refresh_all_asset_library_bindings()
@@ -26138,19 +26164,20 @@ if state.folder_browser_open then
   ensure_folder_navigation_build()
 end
 
-load_collections()
 startup_checkpoint("读取集合")
+load_collections()
 load_project_usage()
 refresh_current_project_binding()
 load_saved_searches()
-load_history()
 startup_checkpoint("读取试听历史")
+load_history()
 load_last_played_session()
 
 if state.restore_played_on_start then
   restore_last_session_played_highlights(true)
 end
 
+startup_checkpoint("读取试听数据")
 load_regions()
 load_loudness_cache()
 startup_checkpoint("完成素材库加载")
@@ -26198,16 +26225,29 @@ AppState.set("startup_session", {
 function process_startup()
   local session = state.startup_session
   if not session or session.failure then return end
-  -- REAPER defer gaps amplify small work slices. Spend up to 24ms when the
-  -- transport is idle, retaining the shorter 12ms budget during playback.
+  -- Idle startup is a short bounded burst. Fewer defer gaps reduce time to
+  -- the first usable catalog; playback keeps the shorter 12ms slice.
   local playing = reaper.GetPlayState and (reaper.GetPlayState() & 1) ~= 0
-  session.deadline = reaper.time_precise() + (playing and 0.012 or 0.024)
+  local started = reaper.time_precise()
+  session.deadline = started + (playing and 0.012 or 0.036)
   local ok, failure = coroutine.resume(session.thread)
+  local finished = reaper.time_precise()
+  session.frames = (session.frames or 0) + 1
+  session.cpu = (session.cpu or 0) + finished - started
+  session.maximum_frame = math.max(session.maximum_frame or 0, finished - started)
   if not ok then
     session.failure = tostring(failure)
     return
   end
   if coroutine.status(session.thread) == "dead" then
+    local phases = session.phases or {}
+    phases[session.phase] = (phases[session.phase] or 0)
+      + finished - (session.phase_started or session.started_at or finished)
+    AppState.set("startup_metrics", {
+      seconds = finished - session.started_at, cpu = session.cpu,
+      frames = session.frames, maximum_frame = session.maximum_frame,
+      assets = #state.assets, phases = phases,
+    })
     AppState.set("startup_session", nil)
     AppState.set("next_watch", reaper.time_precise() + state.watch_interval)
   end
@@ -26302,6 +26342,7 @@ function loop()
   process_library_count_rebuild()
   process_ucs_count_rebuild()
   bg_mark("save")
+  process_config_save()
   process_auxiliary_save()
   bg_mark("preview")
   cleanup_retired_preview_sources(false)

@@ -143,4 +143,39 @@ do
   assert(gone.missing == true)
 end
 
-print(string.format("Lua relink self-test passed: %d assets, path keys %d -> %d", plain_moved, plain_calls, bulk_calls))
+-- A failed rollback write must not report a durable recovery or permit
+-- subsequent autosaves over a mixed on-disk generation.
+assert(load(region(read(runtime_path), "function commit_relink_plan(plan)", "function process_relink_plan()")))()
+AppState = { apply = function(values) for key, value in pairs(values) do state[key] = value end end }
+Jobs = { finish = function() end }
+function create_data_backup() return true end
+function stop_preview() end
+function rebuild_library_indexes() end
+function invalidate_library_counts() end
+function invalidate_folder_navigation() end
+function mark_database_snapshot_dirty() state.db_dirty = true end
+function new_relink_bulk_context() return {} end
+function relative_path_from_root() return nil end
+function set_status(message) state.status = message end
+function start_scan() state.scanned = true end
+function migrate_asset_path(asset, target) asset.path = target; return true end
+for _, rollback_fails in ipairs({ false, true }) do
+  state = {}
+  local libraries, database = 0, 0
+  function save_libraries()
+    libraries = libraries + 1
+    return not rollback_fails or libraries == 1
+  end
+  function save_database()
+    database = database + 1
+    return not rollback_fails and database > 1
+  end
+  local record, asset = { path = "old-root" }, { path = "old-file" }
+  assert(not commit_relink_plan({ record = record, new_root = "new-root", entries = {
+    { asset = asset, target = "new-file", old_path = "old-file", old_artwork = "" },
+  } }))
+  assert(record.path == "old-root" and asset.path == "old-file" and not state.scanned)
+  assert((state.persistence_read_only == true) == rollback_fails)
+  if rollback_fails then assert(state.status:find("备份", 1, true)) end
+end
+print(string.format("Lua relink self-test passed: %d assets, path keys %d -> %d; durable rollback protection", plain_moved, plain_calls, bulk_calls))

@@ -24,6 +24,7 @@ const defaults = {
   navigation: {},
   collapsedLibraries: [],
   fx: false,
+  previewBehavior: "pause",
   columns: {
     index: false,
     star: true,
@@ -74,6 +75,8 @@ let pageSequence = 0;
 let pageRequestAgain = false;
 let waveSequence = 0;
 let detailWave;
+const detailWaveCache = new Map();
+const folderCache = new Map();
 let detailPaintKey;
 let detailPaintWave;
 const fullMetadata = new Map();
@@ -189,7 +192,11 @@ function time(seconds) {
 }
 
 function clamp(value, minimum, maximum) {
-  return Math.max(minimum, Math.min(maximum, Number(value) || minimum));
+  const number = Number(value);
+  return Math.max(
+    minimum,
+    Math.min(maximum, Number.isFinite(number) ? number : minimum),
+  );
 }
 
 function persist() {
@@ -239,7 +246,7 @@ function applyPreferences() {
 
 function layoutAudition() {
   // Keep the waveform's saved height independent of temporary controls.
-  const extra = (prefs.fx ? 48 : 0) + ($("analysis-bar").hidden ? 0 : 28);
+  const extra = (prefs.fx ? 48 : 0) + (innerWidth <= 1100 ? 24 : 0);
   prefs.auditionHeight = clamp(
     prefs.auditionHeight,
     192,
@@ -776,6 +783,7 @@ function folderBranch(root, folder = root) {
   const branch = node("details", "folder-branch");
   const summary = node("summary", "folder-row");
   branch.dataset.path = folder.path;
+  branch.dataset.libraryId = root.libraryId;
   branch.open = folderOpen.has(folder.path);
   const toggle = node("button", "folder-toggle");
   let expandable = folder.children !== false;
@@ -858,11 +866,19 @@ function folderBranch(root, folder = root) {
     message.textContent = "正在读取文件夹…";
     branch.append(message);
     try {
-      const result = await command("catalog.folders", {
-        rootId: root.id,
-        path: folder.path,
-        offset,
-      });
+      const cacheKey = `${root.id}:${folder.path}:${offset}`;
+      const result =
+        folderCache.get(cacheKey) ||
+        (await command("catalog.folders", {
+          rootId: root.id,
+          path: folder.path,
+          offset,
+        }));
+      if (!result.pending) {
+        folderCache.set(cacheKey, result);
+        if (folderCache.size > 128)
+          folderCache.delete(folderCache.keys().next().value);
+      }
       if (!branch.isConnected || !branch.open) return;
       if (result.pending) {
         message.textContent = "正在整理文件夹索引…";
@@ -899,6 +915,7 @@ function folderBranch(root, folder = root) {
     }
   };
   branch.ontoggle = action(() => {
+    if (!branch.isConnected) return;
     updateIcon();
     if (branch.open) folderOpen.add(folder.path);
     else {
@@ -942,29 +959,55 @@ function renderSidebar() {
   );
   const libraries = [];
   for (const library of snapshot.libraries) {
-    const collapsed = prefs.collapsedLibraries?.includes(library.id);
-    libraries.push(
-      navItem(
-        library.name,
-        () => query({ libraryId: library.id }),
-        snapshot.libraryId === library.id,
-      ),
+    const roots = snapshot.roots.filter(
+      (root) => root.libraryId === library.id && root.enabled !== false,
     );
-    libraries[libraries.length - 1].dataset.libraryId = library.id;
-    libraries[libraries.length - 1].prepend(
-      icon(collapsed ? "folder" : "folderOpen"),
+    const branch = node("details", "library-branch");
+    branch.dataset.libraryId = library.id;
+    branch.open = !prefs.collapsedLibraries?.includes(library.id);
+    const summary = node("summary", "folder-row library-row");
+    const toggle = node("button", "folder-toggle library-toggle");
+    toggle.append(icon("layers"));
+    const update = () => {
+      toggle.setAttribute("aria-expanded", String(branch.open));
+      toggle.setAttribute(
+        "aria-label",
+        `${branch.open ? "收起音效库" : "展开音效库"} ${library.name}`,
+      );
+    };
+    update();
+    toggle.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      branch.open = !branch.open;
+    };
+    const label = navItem(
+      library.name,
+      () => query({ libraryId: library.id, root: "" }),
+      snapshot.libraryId === library.id && !snapshot.root,
     );
-    libraries[libraries.length - 1].dataset.literal = "true";
-    libraries[libraries.length - 1].oncontextmenu = (event) => {
+    label.dataset.literal = "true";
+    label.title = library.name;
+    label.append(node("small", "library-count", roots.length));
+    label.oncontextmenu = (event) => {
       event.preventDefault();
       managementMenu(event, "library", library);
     };
-    for (const root of snapshot.roots.filter(
-      (root) => root.libraryId === library.id && root.enabled !== false,
-    )) {
-      if (!collapsed && prefs.navigation?.folders !== false)
-        libraries.push(folderBranch(root));
-    }
+    summary.onclick = (event) => event.preventDefault();
+    summary.append(toggle, label);
+    branch.append(summary);
+    if (prefs.navigation?.folders !== false)
+      for (const root of roots) branch.append(folderBranch(root));
+    branch.ontoggle = () => {
+      if (!branch.isConnected) return;
+      update();
+      const collapsed = new Set(prefs.collapsedLibraries || []);
+      if (branch.open) collapsed.delete(library.id);
+      else collapsed.add(library.id);
+      prefs.collapsedLibraries = [...collapsed];
+      persist();
+    };
+    libraries.push(branch);
   }
   $("libraries").replaceChildren(...libraries);
   $("collections").replaceChildren(
@@ -1117,16 +1160,20 @@ function applySnapshot(next) {
   $("result-count").textContent = next.startup
     ? next.startup.phase
     : `${next.count.toLocaleString()} 个结果${next.pending ? " · 更新中" : ""}`;
-  $("selection-count").textContent = next.selectedCount;
+
   $("status").textContent = next.startup?.failure || next.status || "就绪";
   $("status").classList.toggle(
     "error",
     Boolean(next.error || next.startup?.failure),
   );
+  if (next.error && (!previous?.error || next.status !== previous.status))
+    report(next.status);
   $("empty-state").hidden = !ready || next.loaded > 0;
   $("no-results").hidden =
     !ready || !next.loaded || next.count > 0 || next.pending;
   $("startup-state").hidden = ready;
+  $("startup-elapsed").textContent =
+    next.startup?.elapsed != null ? `${next.startup.elapsed.toFixed(1)} s` : "";
   $("startup-phase").textContent =
     next.startup?.failure || next.startup?.phase || "";
   $("startup-count").textContent = next.startup
@@ -1167,17 +1214,44 @@ function applySnapshot(next) {
           loudness: "响度分析",
         })[name],
     );
-  $("tasks-label").textContent = tasks.join(" · ");
-  $("tasks-label").title = next.aiSummary || "";
-  if (next.transferProgress)
-    $("tasks-label").textContent +=
-      ` ${next.transferProgress.completed}/${next.transferProgress.total}`;
-  $("cancel-tasks").hidden = tasks.length === 0;
+  $("task-count").textContent = tasks.length;
+  $("task-count").hidden = tasks.length === 0;
+  $("tasks-menu").title = tasks.length ? tasks.join(" · ") : "当前没有后台任务";
+  $("tasks-menu").classList.toggle("has-tasks", tasks.length > 0);
+  $("tasks-menu").classList.toggle(
+    "has-error",
+    Boolean(next.error || next.startup?.failure),
+  );
+  $("cancel-tasks").hidden = tasks.length < 2;
+  renderTasks();
   $("play").setAttribute("aria-pressed", String(next.playing));
+  $("play").textContent = next.playing
+    ? prefs.previewBehavior === "stop"
+      ? "■"
+      : "Ⅱ"
+    : "▶";
+  $("play").title = next.playing
+    ? prefs.previewBehavior === "stop"
+      ? "停止试听"
+      : "暂停试听"
+    : next.paused
+      ? "继续试听"
+      : "播放试听";
+  $("play").setAttribute("aria-label", $("play").title);
   $("loop").setAttribute("aria-pressed", String(next.fx.loop));
   if (next.autoPreview !== undefined)
     $("auto-preview").checked = next.autoPreview;
   $("scope-label").textContent = next.readOnly ? "只读保护" : "";
+  if (
+    previous &&
+    (previous.loaded !== next.loaded ||
+      JSON.stringify(previous.roots) !== JSON.stringify(next.roots) ||
+      (previous.tasks?.scan && !next.tasks?.scan) ||
+      (previous.tasks?.import && !next.tasks?.import))
+  ) {
+    folderCache.clear();
+    sidebarSignature = null;
+  }
   const sideKey = JSON.stringify([
     next.libraries,
     next.collections,
@@ -1217,13 +1291,21 @@ function applySnapshot(next) {
     requestPage();
   }
   if (!previous || previous?.selected?.path !== next.selected?.path) {
+    regionDrag = null;
     if (previous?.selected?.path && Object.keys(dirtyFields).length) {
       metadataDrafts.set(previous.selected.path, {
         dirtyFields,
         originalFields,
       });
     }
-    detailWave = null;
+    detailWave = detailWaveCache.get(detailWaveKey(next.selected)) || null;
+    if (!detailWave) {
+      const overview = page?.items.find(
+        (item) => item.path === next.selected?.path,
+      )?.waveform;
+      if (overview)
+        detailWave = { ...overview, overview: true, channels: undefined };
+    }
     waveFailure = "";
     zoomStart = 0;
     zoomEnd = 1;
@@ -1276,7 +1358,12 @@ function applySnapshot(next) {
     ["rate", "rate"],
     ["gain", "gain_db"],
   ]) {
-    if (!$("fx-panel").contains(document.activeElement)) {
+    if (
+      ![$(`fx-${key}`), $(`fx-${key}-value`)].includes(
+        document.activeElement,
+      ) &&
+      pendingFx[field] === undefined
+    ) {
       $(`fx-${key}`).value = next.fx[field];
       $(`fx-${key}-value`).value = next.fx[field];
     }
@@ -1289,7 +1376,16 @@ function applySnapshot(next) {
   drawDetail();
 }
 
-async function requestDetailWave(retry = false) {
+function detailWaveKey(selected) {
+  return JSON.stringify([
+    selected?.path,
+    selected?.duration,
+    snapshot?.detailPoints,
+    snapshot?.spectralPeaks,
+    snapshot?.multichannelWaveform,
+  ]);
+}
+async function requestDetailWave(retry = false, attempt = 0) {
   const selected = snapshot?.selected;
   const sequence = ++waveSequence;
   clearTimeout(waveRetry);
@@ -1305,11 +1401,21 @@ async function requestDetailWave(retry = false) {
     });
     if (sequence !== waveSequence || snapshot?.selected?.path !== result.path)
       return;
-    detailWave = result.waveform;
+    if (result.waveform) {
+      detailWave = result.waveform;
+      const key = detailWaveKey(selected);
+      detailWaveCache.delete(key);
+      detailWaveCache.set(key, detailWave);
+      if (detailWaveCache.size > 12)
+        detailWaveCache.delete(detailWaveCache.keys().next().value);
+    }
     waveFailure = result.error || "";
     drawDetail();
-    if (!detailWave && !waveFailure)
-      waveRetry = setTimeout(requestDetailWave, 850);
+    if (!result.waveform && !waveFailure)
+      waveRetry = setTimeout(
+        () => requestDetailWave(false, attempt + 1),
+        [60, 100, 180, 300][Math.min(attempt, 3)],
+      );
   } catch (error) {
     if (sequence !== waveSequence) return;
     waveFailure = error.message || String(error);
@@ -1331,8 +1437,7 @@ function renderLoudness() {
   ]);
   if (key === loudnessKey) return;
   loudnessKey = key;
-  const heading = node("span", "loudness-heading", "响度");
-  const content = [heading];
+  const content = [];
   for (const item of asset?.loudness || []) {
     const metric = node("span", "loudness-metric");
     const label =
@@ -1357,11 +1462,10 @@ function renderLoudness() {
         asset?.loudnessEnabled === false ? "响度显示已关闭" : "尚无响度数据",
       ),
     );
-  const analyze = node(
-    "button",
-    "loudness-analyze",
-    asset?.loudnessEnabled === false ? "启用并分析" : "重新分析",
-  );
+  const analyze = node("button", "loudness-analyze", "↻");
+  analyze.title =
+    asset?.loudnessEnabled === false ? "启用并分析响度" : "重新分析响度";
+  analyze.setAttribute("aria-label", analyze.title);
   analyze.onclick = action(async () => {
     if (snapshot?.selected?.loudnessEnabled === false)
       await command("settings.update", {
@@ -1376,7 +1480,6 @@ function renderLoudness() {
 function renderSimilarityProgress() {
   const progress = snapshot?.similarityProgress;
   $("analysis-bar").hidden = !progress && !snapshot?.tasks?.similar;
-  layoutAudition();
   $("similar-search").disabled ||= Boolean(snapshot?.tasks?.similar);
   const key = JSON.stringify(progress);
   if (key === similarityProgressKey) return;
@@ -1384,6 +1487,7 @@ function renderSimilarityProgress() {
   if (!progress) return;
   const phase =
     {
+      waiting: "等待后台任务完成",
       prepare: "准备分析",
       load_cache: "读取特征缓存",
       reference: "分析参考声音",
@@ -1400,7 +1504,10 @@ function renderSimilarityProgress() {
       analyze_missing: "分析候选声音",
       rank_buckets: "整理相似结果",
     }[progress.phase] || "分析声音";
-  $("analysis-label").textContent = `相似声音 · ${phase}`;
+  $("analysis-label").textContent =
+    progress.phase === "waiting"
+      ? `相似声音 · 等待${progress.waitingFor || "后台任务"}完成`
+      : `相似声音 · ${phase}`;
   $("analysis-label").title = progress.failure
     ? `已切换为音频特征分析：${progress.failure}`
     : progress.reference || "";
@@ -1408,7 +1515,11 @@ function renderSimilarityProgress() {
   const completed = Math.max(0, Number(progress.completed) || 0);
   $("analysis-count").textContent = total
     ? `${completed.toLocaleString()} / ${total.toLocaleString()}`
-    : "准备中…";
+    : progress.phase === "waiting"
+      ? "排队中"
+      : "准备中…";
+  $("analysis-cancel").textContent =
+    progress.phase === "waiting" ? "取消等待" : "取消分析";
   $("analysis-progress").max = Math.max(1, total);
   if (total && completed) $("analysis-progress").value = completed;
   else $("analysis-progress").removeAttribute("value");
@@ -1422,15 +1533,13 @@ function updateReadouts() {
   const end = regionDrag
     ? Math.max(regionDrag.start, regionDrag.current)
     : (snapshot?.regionEnd ?? 1);
-  $("current-time").textContent = time((snapshot?.position || 0) * duration);
-  $("in-time").textContent = time(start * duration);
-  $("out-time").textContent = time(end * duration);
-  $("range-time").textContent = time((end - start) * duration);
   $("transport-time").textContent =
     `${time((snapshot?.position || 0) * duration)} / ${time(duration)}`;
-  $("range-label").textContent = duration
-    ? `${time(start * duration)} — ${time(end * duration)}`
-    : "";
+  const label = $("range-label");
+  label.hidden = !duration || (start <= 1e-9 && end >= 1 - 1e-9);
+  label.textContent = `${localizer.text("选区")} · ${time((end - start) * duration)}`;
+  label.title = `${time(start * duration)} — ${time(end * duration)} · ${localizer.text("精确设置选区")}`;
+  label.setAttribute("aria-label", label.title);
 }
 
 function drawDetail() {
@@ -1483,7 +1592,7 @@ function drawDetail() {
       ? prefs.waveformSelectionColor || defaults.waveformSelectionColor
       : palette.getPropertyValue("--accent").trim();
   const duration = snapshot?.selected?.duration || 0;
-  $("wave-status").hidden = Boolean(detailWave);
+  $("wave-status").hidden = Boolean(detailWave) && !waveFailure;
   $("wave-retry").hidden = !waveFailure || !snapshot?.selected;
   $("wave-status").textContent = snapshot?.selected
     ? waveFailure || "正在读取波形缓存…"
@@ -1578,7 +1687,11 @@ function drawDetail() {
     context.textAlign = "left";
     context.fillStyle = muted;
     context.fillText(
-      channels.length === 2 ? ["L", "R"][channel] : `Ch ${channel + 1}`,
+      detailWave?.overview
+        ? "Σ"
+        : channels.length === 2
+          ? ["L", "R"][channel]
+          : `Ch ${channel + 1}`,
       4,
       top + channel * laneHeight + 13,
     );
@@ -2134,6 +2247,8 @@ function updateTransferStatus() {
 }
 
 let popoverAnchor;
+let menuFrames = [];
+let menuHoverTimer;
 function positionPopover() {
   const pop = $("popover");
   if (!popoverAnchor || !pop.matches(":popover-open")) return;
@@ -2141,10 +2256,12 @@ function positionPopover() {
   const size = pop.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - size.width - 8))}px`;
   pop.style.top = `${Math.max(8, Math.min(rect.bottom + 5, innerHeight - size.height - 8))}px`;
+  positionSubmenus();
 }
 new ResizeObserver(positionPopover).observe($("popover"));
 function popover(anchor, content, actionMenu = false) {
   const pop = $("popover");
+  closeMenuAfter(-1);
   popoverAnchor = anchor;
   pop.classList.toggle("action-menu", actionMenu);
   pop.replaceChildren(...content);
@@ -2163,22 +2280,51 @@ function toggle(label, checked, callback) {
   return wrapper;
 }
 
-function menu(anchor, entries, title, back) {
-  const content = [];
+function closeMenuAfter(level) {
+  clearTimeout(menuHoverTimer);
+  while (menuFrames.length > level + 1) {
+    const frame = menuFrames.pop();
+    frame.observer?.disconnect();
+    frame.anchor?.setAttribute("aria-expanded", "false");
+    frame.panel.remove();
+  }
+}
+function positionSubmenus() {
+  for (const frame of menuFrames.slice(1)) {
+    const parent = frame.anchor.getBoundingClientRect();
+    const parentPanel = frame.anchor
+      .closest(".menu-panel")
+      .getBoundingClientRect();
+    const size = frame.panel.getBoundingClientRect();
+    const right = parentPanel.right + 3;
+    const left =
+      right + size.width <= innerWidth - 8
+        ? right
+        : parentPanel.left - size.width - 3;
+    frame.panel.style.left = `${Math.max(8, Math.min(left, innerWidth - size.width - 8))}px`;
+    frame.panel.style.top = `${Math.max(8, Math.min(parent.top - 4, innerHeight - size.height - 8))}px`;
+  }
+}
+$("popover").addEventListener("toggle", (event) => {
+  if (event.newState === "closed") closeMenuAfter(-1);
+});
+function menuPanel(entries, level, anchor, title) {
+  const panel = node("div", "menu-panel");
+  panel.dataset.menuLevel = level;
+  panel.setAttribute("role", "group");
   if (title) {
     const heading = node("h3", "menu-title", title);
     heading.dataset.literal = "true";
     heading.title = title;
-    content.push(heading);
+    panel.append(heading);
   }
-  if (back) {
-    const button = node("button", "menu-item menu-back", "‹ 返回");
-    button.onclick = back;
-    content.push(button, node("hr"));
-  }
+  const frame = { panel, anchor };
+  menuFrames[level] = frame;
+  panel.onpointerenter = () => clearTimeout(menuHoverTimer);
+  panel.onscroll = () => closeMenuAfter(level);
   for (const entry of entries) {
     if (!entry) {
-      content.push(node("hr"));
+      panel.append(node("hr"));
       continue;
     }
     const [label, callback, shortcut, enabled = true] = entry;
@@ -2186,31 +2332,55 @@ function menu(anchor, entries, title, back) {
     item.type = "button";
     item.append(node("span", null, label));
     const submenu = Array.isArray(callback);
+    const expand = (focus = false) => {
+      clearTimeout(menuHoverTimer);
+      if (menuFrames[level + 1]?.anchor !== item) {
+        closeMenuAfter(level);
+        const child = menuPanel(callback, level + 1, item);
+        $("popover").append(child);
+        item.setAttribute("aria-expanded", "true");
+        positionSubmenus();
+      }
+      if (focus)
+        menuFrames[level + 1].panel
+          .querySelector("button:not(:disabled)")
+          ?.focus();
+    };
     if (submenu) {
       item.append(node("span", "submenu-arrow", "›"));
       item.setAttribute("aria-haspopup", "menu");
+      item.setAttribute("aria-expanded", "false");
     } else if (shortcut) item.append(node("kbd", null, shortcut));
     item.disabled = !enabled;
+    item.onpointerenter = (event) => {
+      if (event.pointerType === "touch" || !enabled) return;
+      clearTimeout(menuHoverTimer);
+      menuHoverTimer = setTimeout(
+        () => (submenu ? expand() : closeMenuAfter(level)),
+        180,
+      );
+    };
     item.onclick = action(async () => {
       if (submenu) {
-        menu(anchor, callback, undefined, () => {
-          menu(anchor, entries, title, back);
-          const items = [...$("popover").querySelectorAll(".menu-item")];
-          items[
-            entries.filter(Boolean).indexOf(entry) + (back ? 1 : 0)
-          ]?.focus();
-        });
-        $("popover")
-          .querySelector(".menu-item:not(.menu-back):not(:disabled)")
-          ?.focus();
+        expand(true);
         return;
       }
       $("popover").hidePopover();
       await callback();
     });
-    content.push(item);
+    panel.append(item);
   }
-  popover(anchor, content, true);
+  if (level) {
+    frame.observer = new ResizeObserver(positionSubmenus);
+    frame.observer.observe(panel);
+  }
+  return panel;
+}
+function menu(anchor, entries, title) {
+  popover(anchor, [], true);
+  const panel = menuPanel(entries, 0, null, title);
+  $("popover").append(panel);
+  positionPopover();
 }
 function pointerAnchor(event) {
   return {
@@ -2344,23 +2514,46 @@ const taskLabels = {
   transients: "瞬态检测",
   loudness: "响度分析",
 };
-$("tasks-open").onclick = () => {
+let tasksKey;
+function renderTasks() {
   const entries = Object.entries(snapshot?.tasks || {}).filter(
     ([, active]) => active,
   );
-  menu(
-    $("tasks-open"),
-    entries.length
-      ? entries.map(([task]) => [
-          `停止 · ${taskLabels[task] || task}`,
-          () => command("tasks.cancel", { task }),
-        ])
-      : [
-          ["当前没有后台任务", () => {}, "", false],
-          ["维护与恢复", () => settingsDialog("maintenance")],
-        ],
-  );
+  const waiting = snapshot?.similarityProgress?.phase === "waiting";
+  const key = JSON.stringify([entries, waiting]);
+  if (key === tasksKey) return;
+  tasksKey = key;
+  const rows = entries
+    .filter(([task]) => task !== "similar")
+    .map(([task]) => {
+      const row = node("div", "task-row");
+      const label = taskLabels[task] || task;
+      const cancel = node("button", null, "取消");
+      cancel.setAttribute("aria-label", `停止 · ${label}`);
+      cancel.onclick = action(() => command("tasks.cancel", { task }));
+      row.append(node("span", null, label), cancel);
+      return row;
+    });
+  if (!entries.length) rows.push(node("p", "muted", "当前没有后台任务"));
+  $("task-list").replaceChildren(...rows);
+}
+function positionTasks() {
+  const rect = $("tasks-menu").getBoundingClientRect();
+  $("task-panel").style.top = `${rect.bottom + 8}px`;
+  $("task-panel").style.maxHeight = `${innerHeight - rect.bottom - 20}px`;
+}
+$("tasks-menu").onclick = () => {
+  positionTasks();
+  $("task-panel").togglePopover();
 };
+$("tasks-close").onclick = () => $("task-panel").hidePopover();
+$("task-panel").addEventListener("toggle", (event) =>
+  $("tasks-menu").setAttribute(
+    "aria-expanded",
+    String(event.newState === "open"),
+  ),
+);
+window.addEventListener("resize", positionTasks);
 $("clear-query").onclick = action(() => {
   $("search").value = "";
   return query({ search: "" });
@@ -2488,9 +2681,15 @@ for (const button of document.querySelectorAll("[data-menu]"))
     menu(button, menus[button.dataset.menu]);
   };
 $("popover").addEventListener("keydown", (event) => {
-  if (event.key === "ArrowLeft" && $("popover").querySelector(".menu-back")) {
+  if (event.target.matches("input,textarea,select")) return;
+  const panel = event.target.closest(".menu-panel");
+  const level = Number(panel?.dataset.menuLevel || 0);
+  if (event.key === "ArrowLeft" && level > 0) {
     event.preventDefault();
-    $("popover").querySelector(".menu-back").click();
+    event.stopPropagation();
+    const parent = menuFrames[level].anchor;
+    closeMenuAfter(level - 1);
+    parent.focus();
     return;
   }
   if (
@@ -2503,7 +2702,7 @@ $("popover").addEventListener("keydown", (event) => {
   }
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   const items = [
-    ...$("popover").querySelectorAll("button:not(:disabled),input"),
+    ...(panel || $("popover")).querySelectorAll("button:not(:disabled),input"),
   ];
   if (!items.length) return;
   event.preventDefault();
@@ -2519,39 +2718,12 @@ $("popover").addEventListener("keydown", (event) => {
   items[next].focus();
 });
 
-function columnsMenu(anchor, layout = false) {
-  const content = [node("h3", null, layout ? "布局与显示" : "显示列")];
-  if (layout) {
-    content.push(
-      toggle("来源侧栏", prefs.left, (value) => {
-        prefs.left = value;
-        applyPreferences();
-        persist();
-      }),
-    );
-    content.push(
-      toggle("检查器", prefs.right, (value) => {
-        prefs.right = value;
-        applyPreferences();
-        persist();
-      }),
-    );
-    content.push(
-      toggle("FX 面板", prefs.fx, (value) => {
-        prefs.fx = value;
-        applyPreferences();
-        persist();
-      }),
-    );
-    content.push(
-      toggle("纸白墨绿主题", prefs.theme === "paper", (value) => {
-        prefs.theme = value ? "paper" : "dark";
-        applyPreferences();
-        persist();
-      }),
-    );
-    content.push(node("hr"));
-  }
+$("column-head").oncontextmenu = (event) => {
+  event.preventDefault();
+  columnsMenu(pointerAnchor(event));
+};
+function columnsMenu(anchor) {
+  const content = [node("h3", null, "显示列")];
   for (const [key, label] of orderedColumns()) {
     content.push(
       toggle(label, Boolean(prefs.columns[key]), (value) => {
@@ -2575,7 +2747,7 @@ function columnsMenu(anchor, layout = false) {
       prefs.columnOrder = keys;
       persist();
       applyPreferences();
-      columnsMenu(anchor, layout);
+      columnsMenu(anchor);
     };
     order.append(button);
   }
@@ -2601,7 +2773,7 @@ function columnsMenu(anchor, layout = false) {
       applyPreferences();
       persist();
       requestPage();
-      columnsMenu(anchor, layout);
+      columnsMenu(anchor);
     };
     content.push(button);
   }
@@ -2930,6 +3102,53 @@ async function saveRegion() {
     });
 }
 
+function editSelection(anchor = $("range-label")) {
+  const asset = snapshot?.selected;
+  if (!asset?.duration) return;
+  const duration = asset.duration;
+  const form = node("form", "selection-editor");
+  form.append(node("h3", null, "精确设置选区"));
+  const fields = {};
+  for (const [key, title, value] of [
+    ["start", "入点（秒）", snapshot.regionStart],
+    ["finish", "出点（秒）", snapshot.regionEnd],
+  ]) {
+    const label = node("label", null, title);
+    const input = node("input");
+    input.type = "number";
+    input.name = key;
+    input.min = 0;
+    input.max = duration;
+    input.step = "any";
+    input.required = true;
+    input.value = Math.min(duration, Number((value * duration).toFixed(3)));
+    label.append(input);
+    fields[key] = input;
+    form.append(label);
+  }
+  const save = node("button", "primary", "应用选区");
+  save.type = "submit";
+  form.append(save);
+  form.onsubmit = action(async (event) => {
+    event.preventDefault();
+    const first = Number(fields.start.value),
+      last = Number(fields.finish.value);
+    if (!form.reportValidity()) return;
+    if (last <= first) throw new Error("出点必须晚于入点");
+    if (snapshot?.selected?.path !== asset.path)
+      throw new Error("所选素材已改变，请重新设置选区");
+    await command("preview.region", {
+      path: asset.path,
+      start: first / duration,
+      finish: last / duration,
+    });
+    $("popover").hidePopover();
+  });
+  popover(anchor, [form]);
+  fields.start.focus();
+}
+$("range-label").onclick = () => editSelection();
+
 let suggestionTimer;
 let suggestionSequence = 0;
 let suggestions = [];
@@ -3071,8 +3290,6 @@ $("sort-direction").onclick = action(() => {
     descending: sortDescending,
   });
 });
-$("columns-open").onclick = () => columnsMenu($("columns-open"));
-$("layout-menu").onclick = () => columnsMenu($("layout-menu"), true);
 $("left-toggle").onclick = () => {
   prefs.left = !prefs.left;
   applyPreferences();
@@ -3096,7 +3313,9 @@ $("fx-panel").ontoggle = () => {
   drawDetail();
 };
 $("new-tab").onclick = action(() => command("tab.action", { action: "new" }));
-$("play").onclick = action(() => command("preview.toggle"));
+$("play").onclick = action(() =>
+  command("preview.toggle", { behavior: prefs.previewBehavior }),
+);
 $("stop").onclick = action(() => command("preview.stop"));
 $("loop").onclick = action(() =>
   command("preview.parameters", { loop: !snapshot?.fx.loop }),
@@ -3125,6 +3344,12 @@ $("audition-more").onclick = action(async () => {
   ];
   menu($("audition-more"), [
     ["适应完整波形", () => $("zoom-reset").click()],
+    [
+      "精确设置选区",
+      () => editSelection($("audition-more")),
+      "",
+      Boolean(snapshot?.selected),
+    ],
     ["FX 面板", () => $("fx-toggle").click()],
     [
       "试听选项",
@@ -3303,33 +3528,6 @@ $("ucs-search-clear").onclick = () => {
   renderUcs();
   $("ucs-search").focus();
 };
-$("collection-menu").onclick = () => {
-  const content = [node("h3", null, "将所选声音加入集合")];
-  for (const collection of snapshot?.collections || []) {
-    const button = node(
-      "button",
-      "menu-item",
-      `${collection.name} · ${collection.count}`,
-    );
-    button.onclick = action(async () => {
-      await command("collection.add", { id: collection.id });
-      $("popover").hidePopover();
-    });
-    content.push(button);
-  }
-  for (const [label, kind] of [
-    ["＋ 新建项目素材箱", "project"],
-    ["＋ 新建播放列表", "playlist"],
-  ]) {
-    const create = node("button", "menu-item", label);
-    create.onclick = action(async () => {
-      $("popover").hidePopover();
-      await createCollection(kind);
-    });
-    content.push(create);
-  }
-  popover($("collection-menu"), content);
-};
 $("fx-presets").onclick = () =>
   menu($("fx-presets"), [
     [
@@ -3356,9 +3554,15 @@ for (const [label, key] of [
 ]) {
   for (const id of [`fx-${label}`, `fx-${label}-value`]) {
     $(id).oninput = () => {
+      if (
+        $(id).type === "number" &&
+        ($(id).value === "" || $(id).validity.badInput)
+      )
+        return;
       const value = clamp($(id).value, Number($(id).min), Number($(id).max));
       $(`fx-${label}`).value = value;
-      $(`fx-${label}-value`).value = value;
+      // Keep the number field's editing buffer ("-", "-8.", etc.) intact.
+      if ($(id).type === "range") $(`fx-${label}-value`).value = value;
       pendingFx[key] = value;
       clearTimeout(fxTimer);
       fxTimer = setTimeout(() => {
@@ -3367,6 +3571,15 @@ for (const [label, key] of [
         command("preview.parameters", values).catch(report);
       }, 60);
     };
+    if ($(id).type === "number") {
+      $(id).onchange = () => {
+        $(id).value =
+          $(id).value === ""
+            ? $(`fx-${label}`).value
+            : clamp($(id).value, Number($(id).min), Number($(id).max));
+        $(id).dispatchEvent(new Event("input", { bubbles: true }));
+      };
+    }
   }
 }
 $("preserve-pitch").onchange = action(() =>
@@ -3374,6 +3587,11 @@ $("preserve-pitch").onchange = action(() =>
     preserve_pitch: $("preserve-pitch").checked,
   }),
 );
+function resetVolume() {
+  $("fx-gain").value = 0;
+  $("fx-gain").dispatchEvent(new Event("input", { bubbles: true }));
+}
+$("fx-gain").ondblclick = resetVolume;
 $("reverse").onchange = action(() =>
   command("preview.parameters", { reverse: $("reverse").checked }),
 );
@@ -3381,7 +3599,6 @@ $("fx-reset").onclick = action(() =>
   command("preview.parameters", {
     pitch: 0,
     rate: 1,
-    gain_db: 0,
     preserve_pitch: true,
     reverse: false,
   }),
@@ -3414,7 +3631,11 @@ detailCanvas.onpointerdown = (event) => {
     return;
   }
   if (event.button !== 0 || !snapshot?.selected) return;
-  regionDrag = { start: wavePercent(event), current: wavePercent(event) };
+  regionDrag = {
+    path: snapshot.selected.path,
+    start: wavePercent(event),
+    current: wavePercent(event),
+  };
   detailCanvas.setPointerCapture(event.pointerId);
 };
 detailCanvas.onpointermove = (event) => {
@@ -3449,14 +3670,16 @@ detailCanvas.onpointermove = (event) => {
 detailCanvas.onpointerup = action(async (event) => {
   wavePanX = null;
   if (!regionDrag) return;
+  const path = regionDrag.path;
   const start = Math.min(regionDrag.start, regionDrag.current);
   const finish = Math.max(regionDrag.start, regionDrag.current);
   regionDrag = null;
   if (Math.abs(finish - start) < 0.001) {
-    await command("preview.play", { position: start, selection: false });
+    await command("preview.play", { path, position: start, selection: false });
   } else {
-    await command("preview.region", { start, finish });
-    await command("preview.play", { position: start, selection: true });
+    await command("preview.region", { path, start, finish });
+    if (snapshot?.selected?.path !== path) return;
+    await command("preview.play", { path, position: start, selection: true });
   }
 });
 detailCanvas.onpointercancel = () => {
@@ -3558,7 +3781,9 @@ window.addEventListener(
     event.stopImmediatePropagation();
     if (auditionSpaceDown || event.repeat) return;
     auditionSpaceDown = true;
-    command("preview.toggle").catch(report);
+    command("preview.toggle", { behavior: prefs.previewBehavior }).catch(
+      report,
+    );
   },
   true,
 );
@@ -3724,10 +3949,12 @@ async function receiveFolderDrop(payload) {
   const target = document
     .elementFromPoint(payload.x, payload.y)
     ?.closest("[data-library-id]");
-  if (target || payload.files.length === 1) {
+  const libraryId =
+    target?.dataset.libraryId || snapshot?.libraryId || undefined;
+  if (libraryId || payload.files.length === 1) {
     await command("library.drop", {
       paths: payload.files,
-      libraryId: target?.dataset.libraryId,
+      libraryId,
       separate: true,
     });
     return;
@@ -3753,12 +3980,11 @@ async function receiveFolderDrop(payload) {
   dialog.showModal();
 }
 
+$("tasks-menu").prepend(icon("clock"));
 for (const [id, name] of [
   ["left-toggle", "menu"],
   ["right-toggle", "panel"],
   ["settings-open", "settings"],
-  ["layout-menu", "columns"],
-  ["columns-open", "columns"],
 ])
   $(id).replaceChildren(icon(name));
 for (const button of document.querySelectorAll("[data-rail]"))

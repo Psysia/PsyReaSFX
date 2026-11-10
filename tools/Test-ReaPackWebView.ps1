@@ -91,7 +91,10 @@ $main = Join-Path $FixtureDirectory 'Scripts/Psysia/PsyReaSFX.lua'
 $generated = Join-Path $PackagePath 'PsyReaSFX.lua'
 if ((Payload-Hash $main) -cne (Payload-Hash $generated)) { throw 'ReaPack main script differs from the assembled WebView release.' }
 $text = Get-Content -LiteralPath $main -Raw -Encoding UTF8
-if ($text -notmatch 'local WEBVIEW_MODE = true' -or $text -notmatch ('(?m)^-- @version ' + [regex]::Escape($app.version) + '\r?$')) { throw 'ReaPack entry is not the expected WebView beta.' }
+if ($text -notmatch 'PsyReaSFX_Runtime.lua' -or $text -notmatch ('(?m)^-- @version ' + [regex]::Escape($app.version) + '\r?$')) { throw 'ReaPack entry is not the expected WebView launcher.' }
+$runtimeScript = Join-Path $FixtureDirectory 'Scripts/Psysia/PsyReaSFX_Runtime.lua'
+if ((Payload-Hash $runtimeScript) -cne (Payload-Hash (Join-Path $PackagePath 'PsyReaSFX_Runtime.lua'))) { throw 'ReaPack backend differs from the assembled runtime.' }
+if ([IO.File]::ReadAllText($runtimeScript) -notmatch 'local WEBVIEW_MODE = true') { throw 'Missing WebView runtime mode.' }
 foreach ($required in @('docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md','web/index.html','web/app.json','web/host.js','web/app.js','web/settings.js','web/icons.js','web/styles.css','runtime-lock.json','assets/brand/psyreasfx-icon.png','assets/ucs/ucs-8.2.1.tsv')) {
     if (-not (Test-Path -LiteralPath (Join-Path $FixtureDirectory "Scripts/Psysia/$required"))) { throw "Missing script asset: $required" }
 }

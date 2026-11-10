@@ -457,12 +457,12 @@ state.ai_semantic_paths = {
   secret = key_secret_path,
 }
 ai_semantic_launch_bridge = function(request, synchronous)
-  assert(synchronous)
+  assert(not synchronous)
   assert(request.operation == "protect-key")
+  assert(request.pipeName and not request.plaintextPath)
   local encrypted = assert(io.open(request.secretPath, "wb"))
   encrypted:write("encrypted-test-value")
   encrypted:close()
-  os.remove(request.plaintextPath)
   local status_path = os.tmpname()
   local status = assert(io.open(status_path, "wb"))
   status:write('{"state":"complete"}')
@@ -470,6 +470,10 @@ ai_semantic_launch_bridge = function(request, synchronous)
   return { request_path = "", status_path = status_path }
 end
 assert(ai_semantic_save_api_key("sk-test"))
+assert(state.ai_key_save_session.value == "sk-test")
+assert(not io.open(key_plaintext_path, "rb"), "credential must never touch disk")
+process_ai_key_save()
+assert(not state.ai_key_save_session)
 assert(state.ai_api_key_saved)
 assert(state.ai_api_key_input == "")
 assert(state.ai_api_key_status == "API Key 已安全保存")
@@ -478,6 +482,28 @@ assert(state.persistence_read_only, "AI key save must not disable catalog read-o
 assert(not ai_semantic_save_api_key(""))
 assert(state.ai_api_key_status == "保存失败：API Key 不能为空")
 assert(state.ai_api_key_status_error)
+local key_status_reader, key_stopper, pipe_open = ai_semantic_read_status, ai_semantic_stop_job_process, io.open
+local stopped = 0
+ai_semantic_stop_job_process = function() stopped = stopped + 1 end
+assert(ai_semantic_save_api_key("synthetic-timeout-key"))
+local timed_key = state.ai_key_save_session
+timed_key.started = -10
+process_ai_key_save()
+assert(stopped == 1 and timed_key.complete and not timed_key.ok and not timed_key.value)
+assert(not state.ai_key_save_session and state.ai_api_key_status_error)
+ai_semantic_read_status = function() return { state = "ready" } end
+io.open = function(path, mode)
+  if path:find("\\\\.\\pipe\\", 1, true) == 1 then
+    return { write = function() return nil end, flush = function() return true end, close = function() return true end }
+  end
+  return pipe_open(path, mode)
+end
+assert(ai_semantic_save_api_key("synthetic-broken-pipe-key"))
+local broken_key = state.ai_key_save_session
+process_ai_key_save()
+assert(broken_key.complete and not broken_key.ok and not broken_key.value)
+assert(not state.ai_key_save_session and state.ai_api_key_status_error)
+ai_semantic_read_status, ai_semantic_stop_job_process, io.open = key_status_reader, key_stopper, pipe_open
 ai_semantic_launch_bridge = original_launch_bridge
 os.remove(key_plaintext_path)
 os.remove(key_secret_path)

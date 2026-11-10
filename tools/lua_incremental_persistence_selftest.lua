@@ -328,6 +328,47 @@ local history_complete, history_failure = step_history_persistence_job(
 )
 assert(not history_complete and history_failure == "write_history")
 
+-- Rehash/deletion between frames cannot invalidate a live next() cursor.
+for _, kind in ipairs({ "history", "played", "usage" }) do
+  local entries, by_path = {}, {}
+  for i = 1, 80 do
+    local path = "item-" .. i
+    entries[path] = kind == "played" and true or { path = path, last_previewed = 1 }
+    by_path[path] = entries[path]
+  end
+  local job = kind == "history" and new_history_persistence_job(entries, by_path)
+    or kind == "played" and new_path_set_persistence_job(entries)
+    or new_project_usage_persistence_job({ p = { path = "project", assets = entries } })
+  local snapshot = kind == "usage" and job.projects[1] or job
+  local removed = snapshot.keys[10]
+  local output = new_writer()
+  local function step()
+    if kind == "history" then return step_history_persistence_job(job, output, 1, escape, key) end
+    if kind == "played" then return step_path_set_persistence_job(job, output, 1, escape) end
+    return step_project_usage_persistence_job(job, output, 1, escape)
+  end
+  assert(not step())
+  entries[removed] = nil
+  for i = 1, 2000 do entries["new-" .. i] = { path = "new-" .. i, last_previewed = 1 } end
+  while not step() do end
+  assert(#output.lines == 79, kind .. " must preserve every surviving original row exactly once")
+  local seen = {}
+  for _, line in ipairs(output.lines) do
+    assert(not line:find("new-", 1, true), "new records belong to the next dirty generation")
+    assert(not seen[line], "record duplicated by rehash")
+    seen[line] = true
+  end
+end
+do
+  local collection = { id = "mutable", order = { "a", "b", "c" }, items = { a = true, b = true, c = true } }
+  local job, output = new_collections_persistence_job({ collection }), new_writer()
+  assert(not step_collections_persistence_job(job, output, 2, escape, key))
+  table.remove(collection.order, 1)
+  collection.order[#collection.order + 1], collection.items.d = "d", true
+  while not step_collections_persistence_job(job, output, 1, escape, key) do end
+  assert(table.concat(output.lines) == "collection\tmutable\t\tplaylist\t\nitem\tmutable\ta\nitem\tmutable\tb\nitem\tmutable\tc\n")
+end
+
 print(string.format(
   "Lua incremental persistence self-test OK: records=%d collection_steps=%d usage_steps=%d history_steps=%d played_steps=%d regions_steps=%d loudness_steps=%d failed_steps=%d memory=%.1fMiB",
   item_count,

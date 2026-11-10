@@ -98,16 +98,22 @@ jobs:
           ./tools/Build-WebRelease.ps1 -OutputPath $webBuild
           ./tools/Test-ReaPackWebView.ps1 -PackagePath $webBuild
           $webTracked = [IO.File]::ReadAllText('PsyReaSFX_WebView.lua').Replace("`r`n", "`n")
-          $webGenerated = [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX.lua')).Replace("`r`n", "`n")
+          $webGenerated = [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX_Runtime.lua')).Replace("`r`n", "`n")
           if ($webTracked -cne $webGenerated) { throw 'Tracked WebView beta entry is stale.' }
+          $launcher = [IO.File]::ReadAllText('PsyReaSFX_Launcher.lua').Replace("`r`n", "`n")
+          if ($launcher -cne [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX.lua')).Replace("`r`n", "`n")) { throw 'Tracked launcher is stale.' }
+          lua tools/lua_webview_launcher_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'WebView launcher regression failed.' }
           $webVersion = (Get-Content 'src/web/app.json' -Raw | ConvertFrom-Json).version
           ./tools/Test-WebViewPackage.ps1 -PackagePath $webBuild -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-package-test') -ArchivePath (Join-Path $env:RUNNER_TEMP "PsyReaSFX_WebView_${webVersion}_win_x64.zip")
           ./tools/Test-ReaWebAPICandidate.ps1
-          luac -p (Join-Path $webBuild 'PsyReaSFX.lua')
+          luac -p (Join-Path $webBuild 'PsyReaSFX_Runtime.lua')
           if ($LASTEXITCODE -ne 0) { throw 'WebView entry does not compile.' }
+          luac -p (Join-Path $webBuild 'PsyReaSFX.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'WebView launcher does not compile.' }
           $webFixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-fixture'
           New-Item -ItemType Directory -Path $webFixture | Out-Null
-          lua tools/lua_webview_selftest.lua (Join-Path $webBuild 'PsyReaSFX.lua') $webFixture
+          lua tools/lua_webview_selftest.lua (Join-Path $webBuild 'PsyReaSFX_Runtime.lua') $webFixture
           if ($LASTEXITCODE -ne 0) { throw 'WebView backend regression failed.' }
 
       - name: Verify WebView layout and interactions
@@ -171,6 +177,9 @@ jobs:
         shell: pwsh
         run: |
           lua tools/lua_incremental_persistence_selftest.lua (Resolve-Path 'src/lua/38_incremental_persistence.lua') 25000
+          if ($LASTEXITCODE -ne 0) { throw 'Incremental persistence test failed.' }
+          lua tools/lua_config_save_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Config autosave test failed.' }
 
       - name: Run Lua host adapter self-test
         shell: pwsh

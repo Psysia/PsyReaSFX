@@ -2,10 +2,54 @@
 -- atomic writer and pass escaping/path-key functions so this module remains
 -- independent from REAPER and can be capacity-tested from the command line.
 
+-- Map-backed catalogs can change between UI frames, but Lua leaves next()
+-- undefined once a key has been added to the table during a traversal: a rehash
+-- reorders it and entries can be skipped, silently dropping rows from the file
+-- being written. The job therefore snapshots the keys when it is created and
+-- walks that array. A key removed in the meantime is skipped; one added in the
+-- meantime is not part of this save (the owner marks the catalog dirty again,
+-- so the next save writes it). `next_key` always names the next snapshot key,
+-- or nil when the walk is finished.
+local function take_next_live_map_entry(job)
+  local entries = job.entries
+  local keys = job.keys
+  while job.key_index <= job.key_count do
+    local entry_key = keys[job.key_index]
+    job.key_index = job.key_index + 1
+    job.next_key = keys[job.key_index]
+    local value = entries[entry_key]
+    if value ~= nil then
+      return entry_key, value
+    end
+  end
+  job.next_key = nil
+  return nil
+end
+
+local function new_live_map_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  local keys = {}
+  local key_count = 0
+  for key in pairs(entries) do
+    key_count = key_count + 1
+    keys[key_count] = key
+  end
+  return {
+    entries = entries,
+    keys = keys,
+    key_count = key_count,
+    key_index = 1,
+    next_key = keys[1],
+    processed = 0,
+    written = 0,
+  }
+end
+
 function new_collections_persistence_job(collections)
   local snapshots = {}
   for _, collection in ipairs(collections or {}) do
-    local order = collection.order or {}
+    local order = {}
+    for index, path in ipairs(collection.order or {}) do order[index] = path end
     snapshots[#snapshots + 1] = {
       id = collection.id or "",
       name = collection.name or "",
@@ -90,12 +134,9 @@ end
 function new_project_usage_persistence_job(project_usage)
   local projects = {}
   for _, bucket in pairs(project_usage or {}) do
-    projects[#projects + 1] = {
-      path = bucket.path or "",
-      assets = bucket.assets or {},
-      started = false,
-      next_key = nil,
-    }
+    local project = new_live_map_job(bucket.assets)
+    project.path = bucket.path or ""
+    projects[#projects + 1] = project
   end
   return {
     projects = projects,
@@ -122,15 +163,10 @@ function step_project_usage_persistence_job(
   while processed < batch_size do
     local project = job.projects[job.project_index]
     if not project then return true end
-    if not project.started then
-      project.started = true
-      project.next_key = next(project.assets)
-    elseif project.next_key == nil then
+    if project.next_key == nil then
       job.project_index = job.project_index + 1
     else
-      local key = project.next_key
-      local entry = project.assets[key]
-      project.next_key = next(project.assets, key)
+      local _, entry = take_next_live_map_entry(project)
       if entry and not writer:write(
         "usage\t", escape_function(project.path), "\t",
         escape_function(entry.path or ""), "\t",
@@ -150,21 +186,16 @@ function step_project_usage_persistence_job(
     end
   end
   local current = job.projects[job.project_index]
-  if current and current.started and current.next_key == nil then
+  if current and current.next_key == nil then
     job.project_index = job.project_index + 1
   end
   return job.projects[job.project_index] == nil
 end
 
 function new_history_persistence_job(history_assets, by_path)
-  history_assets = type(history_assets) == "table" and history_assets or {}
-  return {
-    entries = history_assets,
-    by_path = type(by_path) == "table" and by_path or {},
-    next_key = next(history_assets),
-    processed = 0,
-    written = 0,
-  }
+  local job = new_live_map_job(history_assets)
+  job.by_path = type(by_path) == "table" and by_path or {}
+  return job
 end
 
 function step_history_persistence_job(
@@ -185,9 +216,7 @@ function step_history_persistence_job(
   batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
   local processed = 0
   while job.next_key ~= nil and processed < batch_size do
-    local id = job.next_key
-    local asset = job.entries[id]
-    job.next_key = next(job.entries, id)
+    local _, asset = take_next_live_map_entry(job)
     if asset and job.by_path[key_function(asset.path)] == asset
       and (tonumber(asset.last_previewed) or 0) > 0 then
       if not writer:write(
@@ -210,14 +239,11 @@ function step_history_persistence_job(
   return job.next_key == nil
 end
 
-function new_path_set_persistence_job(path_set)
-  path_set = type(path_set) == "table" and path_set or {}
-  return {
-    entries = path_set,
-    next_key = next(path_set),
-    saved = {},
-    processed = 0,
-  }
+function new_path_set_persistence_job(path_set, prefix, retain_saved)
+  local job = new_live_map_job(path_set)
+  job.saved = retain_saved ~= false and {} or nil
+  job.prefix = prefix or "played"
+  return job
 end
 
 function step_path_set_persistence_job(
@@ -236,13 +262,12 @@ function step_path_set_persistence_job(
   batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
   local processed = 0
   while job.next_key ~= nil and processed < batch_size do
-    local key = job.next_key
-    job.next_key = next(job.entries, key)
-    if job.entries[key] then
-      if not writer:write("played\t", escape_function(key), "\n") then
+    local key, value = take_next_live_map_entry(job)
+    if value then
+      if not writer:write(job.prefix, "\t", escape_function(key), "\n") then
         return false, "write_played"
       end
-      job.saved[key] = true
+      if job.saved then job.saved[key] = true end
     end
     processed = processed + 1
     job.processed = job.processed + 1
@@ -253,49 +278,6 @@ function step_path_set_persistence_job(
     end
   end
   return job.next_key == nil
-end
-
--- Map-backed catalogs can change between UI frames, but Lua leaves next()
--- undefined once a key has been added to the table during a traversal: a rehash
--- reorders it and entries can be skipped, silently dropping rows from the file
--- being written. The job therefore snapshots the keys when it is created and
--- walks that array. A key removed in the meantime is skipped; one added in the
--- meantime is not part of this save (the owner marks the catalog dirty again,
--- so the next save writes it). `next_key` always names the next snapshot key,
--- or nil when the walk is finished.
-local function take_next_live_map_entry(job)
-  local entries = job.entries
-  local keys = job.keys
-  while job.key_index <= job.key_count do
-    local entry_key = keys[job.key_index]
-    job.key_index = job.key_index + 1
-    job.next_key = keys[job.key_index]
-    local value = entries[entry_key]
-    if value ~= nil then
-      return entry_key, value
-    end
-  end
-  job.next_key = nil
-  return nil
-end
-
-local function new_live_map_job(entries)
-  entries = type(entries) == "table" and entries or {}
-  local keys = {}
-  local key_count = 0
-  for key in pairs(entries) do
-    key_count = key_count + 1
-    keys[key_count] = key
-  end
-  return {
-    entries = entries,
-    keys = keys,
-    key_count = key_count,
-    key_index = 1,
-    next_key = keys[1],
-    processed = 0,
-    written = 0,
-  }
 end
 
 local function persistence_deadline_reached(processed, deadline, time_function)

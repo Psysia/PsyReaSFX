@@ -1,5 +1,6 @@
 param(
-    [string]$ModulePath = ""
+    [string]$ModulePath = "",
+    [string]$Lua = "lua"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,27 +30,59 @@ try {
 
     [void][ScriptBlock]::Create($match.Groups["script"].Value)
     [IO.File]::WriteAllText($bridge, $match.Groups["script"].Value, $utf8)
-    [IO.File]::WriteAllText($plaintext, $expected, $utf8)
-    [IO.File]::WriteAllText(
-        $request,
-        (@{
-            operation = "protect-key"
-            plaintextPath = $plaintext
-            secretPath = $secret
-            statusPath = $status
-        } | ConvertTo-Json -Compress),
-        $utf8
-    )
-
-    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bridge $request
-    if ($LASTEXITCODE -ne 0) {
-        $detail = if (Test-Path -LiteralPath $status) {
-            Get-Content -LiteralPath $status -Raw -Encoding UTF8
-        } else {
-            "no status file"
+    function Protect-TestKey([string]$Value, [string]$SecretPath) {
+        $pipeName = 'PsyReaSFX-Test-' + [guid]::NewGuid().ToString('N')
+        Remove-Item -LiteralPath $status -Force -ErrorAction SilentlyContinue
+        [IO.File]::WriteAllText($request, (@{
+            operation = 'protect-key'; pipeName = $pipeName
+            secretPath = $SecretPath; statusPath = $status
+        } | ConvertTo-Json -Compress), $utf8)
+        $process = Start-Process powershell.exe -WindowStyle Hidden -PassThru -ArgumentList @(
+            '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $bridge, $request)
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        do {
+            Start-Sleep -Milliseconds 20
+            # The producer atomically replaces this file. Match the Lua
+            # reader's retry behavior if the path changes between opens.
+            try { $ready = ([IO.File]::ReadAllText($status) | ConvertFrom-Json).state }
+            catch { $ready = '' }
+        } while ($ready -ne 'ready' -and -not $process.HasExited -and [DateTime]::UtcNow -lt $deadline)
+        if ($ready -ne 'ready') {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            $process.Dispose()
+            throw ('Pipe did not become ready: ' + [IO.File]::ReadAllText($status))
         }
-        throw "AI bridge returned exit code $LASTEXITCODE`: $detail"
+        $info = [Diagnostics.ProcessStartInfo]::new()
+        $info.FileName = $Lua
+        $info.Arguments = '-'
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardInput = $true
+        $info.RedirectStandardError = $true
+        $info.RedirectStandardOutput = $true
+        $client = [Diagnostics.Process]::Start($info)
+        $bytes = $utf8.GetBytes($Value)
+        $script = 'local p=assert(io.open([[\\.\pipe\' + $pipeName + ']], "wb"));local v=string.char(' + ($bytes -join ',') + ');assert(p:write(string.pack("<I4",#v),v));assert(p:flush());assert(p:close())'
+        try {
+            $client.StandardInput.WriteLine($script)
+            $client.StandardInput.Close()
+            if (-not $client.WaitForExit(5000)) { throw 'Lua pipe client timed out.' }
+            if ($client.ExitCode -ne 0) { throw $client.StandardError.ReadToEnd() }
+            if (-not $process.WaitForExit(10000)) { throw 'Key encryption timed out.' }
+            if ($process.ExitCode -ne 0) { throw ('Key encryption failed: ' + [IO.File]::ReadAllText($status)) }
+        } finally {
+            if (-not $client.HasExited) { Stop-Process -Id $client.Id -Force }
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            $client.Dispose(); $process.Dispose()
+        }
+        foreach ($file in Get-ChildItem -LiteralPath $work -File) {
+            if ([IO.File]::ReadAllText($file.FullName).Contains($Value)) {
+                throw "Credential leaked to $($file.Name)"
+            }
+        }
     }
+    Protect-TestKey $expected $secret
+    Protect-TestKey $expected $secret # Updating an existing encrypted key is atomic too.
     $result = Get-Content -LiteralPath $status -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($result.state -ne "complete") { throw "AI bridge did not complete." }
     if (Test-Path -LiteralPath $plaintext) { throw "Plaintext API key was not removed." }
@@ -72,15 +105,7 @@ try {
 
     # A second preset must not replace the first preset's encrypted credential.
     $secondSecret = Join-Path $work "api-key-p1.dpapi"
-    [IO.File]::WriteAllText($plaintext, 'sk-second-preset-test', $utf8)
-    [IO.File]::WriteAllText($request, (@{
-        operation = "protect-key"
-        plaintextPath = $plaintext
-        secretPath = $secondSecret
-        statusPath = $status
-    } | ConvertTo-Json -Compress), $utf8)
-    & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $bridge $request
-    if ($LASTEXITCODE -ne 0) { throw "Second preset key save failed." }
+    Protect-TestKey 'sk-second-preset-test' $secondSecret
     if ([IO.File]::ReadAllText($secret) -cne $encrypted) { throw "Saving another preset overwrote the original key." }
     if (Test-Path -LiteralPath $plaintext) { throw "Second preset plaintext key was retained." }
     $secondEncryptedBytes = [Convert]::FromBase64String([IO.File]::ReadAllText($secondSecret).Trim())
@@ -198,6 +223,12 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $work) {
+        $resolvedWork = [IO.Path]::GetFullPath($work)
+        $testRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        if (-not $resolvedWork.StartsWith($testRoot, [StringComparison]::OrdinalIgnoreCase) -or
+            [IO.Path]::GetFileName($resolvedWork) -notmatch '^PsyReaSFX-ai-bridge-[0-9a-f]{32}$') {
+            throw 'Refusing to remove a directory outside the AI bridge fixture.'
+        }
         Remove-Item -LiteralPath $work -Recurse -Force
     }
 }

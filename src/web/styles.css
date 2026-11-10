@@ -181,7 +181,7 @@ small {
   background: transparent;
   border-color: #51484c;
 }
-.bin-button {
+.tasks-button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -231,7 +231,7 @@ small {
 #app {
   height: 100dvh;
   display: grid;
-  grid-template-rows: 115px minmax(145px, 1fr) 5px var(--audition-height) 27px;
+  grid-template-rows: 115px minmax(145px, 1fr) 5px var(--audition-height);
 }
 #browser {
   display: grid;
@@ -653,12 +653,13 @@ body.right-hidden #inspector {
   border-bottom: 1px solid var(--quiet);
   padding: 0 5px;
 }
-.audition-heading strong {
+#asset-name {
   font-size: 12px;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  max-width: 35%;
+  max-width: 28%;
+  min-width: 72px;
 }
 .audition-heading > span {
   font-size: 11px;
@@ -679,31 +680,8 @@ body.right-hidden #inspector {
   min-height: 80px;
   flex: 1 1 0;
   display: grid;
-  grid-template-columns: 128px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
   padding: 4px 0;
-}
-#wave-readouts {
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  align-self: stretch;
-  display: grid;
-  grid-template-rows: repeat(4, minmax(0, 1fr));
-  min-height: 0;
-  overflow: hidden;
-  font-size: 11px;
-}
-#wave-readouts label {
-  display: flex;
-  justify-content: space-between;
-  gap: 5px;
-  color: var(--muted);
-  white-space: nowrap;
-  align-items: center;
-}
-#wave-readouts output {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
 }
 #detail-wave-wrap {
   min-width: 0;
@@ -754,7 +732,6 @@ body.right-hidden #inspector {
   white-space: nowrap;
   border-top: 1px solid var(--quiet);
 }
-.loudness-heading,
 .loudness-metric > span {
   color: var(--muted);
 }
@@ -848,6 +825,26 @@ body.right-hidden #inspector {
   min-width: 33px;
   height: 28px;
 }
+.transport-volume {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 0 9px;
+  border-right: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.transport-volume input[type="range"] {
+  width: clamp(54px, 6vw, 100px);
+}
+.transport-volume input[type="number"] {
+  width: 49px;
+  height: 25px;
+  padding: 2px 3px;
+  font-variant-numeric: tabular-nums;
+}
 .play-button {
   background: #b6a274;
   color: #201d17;
@@ -872,28 +869,6 @@ body.right-hidden #inspector {
 }
 .transport #fx-toggle {
   font-size: 11px;
-}
-footer {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 0 10px;
-  font-size: 11px;
-  color: var(--muted);
-  border-top: 1px solid var(--quiet);
-}
-footer #status {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-footer button {
-  min-height: 20px;
-  font-size: 10px;
-  padding: 0 5px;
-}
-footer .error {
-  color: #f8a8a0;
 }
 #popover {
   position: fixed;
@@ -1021,9 +996,6 @@ body[data-theme="paper"] button.active {
   background: var(--selected);
   color: var(--text);
 }
-body[data-theme="paper"] #wave-readouts output {
-  color: var(--text);
-}
 @media (max-width: 1050px) {
   .brand strong {
     font-size: 18px;
@@ -1034,10 +1006,7 @@ body[data-theme="paper"] #wave-readouts output {
   .scope-control select {
     max-width: 120px;
   }
-  .bin-button > span:not(.count) {
-    display: none;
-  }
-  #asset-info {
+  .tasks-button > span:not(.count) {
     display: none;
   }
   .auto-preview {
@@ -1046,6 +1015,19 @@ body[data-theme="paper"] #wave-readouts output {
   .transport output {
     min-width: 160px;
     padding: 0 5px;
+  }
+  .transport {
+    gap: 4px;
+  }
+  .transport-volume {
+    padding: 0 5px;
+  }
+  .transport-volume > span:first-child {
+    display: none;
+  }
+  .transport #insert,
+  .transport #transfer-open {
+    padding: 3px 8px;
   }
 }
 @media (max-width: 760px) {
@@ -1069,8 +1051,12 @@ body[data-theme="paper"] #wave-readouts output {
     padding: 3px 7px;
     font-size: 11px;
   }
-  #wave-area {
-    grid-template-columns: 128px minmax(0, 1fr);
+  .transport {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .transport > * {
+    flex-shrink: 0;
   }
   .transport output {
     font-size: 11px;
@@ -1390,12 +1376,6 @@ body[data-theme="paper"] #wave-readouts output {
   border: 0;
   border-top: 1px solid var(--line);
   margin: 5px 0;
-}
-#tasks-open {
-  max-width: 42vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .task-row {
   display: flex;
@@ -1779,4 +1759,219 @@ dialog::backdrop {
 #popover .submenu-arrow {
   color: var(--muted);
   margin-left: 12px;
+}
+
+/* A library is a group of indexed source roots, not another disk folder. */
+#sources .library-row {
+  min-height: 32px;
+}
+#sources .library-row .nav-item {
+  font-weight: 600;
+}
+#sources .library-row .ui-icon {
+  margin: 0;
+}
+#sources .library-row .nav-item > span {
+  flex: 1;
+  min-width: 0;
+}
+#sources .library-count {
+  color: var(--muted);
+  font-weight: 400;
+}
+.library-branch > summary {
+  list-style: none;
+}
+.library-branch > summary::-webkit-details-marker {
+  display: none;
+}
+.library-branch {
+  margin-bottom: 5px;
+}
+#sources .library-toggle {
+  width: 22px;
+}
+
+#popover.action-menu {
+  padding: 0;
+  max-height: none;
+  overflow: visible;
+}
+#popover .menu-panel {
+  width: max-content;
+  min-width: 158px;
+  max-width: min(400px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 5px;
+}
+#popover .menu-panel[data-menu-level]:not([data-menu-level="0"]) {
+  position: fixed;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--raised);
+  box-shadow: 0 8px 24px #0006;
+}
+#popover .menu-item[aria-expanded="true"] {
+  background: var(--selected);
+}
+#sources .folder-row .ui-icon {
+  margin: 0;
+}
+
+/* Keep sound information together; background work lives in its own panel. */
+.audition-metadata {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+#loudness-strip {
+  min-height: 22px;
+  padding: 0 0 0 12px;
+  gap: 10px;
+  border: 0;
+  border-left: 1px solid var(--line);
+}
+.loudness-metric {
+  gap: 5px;
+}
+.loudness-analyze {
+  padding: 0 4px !important;
+  margin: 0;
+}
+#task-panel {
+  inset: auto 12px auto auto;
+  margin: 0;
+  width: min(370px, calc(100vw - 24px));
+  padding: 14px;
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 35px #0005;
+  overflow: auto;
+}
+.task-panel-heading,
+#task-panel .task-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-panel-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+#tasks-close {
+  background: transparent;
+  border-color: transparent;
+}
+#task-panel #status {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+#task-panel #status.error {
+  color: #ee9187;
+}
+#task-panel .task-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+#task-panel .task-row button,
+#cancel-tasks {
+  min-height: 25px;
+  font-size: 11px;
+}
+#cancel-tasks {
+  margin-top: 10px;
+}
+#task-panel #analysis-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  white-space: normal;
+}
+#task-panel #analysis-label {
+  overflow: visible;
+}
+#task-panel #analysis-progress {
+  width: 100%;
+  max-width: none;
+}
+.tasks-button.has-tasks {
+  border-color: var(--accent);
+}
+.tasks-button.has-error {
+  border-color: #ee9187;
+}
+.selection-editor {
+  display: grid;
+  gap: 12px;
+  padding: 6px;
+}
+.selection-editor label {
+  display: grid !important;
+  gap: 5px;
+}
+@media (max-width: 1100px) {
+  .audition-heading {
+    flex-wrap: wrap;
+    height: 56px;
+    min-height: 56px;
+    gap: 2px 10px;
+  }
+  .audition-metadata {
+    order: 1;
+    flex-basis: 100%;
+    height: 22px;
+  }
+  #asset-name {
+    max-width: 42%;
+  }
+}
+
+#startup-state {
+  inset: 0;
+  gap: 14px;
+}
+.startup-logo {
+  width: 72px;
+  height: 72px;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  fill: none;
+  animation: startup-pulse 1.6s ease-in-out infinite alternate;
+}
+#startup-state .startup-brand {
+  font-size: 30px;
+  letter-spacing: -0.8px;
+}
+#startup-phase {
+  margin-top: 8px;
+}
+#startup-count,
+#startup-elapsed {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes startup-pulse {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .startup-logo {
+    animation: none;
+  }
 }
