@@ -105,4 +105,49 @@ assert(
   "confirmed seek position must resume normal preview polling"
 )
 
+-- Exercise the real preview constructor: restore SECTION time before starting
+-- playback, including reverse/selection previews. Native audio itself is mocked.
+do
+  local preview, seek, section
+  local env = setmetatable({}, { __index = _ENV })
+  env.state = { region_start = 0.25, region_end = 0.75, reverse = true, rate = 2 }
+  local asset = { path = "fixture.wav", name = "Fixture", duration = 8 }
+  env.reaper = {
+    file_exists = function() return true end,
+    PCM_Source_CreateFromFile = function() return {} end,
+    PCM_Source_CreateFromType = function() return {} end,
+    PCM_Source_Destroy = function() end,
+    GetMediaSourceLength = function() return 8, false end,
+    CF_PCM_Source_SetSectionInfo = function(_, _, offset, length, reverse)
+      section = { offset, length, reverse }; return true
+    end,
+    CF_CreatePreview = function() preview = {}; return preview end,
+    CF_Preview_SetValue = function(_, key, value) if key == "D_POSITION" then seek = value end end,
+    CF_Preview_GetValue = function() return true, 8 end,
+    CF_Preview_Play = function() preview.started_at = seek or 0; return true end,
+    time_precise = function() return 10 end,
+  }
+  env.AppState = { set = function(key, value) env.state[key] = value end }
+  env.Jobs = { begin = function() return {} end }
+  env.selected_asset = function() return asset end
+  env.queue_metadata = function() end
+  env.stop_preview = function() seek = nil end
+  env.has_selection = function() return env.state.region_start > 0 end
+  env.loudness_match_offset_db = function() return 0 end
+  env.configure_preview_instance = function() end
+  env.preview_uses_centered_mono = function() return false end
+  env.record_preview_history = function() end
+  env.set_status = function() end
+  assert(load(play_preview_source, "resume-constructor", "t", env))()
+  env.play_preview(asset, nil, true, 1.25)
+  assert(section[1] == 2 and section[2] == 4 and section[3])
+  assert(preview.started_at == 1.25 and env.state.preview_position == 1.25,
+    "resume must seek before audio starts, independently of rate/reverse")
+  env.play_preview(asset, nil, false, 3.5)
+  assert(section[1] == 0 and section[2] == 8 and preview.started_at == 3.5)
+  env.play_preview(asset, nil, true)
+  assert(preview.started_at == 0, "ordinary selection preview must still begin at its boundary")
+  env.play_preview(asset, nil, true, 100)
+  assert(preview.started_at < 4, "stale resume times must stay inside the active source")
+end
 print("Lua preview seek self-test passed")

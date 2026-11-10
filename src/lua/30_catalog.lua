@@ -937,28 +937,22 @@ function load_config()
   file:close()
 end
 
-function save_config()
-  if state.root_removal_session then return false end
-  ensure_dirs()
-
-  local file = atomic_file_writer(CONFIG_FILE)
-
-  if not file then
-    set_status("无法保存配置", true)
-    return
-  end
-
+-- Small settings are captured in the same frame; only large favorite sets
+-- are streamed later. Mutations set config_dirty again for the next save.
+function write_config_settings(file, include_favorites)
   write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
   workspace_write_settings(file)
   if workspace_tabs_write_settings then workspace_tabs_write_settings(file) end
 
-  for path in pairs(state.favorites) do
-    file:write(
-      "favorite\t",
-      escape_tsv(path),
-      "\n"
-    )
+  if include_favorites then
+    for path in pairs(state.favorites) do
+      file:write(
+        "favorite\t",
+        escape_tsv(path),
+        "\n"
+      )
+    end
   end
 
   for index, path in ipairs(state.recent) do
@@ -1590,10 +1584,64 @@ function save_config()
     )
   end
 
+end
+
+function cancel_config_save()
+  local session = state.config_save_session
+  if not session then return end
+  session.writer:abort()
+  AppState.set("config_save_session", nil)
+  AppState.set("config_dirty", true)
+end
+
+function save_config()
+  if state.root_removal_session then return false end
+  cancel_config_save()
+  ensure_dirs()
+  local file = atomic_file_writer(CONFIG_FILE)
+  if not file then set_status("无法保存配置", true); return false end
+  write_config_settings(file, true)
   if not file:close() then
     set_status("无法保存配置", true)
     return false
   end
-  state.config_dirty = false
+  AppState.set("config_dirty", false)
   return true
+end
+
+function start_config_save()
+  if state.config_save_session or not state.config_dirty
+    or state.persistence_read_only or state.root_removal_session then return false end
+  ensure_dirs()
+  local writer = atomic_file_writer(CONFIG_FILE)
+  if not writer then set_status("无法保存配置", true); return false end
+  write_config_settings(writer, false)
+  if writer.failed then writer:abort(); set_status("无法保存配置", true); return false end
+  AppState.set("config_save_session", {
+    writer = writer, job = new_path_set_persistence_job(state.favorites, "favorite", false),
+  })
+  AppState.set("config_dirty", false)
+  return true
+end
+
+function process_config_save()
+  local session = state.config_save_session
+  if not session then return end
+  if state.root_removal_session or state.persistence_read_only then cancel_config_save(); return end
+  local complete, reason = step_path_set_persistence_job(
+    session.job, session.writer, 4000, escape_tsv,
+    HostApi.time_precise() + 0.004, HostApi.time_precise
+  )
+  if reason then
+    cancel_config_save()
+    set_status("无法保存配置：" .. tostring(reason), true)
+  elseif complete then
+    AppState.set("config_save_session", nil)
+    if not session.writer:close() then
+      AppState.set("config_dirty", true)
+      set_status("无法保存配置", true)
+    end
+    -- Do not clear config_dirty here: the user may have changed settings
+    -- while this generation was being written.
+  end
 end

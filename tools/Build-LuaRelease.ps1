@@ -54,6 +54,7 @@ $parts = for ($index = 0; $index -lt $modules.Count; $index++) {
 $release = [string]::Join("`n", $parts)
 if ($Ui -eq 'webview') {
     $release = $release.Replace('local WEBVIEW_MODE = false', 'local WEBVIEW_MODE = true')
+    $release = [regex]::Replace($release, '(?m)^-- @description[^\r\n]*$', '-- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）', 1)
 }
 
 $matches = [regex]::Matches($release, '(?m)^-- @version\s+[^\r\n]+$')

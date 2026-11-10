@@ -143,6 +143,7 @@ export function createSettings({
     busy = true;
     apply.disabled = true;
     dialog.setAttribute("aria-busy", "true");
+    body.inert = true;
     try {
       return await callback();
     } catch (error) {
@@ -150,6 +151,7 @@ export function createSettings({
     } finally {
       busy = false;
       dialog.removeAttribute("aria-busy");
+      body.inert = false;
       apply.disabled = !loaded || settings?.loading || !changed();
     }
   }
@@ -614,6 +616,31 @@ export function createSettings({
     target.append(row, warning, result);
   }
   function extra() {
+    if (section === "general") {
+      const target = card(
+        "试听控制",
+        "停止按钮始终结束试听；暂停会保留位置，再次播放从该位置继续。",
+      );
+      target.append(
+        control(
+          {
+            key: "previewBehavior",
+            label: "空格与播放按钮",
+            kind: "choice",
+            options: [
+              ["pause", "暂停 / 继续（默认）"],
+              ["stop", "停止 / 重新播放"],
+            ],
+          },
+          localDraft.previewBehavior,
+          (value) => {
+            localDraft.previewBehavior = value;
+            updateDirty();
+          },
+          true,
+        ),
+      );
+    }
     if (section === "appearance") appearance();
     if (section === "ai") ai();
     if (section === "transfer") {
@@ -715,7 +742,7 @@ export function createSettings({
         card("运行环境", `ReaWebAPI ${runtime.version} · ${runtime.notice}`);
       const help = card("快捷键与使用说明");
       for (const [keys, description] of [
-        ["Space", "播放 / 停止"],
+        ["Space", "播放 / 暂停（可改为停止）"],
         ["F / M / L", "收藏 / 标记 / 循环"],
         ["Ctrl+F", "搜索"],
         ["Ctrl+Shift+F", "AI 语义搜索"],

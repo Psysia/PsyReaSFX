@@ -127,12 +127,13 @@ state.watch_interval = 60
 reaper.time_precise = function() return now end
 reaper.GetPlayState = function() return 0 end
 local function loading() coroutine.yield() coroutine.yield() end
-state.startup_session = { thread = coroutine.create(loading) }
+state.startup_session = { thread = coroutine.create(loading), started_at = 10, phase = "fixture" }
 process_startup()
-assert(math.abs(state.startup_session.deadline - 10.024) < 0.0001)
+assert(math.abs(state.startup_session.deadline - 10.036) < 0.0001)
 reaper.GetPlayState = function() return 1 end
 process_startup()
 assert(math.abs(state.startup_session.deadline - 10.012) < 0.0001, "playing transport must retain shorter work budget")
 process_startup()
 assert(not state.startup_session, "finished startup must unlock normal UI")
+assert(state.startup_metrics.frames == 3 and state.startup_metrics.seconds == 0)
 print("Lua import recovery and loading lifecycle self-test passed")

@@ -201,7 +201,7 @@ async function main() {
           },
           removeEventListener() {},
           postMessage(request) {
-            calls.push(request);
+            calls.push({ ...request, at: performance.now() });
             if (
               (request.method === "settings.get" && window.testSettingsError) ||
               (request.method === "settings.update" && window.testUpdateError)
@@ -599,6 +599,11 @@ async function main() {
       window.testSetState({ startup: { phase: "读取素材索引" } }),
     );
     await page.locator("#startup-state").waitFor();
+    assert.match(
+      await page.locator("#startup-state").textContent(),
+      /PsyReaSFX/,
+    );
+    await page.screenshot({ path: path.join(output, "beta10-startup.png") });
     assert(
       await page.locator("#play").isDisabled(),
       "startup must disable asset actions",
@@ -817,7 +822,7 @@ async function main() {
     await page.evaluate(() =>
       window.testSetState({ tasks: { transfer: true, scan: true } }),
     );
-    await page.locator("#tasks-open").click();
+    await page.locator("#tasks-menu").click();
     await page
       .getByRole("button", { name: "停止 · 扫描", exact: true })
       .click();
@@ -930,7 +935,7 @@ async function main() {
       "expanded FX must keep waveform width",
     );
     await page.locator("#fx-toggle").click();
-    await page.locator("#columns-open").click();
+    await page.locator("#column-head").click({ button: "right" });
     await page
       .locator("#popover label")
       .filter({ hasText: "预览波形" })
@@ -992,13 +997,11 @@ async function main() {
     await page.screenshot({ path: path.join(output, "expanded-sidebars.png") });
     await page.locator("#left-toggle").click();
     await page.screenshot({ path: path.join(output, "default-dark.png") });
-    await page.locator("#layout-menu").click();
-    await page
-      .locator("#popover label")
-      .filter({ hasText: "纸白墨绿主题" })
-      .locator("input")
-      .check();
-    await page.keyboard.press("Escape");
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="appearance"]').click();
+    await page.locator('[data-preference="theme"]').selectOption("paper");
+    await page.locator("#settings-apply").click();
+    await page.locator("#settings-close").click();
     await page.reload();
     await page.waitForSelector(".result-row");
     assert.equal(
@@ -1015,6 +1018,14 @@ async function main() {
     const toggles = await page.evaluate(
       () =>
         window.testCalls.filter((c) => c.method === "preview.toggle").length,
+    );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("psyreasfx.workspace.v1") || "{}")
+            .previewBehavior || "pause",
+      ),
+      "pause",
     );
     await page.locator("#play").focus();
     await page.keyboard.down("Space");
@@ -1044,6 +1055,34 @@ async function main() {
       toggles + 2,
       "text entry must not control audition",
     );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((c) => c.method === "preview.toggle").at(-1)
+            .params.behavior,
+      ),
+      "pause",
+    );
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="general"]').click();
+    await page
+      .locator('[data-preference="previewBehavior"]')
+      .selectOption("stop");
+    await page.locator("#settings-apply").click();
+    await page.locator("#settings-close").click();
+    await page.locator("#play").click();
+    await page.waitForFunction(
+      () =>
+        window.testCalls.filter((c) => c.method === "preview.toggle").at(-1)
+          .params.behavior === "stop",
+    );
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="general"]').click();
+    await page
+      .locator('[data-preference="previewBehavior"]')
+      .selectOption("pause");
+    await page.locator("#settings-apply").click();
+    await page.locator("#settings-close").click();
     await page.locator("#search").fill("");
     await page.evaluate(() => {
       window.testLongName =
@@ -1065,7 +1104,7 @@ async function main() {
       (await page.locator("#popover .menu-item").count()) < 15,
       "secondary actions belong to groups",
     );
-    await page.screenshot({ path: path.join(output, "beta9-menu-zh.png") });
+    await page.screenshot({ path: path.join(output, "beta10-menu-zh.png") });
     await page
       .locator("#popover")
       .getByRole("button", { name: "插入 REAPER", exact: false })
@@ -1075,10 +1114,72 @@ async function main() {
       .getByRole("button", { name: "插入新轨道", exact: true })
       .waitFor();
     await page.keyboard.press("ArrowLeft");
+    assert.equal(
+      await page.locator('.menu-panel[data-menu-level="1"]').count(),
+      0,
+    );
+    await page
+      .locator("#popover")
+      .getByRole("button", { name: "分析与元数据", exact: false })
+      .hover();
+    await page.locator('.menu-panel[data-menu-level="1"]').waitFor();
+    assert(
+      await page
+        .locator("#popover")
+        .getByRole("button", { name: "分析与元数据", exact: false })
+        .isVisible(),
+      "hover must retain the parent menu",
+    );
+    await page.locator('.menu-panel[data-menu-level="1"]').hover();
+    assert.equal(
+      await page.locator(".menu-panel").count(),
+      2,
+      "moving into a submenu must keep it open",
+    );
+    await page.screenshot({ path: path.join(output, "beta10-hover-menu.png") });
+    const submenuBox = await page
+      .locator('.menu-panel[data-menu-level="1"]')
+      .boundingBox();
+    assert(
+      submenuBox.x >= 0 &&
+        submenuBox.x + submenuBox.width <= page.viewportSize().width &&
+        submenuBox.y >= 0 &&
+        submenuBox.y + submenuBox.height <= page.viewportSize().height,
+      "submenu must remain inside viewport",
+    );
     assert(
       await page
         .getByRole("button", { name: "分析与元数据", exact: false })
         .isVisible(),
+    );
+    await page.keyboard.press("Escape");
+    await page
+      .locator(".result-row")
+      .first()
+      .evaluate((row) =>
+        row.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            clientX: 990,
+            clientY: 690,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      );
+    await page
+      .getByRole("button", { name: "分析与元数据", exact: false })
+      .hover();
+    await page.locator('.menu-panel[data-menu-level="1"]').waitFor();
+    const edgeSubmenu = await page
+      .locator('.menu-panel[data-menu-level="1"]')
+      .boundingBox();
+    const edgeParent = await page.locator("#popover").boundingBox();
+    await page.screenshot({ path: path.join(output, "beta10-edge-menu.png") });
+    assert(
+      edgeSubmenu.x >= 0 &&
+        edgeSubmenu.x + edgeSubmenu.width <= edgeParent.x + 1 &&
+        edgeSubmenu.y + edgeSubmenu.height <= page.viewportSize().height,
+      `near the right/bottom edge, the submenu must flip left and remain visible: ${JSON.stringify({ edgeSubmenu, edgeParent, viewport: page.viewportSize() })}`,
     );
     await page.keyboard.press("Escape");
     await page.evaluate(() => window.testSetState({ language: "en" }));
@@ -1091,7 +1192,7 @@ async function main() {
       enMenu.width > zhMenu.width && enMenu.width < 340,
       "menu width adapts to translated commands",
     );
-    await page.screenshot({ path: path.join(output, "beta9-menu-en.png") });
+    await page.screenshot({ path: path.join(output, "beta10-menu-en.png") });
     await page.keyboard.press("Escape");
     await page.evaluate(() => {
       window.testLongName = undefined;
@@ -1122,15 +1223,35 @@ async function main() {
     await page.locator('[data-rail="libraries"]').click();
     assert(await page.locator("#libraries").isVisible());
     assert(!(await page.locator("#views").isVisible()));
+    assert.equal(
+      await page.locator("#collection-menu").count(),
+      0,
+      "remove the redundant top collection entry",
+    );
+    assert(await page.locator("#tasks-menu").isVisible());
+    const libraryIcon = await page
+      .locator(".library-row .ui-icon")
+      .first()
+      .boundingBox();
+    const libraryName = await page
+      .locator(".library-row .nav-item > span")
+      .first()
+      .boundingBox();
+    assert(
+      libraryName.x - libraryIcon.x < 45,
+      "library icon must not push the name to the right edge",
+    );
     const navFont = await page
-      .locator("#libraries > .nav-item")
+      .locator("#libraries > .library-branch > .library-row > .nav-item")
       .first()
       .evaluate((el) => getComputedStyle(el).fontSize);
     await page.evaluate(() => {
       window.testFolderPending = true;
     });
     await page
-      .locator("#libraries > .folder-branch > summary > .folder-toggle")
+      .locator(
+        "#libraries > .library-branch > .folder-branch > summary > .folder-toggle",
+      )
       .click();
     await page
       .locator("#libraries .folder-state")
@@ -1150,18 +1271,22 @@ async function main() {
       .filter({ hasText: "Leaf" })
       .waitFor();
     const rootLabel = page.locator(
-      "#libraries > .folder-branch > summary > .nav-item",
+      "#libraries > .library-branch > .folder-branch > summary > .nav-item",
     );
     await rootLabel.dblclick({ delay: 100 });
     await page.waitForFunction(
-      () => !document.querySelector("#libraries > .folder-branch").open,
+      () =>
+        !document.querySelector("#libraries > .library-branch > .folder-branch")
+          .open,
     );
     await rootLabel.dblclick({ delay: 100 });
     await page.waitForFunction(
-      () => document.querySelector("#libraries > .folder-branch").open,
+      () =>
+        document.querySelector("#libraries > .library-branch > .folder-branch")
+          .open,
     );
     const rootArrow = page.locator(
-      "#libraries > .folder-branch > summary > .folder-toggle",
+      "#libraries > .library-branch > .folder-branch > summary > .folder-toggle",
     );
     const labelBox = await rootLabel.boundingBox(),
       arrowBox = await rootArrow.boundingBox();
@@ -1182,6 +1307,9 @@ async function main() {
           call.params.root?.endsWith("\\Child\\Leaf"),
       ),
     );
+    await page.screenshot({
+      path: path.join(output, "beta10-library-tree.png"),
+    });
     await page.locator('[data-rail="ucs"]').click();
     assert(!(await page.locator("#libraries").isVisible()));
     await page.locator("#ucs-categories > details > summary").click();
@@ -1278,12 +1406,20 @@ async function main() {
     );
     await page.evaluate(() => {
       window.testWaveMisses = 2;
+      window.testWaveStart = performance.now();
     });
     await page.locator(".result-cell.name").nth(2).click();
     await page.waitForFunction(
       () =>
         window.testWaveMisses === 0 &&
         document.getElementById("wave-status").hidden,
+    );
+    const retryLatency = await page.evaluate(
+      () => performance.now() - window.testWaveStart,
+    );
+    assert(
+      retryLatency < 700,
+      `cached waveform polling must not add an 850ms delay: ${retryLatency}`,
     );
     await page.evaluate(() =>
       window.testSetState({ regionStart: 0, regionEnd: 1 }),
@@ -1319,6 +1455,7 @@ async function main() {
         },
       }),
     );
+    await page.locator("#tasks-menu").click();
     assert.match(
       await page.locator("#analysis-bar").textContent(),
       /建立声音特征缓存.*27 \/ 125/s,
@@ -1330,6 +1467,38 @@ async function main() {
           call.method === "tasks.cancel" && call.params.task === "similar",
       ),
     );
+    await page.evaluate(() =>
+      window.testSetState({
+        tasks: { scan: true, similar: true },
+        similarityProgress: {
+          phase: "waiting",
+          completed: 0,
+          total: 0,
+          reference: "fixture.wav",
+          waitingFor: "扫描",
+        },
+      }),
+    );
+    await page.waitForFunction(() =>
+      document
+        .getElementById("analysis-label")
+        .textContent.includes("等待扫描完成"),
+    );
+    assert.equal(
+      await page.locator("#analysis-cancel").textContent(),
+      "取消等待",
+    );
+    assert.equal(await page.locator("#task-count").textContent(), "2");
+    await page.screenshot({ path: path.join(output, "beta10-task-panel.png") });
+    await page.locator("#analysis-cancel").click();
+    await page.waitForFunction(
+      () =>
+        window.testCalls.filter((call) => call.method === "tasks.cancel").at(-1)
+          .params.task === "similar",
+    );
+    await page.locator("#tasks-close").click();
+    assert.equal(await page.locator("#app > footer").count(), 0);
+    assert.equal(await page.locator("#wave-readouts").count(), 0);
     await page.locator("#fx-toggle").click();
     for (const size of [
       { width: 1600, height: 1000 },
@@ -1342,7 +1511,7 @@ async function main() {
         Object.fromEntries(
           [
             "detail-wave",
-            "wave-readouts",
+            "asset-info",
             "fx-panel",
             "audition",
             "loudness-strip",
@@ -1373,8 +1542,9 @@ async function main() {
         "FX toolbar must precede and never overlap the waveform",
       );
       assert(
-        boxes["wave-readouts"].bottom <= boxes["loudness-strip"].top + 1,
-        "readouts must fit their waveform row",
+        boxes["loudness-strip"].bottom <= boxes["fx-panel"].top + 1 &&
+          Math.abs(boxes["asset-info"].top - boxes["loudness-strip"].top) < 10,
+        "loudness belongs beside format metadata, above the waveform/FX",
       );
       assert(
         boxes["fx-panel"].bottom <= boxes.transport.top + 1,
@@ -1404,7 +1574,7 @@ async function main() {
         });
       }
       await page.screenshot({
-        path: path.join(output, `beta9-fx-${size.width}.png`),
+        path: path.join(output, `beta10-fx-${size.width}.png`),
       });
     }
     await page.setViewportSize({ width: 1600, height: 1000 });
@@ -1425,7 +1595,51 @@ async function main() {
         smallPlayer.y + smallPlayer.height,
       "minimum height keeps transport accessible",
     );
-    await page.screenshot({ path: path.join(output, "beta9-compact-fx.png") });
+    await page.screenshot({ path: path.join(output, "beta10-compact-fx.png") });
+    const volumeBox = await page.locator(".transport-volume").boundingBox();
+    const loopBox = await page.locator("#loop").boundingBox();
+    assert(volumeBox.x > loopBox.x && Math.abs(volumeBox.y - loopBox.y) < 6);
+    await page.locator("#fx-gain-value").fill("");
+    await page
+      .locator("#fx-gain-value")
+      .pressSequentially("-8.6", { delay: 15 });
+    assert.equal(
+      await page.locator("#fx-gain-value").inputValue(),
+      "-8.6",
+      "signed decimal values must remain editable",
+    );
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (c) => c.method === "preview.parameters" && c.params.gain_db === -8.6,
+      ),
+    );
+    await page.locator("#fx-gain").dblclick();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (c) => c.method === "preview.parameters" && c.params.gain_db === 0,
+      ),
+    );
+    await page.evaluate(() =>
+      window.testSetState({ regionStart: 0.1, regionEnd: 0.8 }),
+    );
+    await page.locator("#range-label").click();
+    await page.locator('.selection-editor input[name="start"]').fill("1");
+    await page.locator('.selection-editor input[name="finish"]').fill("0.5");
+    await page.locator('.selection-editor button[type="submit"]').click();
+    assert(
+      await page.locator(".selection-editor").isVisible(),
+      "invalid ranges must remain editable",
+    );
+    await page.locator('.selection-editor input[name="finish"]').fill("3");
+    await page.locator('.selection-editor button[type="submit"]').click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (c) =>
+          c.method === "preview.region" &&
+          c.params.path &&
+          c.params.finish > c.params.start,
+      ),
+    );
     await page.locator("#fx-presets").click();
     await page.getByRole("button", { name: "音高预设", exact: false }).click();
     await page.getByRole("button", { name: "+6 st", exact: true }).click();
@@ -1442,6 +1656,10 @@ async function main() {
       window.testCalls.some((c) => c.method === "preview.clearRegion"),
     );
     await page.locator("#fx-toggle").click();
+    assert(
+      await page.locator("#fx-gain").isVisible(),
+      "volume remains available with FX closed",
+    );
     await page.evaluate(() =>
       window.testSetState({ tasks: {}, similarityProgress: undefined }),
     );
@@ -1546,6 +1764,36 @@ async function main() {
     );
     await page.waitForFunction(
       () => typeof window.testNativeDrop === "function",
+    );
+    await page.locator('[data-rail="libraries"]').click();
+    const source = page
+      .locator("#libraries > .library-branch > .folder-branch")
+      .first();
+    if (!(await source.evaluate((el) => el.open)))
+      await source.locator(":scope > summary > .folder-toggle").click();
+    await source.locator(".folder-branch").first().waitFor();
+    const target = source
+      .locator(".folder-branch > summary > .nav-item")
+      .first();
+    const targetBox = await target.boundingBox();
+    const owner = await target.evaluate(
+      (el) => el.closest("[data-library-id]").dataset.libraryId,
+    );
+    await page.evaluate(
+      ({ x, y }) => window.testNativeDrop({ files: ["D:\\New source"], x, y }),
+      { x: targetBox.x + 10, y: targetBox.y + 10 },
+    );
+    await page.waitForFunction(
+      (id) =>
+        window.testCalls.some(
+          (c) => c.method === "library.drop" && c.params.libraryId === id,
+        ),
+      owner,
+    );
+    assert.equal(
+      await page.locator("dialog[open]").count(),
+      0,
+      "dropping on a child folder must add a source to its library",
     );
     await page.evaluate(() =>
       window.testNativeDrop({

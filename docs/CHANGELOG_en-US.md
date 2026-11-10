@@ -1,3 +1,17 @@
+## 0.9.3 Beta 10 (0.9.a WebView) — 2026-11-10
+
+- Default the play button and Space to pause/resume at the captured source position, including selected regions and reverse audition. General settings can restore stop/restart; the separate Stop button always ends playback.
+- Group source folders and subdirectories under their owning library; fix icon spacing. Drops on a library or its descendants add source roots to that library; blank-workspace drops use the currently selected library when available. Allow bounded folder browsing during scans.
+- Reuse recent detail waveforms or a list overview immediately and replace the fixed 850 ms cache retry with short adaptive retries.
+- Queue similar-sound requests behind exclusive catalog work with visible status and cancellation. Start when idle; cancel a waiting current-results search if its filters change.
+- Replace the top collection shortcut with task status/cancellation; retain collections in the sidebar and context/library menus.
+- Open cascading submenus on hover, retain the parent menu and flip near window edges; preserve click and keyboard navigation.
+- Extend Lua and browser regressions for resume mapping, queued work, bounded folders, native drop ownership, wave latency and hover menus. The user confirmed Beta 9 Space routing; native audio resume still requires this release's acceptance steps.
+
+- Keep volume beside transport controls, move loudness beside format metadata, replace redundant time readouts with a selection summary/editor, and consolidate tasks and column configuration into their contextual entries.
+- Add an immediate branded loading state and startup diagnostics; reduce idle defer overhead while preserving the playback budget. Split the public launcher from the runtime so rerunning restores the existing window; register floating Windows taskbar entries when js_ReaScriptAPI is available.
+- Revisit previous audits: snapshot remaining live-map save cursors, stream favorites/config saves atomically, transfer DPAPI credentials through a current-user pipe without plaintext files, preserve DSP zero values, and protect failed durable relink rollback.
+
 ## 0.9.3 Beta 9 (0.9.a WebView) — 2026-11-10
 
 - Size Chinese/English context menus to their commands, truncate long file titles and group secondary actions with keyboard navigation.

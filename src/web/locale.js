@@ -36,6 +36,17 @@ export function createLocalizer() {
           /^相似声音 · (.+)$/,
           (_, phase) => `Similar sounds · ${english[phase] || phase}`,
         )
+        .replace(
+          /^(?:相似声音|Similar sounds) · 等待(.+)完成$/,
+          (_, task) => `Similar sounds · Waiting for ${english[task] || task}`,
+        )
+        .replace(
+          /^相似声音已排队，等待(.+)完成，可取消等待$/,
+          (_, task) =>
+            `Similar search queued; waiting for ${english[task] || task}. You can cancel the queued search.`,
+        )
+        .replace(/^展开音效库 /, "Expand library ")
+        .replace(/^收起音效库 /, "Collapse library ")
         .replace(/^展开文件夹 /, "Expand folder ")
         .replace(/^收起文件夹 /, "Collapse folder ")
         .replace(/^打开文件夹 /, "Open folder ")
@@ -49,8 +60,9 @@ export function createLocalizer() {
         .replace(/^↑ (.+)$/, (_, value) => `↑ ${english[value] || value}`)
         .replace(/^全部 (.+)$/, "All $1");
       result = result.replace(
-        /^停止 · (.+)$/,
-        (_, value) => `Stop · ${english[value] || value}`,
+        /^(停止|取消等待) · (.+)$/,
+        (_, action, value) =>
+          `${action === "停止" ? "Stop" : "Cancel queued search"} · ${english[value] || value}`,
       );
     }
     return source.replace(trimmed, result);
@@ -105,6 +117,7 @@ export function createLocalizer() {
     if (language === "en") observer.observe(document.body, options);
   });
   return {
+    text: translate,
     setLanguage(value) {
       const next = value === "en" ? "en" : "zh";
       if (next === language) return;

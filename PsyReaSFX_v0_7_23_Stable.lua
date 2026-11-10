@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "8e2048f31a1605f5d8894a11716998e7359f6a773d74ca8c97f13574cc16c73f",
+  source_sha256 = "b9bd2a9bb03983aa64681edfb18f9f6d2d8ad6af3b0018b954a24e7019b4529b",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -9460,28 +9460,22 @@ function load_config()
   file:close()
 end
 
-function save_config()
-  if state.root_removal_session then return false end
-  ensure_dirs()
-
-  local file = atomic_file_writer(CONFIG_FILE)
-
-  if not file then
-    set_status("无法保存配置", true)
-    return
-  end
-
+-- Small settings are captured in the same frame; only large favorite sets
+-- are streamed later. Mutations set config_dirty again for the next save.
+function write_config_settings(file, include_favorites)
   write_persistence_schema(file, CONFIG_FILE)
   file:write("version\t", VERSION, "\n")
   workspace_write_settings(file)
   if workspace_tabs_write_settings then workspace_tabs_write_settings(file) end
 
-  for path in pairs(state.favorites) do
-    file:write(
-      "favorite\t",
-      escape_tsv(path),
-      "\n"
-    )
+  if include_favorites then
+    for path in pairs(state.favorites) do
+      file:write(
+        "favorite\t",
+        escape_tsv(path),
+        "\n"
+      )
+    end
   end
 
   for index, path in ipairs(state.recent) do
@@ -10113,12 +10107,66 @@ function save_config()
     )
   end
 
+end
+
+function cancel_config_save()
+  local session = state.config_save_session
+  if not session then return end
+  session.writer:abort()
+  AppState.set("config_save_session", nil)
+  AppState.set("config_dirty", true)
+end
+
+function save_config()
+  if state.root_removal_session then return false end
+  cancel_config_save()
+  ensure_dirs()
+  local file = atomic_file_writer(CONFIG_FILE)
+  if not file then set_status("无法保存配置", true); return false end
+  write_config_settings(file, true)
   if not file:close() then
     set_status("无法保存配置", true)
     return false
   end
-  state.config_dirty = false
+  AppState.set("config_dirty", false)
   return true
+end
+
+function start_config_save()
+  if state.config_save_session or not state.config_dirty
+    or state.persistence_read_only or state.root_removal_session then return false end
+  ensure_dirs()
+  local writer = atomic_file_writer(CONFIG_FILE)
+  if not writer then set_status("无法保存配置", true); return false end
+  write_config_settings(writer, false)
+  if writer.failed then writer:abort(); set_status("无法保存配置", true); return false end
+  AppState.set("config_save_session", {
+    writer = writer, job = new_path_set_persistence_job(state.favorites, "favorite", false),
+  })
+  AppState.set("config_dirty", false)
+  return true
+end
+
+function process_config_save()
+  local session = state.config_save_session
+  if not session then return end
+  if state.root_removal_session or state.persistence_read_only then cancel_config_save(); return end
+  local complete, reason = step_path_set_persistence_job(
+    session.job, session.writer, 4000, escape_tsv,
+    HostApi.time_precise() + 0.004, HostApi.time_precise
+  )
+  if reason then
+    cancel_config_save()
+    set_status("无法保存配置：" .. tostring(reason), true)
+  elseif complete then
+    AppState.set("config_save_session", nil)
+    if not session.writer:close() then
+      AppState.set("config_dirty", true)
+      set_status("无法保存配置", true)
+    end
+    -- Do not clear config_dirty here: the user may have changed settings
+    -- while this generation was being written.
+  end
 end
 
 end
@@ -11195,10 +11243,54 @@ do
 -- atomic writer and pass escaping/path-key functions so this module remains
 -- independent from REAPER and can be capacity-tested from the command line.
 
+-- Map-backed catalogs can change between UI frames, but Lua leaves next()
+-- undefined once a key has been added to the table during a traversal: a rehash
+-- reorders it and entries can be skipped, silently dropping rows from the file
+-- being written. The job therefore snapshots the keys when it is created and
+-- walks that array. A key removed in the meantime is skipped; one added in the
+-- meantime is not part of this save (the owner marks the catalog dirty again,
+-- so the next save writes it). `next_key` always names the next snapshot key,
+-- or nil when the walk is finished.
+local function take_next_live_map_entry(job)
+  local entries = job.entries
+  local keys = job.keys
+  while job.key_index <= job.key_count do
+    local entry_key = keys[job.key_index]
+    job.key_index = job.key_index + 1
+    job.next_key = keys[job.key_index]
+    local value = entries[entry_key]
+    if value ~= nil then
+      return entry_key, value
+    end
+  end
+  job.next_key = nil
+  return nil
+end
+
+local function new_live_map_job(entries)
+  entries = type(entries) == "table" and entries or {}
+  local keys = {}
+  local key_count = 0
+  for key in pairs(entries) do
+    key_count = key_count + 1
+    keys[key_count] = key
+  end
+  return {
+    entries = entries,
+    keys = keys,
+    key_count = key_count,
+    key_index = 1,
+    next_key = keys[1],
+    processed = 0,
+    written = 0,
+  }
+end
+
 function new_collections_persistence_job(collections)
   local snapshots = {}
   for _, collection in ipairs(collections or {}) do
-    local order = collection.order or {}
+    local order = {}
+    for index, path in ipairs(collection.order or {}) do order[index] = path end
     snapshots[#snapshots + 1] = {
       id = collection.id or "",
       name = collection.name or "",
@@ -11283,12 +11375,9 @@ end
 function new_project_usage_persistence_job(project_usage)
   local projects = {}
   for _, bucket in pairs(project_usage or {}) do
-    projects[#projects + 1] = {
-      path = bucket.path or "",
-      assets = bucket.assets or {},
-      started = false,
-      next_key = nil,
-    }
+    local project = new_live_map_job(bucket.assets)
+    project.path = bucket.path or ""
+    projects[#projects + 1] = project
   end
   return {
     projects = projects,
@@ -11315,15 +11404,10 @@ function step_project_usage_persistence_job(
   while processed < batch_size do
     local project = job.projects[job.project_index]
     if not project then return true end
-    if not project.started then
-      project.started = true
-      project.next_key = next(project.assets)
-    elseif project.next_key == nil then
+    if project.next_key == nil then
       job.project_index = job.project_index + 1
     else
-      local key = project.next_key
-      local entry = project.assets[key]
-      project.next_key = next(project.assets, key)
+      local _, entry = take_next_live_map_entry(project)
       if entry and not writer:write(
         "usage\t", escape_function(project.path), "\t",
         escape_function(entry.path or ""), "\t",
@@ -11343,21 +11427,16 @@ function step_project_usage_persistence_job(
     end
   end
   local current = job.projects[job.project_index]
-  if current and current.started and current.next_key == nil then
+  if current and current.next_key == nil then
     job.project_index = job.project_index + 1
   end
   return job.projects[job.project_index] == nil
 end
 
 function new_history_persistence_job(history_assets, by_path)
-  history_assets = type(history_assets) == "table" and history_assets or {}
-  return {
-    entries = history_assets,
-    by_path = type(by_path) == "table" and by_path or {},
-    next_key = next(history_assets),
-    processed = 0,
-    written = 0,
-  }
+  local job = new_live_map_job(history_assets)
+  job.by_path = type(by_path) == "table" and by_path or {}
+  return job
 end
 
 function step_history_persistence_job(
@@ -11378,9 +11457,7 @@ function step_history_persistence_job(
   batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
   local processed = 0
   while job.next_key ~= nil and processed < batch_size do
-    local id = job.next_key
-    local asset = job.entries[id]
-    job.next_key = next(job.entries, id)
+    local _, asset = take_next_live_map_entry(job)
     if asset and job.by_path[key_function(asset.path)] == asset
       and (tonumber(asset.last_previewed) or 0) > 0 then
       if not writer:write(
@@ -11403,14 +11480,11 @@ function step_history_persistence_job(
   return job.next_key == nil
 end
 
-function new_path_set_persistence_job(path_set)
-  path_set = type(path_set) == "table" and path_set or {}
-  return {
-    entries = path_set,
-    next_key = next(path_set),
-    saved = {},
-    processed = 0,
-  }
+function new_path_set_persistence_job(path_set, prefix, retain_saved)
+  local job = new_live_map_job(path_set)
+  job.saved = retain_saved ~= false and {} or nil
+  job.prefix = prefix or "played"
+  return job
 end
 
 function step_path_set_persistence_job(
@@ -11429,13 +11503,12 @@ function step_path_set_persistence_job(
   batch_size = math.max(1, math.floor(tonumber(batch_size) or 1))
   local processed = 0
   while job.next_key ~= nil and processed < batch_size do
-    local key = job.next_key
-    job.next_key = next(job.entries, key)
-    if job.entries[key] then
-      if not writer:write("played\t", escape_function(key), "\n") then
+    local key, value = take_next_live_map_entry(job)
+    if value then
+      if not writer:write(job.prefix, "\t", escape_function(key), "\n") then
         return false, "write_played"
       end
-      job.saved[key] = true
+      if job.saved then job.saved[key] = true end
     end
     processed = processed + 1
     job.processed = job.processed + 1
@@ -11446,49 +11519,6 @@ function step_path_set_persistence_job(
     end
   end
   return job.next_key == nil
-end
-
--- Map-backed catalogs can change between UI frames, but Lua leaves next()
--- undefined once a key has been added to the table during a traversal: a rehash
--- reorders it and entries can be skipped, silently dropping rows from the file
--- being written. The job therefore snapshots the keys when it is created and
--- walks that array. A key removed in the meantime is skipped; one added in the
--- meantime is not part of this save (the owner marks the catalog dirty again,
--- so the next save writes it). `next_key` always names the next snapshot key,
--- or nil when the walk is finished.
-local function take_next_live_map_entry(job)
-  local entries = job.entries
-  local keys = job.keys
-  while job.key_index <= job.key_count do
-    local entry_key = keys[job.key_index]
-    job.key_index = job.key_index + 1
-    job.next_key = keys[job.key_index]
-    local value = entries[entry_key]
-    if value ~= nil then
-      return entry_key, value
-    end
-  end
-  job.next_key = nil
-  return nil
-end
-
-local function new_live_map_job(entries)
-  entries = type(entries) == "table" and entries or {}
-  local keys = {}
-  local key_count = 0
-  for key in pairs(entries) do
-    key_count = key_count + 1
-    keys[key_count] = key
-  end
-  return {
-    entries = entries,
-    keys = keys,
-    key_count = key_count,
-    key_index = 1,
-    next_key = keys[1],
-    processed = 0,
-    written = 0,
-  }
 end
 
 local function persistence_deadline_reached(processed, deadline, time_function)
@@ -15330,7 +15360,8 @@ Add-Type -AssemblyName System.Security
 function Write-Utf8Atomic([string]$Path, [string]$Content) {
   $Temporary = "$Path.tmp"
   [IO.File]::WriteAllText($Temporary, $Content, $Utf8NoBom)
-  Move-Item -LiteralPath $Temporary -Destination $Path -Force
+  if ([IO.File]::Exists($Path)) { [IO.File]::Replace($Temporary, $Path, [NullString]::Value) }
+  else { [IO.File]::Move($Temporary, $Path) }
 }
 
 function Write-Status([string]$Path, [hashtable]$Value) {
@@ -15341,16 +15372,34 @@ $Request = Get-Content -LiteralPath $RequestPath -Raw -Encoding UTF8 | ConvertFr
 try {
   Write-Status ([string]$Request.statusPath) @{ state = 'running'; pid = $PID }
   if ($Request.operation -eq 'protect-key') {
-    $Plain = [IO.File]::ReadAllText([string]$Request.plaintextPath, [Text.Encoding]::UTF8)
-    $PlainBytes = [Text.Encoding]::UTF8.GetBytes($Plain)
+    # Credentials only cross a current-user named pipe; no plaintext file or
+    # command-line argument is created, including on crash or timeout.
+    $Security = New-Object IO.Pipes.PipeSecurity
+    $Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $Security.SetAccessRuleProtection($true, $false)
+    $Security.AddAccessRule((New-Object IO.Pipes.PipeAccessRule($Sid, 'FullControl', 'Allow')))
+    $Pipe = New-Object IO.Pipes.NamedPipeServerStream(
+      [string]$Request.pipeName, [IO.Pipes.PipeDirection]::In, 1,
+      [IO.Pipes.PipeTransmissionMode]::Byte, [IO.Pipes.PipeOptions]::Asynchronous,
+      16384, 16384, $Security)
     try {
+      $Connection = $Pipe.BeginWaitForConnection($null, $null)
+      Write-Status ([string]$Request.statusPath) @{ state = 'ready'; pid = $PID }
+      if (-not $Connection.AsyncWaitHandle.WaitOne(12000)) { throw 'Credential transfer timed out.' }
+      $Pipe.EndWaitForConnection($Connection)
+      $Reader = New-Object IO.BinaryReader($Pipe, [Text.Encoding]::UTF8, $true)
+      $Length = $Reader.ReadInt32()
+      if ($Length -lt 1 -or $Length -gt 8192) { throw 'Invalid credential length.' }
+      $PlainBytes = $Reader.ReadBytes($Length)
+      if ($PlainBytes.Length -ne $Length) { throw 'Incomplete credential transfer.' }
       $EncryptedBytes = [System.Security.Cryptography.ProtectedData]::Protect(
         $PlainBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
       Write-Utf8Atomic ([string]$Request.secretPath) ([Convert]::ToBase64String($EncryptedBytes))
     } finally {
       if ($PlainBytes) { [Array]::Clear($PlainBytes, 0, $PlainBytes.Length) }
       if ($EncryptedBytes) { [Array]::Clear($EncryptedBytes, 0, $EncryptedBytes.Length) }
-      $Plain = $null
+      if ($Reader) { $Reader.Dispose() }
+      $Pipe.Dispose()
     }
     Write-Status ([string]$Request.statusPath) @{ state = 'complete' }
     exit 0
@@ -15393,10 +15442,6 @@ try {
   $Message = $Message -replace '\bsk-[A-Za-z0-9_-]{8,}', 'sk-[redacted]'
   Write-Status ([string]$Request.statusPath) @{ state = 'error'; message = $Message }
   exit 1
-} finally {
-  if ($Request.plaintextPath) {
-    Remove-Item -LiteralPath ([string]$Request.plaintextPath) -Force -ErrorAction SilentlyContinue
-  }
 }]=]
 end
 
@@ -15506,6 +15551,7 @@ function ai_semantic_preset_stash()
 end
 
 function ai_semantic_select_preset(id)
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   local preset = ai_semantic_preset_by_id(id)
   if not preset then return false, "预设不存在" end
   ai_semantic_preset_stash()
@@ -15617,6 +15663,7 @@ function ai_semantic_clear_active_preset()
 end
 
 function ai_semantic_new_preset(provider)
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   if not state.ai_presets_loaded then return false, "预设数据不可用" end
   if #(state.ai_presets or {}) >= 32 then return false, "最多保存 32 组预设" end
   if provider ~= "deepseek" and provider ~= "openai" then provider = "custom" end
@@ -15677,6 +15724,7 @@ function ai_semantic_invalidate_preset_test()
 end
 
 function ai_semantic_save_preset()
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   local preset = ai_semantic_preset_by_id(state.ai_active_preset_id)
   local function fail(reason)
     AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
@@ -15693,6 +15741,16 @@ function ai_semantic_save_preset()
   if trim(state.ai_api_key_input) ~= "" then
     local key_ok, key_reason = ai_semantic_save_api_key(state.ai_api_key_input)
     if not key_ok then return fail(key_reason) end
+    if key_reason == "pending" then
+      state.ai_key_save_session.preset = preset
+      state.ai_key_save_session.fields = {
+        name = name, provider = state.ai_provider,
+        url = trim(state.ai_api_url), model = trim(state.ai_model),
+      }
+      AppState.set("ai_api_key_input", "")
+      AppState.set("ai_preset_status", "密钥正在加密保存，请稍候")
+      return true, "pending"
+    end
   end
   local old = { name = preset.name, provider = preset.provider, url = preset.url, model = preset.model, saved = preset.saved }
   preset.name, preset.provider = name, state.ai_provider
@@ -15711,6 +15769,7 @@ function ai_semantic_save_preset()
 end
 
 function ai_semantic_delete_preset(id)
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   local function fail(reason)
     AppState.apply({ ai_preset_status = reason, ai_preset_status_error = true })
     return false, reason
@@ -15767,6 +15826,7 @@ function ai_semantic_save_settings()
 end
 
 function ai_semantic_reset_presets()
+  ai_semantic_cancel_key_save()
   for _, preset in ipairs(state.ai_presets or {}) do
     local path = ai_semantic_preset_secret_path(preset.id)
     if path then os.remove(path) os.remove(path .. ".bak") os.remove(path .. ".tmp") end
@@ -15836,12 +15896,16 @@ function ai_semantic_launch_bridge(request, synchronous)
     neural_json_encode(request)
   )
   if not ok then return nil, tostring(reason or "request_write_failed") end
-  local command = table.concat({
-    neural_windows_quote_argument("powershell.exe"),
-    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-    "-File", neural_windows_quote_argument(state.ai_semantic_paths.bridge),
-    neural_windows_quote_argument(request_path),
-  }, " ")
+  local arguments = { "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+    "-ExecutionPolicy", "Bypass", "-File", state.ai_semantic_paths.bridge, request_path }
+  local command
+  if synchronous then
+    local quoted = {}
+    for index, value in ipairs(arguments) do quoted[index] = neural_windows_quote_argument(value) end
+    command = table.concat(quoted, " ")
+  else
+    command = neural_windows_hidden_command(arguments)
+  end
   local launched, result = pcall(
     host.ExecProcess,
     command,
@@ -15885,15 +15949,14 @@ function ai_semantic_stop_job_process(job)
   if not job then return end
   local status = ai_semantic_read_status(job)
   local pid = status and math.floor(tonumber(status.pid) or 0) or 0
-  if pid <= 0 then return end
-  pcall(
-    Host.ExecProcess,
-    "powershell.exe -NoLogo -NoProfile -NonInteractive -Command "
-      .. neural_windows_quote_argument(
-        "Stop-Process -Id " .. tostring(pid) .. " -Force -ErrorAction SilentlyContinue"
-      ),
-    -1
-  )
+  if pid <= 0 or not job.request_path or job.request_path == "" then return end
+  local script = "$p = Get-CimInstance Win32_Process -Filter 'ProcessId = " .. tostring(pid)
+    .. "'; if ($p.Name -ieq 'powershell.exe' -and $p.CommandLine -and $p.CommandLine.Contains('"
+    .. tostring(job.request_path):gsub("'", "''")
+    .. "')) { Stop-Process -Id " .. tostring(pid) .. " -Force -ErrorAction SilentlyContinue }"
+  pcall(Host.ExecProcess, neural_windows_hidden_command({
+    "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script,
+  }), -2)
 end
 
 function ai_semantic_save_api_key(value)
@@ -15922,45 +15985,99 @@ function ai_semantic_save_api_key(value)
     ai_api_key_status = "正在使用 Windows DPAPI 加密保存…",
     ai_api_key_status_error = false,
   })
-  local plaintext_path = state.ai_semantic_paths.plaintext
-  os.remove(plaintext_path)
-  local ok, reason = ai_semantic_write_atomic(plaintext_path, value)
-  if not ok then return fail(reason or "key_write_failed") end
-  local job, launch_reason = ai_semantic_launch_bridge({
-    operation = "protect-key",
-    plaintextPath = plaintext_path,
+  if state.ai_key_save_session then return fail("密钥正在加密保存，请稍候") end
+  if #value > 8192 then return fail("API Key 过长") end
+  local nonce = Host.genGuid and Host.genGuid("") or
+    (tostring(Host.time_precise()) .. "-" .. tostring(math.random(1, 2147483647)))
+  local pipe_name = "PsyReaSFX-Key-" .. nonce:gsub("[^%w%-]", "")
+  local job, reason = ai_semantic_launch_bridge({
+    operation = "protect-key", pipeName = pipe_name,
     secretPath = state.ai_semantic_paths.secret,
-  }, true)
-  if not job then
-    os.remove(plaintext_path)
-    return fail(launch_reason)
+  }, false)
+  if not job then return fail(reason) end
+  job.pipe_name, job.value = pipe_name, value
+  job.secret_path = state.ai_semantic_paths.secret
+  job.preset_id, job.key_url = state.ai_active_preset_id, trim(state.ai_api_url)
+  job.started = Host.time_precise()
+  AppState.set("ai_api_key_input", "")
+  AppState.set("ai_key_save_session", job)
+  return true, "pending"
+end
+
+function ai_semantic_finish_key_save(job, ok, reason)
+  job.value = nil
+  if ok then
+    local encrypted = ai_semantic_read_file(job.secret_path, 64 * 1024)
+    if not encrypted or trim(encrypted) == "" then
+      ok, reason = false, "加密文件未生成，请检查 REAPER 对脚本目录的写入权限"
+    end
   end
-  job.plaintext_path = plaintext_path
-  local status = ai_semantic_read_status(job)
-  ai_semantic_cleanup_job(job)
-  os.remove(plaintext_path)
-  if not status or status.state ~= "complete" then
-    return fail(status and status.message or "无法加密保存 API Key")
-  end
-  local encrypted = ai_semantic_read_file(state.ai_semantic_paths.secret, 64 * 1024)
-  if not encrypted or trim(encrypted) == "" then
-    return fail("加密文件未生成，请检查 REAPER 对脚本目录的写入权限")
-  end
-  AppState.apply({
-    ai_api_key_saved = true,
-    ai_api_key_input = "",
-    ai_api_key_status = "API Key 已安全保存",
-    ai_api_key_status_error = false,
-  })
-  if preset then
-    preset.key_url = trim(state.ai_api_url)
+  local preset = job.preset or ai_semantic_preset_by_id(job.preset_id)
+  if ok and preset then
+    local old = {}
+    for _, key in ipairs({ "name", "provider", "url", "model", "key_url", "saved" }) do old[key] = preset[key] end
+    preset.key_url = job.key_url
+    if job.fields then
+      for key, value in pairs(job.fields) do preset[key] = value end
+      preset.saved = true
+    end
     AppState.set("config_dirty", true)
-    ai_semantic_invalidate_preset_test()
+    if save_config() ~= true then
+      for _, key in ipairs({ "name", "provider", "url", "model", "key_url", "saved" }) do preset[key] = old[key] end
+      ok, reason = false, "预设保存失败，请检查配置写入权限"
+    end
   end
-  return true
+  ai_semantic_cleanup_job(job)
+  AppState.set("ai_key_save_session", nil)
+  local message = ok and "API Key 已安全保存" or ("保存失败：" .. ai_semantic_redact(reason or "无法加密保存 API Key"))
+  if job.preset_id == state.ai_active_preset_id then
+    AppState.apply({ ai_api_key_status = message, ai_api_key_status_error = not ok,
+      ai_preset_status = ok and "预设已保存" or message, ai_preset_status_error = not ok })
+    if ok then
+      AppState.set("ai_api_key_saved", true)
+      ai_semantic_invalidate_preset_test()
+      if preset then ai_semantic_preset_stash() end
+    end
+  end
+  job.complete, job.ok, job.reason = true, ok, message
+end
+
+function ai_semantic_cancel_key_save()
+  local job = state.ai_key_save_session
+  if not job then return end
+  ai_semantic_stop_job_process(job)
+  ai_semantic_finish_key_save(job, false, "密钥保存已取消")
+end
+
+function process_ai_key_save()
+  local job = state.ai_key_save_session
+  if not job then return end
+  if Host.time_precise() - job.started > 15 then
+    ai_semantic_stop_job_process(job)
+    ai_semantic_finish_key_save(job, false, "密钥加密超时，请重试")
+    return
+  end
+  local status = ai_semantic_read_status(job)
+  if not status then return end
+  if status.state == "ready" and job.value then
+    local pipe = io.open("\\\\.\\pipe\\" .. job.pipe_name, "wb")
+    if not pipe then return end
+    local written = pipe:write(string.pack("<I4", #job.value), job.value)
+    local flushed = pipe:flush()
+    local closed = pipe:close()
+    job.value = nil
+    if not written or not flushed or not closed then
+      ai_semantic_finish_key_save(job, false, "密钥传输失败，请重试")
+    end
+  elseif status.state == "complete" then
+    ai_semantic_finish_key_save(job, true)
+  elseif status.state == "error" then
+    ai_semantic_finish_key_save(job, false, status.message)
+  end
 end
 
 function ai_semantic_delete_api_key()
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   if state.ai_semantic_session then return false, "请等待当前 AI 请求结束后再修改密钥" end
   if not state.ai_semantic_paths then return false end
   local path = state.ai_semantic_paths.secret
@@ -16040,6 +16157,7 @@ function ai_semantic_chat_body(system_prompt, user_prompt, maximum_tokens, confi
 end
 
 function ai_semantic_start_api_job(kind, system_prompt, user_prompt, maximum_tokens, config)
+  if state.ai_key_save_session then return nil, "密钥正在加密保存，请稍候" end
   if state.ai_presets_error and state.ai_presets_error ~= "" then return nil, state.ai_presets_error end
   if not config and trim(state.ai_api_key_input) ~= "" then
     return nil, "请先保存输入的新密钥，再测试或搜索"
@@ -16638,6 +16756,7 @@ function ai_semantic_poll_api(session)
 end
 
 function process_ai_semantic_search()
+  process_ai_key_save()
   local session = state.ai_semantic_session
   if not session or not Jobs.is_current(session.job_token) then return end
   if session.phase == "test_wait" then
@@ -16699,6 +16818,7 @@ function process_ai_semantic_search()
 end
 
 function start_ai_semantic_connection_test()
+  if state.ai_key_save_session then return false, "密钥正在加密保存，请稍候" end
   if state.ai_semantic_session then return false, "已有 AI 请求正在运行" end
   local token, reason = Jobs.begin("ai_semantic_search", "ai_semantic_api", true, 72)
   if not token then return false, reason end
@@ -17128,8 +17248,16 @@ do
 function startup_checkpoint(phase)
   local session = state.startup_session
   if not session then return end
-  if phase then session.phase = phase end
-  if reaper.time_precise() >= session.deadline then
+  local now = reaper.time_precise()
+  if phase and phase ~= session.phase then
+    session.phases = session.phases or {}
+    if session.phase then
+      session.phases[session.phase] = (session.phases[session.phase] or 0)
+        + now - (session.phase_started or session.started_at or now)
+    end
+    session.phase, session.phase_started = phase, now
+  end
+  if now >= session.deadline then
     coroutine.yield()
   end
 end
@@ -24333,7 +24461,8 @@ end
 function play_preview(
   asset,
   start_percent,
-  use_selection
+  use_selection,
+  resume_position
 )
   if state.root_removal_session then
     set_status("请等待来源移除完成后再试听", true)
@@ -24497,7 +24626,10 @@ function play_preview(
     or duration
   local seek_position = 0
 
-  if not selection
+  if resume_position ~= nil then
+    -- Resume in source/SECTION time, independent of audition rate and direction.
+    seek_position = clamp(resume_position, 0, math.max(0, preview_length - 0.001))
+  elseif not selection
     and start_percent
     and start_percent > 0 then
     seek_position = preview_position_from_percent(
@@ -27179,6 +27311,7 @@ function start_root_removal(records, library_id)
   end
   if #roots == 0 and not library_id then return false end
 
+  cancel_config_save()
   cancel_auxiliary_save("catalog changed")
   cancel_database_snapshot("catalog changed")
   local job_token, job_error = Jobs.begin(
@@ -28068,9 +28201,15 @@ function commit_relink_plan(plan)
     state.root_filter = old_root_filter
     state.libraries_dirty = true
     mark_database_snapshot_dirty()
-    save_libraries()
-    save_database()
-    set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    local rollback_libraries = save_libraries()
+    local rollback_database = save_database()
+    if rollback_libraries and rollback_database then
+      set_status("来源重定位提交失败，已恢复原路径和引用", true)
+    else
+      AppState.apply({ persistence_read_only = true,
+        persistence_read_only_reason = "来源重定位回滚写入失败，请从重定位前备份恢复" })
+      set_status(state.persistence_read_only_reason, true)
+    end
     Jobs.finish(plan.job_token, false, "commit failed")
     return false
   end
@@ -28139,6 +28278,7 @@ function relink_root(record, supplied_path)
     return false
   end
 
+  cancel_config_save()
   cancel_auxiliary_save("source relink")
 
   local job_token = Jobs.begin(
@@ -28857,6 +28997,8 @@ function reset_interface_settings()
 end
 
 function cancel_catalog_jobs(reason)
+  cancel_config_save()
+  ai_semantic_cancel_key_save()
   if state.similarity_session then
     cancel_similarity_search()
   end
@@ -39145,7 +39287,8 @@ function draw_settings_ai()
   if dark_button("加密保存 Key", 132) then
     local ok, reason = false, "API Key 不能为空"
     if trim(state.ai_api_key_input) ~= "" then ok, reason = ai_semantic_save_preset() end
-    set_status(ok and "API Key 已安全保存" or ("保存 API Key 失败：" .. tostring(reason)), not ok)
+    set_status(ok and (reason == "pending" and "密钥正在加密保存，请稍候" or "API Key 已安全保存")
+      or ("保存 API Key 失败：" .. tostring(reason)), not ok)
   end
 
   ImGui.SameLine(ctx)
@@ -39161,7 +39304,7 @@ function draw_settings_ai()
   end
 
   local test = (state.ai_preset_tests or {})[state.ai_active_preset_id]
-  local running = state.ai_semantic_session
+  local running = state.ai_semantic_session or state.ai_key_save_session
   if running and running.phase == "test_wait" and running.api_config then
     local testing_preset = ai_semantic_preset_by_id(running.api_config.preset_id)
     ImGui.TextWrapped(ctx, "正在测试预设：" .. (testing_preset and testing_preset.name or "—"))
@@ -42959,7 +43102,7 @@ function autosave()
   end
 
   if state.config_dirty then
-    save_config()
+    start_config_save()
   end
 
   if state.libraries_dirty then
@@ -43032,6 +43175,8 @@ function cleanup()
     -- Never persist a partially loaded catalog on close or initialization error.
     return
   end
+  ai_semantic_cancel_key_save()
+  cancel_config_save()
   Jobs.stop_accepting()
   if state.ai_semantic_session then
     ai_semantic_cancel()
@@ -43233,14 +43378,15 @@ startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
 ai_semantic_initialize_presets()
 state.next_watch = reaper.time_precise() + state.watch_interval
-load_or_migrate_libraries()
 startup_checkpoint("读取音效库")
+load_or_migrate_libraries()
 apply_unified_interface(false, false)
 apply_wave_cache_directory(
   state.wave_cache_dir
     or DEFAULT_WAVE_CACHE_DIR
 )
 install_i18n_wrappers()
+startup_checkpoint("读取素材索引")
 load_database()
 startup_checkpoint("恢复素材库视图")
 refresh_all_asset_library_bindings()
@@ -43263,19 +43409,20 @@ if state.folder_browser_open then
   ensure_folder_navigation_build()
 end
 
-load_collections()
 startup_checkpoint("读取集合")
+load_collections()
 load_project_usage()
 refresh_current_project_binding()
 load_saved_searches()
-load_history()
 startup_checkpoint("读取试听历史")
+load_history()
 load_last_played_session()
 
 if state.restore_played_on_start then
   restore_last_session_played_highlights(true)
 end
 
+startup_checkpoint("读取试听数据")
 load_regions()
 load_loudness_cache()
 startup_checkpoint("完成素材库加载")
@@ -43323,16 +43470,29 @@ AppState.set("startup_session", {
 function process_startup()
   local session = state.startup_session
   if not session or session.failure then return end
-  -- REAPER defer gaps amplify small work slices. Spend up to 24ms when the
-  -- transport is idle, retaining the shorter 12ms budget during playback.
+  -- Idle startup is a short bounded burst. Fewer defer gaps reduce time to
+  -- the first usable catalog; playback keeps the shorter 12ms slice.
   local playing = reaper.GetPlayState and (reaper.GetPlayState() & 1) ~= 0
-  session.deadline = reaper.time_precise() + (playing and 0.012 or 0.024)
+  local started = reaper.time_precise()
+  session.deadline = started + (playing and 0.012 or 0.036)
   local ok, failure = coroutine.resume(session.thread)
+  local finished = reaper.time_precise()
+  session.frames = (session.frames or 0) + 1
+  session.cpu = (session.cpu or 0) + finished - started
+  session.maximum_frame = math.max(session.maximum_frame or 0, finished - started)
   if not ok then
     session.failure = tostring(failure)
     return
   end
   if coroutine.status(session.thread) == "dead" then
+    local phases = session.phases or {}
+    phases[session.phase] = (phases[session.phase] or 0)
+      + finished - (session.phase_started or session.started_at or finished)
+    AppState.set("startup_metrics", {
+      seconds = finished - session.started_at, cpu = session.cpu,
+      frames = session.frames, maximum_frame = session.maximum_frame,
+      assets = #state.assets, phases = phases,
+    })
     AppState.set("startup_session", nil)
     AppState.set("next_watch", reaper.time_precise() + state.watch_interval)
   end
@@ -43427,6 +43587,7 @@ function loop()
   process_library_count_rebuild()
   process_ucs_count_rebuild()
   bg_mark("save")
+  process_config_save()
   process_auxiliary_save()
   bg_mark("preview")
   cleanup_retired_preview_sources(false)

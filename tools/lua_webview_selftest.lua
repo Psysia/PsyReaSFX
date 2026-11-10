@@ -581,10 +581,11 @@ runtime.startup_session = nil
 -- Beta 9: source-equivalent actions, independent of stale browser snapshots.
 do
   local play, stop, folder, transfer, queue, mark = play_preview, request_preview_stop, open_folder, run_transfer, queue_artwork, mark_asset_database_change
-  local saved_preview = runtime.preview
+  local saved_preview, old_poll = runtime.preview, poll_preview
+  poll_preview = function() end
   local toggles = {}
   play_preview = function(item, position, selection)
-    assert(item == nil and position == nil and selection == true)
+    assert(item == selected_asset() and position == nil and selection == true)
     runtime.preview = "fixture-preview"
     toggles[#toggles + 1] = "play"
   end
@@ -601,7 +602,8 @@ do
   WebUI.handlers["preview.clearRegion"]({})
   assert(runtime.region_start == 0 and runtime.region_end == 1 and runtime.active_region_index == 0)
   runtime.preview = saved_preview
-  play_preview, request_preview_stop = play, stop
+  play_preview, request_preview_stop, poll_preview = play, stop, old_poll
+  WebUI.paused_preview = nil
 
   local opened = {}
   open_folder = function(path) opened[#opened + 1] = path end
@@ -647,6 +649,160 @@ do
   local catalog = WebUI.handlers["catalog.ucs"]({})
   assert(#catalog > 50 and type(catalog[1].entries[1].synonyms) == "string")
   assert(#neural_json_encode(catalog) < 900000, "searchable taxonomy must fit the native message budget")
+end
+-- Beta 10: pause ownership, queued similarity, and disk navigation during scans.
+do
+  local saved = {}
+  for _, key in ipairs({ "preview", "preview_path", "preview_position", "preview_percent", "preview_length",
+    "preview_map_start", "preview_map_span", "region_start", "region_end", "reverse", "loop",
+    "selected_index", "selected_path", "results", "scan", "import_session", "precache_session",
+    "root_removal_session", "relink_plan_session", "transfer_running", "startup_session", "similarity_session",
+    "search", "root_records", "folder_navigation_ready", "folder_navigation_revision", "folder_navigation_job" }) do
+    saved[key] = { runtime[key] }
+  end
+  local play, stop, poll, search, exists, enumerate = play_preview, request_preview_stop, poll_preview,
+    start_similarity_search, directory_exists, reaper.EnumerateSubdirectories
+  local active = Jobs.active
+  Jobs.active = {}
+  runtime.results, runtime.selected_index, runtime.selected_path = { asset }, 1, asset.path
+  runtime.region_start, runtime.region_end, runtime.reverse = 0.25, 0.75, true
+  runtime.preview_map_start, runtime.preview_map_span = 0.25, 0.5
+  runtime.preview, runtime.preview_path, runtime.preview_length = "live", asset.path, 4
+  poll_preview = function() runtime.preview_position, runtime.preview_percent = 1.25, 0.59375 end
+  request_preview_stop = function()
+    runtime.preview, runtime.preview_path = nil, nil
+    runtime.preview_percent, runtime.preview_position = 0, 0
+  end
+  local resumed
+  play_preview = function(item, _, selection, position)
+    resumed = { item = item, selection = selection, position = position }
+    runtime.preview, runtime.preview_path = "resumed", item.path
+  end
+  WebUI.handlers["preview.toggle"]({})
+  assert(not runtime.preview and WebUI.paused_preview.position == 1.25)
+  assert(WebUI.paused_preview.percent == 0.59375 and WebUI.paused_preview.reverse)
+  WebUI.handlers["preview.toggle"]({})
+  assert(resumed.item == asset and resumed.position == 1.25 and resumed.selection)
+  assert(WebUI.paused_preview == nil)
+  WebUI.handlers["preview.toggle"]({ behavior = "stop" })
+  WebUI.handlers["preview.toggle"]({ behavior = "stop" })
+  assert(resumed.position == nil, "optional stop behavior must restart")
+  runtime.preview_map_start, runtime.preview_map_span = 0, 1
+  WebUI.handlers["preview.toggle"]({})
+  WebUI.handlers["preview.toggle"]({})
+  assert(resumed.position == 1.25 and resumed.selection == false, "full-file preview must not resume inside a stale Region")
+  WebUI.handlers["preview.toggle"]({})
+  WebUI.handlers["preview.stop"]({})
+  assert(WebUI.paused_preview == nil, "explicit Stop must clear the bookmark")
+  assert(not pcall(WebUI.handlers["preview.toggle"], { behavior = "invalid" }))
+  local other_path = "D:/Fixture/Beta10-other.wav"
+  local other_key = path_key(other_path)
+  runtime.by_path[other_key] = { path = other_path }
+  assert(not pcall(WebUI.handlers["preview.region"], { path = other_path, start = 0.1, finish = 0.2 }))
+  assert(not pcall(WebUI.handlers["preview.play"], { path = other_path, selection = true }))
+  runtime.by_path[other_key] = nil
+  play_preview, request_preview_stop, poll_preview = play, stop, poll
+
+  for _, key in ipairs({ "import_session", "precache_session", "root_removal_session", "relink_plan_session",
+    "transfer_running", "startup_session", "similarity_session" }) do runtime[key] = nil end
+  runtime.scan = {}
+  local starts = {}
+  start_similarity_search = function(reference, scope)
+    starts[#starts + 1] = { reference, scope }
+    return true
+  end
+  local result = WebUI.handlers["search.similar"]({ scope = "all" })
+  assert(result.queued and #starts == 0 and WebUI.pending_similarity.blocker == "扫描")
+  WebUI.process_pending_similarity()
+  assert(#starts == 0)
+  runtime.scan = nil
+  WebUI.process_pending_similarity()
+  assert(#starts == 1 and starts[1][1] == asset and starts[1][2] == "all")
+  assert(WebUI.pending_similarity == nil)
+  WebUI.process_pending_similarity()
+  assert(#starts == 1, "queued search must start only once")
+  runtime.scan = {}
+  WebUI.handlers["search.similar"]({ scope = "all" })
+  WebUI.handlers["tasks.cancel"]({ task = "similar" })
+  runtime.scan = nil
+  WebUI.process_pending_similarity()
+  assert(#starts == 1 and not WebUI.pending_similarity)
+  runtime.scan, runtime.search = {}, ""
+  WebUI.handlers["search.similar"]({ scope = "current" })
+  runtime.search, runtime.scan = "changed scope", nil
+  WebUI.process_pending_similarity()
+  assert(#starts == 1 and not WebUI.pending_similarity, "changing scope cancels a waiting current-results search")
+  start_similarity_search = search
+
+  runtime.root_records = {{ id = "disk-source", path = "D:\\Fixture", library_id = "lib" }}
+  runtime.folder_navigation_ready, runtime.folder_navigation_job = false, nil
+  runtime.folder_navigation_revision = 991
+  runtime.scan = {}
+  directory_exists = function(path) return path == "D:\\Fixture" end
+  reaper.EnumerateSubdirectories = function(_, index) return index < 104 and ("Child " .. index) or nil end
+  local first = WebUI.handlers["catalog.folders"]({ rootId = "disk-source", path = "D:\\Fixture" })
+  assert(first.fromDisk and not first.pending and #first.items == 100 and first.total == 101)
+  local last = WebUI.handlers["catalog.folders"]({ rootId = "disk-source", path = "D:\\Fixture", offset = 100 })
+  assert(#last.items == 4 and last.total == 104)
+  assert(not pcall(WebUI.handlers["catalog.folders"], { rootId = "disk-source", path = "D:\\Fixture\\..\\Outside" }))
+  directory_exists, reaper.EnumerateSubdirectories = exists, enumerate
+  Jobs.active = active
+  for key, value in pairs(saved) do runtime[key] = value[1] end
+  WebUI.paused_preview, WebUI.pending_similarity = nil, nil
+end
+do
+  local original = {}
+  local names = { "JS_Window_Find", "JS_Window_GetClassName", "JS_Window_GetParent", "JS_Window_GetLong",
+    "JS_Window_SetLong", "JS_Window_Show", "JS_Window_IsVisible", "GetMainHwnd" }
+  for _, name in ipairs(names) do original[name] = reaper[name] end
+  local style, extended, class, owner, visible, calls = 0, 0x80, "ReaWebAPI.Window", "reaper", true, {}
+  reaper.JS_Window_Find = function() return "prs" end
+  reaper.JS_Window_GetClassName = function() return class end
+  reaper.JS_Window_GetParent = function() return owner end
+  reaper.GetMainHwnd = function() return "reaper" end
+  reaper.JS_Window_GetLong = function(_, field) return field == "STYLE" and style or extended end
+  reaper.JS_Window_SetLong = function(_, field, value) assert(field == "EXSTYLE"); extended = value; calls[#calls+1] = "style" end
+  reaper.JS_Window_IsVisible = function() return visible end
+  reaper.JS_Window_Show = function(_, mode) calls[#calls+1] = mode end
+  WebUI.next_taskbar = 0
+  WebUI.update_taskbar(10)
+  assert(extended == 0x40000 and table.concat(calls, ",") == "HIDE,style,SHOWNA")
+  WebUI.update_taskbar(12)
+  assert(#calls == 3, "unchanged windows must not flicker")
+  style, extended, calls = 0x20000000, 0x80, {}
+  WebUI.update_taskbar(14)
+  assert(calls[3] == "SHOWMINIMIZED", "taskbar registration cannot unminimize the window")
+  style, calls = 0x40000000, {}
+  WebUI.update_taskbar(16)
+  assert(extended == 0 and WebUI.taskbar_status == "docked")
+  class, style, calls = "REAPERwnd", 0, {}
+  WebUI.update_taskbar(18)
+  assert(#calls == 0, "never modify another window class")
+  class, owner = "ReaWebAPI.Window", "other-process"
+  WebUI.update_taskbar(20)
+  assert(#calls == 0, "never modify a different host's window")
+  for _, name in ipairs(names) do reaper[name] = original[name] end
+  WebUI.next_taskbar, WebUI.taskbar_hwnd = nil, nil
+end
+do
+  local old_receive, old_handler = reaper.ReaWeb_Receive, WebUI.handlers["settings.ai"]
+  local job = { value = "synthetic-key-must-not-be-serialized" }
+  runtime.ai_key_save_session = job
+  WebUI.handlers["settings.ai"] = function() return job end
+  local request = neural_json_encode({ id = "key-save-fixture", protocol = 1, method = "settings.ai" })
+  reaper.ReaWeb_Receive = function() local value = request; request = ""; return value end
+  local before = #messages
+  webview_receive()
+  assert(#messages == before and WebUI.pending_key_response.job == job)
+  job.value, job.complete, job.ok = nil, true, true
+  runtime.ai_key_save_session = nil
+  WebUI.next_publish = math.huge
+  webview_publish()
+  local response = neural_json_decode(messages[#messages])
+  assert(response.id == "key-save-fixture" and response.ok and response.result == true)
+  assert(not WebUI.pending_key_response)
+  reaper.ReaWeb_Receive, WebUI.handlers["settings.ai"] = old_receive, old_handler
+  WebUI.next_publish = 0
 end
 if arg[3] then
   local file = assert(io.open(arg[3], "wb"))

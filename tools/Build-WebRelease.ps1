@@ -27,7 +27,8 @@ $appManifest.version = $Version
 [IO.File]::WriteAllText($appManifestPath, ($appManifest | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $OutputPath 'LICENSE')
 if ($Target -eq 'reaper') {
-    & (Join-Path $PSScriptRoot 'Build-LuaRelease.ps1') -Ui webview -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX.lua')
+    & (Join-Path $PSScriptRoot 'Build-LuaRelease.ps1') -Ui webview -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX_Runtime.lua')
+    & (Join-Path $PSScriptRoot 'Build-WebLauncher.ps1') -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX.lua')
     & (Join-Path $PSScriptRoot 'Get-ReaWebAPIRuntime.ps1') -LockPath $DependencyLockPath -Destination $OutputPath
     Copy-Item -Path (Join-Path $repoRoot 'packaging/webview/*') -Destination $OutputPath -Force
 }
@@ -41,6 +42,7 @@ if ($Target -eq 'reaper') {
     $documentation = Join-Path $OutputPath 'docs'
     [IO.Directory]::CreateDirectory($documentation) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md') -Destination $documentation
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md') -Destination $documentation
     $prefix = $OutputPath.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $files = @(Get-ChildItem -LiteralPath $OutputPath -File -Recurse | Sort-Object FullName | ForEach-Object {
         [ordered]@{

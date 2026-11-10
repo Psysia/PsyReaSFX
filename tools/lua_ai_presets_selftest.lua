@@ -28,7 +28,8 @@ ai_semantic_read_file = function(path) return virtual_files[path] end
 ai_semantic_launch_bridge = function(request)
   requests[#requests + 1] = request
   if request.operation == "protect-key" then
-    virtual_files[request.secretPath] = "encrypted:" .. virtual_files[request.plaintextPath]
+    assert(request.pipeName and not request.plaintextPath)
+    virtual_files[request.secretPath] = "encrypted:sk-custom-test"
   end
   return { status_path = "mock-status", kind = request.operation }
 end
@@ -63,6 +64,12 @@ state.ai_api_key_input = "sk-custom-test"
 local started, reason = ai_semantic_start_api_job("test", "JSON", "test", 20)
 assert(not started and reason == "请先保存输入的新密钥，再测试或搜索")
 assert(ai_semantic_save_preset())
+assert(state.ai_key_save_session and state.ai_key_save_session.fields.model == "compatible-model")
+assert(not ai_semantic_select_preset("legacy"), "pending encryption must hold its preset identity")
+assert(not ai_semantic_delete_preset(custom_id))
+assert(not ai_semantic_start_api_job("test", "JSON", "test", 20))
+process_ai_key_save()
+assert(not state.ai_key_save_session)
 assert(virtual_files[deepseek_config.secret] == "encrypted-deepseek-original")
 assert(virtual_files[custom_secret] == "encrypted:sk-custom-test")
 assert(state.ai_api_key_input == "" and ai_semantic_preset_key_usable())
@@ -164,13 +171,14 @@ function atomic_file_writer()
     saved_lines[#saved_lines + 1] = tostring(select(index, ...)) end return true end,
     close = function() return true end }
 end
-assert(load(catalog:sub(last, save_last - 1), "config-writer", "t", _ENV))()
+local writer_start = assert(catalog:find("function write_config_settings(", 1, true))
+assert(load(catalog:sub(writer_start, save_last - 1), "config-writer", "t", _ENV))()
 -- A proxy supplies neutral values for the unrelated legacy config fields.
 local table_fields = { favorites = true, recent = true, expanded_folder_nodes = true,
   expanded_source_folders = true, sidebar_sections = true, column_visible = true, column_widths = true }
 setmetatable(state, { __index = function(_, key)
   if table_fields[key] then return {} end
-  if key == "ai_semantic_session" or key == "root_removal_session" then return nil end
+  if key == "ai_semantic_session" or key == "root_removal_session" or key == "ai_key_save_session" or key == "config_save_session" then return nil end
   return ""
 end })
 state.ai_preset_name = "Saved name"
@@ -295,7 +303,9 @@ draw_settings_ai()
 assert(status_error and status_message:find("API Key 不能为空", 1, true))
 state.ai_preset_name, state.ai_api_key_input = "Key button saved group", "sk-ui-test"
 draw_settings_ai()
-assert(not status_error and state.ai_api_key_input == "")
+assert(not status_error and state.ai_key_save_session)
+process_ai_key_save()
+assert(state.ai_api_key_input == "")
 assert(neural_json_decode(persisted).presets[1].name == "Key button saved group")
 assert(not persisted:find("sk-ui-test", 1, true))
 assert(button_layout[1].label == "新建预设" and button_layout[2].label == "切换预设"
