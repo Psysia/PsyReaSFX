@@ -1,0 +1,93 @@
+name: WebView latest runtime
+run-name: WebView development · ${{ github.ref_name }}
+
+on:
+  push:
+    branches: [main, 'codex/**', 'beta/**']
+    paths:
+      - 'src/**'
+      - 'tools/**'
+      - 'packaging/webview/**'
+      - 'dependencies/reawebapi/**'
+      - '.github/workflows/development-webview.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webview-latest-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identify latest published upstream runtime
+        id: upstream
+        shell: pwsh
+        run: |
+          $tag = gh api repos/zaibuyidao/ReaWebAPI/releases/latest --jq .tag_name
+          if ($LASTEXITCODE -ne 0 -or $tag -notmatch '^v\d+(\.\d+){2,3}$') { throw 'Cannot resolve upstream release.' }
+          $source = gh api repos/zaibuyidao/ReaWebAPI/commits/main --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $source -notmatch '^[a-f0-9]{40}$') { throw 'Cannot resolve upstream source.' }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "source=$source" >> $env:GITHUB_OUTPUT
+      - name: Check previous successful scheduled validation
+        id: validated
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/reawebapi-validation
+          key: webview-latest-v1-${{ github.sha }}-${{ steps.upstream.outputs.tag }}-${{ steps.upstream.outputs.source }}
+          lookup-only: true
+      - name: Build from the owned fork
+        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: ./tools/Build-WebDevelopment.ps1 -OutputDirectory dist/development -ReadOnlySync
+      - name: Check package install and rollback
+        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $archive = (Get-ChildItem dist/development/*.zip).FullName
+          ./tools/Test-WebViewPackage.ps1 -PackagePath dist/development/package -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'dev-package-check') -ArchivePath $archive
+      - name: Check browser interactions
+        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $browserTools = Join-Path $env:RUNNER_TEMP 'browser-tools'
+          npm install --prefix $browserTools --no-save --ignore-scripts playwright@1.56.1
+          if ($LASTEXITCODE -ne 0) { throw 'Browser tools installation failed.' }
+          node tools/webview_ui_selftest.cjs (Join-Path $browserTools 'node_modules/playwright') dist/development/package/web
+          if ($LASTEXITCODE -ne 0) { throw 'Browser regression failed.' }
+      - name: Upload tested development package
+        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebView-${{ steps.upstream.outputs.tag }}-${{ github.run_id }}
+          path: |
+            dist/development/*.zip
+            dist/development/runtime.lock.json
+            dist/development/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Record successful validation
+        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $marker = Join-Path $env:RUNNER_TEMP 'reawebapi-validation'
+          New-Item -ItemType Directory -Path $marker -Force | Out-Null
+          'Package and browser checks passed; native REAPER acceptance remains pending.' | Set-Content (Join-Path $marker 'passed.txt')
+          $lock = Get-Content dist/development/runtime.lock.json -Raw | ConvertFrom-Json
+          "Built ReaWebAPI $($lock.version) from $($lock.repository) at $($lock.commit). Package and browser checks passed. Native REAPER acceptance remains pending." >> $env:GITHUB_STEP_SUMMARY
+      - name: Cache successful validation
+        if: steps.validated.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/reawebapi-validation
+          key: ${{ steps.validated.outputs.cache-primary-key }}

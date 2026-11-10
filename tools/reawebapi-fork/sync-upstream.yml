@@ -1,0 +1,44 @@
+name: Sync upstream ReaWebAPI
+run-name: Mirror ReaWebAPI ${{ inputs.tag || 'latest' }}
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream release tag, or latest
+        default: latest
+        type: string
+  push:
+    branches: [psyreasfx]
+    paths: ['.github/psysia/**', '.github/workflows/sync-upstream.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: psysia-upstream-mirror
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'Psysia/ReaWebAPI'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: psyreasfx
+          fetch-depth: 0
+      - name: Configure merge author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Check mirror integrity rules
+        run: python .github/psysia/test_sync_upstream.py
+      - name: Sync source and mirror release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ inputs.tag || 'latest' }}
+        run: python .github/psysia/sync_upstream.py --tag "$UPSTREAM_TAG"

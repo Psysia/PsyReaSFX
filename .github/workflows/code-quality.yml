@@ -34,6 +34,13 @@ jobs:
       - name: Verify generated WebView translations
         run: python tools/generate_web_translations.py --check
 
+      - name: Verify upstream synchronization rules
+        shell: pwsh
+        run: |
+          python tools/reawebapi-fork/test_sync_upstream.py
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream mirror integrity test failed.' }
+          ./tools/Test-ReaWebAPISync.ps1
+
       - name: Set up pinned Lua test runtime
         shell: pwsh
         run: |

@@ -3,11 +3,12 @@
   "name": "ReaWebAPI",
   "platform": "windows-x64",
   "version": "0.3.9.30",
-  "repository": "https://github.com/zaibuyidao/ReaWebAPI",
+  "repository": "https://github.com/Psysia/ReaWebAPI",
+  "upstream": "https://github.com/zaibuyidao/ReaWebAPI",
   "commit": "f3d83ee333a5df0f1242b20efc706ce5a893dabf",
   "license": "LGPL-3.0-or-later",
   "archive": {
-    "url": "https://github.com/zaibuyidao/ReaWebAPI/releases/download/v0.3.9.30/ReaWebAPI-windows-x64-v0.3.9.30.zip",
+    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30/ReaWebAPI-windows-x64-v0.3.9.30.zip",
     "file": "ReaWebAPI-windows-x64-v0.3.9.30.zip",
     "sha256": "e6c1c11b8240d52bd6ca2170f360469d544beaa29defba55b03bafe9dd3eb490"
   },
@@ -17,7 +18,7 @@
     "sha256": "1fe73ba0a4363c8cfa9faedaf2166506fa5a3114300eaa2de31d47e1a187130e"
   },
   "source": {
-    "url": "https://codeload.github.com/zaibuyidao/ReaWebAPI/zip/f3d83ee333a5df0f1242b20efc706ce5a893dabf",
+    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30/ReaWebAPI-source.zip",
     "file": "ReaWebAPI-source.zip",
     "sha256": "f148873329b58d36fe83472213011419ece16e2dceaee0faa0cad32768514046"
   },
