@@ -236,10 +236,9 @@ small {
 #browser {
   display: grid;
   min-height: 0;
-  grid-template-columns: 44px var(--sidebar-left) 5px minmax(
-      160px,
-      1fr
-    ) 5px var(--sidebar-right);
+  grid-template-columns:
+    44px var(--sidebar-left) 5px minmax(160px, 1fr)
+    5px var(--sidebar-right);
   overflow: hidden;
 }
 #sources,
@@ -1245,14 +1244,19 @@ body[data-theme="paper"] #wave-readouts output {
 }
 #navigation-rail {
   display: flex;
+  min-height: 0;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 10px 4px;
+  padding: 10px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
   border-right: 1px solid var(--line);
   background: var(--surface);
 }
 #navigation-rail button {
+  flex: none;
   width: 34px;
   height: 36px;
   padding: 0;

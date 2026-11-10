@@ -1170,6 +1170,25 @@ async function main() {
         boxes.transport.bottom <= boxes.audition.bottom + 1,
         "transport must stay inside the player",
       );
+      if (size.height === 620) {
+        const rail = page.locator("#navigation-rail");
+        assert.equal(
+          await rail.evaluate((el) => getComputedStyle(el).overflowY),
+          "auto",
+          "short windows must allow access to every navigation icon",
+        );
+        await page
+          .locator('[data-rail="collections"]')
+          .scrollIntoViewIfNeeded();
+        const railBox = await rail.boundingBox();
+        const lastIcon = await page
+          .locator('[data-rail="collections"]')
+          .boundingBox();
+        assert(lastIcon.y + lastIcon.height <= railBox.y + railBox.height + 1);
+        await rail.evaluate((el) => {
+          el.scrollTop = 0;
+        });
+      }
       await page.screenshot({
         path: path.join(output, `beta8-fx-${size.width}.png`),
       });

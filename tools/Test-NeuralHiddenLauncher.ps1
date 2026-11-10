@@ -31,8 +31,9 @@ class Probe {
 '@, $utf8)
 [IO.File]::WriteAllText($launcher, @'
 dofile(arg[1])
-local arguments = {}
-for index = 3, #arg do arguments[#arguments + 1] = arg[index] end
+local payload = assert(io.open(arg[3], "rb"))
+local arguments = neural_json_decode(payload:read("*a"))
+payload:close()
 local file = assert(io.open(arg[2], "wb"))
 file:write(neural_windows_hidden_command(arguments))
 file:close()
@@ -42,7 +43,11 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Console probe compilation failed.' }
 function Invoke-HiddenFixture([string[]]$Arguments, [string]$ExpectedOutput) {
     $commandFile = Join-Path $fixture ('command-' + [guid]::NewGuid().ToString('N') + '.txt')
-    & $Lua $launcher $module $commandFile @Arguments
+    # REAPER supplies UTF-8 Lua strings. Stock Windows lua.exe uses ANSI argv,
+    # so load UTF-8 fixture data from disk instead of losing Unicode in argv.
+    $argumentsFile = $commandFile + '.json'
+    [IO.File]::WriteAllText($argumentsFile, (ConvertTo-Json -InputObject @($Arguments) -Compress), $utf8)
+    & $Lua $launcher $module $commandFile $argumentsFile
     if ($LASTEXITCODE -ne 0) { throw 'Lua launcher generation failed.' }
     $command = [IO.File]::ReadAllText($commandFile)
     if ($command -notmatch '^powershell\.exe (-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand [A-Za-z0-9+/=]+)$') { throw 'Unexpected launcher command.' }
