@@ -1,3 +1,11 @@
+## 0.9.3 Beta 13 (0.9.a WebView) — 2026-11-10
+
+- Add all 29 registered Codex theme families and 44 available light/dark variants, preserving original color seeds and names. GitHub dark is the default; system mode and custom colors are supported.
+- Center playback and volume, with activity at bottom left and responsive actions at right.
+- Start selection drags before mouse-up. The native loop captures the release even outside WebView, preserves the range and inserts at the target track/time. Cancellation, project changes, late/duplicate messages and insertion failures are handled.
+- Replace old PRS screenshots throughout the website and user guides with supplied WebView captures; remove language-switch code that restored old Transfer images.
+- Add theme, responsive layout, drag handoff/cancellation/cleanup and website image regressions. Actual cross-window insertion remains a native acceptance step.
+
 ## 0.9.3 Beta 12 (0.9.a WebView) — 2026-11-10
 
 - Restore click-position audition in list waveforms: capture canvas coordinates before asynchronous selection rebuilds the row. Keep Ctrl/Shift selection, prevent double-click bubbling and show a hover time guide.

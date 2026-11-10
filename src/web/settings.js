@@ -1,3 +1,10 @@
+import {
+  themePresets,
+  resolveTheme,
+  themeColors,
+  selectTheme,
+} from "./themes.js";
+
 // Settings owns its draft and DOM. Playback snapshots must never rebuild an editor.
 const el = (tag, className, text) => {
   const item = document.createElement(tag);
@@ -40,51 +47,6 @@ const operationLabels = {
   overwrite: "用当前条件覆盖",
   activate: "打开",
 };
-
-export const themePresets = [
-  {
-    id: "graphite",
-    label: "石墨蓝",
-    description: "深色工作台 · 蓝色定位线",
-    colors: ["#181d25", "#1e2530", "#8aafff"],
-  },
-  {
-    id: "dark",
-    label: "经典金灰",
-    description: "中性灰阶 · 哑光金色",
-    colors: ["#1e1f21", "#252628", "#c7b57f"],
-  },
-  {
-    id: "slate",
-    label: "深海青",
-    description: "控制台分区 · 清晰行线",
-    colors: ["#152127", "#1b2a30", "#6ad4ce"],
-  },
-  {
-    id: "amethyst",
-    label: "暮色紫",
-    description: "柔和圆角 · 轻盈页签",
-    colors: ["#211e29", "#292532", "#c2a3f7"],
-  },
-  {
-    id: "forest",
-    label: "松林绿",
-    description: "暖灰绿调 · 安静侧栏",
-    colors: ["#1d231f", "#252d27", "#9dcbb2"],
-  },
-  {
-    id: "paper",
-    label: "纸白墨绿",
-    description: "柔纸灰底 · 细线排版",
-    colors: ["#d8d6ce", "#d0d0c8", "#3d6b64"],
-  },
-  {
-    id: "frost",
-    label: "雾白蓝",
-    description: "雾蓝灰底 · 轻浮工具栏",
-    colors: ["#d5dce5", "#ccd5e0", "#345d9d"],
-  },
-];
 
 // Match draw_transfer_settings_content in the legacy UI. Empty lists mean the
 // current audition parameter, not a hard-coded zero/default.
@@ -301,16 +263,35 @@ export function createSettings({
   function appearance() {
     const palette = card(
       "配色预设",
-      "选择整套配色后应用；也可继续调整强调色和框架底色。",
+      "对应 Codex 的全部主题；提供原有明暗版本，可自定义颜色。",
+    );
+    palette.append(
+      control(
+        {
+          key: "themeMode",
+          label: "模式",
+          kind: "choice",
+          options: [
+            ["dark", "深色"],
+            ["light", "浅色"],
+            ["system", "跟随系统"],
+          ],
+        },
+        localDraft.themeMode,
+        (mode) => {
+          selectTheme(localDraft, localDraft.theme, mode);
+          render();
+          updateDirty();
+        },
+        true,
+      ),
     );
     const swatches = el("div", "theme-presets");
     for (const theme of themePresets) {
       const item = button(
         theme.label,
         () => {
-          localDraft.theme = theme.id;
-          localDraft.accentColor = theme.colors[2];
-          localDraft.surfaceColor = theme.colors[1];
+          selectTheme(localDraft, theme.id);
           render();
           updateDirty();
         },
@@ -320,13 +301,29 @@ export function createSettings({
       item.setAttribute("aria-pressed", String(localDraft.theme === theme.id));
       const preview = el("span", "theme-swatches");
       preview.setAttribute("aria-hidden", "true");
-      for (const color of theme.colors) {
+      const variant = resolveTheme(theme.id, localDraft.themeMode);
+      for (const color of [
+        variant.background,
+        themeColors(variant).surface,
+        variant.foreground,
+        variant.accent,
+      ]) {
         const dot = el("i");
         dot.style.background = color;
         preview.append(dot);
       }
       item.prepend(preview);
-      item.append(el("small", "theme-description", theme.description));
+      item.append(
+        el(
+          "small",
+          "theme-description",
+          theme.variants.length === 2
+            ? "深色 / 浅色"
+            : variant.tone === "dark"
+              ? "仅深色"
+              : "仅浅色",
+        ),
+      );
       swatches.append(item);
     }
     palette.append(swatches);
@@ -386,6 +383,8 @@ export function createSettings({
         integer: true,
       },
       { key: "accentColor", label: "强调色", kind: "color" },
+      { key: "backgroundColor", label: "背景色", kind: "color" },
+      { key: "foregroundColor", label: "前景色", kind: "color" },
       { key: "surfaceColor", label: "框架底色", kind: "color" },
       {
         key: "waveformColorMode",
@@ -410,9 +409,7 @@ export function createSettings({
           (value) => {
             localDraft[definition.key] = value;
             if (definition.key === "theme") {
-              const theme = themePresets.find((item) => item.id === value);
-              localDraft.accentColor = theme.colors[2];
-              localDraft.surfaceColor = theme.colors[1];
+              selectTheme(localDraft, value);
               render();
             } else if (definition.key === "waveformSelectionColor") {
               localDraft.waveformColorMode = "custom";

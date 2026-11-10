@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.3-beta12
+-- @version 0.9.3-beta13
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 12"
+local VERSION = "0.9.3 Beta 13"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta12",
-  source_sha256 = "8f65cb4addb7b47915aaee8ad8a367738a10e130b4f8ce4d888fca4dbeba71dc",
+  release_id = "PsyReaSFX/0.9.3-beta13",
+  source_sha256 = "693f3041f48466b3b69ee3dcaa31a70b92714cdf872d02da77cb34e8e34cba94",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -17492,6 +17492,9 @@ function webview_open()
 end
 
 function webview_close()
+  WebUI.arrange_drag = nil
+  AppState.set("external_drag", nil)
+  AppState.set("external_drag_started", false)
   if not WebUI.window then
     return
   end
@@ -18130,13 +18133,65 @@ WebUI.handlers["tab.action"] = function(params)
   end
   return true
 end
-WebUI.handlers["drag.drop"] = function(params)
+WebUI.handlers["drag.begin"] = function(params)
   writable()
+  assert(not state.root_removal_session and not state.transfer_running, "请等待当前任务完成后再拖入素材")
+  assert(type(reaper.JS_Mouse_GetState) == "function", "拖入选区需要 js_ReaScriptAPI")
+  assert(type(reaper.BR_GetMouseCursorContext) == "function"
+    and type(reaper.BR_GetMouseCursorContext_Position) == "function"
+    and type(reaper.BR_GetMouseCursorContext_Track) == "function", "拖到编排区需要 SWS Extension")
   local asset = params.path and asset_for(params.path) or selected_asset()
   assert(asset, "请先选择素材")
+  local first, last = 0, 1
+  if params.selection == true then
+    local selected = selected_asset()
+    assert(selected and path_key(selected.path) == path_key(asset.path), "所选素材已改变，请重新设置选区")
+    first = number(params.start, 0, 1)
+    last = number(params.finish, first, 1)
+    assert(last > first, "请先选择有效区间")
+  end
+  -- Never turn an RPC that arrived after mouse-up into an insertion.
+  if reaper.JS_Mouse_GetState(1) & 1 == 0 then return { started = false } end
   begin_external_drag(asset, params.selection == true)
-  drop_external_drag()
+  if params.selection == true then
+    state.external_drag.assets = { asset }
+    state.external_drag.start_percent, state.external_drag.end_percent = first, last
+  end
+  WebUI.arrange_drag = { id = text(params.id, 80), started = reaper.time_precise(),
+    project = reaper.EnumProjects(-1, "") }
+  set_status("拖到 REAPER 编排区后松开；Esc 取消")
+  return { started = true }
+end
+
+WebUI.handlers["drag.cancel"] = function(params)
+  if WebUI.arrange_drag and (not params.id or params.id == WebUI.arrange_drag.id) then
+    WebUI.arrange_drag = nil
+    AppState.set("external_drag", nil)
+    AppState.set("external_drag_started", false)
+    set_status("已取消拖拽")
+  end
   return true
+end
+
+function WebUI.process_arrange_drag()
+  local gesture = WebUI.arrange_drag
+  if not gesture then return end
+  local keys = type(reaper.JS_VKeys_GetState) == "function" and reaper.JS_VKeys_GetState(0) or ""
+  if (keys:byte(27) or 0) ~= 0 or reaper.time_precise() - gesture.started > 60
+    or gesture.project ~= reaper.EnumProjects(-1, "")
+    or state.persistence_read_only or state.root_removal_session or state.transfer_running then
+    WebUI.handlers["drag.cancel"]({ id = gesture.id })
+    return
+  end
+  if reaper.JS_Mouse_GetState(1) & 1 ~= 0 then return end
+  WebUI.arrange_drag = nil
+  -- This runs every native frame, even when the WebView no longer receives
+  -- pointer events. The captured range is independent of later UI snapshots.
+  local ok, failure = pcall(drop_external_drag)
+  AppState.set("external_drag", nil)
+  AppState.set("external_drag_started", false)
+  if not ok then set_status(tostring(failure), true) end
+  WebUI.next_publish = 0
 end
 
 WebUI.handlers["insert"] = function(params)
@@ -19296,6 +19351,7 @@ function webview_receive()
     end
     if reaper.time_precise() >= deadline then break end
   end
+  WebUI.process_arrange_drag()
 end
 
 function webview_publish()
@@ -19426,6 +19482,7 @@ function webview_publish()
     collectionId = state.active_collection_id,
     selected = selected,
     selectedCount = selected_count(),
+    arrangeDragging = WebUI.arrange_drag ~= nil,
     playing = state.preview ~= nil,
     paused = paused ~= nil,
     position = paused and paused.percent or state.preview_percent or 0,
@@ -29193,17 +29250,19 @@ function drop_external_drag()
 
   local inserted = 0
 
-  for index, asset in ipairs(drag.assets) do
-    if insert_asset_at(
-      asset,
-      base_index + index - 1,
-      position,
-      drag.start_percent,
-      drag.end_percent
-    ) then
-      inserted = inserted + 1
+  local ok, failure = xpcall(function()
+    for index, asset in ipairs(drag.assets) do
+      if insert_asset_at(
+        asset,
+        base_index + index - 1,
+        position,
+        drag.start_percent,
+        drag.end_percent
+      ) then
+        inserted = inserted + 1
+      end
     end
-  end
+  end, debug.traceback)
 
   reaper.PreventUIRefresh(-1)
   reaper.UpdateArrange()
@@ -29212,6 +29271,11 @@ function drop_external_drag()
     "PsyReaSFX：拖拽素材到编排区",
     -1
   )
+
+  if not ok then
+    set_status("拖入素材失败：" .. tostring(failure), true)
+    return
+  end
 
   set_status(
     string.format(

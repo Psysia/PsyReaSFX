@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const { chromium } = require(process.argv[2] || "playwright");
 let url = process.argv[3];
-const output = path.resolve(__dirname, "../dist/beta12-design/website");
+const output = path.resolve(__dirname, "../dist/website-current/verification");
 fs.mkdirSync(output, { recursive: true });
 (async () => {
   let browser, server;
@@ -56,15 +56,15 @@ fs.mkdirSync(output, { recursive: true });
       route.fulfill({
         json: [
           {
-            tag_name: "v0.9.3-beta12",
+            tag_name: "v0.9.3-beta13",
             prerelease: true,
             html_url:
-              "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta12",
+              "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta13",
             assets: [
               {
-                name: "PsyReaSFX_WebView_0.9.3-beta12_win_x64.zip",
+                name: "PsyReaSFX_WebView_0.9.3-beta13_win_x64.zip",
                 browser_download_url:
-                  "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta12/PsyReaSFX_WebView_0.9.3-beta12_win_x64.zip",
+                  "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta13/PsyReaSFX_WebView_0.9.3-beta13_win_x64.zip",
               },
             ],
           },
@@ -105,13 +105,31 @@ fs.mkdirSync(output, { recursive: true });
               .locator("[data-webview-download]")
               .first()
               .getAttribute("href")
-          ).endsWith("0.9.3-beta12_win_x64.zip"),
+          ).endsWith("0.9.3-beta13_win_x64.zip"),
         );
         const shot = await page.locator(".hero-visual img").boundingBox();
         assert(
           Math.abs(shot.width / shot.height - 1846 / 1026) < 0.01,
           "product screenshot must not be cropped or stretched",
         );
+        assert.equal(
+          await page
+            .locator(
+              'img[src*="focus-workspace"], img[src*="logical-library-workflow"], img[src*="waveform-edit-drag"], img[src*="transfer-settings"]',
+            )
+            .count(),
+          0,
+          "current PRS sections must not retain legacy screenshots",
+        );
+        const settings = page.locator(".transfer-stage img");
+        await settings.scrollIntoViewIfNeeded();
+        await settings.evaluate((img) => img.decode());
+        assert.equal(await settings.evaluate((img) => img.naturalWidth), 1843);
+        const settingsBox = await settings.boundingBox();
+        assert(
+          Math.abs(settingsBox.width / settingsBox.height - 1843 / 1056) < 0.01,
+        );
+        await page.evaluate(() => scrollTo(0, 0));
         await page.screenshot({
           path: path.join(output, `home-${lang}-${width}.png`),
           fullPage: false,

@@ -5,8 +5,8 @@ const STABLE_FALLBACK = {
   url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.1",
 };
 const WEBVIEW_FALLBACK = {
-  version: "0.9.3 Beta 12",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta12",
+  version: "0.9.3 Beta 13",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta13",
 };
 const NEURAL_FALLBACK_URL =
   "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip";
@@ -68,7 +68,7 @@ const messages = {
     getStable: "Get Stable ↗",
     previewChannel: "WebView Beta",
     previewSummary:
-      "The new Windows interface: full-width waveforms, precise click-to-audition, resumable playback, compact FX, searchable UCS and seven quieter themes.",
+      "The new Windows interface: full-width waveforms, precise click-to-audition, resumable playback, compact FX, searchable UCS and 29 Codex themes.",
     getPreview: "WebView release notes ↗",
     neuralAddon: "Download complete neural ZIP · Windows x64 ↗",
     neuralInstallNote:
@@ -163,7 +163,7 @@ const messages = {
     betaStepTwo:
       "For <strong>PsyReaSFX.lua</strong>, enable <strong>Enable pre-releases</strong>; unpin an older version if necessary.",
     betaStepThree:
-      "Choose <strong>Versions → 0.9.3-beta12</strong>. Also install <strong>PsyReaSFX WebView Runtime</strong>. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.",
+      "Choose <strong>Versions → 0.9.3-beta13</strong>. Also install <strong>PsyReaSFX WebView Runtime</strong>. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.",
     betaStepFour:
       "Apply the update, close the old PRS window, then run <strong>PsyReaSFX.lua</strong>. Restart REAPER when a native extension is newly installed. Running the same action again brings the existing window back.",
     betaNeuralNote:
@@ -175,7 +175,7 @@ const messages = {
     betaScreenshotLabel:
       "View the historical ReaPack menu example at full resolution",
     betaScreenshotCaption:
-      "Earlier ReaPack screenshot showing the menu locations. After synchronization, enable pre-releases and select 0.9.3-beta12 for WebView. Stable remains 0.9.1.",
+      "Earlier ReaPack screenshot showing the menu locations. After synchronization, enable pre-releases and select 0.9.3-beta13 for WebView. Stable remains 0.9.1.",
     compareIncluded: "Included",
     compareRetained: "Retained",
     compareNone: "—",
@@ -279,10 +279,9 @@ const messages = {
     previewThree: "03 / Carry it into REAPER",
     compareWebUi: "Full-width player · compact FX",
     compareClassicUi: "Classic native interface",
-    compareWebTheme: "Seven themes · custom colors",
+    compareWebTheme: "29 Codex themes · custom colors",
     compareNativeTheme: "Scalable fonts · native palette",
-    legacyDemo:
-      "Earlier native interface · the workflow is retained in WebView",
+    settingsPreview: "Settings captured in Beta 12 · open Transfer in the sidebar to configure delivery.",
     checklist: "Open the feature acceptance checklist ↗",
     webviewRequirements: "WebView: Windows x64 · ReaWebAPI · js_ReaScriptAPI",
   },
@@ -340,7 +339,7 @@ const messages = {
     getStable: "获取稳定版 ↗",
     previewChannel: "WebView 测试版",
     previewSummary:
-      "新的 Windows 界面：全宽波形、点击定位试听、暂停续播、紧凑 FX、UCS 搜索与七套更柔和的主题。",
+      "新的 Windows 界面：全宽波形、点击定位试听、暂停续播、紧凑 FX、UCS 搜索与 29 个 Codex 对应主题。",
     getPreview: "WebView 更新说明 ↗",
     neuralAddon: "直接下载完整神经包 ZIP · Windows x64 ↗",
     neuralInstallNote:
@@ -427,7 +426,7 @@ const messages = {
     betaStepTwo:
       "在 <strong>PsyReaSFX.lua</strong> 右键菜单中启用 <strong>Enable pre-releases</strong>；如固定了旧版，先取消固定。",
     betaStepThree:
-      "选择 <strong>Versions → 0.9.3-beta12</strong>，同时安装 <strong>PsyReaSFX WebView Runtime</strong>。js_ReaScriptAPI 用于系统目录选择与 Windows 任务栏入口。",
+      "选择 <strong>Versions → 0.9.3-beta13</strong>，同时安装 <strong>PsyReaSFX WebView Runtime</strong>。js_ReaScriptAPI 用于系统目录选择与 Windows 任务栏入口。",
     betaStepFour:
       "应用更新，关闭旧 PRS 窗口后运行 <strong>PsyReaSFX.lua</strong>；首次安装原生扩展后需重启 REAPER。之后重复运行同一动作即可唤回窗口。",
     betaNeuralNote:
@@ -438,7 +437,7 @@ const messages = {
       "WebView 沿用已有目录索引、波形与本地神经缓存；这次界面更新无需全库重扫。",
     betaScreenshotLabel: "查看历史 ReaPack 菜单示例原图",
     betaScreenshotCaption:
-      "早期 ReaPack 截图，仅用于说明菜单位置。同步后启用预发布，选择 0.9.3-beta12 安装 WebView；稳定通道仍是 0.9.1。",
+      "早期 ReaPack 截图，仅用于说明菜单位置。同步后启用预发布，选择 0.9.3-beta13 安装 WebView；稳定通道仍是 0.9.1。",
     compareIncluded: "有",
     compareRetained: "保留",
     compareNone: "—",
@@ -536,9 +535,9 @@ const messages = {
     previewThree: "03 / 带着选区进入工程",
     compareWebUi: "全宽试听区 · 紧凑 FX",
     compareClassicUi: "经典原生界面",
-    compareWebTheme: "七套主题 · 自定义颜色",
+    compareWebTheme: "29 个 Codex 主题 · 自定义颜色",
     compareNativeTheme: "可缩放字体 · 原生配色",
-    legacyDemo: "早期原生界面演示 · WebView 保留对应工作流",
+    settingsPreview: "设置截图来自 Beta 12 · 在侧栏选择 Transfer 配置交付。",
     checklist: "查看逐项功能验收清单 ↗",
     webviewRequirements: "WebView：Windows x64 · ReaWebAPI · js_ReaScriptAPI",
   },
@@ -573,19 +572,6 @@ function applyLanguage(language) {
       `${current.textContent} / ${other.textContent} — ${messages[selected].languageLabel}`,
     );
   }
-
-  document.querySelectorAll("[data-transfer-image]").forEach((image) => {
-    image.src =
-      selected === "zh"
-        ? "assets/screenshots/transfer-settings-zh.png"
-        : "assets/screenshots/transfer-settings-en.png";
-  });
-  document.querySelectorAll("[data-transfer-source]").forEach((source) => {
-    source.srcset =
-      selected === "zh"
-        ? "assets/screenshots/transfer-settings-zh-960.webp 960w, assets/screenshots/transfer-settings-zh.webp 1700w"
-        : "assets/screenshots/transfer-settings-en-960.webp 960w, assets/screenshots/transfer-settings-en.webp 1700w";
-  });
 
   document.querySelectorAll('a[href*="USER_GUIDE_"]').forEach((link) => {
     link.href = `https://github.com/${REPOSITORY}/blob/main/docs/USER_GUIDE_${selected === "zh" ? "zh-CN" : "en-US"}.md`;

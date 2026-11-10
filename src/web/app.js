@@ -1,13 +1,21 @@
 import { connectHost } from "./host.js";
 import { createLocalizer } from "./locale.js";
-import { createSettings, transferPresets, themePresets } from "./settings.js";
+import { createSettings, transferPresets } from "./settings.js";
 import { icon } from "./icons.js";
+import {
+  resolveTheme,
+  themeColors,
+  syncSystemTheme,
+  migrateTheme,
+} from "./themes.js";
 
 const $ = (id) => document.getElementById(id);
 const defaults = {
   version: 1,
-  themeColorsVersion: 2,
-  theme: "graphite",
+  themeColorsVersion: 3,
+  theme: "github",
+  themeMode: "dark",
+  themeTone: "dark",
   language: "zh",
   left: false,
   right: true,
@@ -17,8 +25,10 @@ const defaults = {
   rowHeight: 29,
   fontSize: 13,
   fontFamily: "Segoe UI",
-  accentColor: "#8aafff",
-  surfaceColor: "#1e2530",
+  accentColor: "#1f6feb",
+  backgroundColor: "#0d1117",
+  foregroundColor: "#e6edf3",
+  surfaceColor: themeColors(resolveTheme("github", "dark")).surface,
   waveformColorMode: "theme",
   waveformSelectionColor: "#8aafff",
   navigationPanel: "libraries",
@@ -67,29 +77,13 @@ try {
 } catch {
   prefs = structuredClone(defaults);
 }
-// Older preferences stored the dark palette's defaults for every theme.
-// Migrate once; later explicit custom colors (including gold) must be preserved.
-if (prefs.themeColorsVersion !== 2) {
-  const theme =
-    themePresets.find((item) => item.id === prefs.theme) || themePresets[0];
-  if (!prefs.themeColorsVersion && prefs.accentColor === "#c7b57f")
-    prefs.accentColor = theme.colors[2];
-  const previousSurfaces = {
-    dark: "#222426",
-    graphite: "#202329",
-    slate: "#192b38",
-    amethyst: "#272333",
-    forest: "#202e28",
-    paper: "#e4e4de",
-    frost: "#e8edf5",
-  };
-  if (
-    prefs.surfaceColor === previousSurfaces[theme.id] ||
-    (!prefs.themeColorsVersion && prefs.surfaceColor === "#222426")
-  )
-    prefs.surfaceColor = theme.colors[1];
-  prefs.themeColorsVersion = 2;
-}
+migrateTheme(prefs);
+const systemTheme = matchMedia("(prefers-color-scheme: dark)");
+systemTheme.addEventListener("change", () => {
+  if (prefs.themeMode !== "system") return;
+  applyPreferences();
+  persist();
+});
 
 const localizer = createLocalizer();
 localizer.setLanguage(prefs.language);
@@ -248,8 +242,8 @@ function persist() {
 }
 
 function applyPreferences() {
-  const theme =
-    themePresets.find((item) => item.id === prefs.theme) || themePresets[0];
+  syncSystemTheme(prefs);
+  const theme = resolveTheme(prefs.theme, prefs.themeMode);
   prefs.theme = theme.id;
   // Pointer coordinates can be fractional at Windows display scaling levels.
   // Persist whole CSS pixels so settings' integer controls always remain valid.
@@ -260,9 +254,7 @@ function applyPreferences() {
     clamp(prefs.rowHeight, Math.max(24, prefs.fontSize + 10), 52),
   );
   document.body.dataset.theme = prefs.theme;
-  document.body.dataset.tone = ["paper", "frost"].includes(prefs.theme)
-    ? "light"
-    : "dark";
+  document.body.dataset.tone = theme.tone;
   document.body.classList.toggle("left-hidden", !prefs.left);
   document.body.classList.toggle("right-hidden", !prefs.right);
   const style = document.documentElement.style;
@@ -277,16 +269,8 @@ function applyPreferences() {
   $("fx-toggle").setAttribute("aria-expanded", String(prefs.fx));
   $("left-toggle").setAttribute("aria-expanded", String(prefs.left));
   $("right-toggle").setAttribute("aria-expanded", String(prefs.right));
-  // Put overrides on the same element as the theme palette, not its ancestor.
-  style.removeProperty("--accent");
-  style.removeProperty("--surface");
-  for (const [variable, key] of [
-    ["--accent", "accentColor"],
-    ["--surface", "surfaceColor"],
-  ]) {
-    if (prefs[key]) document.body.style.setProperty(variable, prefs[key]);
-    else document.body.style.removeProperty(variable);
-  }
+  for (const [variable, color] of Object.entries(themeColors(theme, prefs)))
+    document.body.style.setProperty(`--${variable}`, color);
   renderColumns();
   renderRows();
   updateNavigation();
@@ -295,7 +279,10 @@ function applyPreferences() {
 
 function layoutAudition() {
   // Keep the waveform's saved height independent of temporary controls.
-  const extra = (prefs.fx ? 48 : 0) + (innerWidth <= 1100 ? 24 : 0);
+  const extra =
+    (prefs.fx ? 48 : 0) +
+    (innerWidth <= 1100 ? 24 : 0) +
+    (innerWidth <= 1450 ? 36 : 0);
   prefs.auditionHeight = Math.round(
     clamp(prefs.auditionHeight, 192, Math.max(192, innerHeight - 300 - extra)),
   );
@@ -463,8 +450,24 @@ function drawPeaks(canvas, waveform, color, selected = false) {
   context.stroke();
 }
 
+let arrangeGesture;
+let arrangeSequence = 0;
+function clearArrangeGesture() {
+  if (arrangeGesture) {
+    const { element, pointerId } = arrangeGesture;
+    if (element.hasPointerCapture(pointerId))
+      element.releasePointerCapture(pointerId);
+    element.style.cursor = "";
+  }
+  arrangeGesture = null;
+  $("drag-hint").hidden = true;
+}
+function cancelArrangeGesture() {
+  const id = arrangeGesture?.id;
+  clearArrangeGesture();
+  if (id) command("drag.cancel", { id }).catch(report);
+}
 function attachArrangeDrag(element, assetPath, selection) {
-  let gesture;
   element.addEventListener("pointerdown", (event) => {
     if (
       event.button !== 0 ||
@@ -472,39 +475,79 @@ function attachArrangeDrag(element, assetPath, selection) {
       event.target.closest(".waveform,.star")
     )
       return;
-    gesture = { x: event.clientX, y: event.clientY, active: false };
+    cancelArrangeGesture();
+    arrangeGesture = {
+      element,
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      path: assetPath(),
+      selection,
+      start: snapshot?.regionStart ?? 0,
+      finish: snapshot?.regionEnd ?? 1,
+    };
+    element.setPointerCapture(event.pointerId);
   });
   element.addEventListener("pointermove", (event) => {
-    if (!gesture || !(event.buttons & 1)) return;
-    if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 6) {
-      gesture.active = true;
-      element.setPointerCapture(event.pointerId);
-      element.style.cursor = "grabbing";
-    }
+    const gesture = arrangeGesture;
+    if (
+      !gesture ||
+      gesture.element !== element ||
+      gesture.id ||
+      !(event.buttons & 1)
+    )
+      return;
+    if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) <= 6)
+      return;
+    gesture.id = `arrange-${++arrangeSequence}`;
+    element.dataset.dragged = "true";
+    element.style.cursor = "grabbing";
+    $("drag-hint").hidden = false;
+    command("drag.begin", {
+      id: gesture.id,
+      path: gesture.path,
+      selection: gesture.selection,
+      start: gesture.start,
+      finish: gesture.finish,
+    })
+      .then((result) => {
+        if (arrangeGesture !== gesture) return;
+        if (result?.started === false) clearArrangeGesture();
+        else gesture.accepted = true;
+      })
+      .catch((error) => {
+        if (arrangeGesture === gesture) clearArrangeGesture();
+        report(error);
+      });
   });
-  element.addEventListener(
-    "pointerup",
-    action(async (event) => {
-      const active = gesture?.active;
-      gesture = null;
-      element.style.cursor = "";
-      if (!active) return;
-      element.dataset.dragged = "true";
-      if (
-        event.clientX >= 0 &&
-        event.clientX < innerWidth &&
-        event.clientY >= 0 &&
-        event.clientY < innerHeight
-      )
-        return;
-      await command("drag.drop", { path: assetPath(), selection });
-    }),
-  );
+  element.addEventListener("pointerup", (event) => {
+    if (arrangeGesture?.element !== element) return;
+    if (
+      event.clientX >= 0 &&
+      event.clientX < innerWidth &&
+      event.clientY >= 0 &&
+      event.clientY < innerHeight
+    )
+      cancelArrangeGesture();
+    else clearArrangeGesture(); // Native polling owns release outside the window.
+  });
   element.addEventListener("pointercancel", () => {
-    gesture = null;
-    element.style.cursor = "";
+    if (arrangeGesture?.element === element) cancelArrangeGesture();
   });
+  element.addEventListener("dragstart", (event) => event.preventDefault());
 }
+window.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key === "Escape" && arrangeGesture) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      cancelArrangeGesture();
+    }
+  },
+  true,
+);
+window.addEventListener("pagehide", cancelArrangeGesture);
 
 const thumbnailCache = new Map();
 function thumbnail(path) {
@@ -1270,6 +1313,8 @@ function applySnapshot(next) {
     "drag-selection",
   ])
     $(id).disabled = !ready || !next.selected;
+  if (arrangeGesture?.accepted && next.arrangeDragging === false)
+    clearArrangeGesture();
   $("ai-search").disabled = !ready;
   $("ai-search").title = next.tasks?.ai ? "取消 AI 搜索" : "AI 语义搜索";
   renderFilterBar();

@@ -843,6 +843,35 @@ async function main() {
           call.params.name === "My playlist",
       ),
     );
+    await page.evaluate(() =>
+      window.testSetState({ regionStart: 0.2, regionEnd: 0.6 }),
+    );
+    const dragBox = await page.locator("#drag-selection").boundingBox();
+    await page.mouse.move(dragBox.x + 12, dragBox.y + 12);
+    await page.mouse.down();
+    await page.mouse.move(dragBox.x + 30, dragBox.y + 12);
+    await page.waitForFunction(() =>
+      window.testCalls.some((call) => call.method === "drag.begin"),
+    );
+    const dragBegin = await page.evaluate(() =>
+      window.testCalls.filter((call) => call.method === "drag.begin").at(-1),
+    );
+    assert.equal(dragBegin.params.selection, true);
+    assert.equal(dragBegin.params.start, 0.2);
+    assert.equal(dragBegin.params.finish, 0.6);
+    assert(
+      await page.locator("#drag-hint").isVisible(),
+      "start native handoff before mouse-up",
+    );
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await page.waitForFunction(() =>
+      window.testCalls.some((call) => call.method === "drag.cancel"),
+    );
+    assert(!(await page.locator("#drag-hint").isVisible()));
+    await page.evaluate(() =>
+      window.testSetState({ regionStart: undefined, regionEnd: undefined }),
+    );
     await page.locator("#save-region").click();
     await page.locator("#input-value").fill("Metal tail");
     await page.locator("#input-value").press("Enter");
@@ -1081,29 +1110,43 @@ async function main() {
         .locator('[data-preference="auditionHeight"]')
         .evaluate((input) => input.validity.valid),
     );
-    await page.locator('[data-preference="theme"]').selectOption("paper");
+    await page.locator('[data-preference="theme"]').selectOption("everforest");
+    await page.locator('[data-preference="themeMode"]').selectOption("light");
     await page.locator("#settings-apply").click();
     await page.locator("#settings-close").click();
     await page.reload();
     await page.waitForSelector(".result-row");
     assert.equal(
       await page.locator("body").getAttribute("data-theme"),
-      "paper",
+      "everforest",
       "theme choice must persist",
     );
     await page.screenshot({ path: path.join(output, "optional-paper.png") });
-    for (const theme of [
-      "graphite",
-      "slate",
-      "amethyst",
-      "forest",
-      "frost",
-      "paper",
-    ]) {
+    const variants = await page.evaluate(
+      async () => (await import("./themes.js")).themeVariants,
+    );
+    assert.equal(variants.length, 44);
+    assert.equal(new Set(variants.map((item) => item.id)).size, 29);
+    assert.deepEqual(
+      variants.find((item) => item.id === "github" && item.tone === "dark"),
+      {
+        id: "github",
+        label: "GitHub",
+        tone: "dark",
+        background: "#0d1117",
+        foreground: "#e6edf3",
+        accent: "#1f6feb",
+      },
+    );
+    for (const variant of variants) {
+      const theme = variant.id;
       await page.locator("#settings-open").click();
       await page.locator('[data-section="appearance"]').click();
-      assert.equal(await page.locator(".theme-preset").count(), 7);
+      assert.equal(await page.locator(".theme-preset").count(), 29);
       await page.locator(`[data-theme-preset="${theme}"]`).click();
+      await page
+        .locator('[data-preference="themeMode"]')
+        .selectOption(variant.tone);
       const presetAccent = await page
         .locator('[data-preference="accentColor"]')
         .inputValue();
@@ -1115,6 +1158,8 @@ async function main() {
       );
       const colors = await page.locator("body").evaluate((body) => ({
         accent: getComputedStyle(body).getPropertyValue("--accent").trim(),
+        background: getComputedStyle(body).getPropertyValue("--bg").trim(),
+        foreground: getComputedStyle(body).getPropertyValue("--text").trim(),
         search: getComputedStyle(body).getPropertyValue("--search-bg").trim(),
         expectedSearch: getComputedStyle(body)
           .getPropertyValue("--input")
@@ -1146,11 +1191,35 @@ async function main() {
         presetAccent,
         "the editable accent must match the preset",
       );
-      if (["slate", "frost"].includes(theme))
+      assert.equal(colors.background, variant.background);
+      assert.equal(colors.foreground, variant.foreground);
+      assert.equal(colors.accent, variant.accent);
+      if (["github", "codex", "catppuccin"].includes(theme))
         await page.screenshot({
-          path: path.join(output, `beta12-theme-${theme}.png`),
+          path: path.join(output, `beta13-theme-${theme}-${variant.tone}.png`),
         });
     }
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="appearance"]').click();
+    await page.locator('[data-preference="theme"]').selectOption("github");
+    await page.locator('[data-preference="themeMode"]').selectOption("system");
+    await page.locator("#settings-apply").click();
+    await page.locator("#settings-close").click();
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.waitForFunction(() => document.body.dataset.tone === "light");
+    await page.reload();
+    await page.waitForSelector(".result-row");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForFunction(() => document.body.dataset.tone === "dark");
+    assert.equal(
+      await page
+        .locator("body")
+        .evaluate((body) =>
+          getComputedStyle(body).getPropertyValue("--bg").trim(),
+        ),
+      "#0d1117",
+    );
     await page.locator("#settings-open").click();
     await page.locator('[data-section="appearance"]').click();
     await page.locator('[data-preference="accentColor"]').fill("#c7b57f");
@@ -1487,7 +1556,8 @@ async function main() {
     await page.waitForSelector(".result-row");
     await page.locator("#settings-open").click();
     await page.locator('[data-section="appearance"]').click();
-    await page.locator('[data-preference="theme"]').selectOption("dark");
+    await page.locator('[data-preference="theme"]').selectOption("github");
+    await page.locator('[data-preference="themeMode"]').selectOption("dark");
     await page.locator('[data-preference="left"]').check();
     await page.locator('[data-preference="right"]').check();
     await page.locator('[data-preference="fx"]').uncheck();
@@ -1496,7 +1566,10 @@ async function main() {
     await page.locator('[data-preference="auditionHeight"]').fill("282");
     await page.locator("#settings-apply").click();
     await page.locator("#settings-close").click();
-    assert.equal(await page.locator("body").getAttribute("data-theme"), "dark");
+    assert.equal(
+      await page.locator("body").getAttribute("data-theme"),
+      "github",
+    );
     assert.equal(
       await page.locator('[data-rail="settings"]').count(),
       0,
@@ -1854,11 +1927,21 @@ async function main() {
         "transport must stay inside the player",
       );
       const controls = await page.locator(".transport").evaluate((row) =>
-        [...row.children]
+        [
+          ...row.querySelectorAll(
+            ":scope > button, .transport-center > *, .transport-actions > *",
+          ),
+        ]
           .filter((el) => el.getClientRects().length)
           .map((el) => {
             const r = el.getBoundingClientRect();
-            return { id: el.id || el.tagName, left: r.left, right: r.right };
+            return {
+              id: el.id || el.className,
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              bottom: r.bottom,
+            };
           }),
       );
       for (let i = 0; i < controls.length; i++) {
@@ -1866,12 +1949,28 @@ async function main() {
           controls[i].left >= -1 && controls[i].right <= size.width + 1,
           `${controls[i].id} must stay in the viewport at ${size.width}px`,
         );
-        if (i)
+        for (let j = 0; j < i; j++) {
+          const a = controls[i],
+            b = controls[j];
           assert(
-            controls[i].left >= controls[i - 1].right - 1,
-            "activity must not overlap adjacent transport controls",
+            a.left >= b.right - 1 ||
+              b.left >= a.right - 1 ||
+              a.top >= b.bottom - 1 ||
+              b.top >= a.bottom - 1,
+            `${a.id} overlaps ${b.id}`,
           );
+        }
       }
+      const center = await page.locator(".transport-center").boundingBox();
+      assert(
+        Math.abs(center.x + center.width / 2 - size.width / 2) < 2,
+        "transport group stays centered",
+      );
+      const activity = await page.locator("#activity-status").boundingBox();
+      assert(
+        activity.x <= 15,
+        "activity stays at bottom left inside the player padding",
+      );
       if (size.height === 620) {
         const rail = page.locator("#navigation-rail");
         assert.equal(
@@ -2164,8 +2263,8 @@ async function main() {
         themeColorsVersion: 1,
         surfaceColor: "#e8edf5",
         accentColor: "#345d9d",
-        expectedSurface: "#ccd5e0",
-        expectedAccent: "#345d9d",
+        expectedSurface: "#f7f7f7",
+        expectedAccent: "#0969da",
       },
       {
         themeColorsVersion: 1,
@@ -2178,8 +2277,8 @@ async function main() {
         themeColorsVersion: 0,
         surfaceColor: "#222426",
         accentColor: "#c7b57f",
-        expectedSurface: "#ccd5e0",
-        expectedAccent: "#345d9d",
+        expectedSurface: "#f7f7f7",
+        expectedAccent: "#0969da",
       },
     ]) {
       const migrationUrl = new URL(page.url());

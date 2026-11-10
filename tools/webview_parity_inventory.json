@@ -743,7 +743,7 @@
     {
       "feature": "拖出原文件/拖出选区",
       "entry": "Alt+拖动列表行；底部拖入选区",
-      "rpc": "drag.drop",
+      "rpc": "drag.begin,drag.cancel",
       "acceptance": "放到 REAPER 对应轨道/时间位置；窗口外松开有清理；源文件不被改写。",
       "id": "F083",
       "group": "插入 REAPER 与 Transfer",

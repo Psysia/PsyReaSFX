@@ -336,48 +336,7 @@
           </div>
         </div>
         <div class="transport">
-          <button id="stop" title="停止" aria-label="停止">■</button
-          ><button
-            id="play"
-            class="play-button"
-            title="播放 / 空格"
-            aria-label="播放"
-          >
-            ▶</button
-          ><button
-            id="loop"
-            title="循环"
-            aria-label="循环"
-            aria-pressed="false"
-          >
-            ↻</button
-          ><label class="transport-volume" title="音量 · 双击滑块恢复 0 dB"
-            ><span aria-hidden="true">音量</span
-            ><input
-              id="fx-gain"
-              aria-label="音量"
-              type="range"
-              min="-36"
-              max="18"
-              step="0.1"
-              value="0"
-            /><input
-              id="fx-gain-value"
-              aria-label="音量 dB"
-              type="number"
-              min="-36"
-              max="18"
-              step="0.1"
-              value="0"
-            /><span class="volume-unit">dB</span></label
-          ><output id="transport-time">00:00.000 / 00:00.000</output
-          ><label class="auto-preview"
-            ><input
-              id="auto-preview"
-              type="checkbox"
-              checked
-            />选择即试听</label
-          ><button
+          <button
             id="activity-status"
             class="activity-status"
             popovertarget="task-panel"
@@ -387,15 +346,65 @@
           >
             <span class="activity-dot" aria-hidden="true"></span
             ><span id="activity-text" role="status">正在连接宿主…</span
-            ><span id="task-count" class="count" hidden>0</span></button
-          ><button id="zoom-reset" title="复位缩放">适应</button
-          ><button id="fx-toggle" aria-expanded="false">FX⌄</button
-          ><button id="drag-selection" title="按住并拖到 REAPER 编排区">
-            拖入选区</button
-          ><button id="insert">↥ 插入 REAPER</button
-          ><button id="transfer-open">⇥ Transfer</button>
+            ><span id="task-count" class="count" hidden>0</span>
+          </button>
+          <div class="transport-center">
+            <button id="stop" title="停止" aria-label="停止">■</button
+            ><button
+              id="play"
+              class="play-button"
+              title="播放 / 空格"
+              aria-label="播放"
+            >
+              ▶</button
+            ><button
+              id="loop"
+              title="循环"
+              aria-label="循环"
+              aria-pressed="false"
+            >
+              ↻</button
+            ><label class="transport-volume" title="音量 · 双击滑块恢复 0 dB"
+              ><span aria-hidden="true">音量</span
+              ><input
+                id="fx-gain"
+                aria-label="音量"
+                type="range"
+                min="-36"
+                max="18"
+                step="0.1"
+                value="0"
+              /><input
+                id="fx-gain-value"
+                aria-label="音量 dB"
+                type="number"
+                min="-36"
+                max="18"
+                step="0.1"
+                value="0"
+              /><span class="volume-unit">dB</span></label
+            ><output id="transport-time">00:00.000 / 00:00.000</output
+            ><label class="auto-preview"
+              ><input
+                id="auto-preview"
+                type="checkbox"
+                checked
+              />选择即试听</label
+            >
+          </div>
+          <div class="transport-actions">
+            <button id="zoom-reset" title="复位缩放">适应</button
+            ><button id="fx-toggle" aria-expanded="false">FX⌄</button
+            ><button id="drag-selection" title="按住并拖到 REAPER 编排区">
+              拖入选区</button
+            ><button id="insert">↥ 插入 REAPER</button
+            ><button id="transfer-open">⇥ Transfer</button>
+          </div>
         </div>
       </section>
+    </div>
+    <div id="drag-hint" role="status" hidden>
+      拖到 REAPER 编排区后松开；Esc 取消
     </div>
     <div id="task-panel" popover="auto" aria-label="后台任务">
       <div class="task-panel-heading">
