@@ -2,6 +2,7 @@ import { connectHost } from "./host.js";
 import { createLocalizer } from "./locale.js";
 import { createSettings, transferPresets } from "./settings.js";
 import { icon } from "./icons.js";
+import { PlaybackClock } from "./playback.js";
 import {
   resolveTheme,
   themeColors,
@@ -124,6 +125,11 @@ let ucsLoading;
 const ucsOpen = new Set();
 const tabScroll = new Map();
 const metadataDrafts = new Map();
+const playbackClock = new PlaybackClock();
+let playbackFrame = 0;
+let detailWidth = 0;
+let animatedMini = [];
+let lastClockReadout = 0;
 const columnDefinitions = [
   ["index", "序号"],
   ["star", "收藏"],
@@ -734,7 +740,7 @@ function waveformInk(value, fallback) {
   // Default pale inks belong to the dark native palette. Keep explicit custom
   // colors, but use the paper theme's readable ink for those default values.
   if (
-    ["paper", "frost"].includes(prefs.theme) &&
+    document.body.dataset.tone === "light" &&
     ["#d7d8da", "#eaf3ff", "#dce8f3", "#f5faff"].includes(value?.toLowerCase())
   )
     return fallback;
@@ -742,15 +748,51 @@ function waveformInk(value, fallback) {
 }
 
 function updateMiniPlayheads() {
+  animatedMini = [];
   for (const row of $("visible-rows").children) {
     const playhead = row.querySelector(".mini-playhead");
     if (!playhead) continue;
     playhead.hidden =
       !snapshot?.playing || snapshot.previewPath !== row.dataset.path;
-    const position = clamp(snapshot?.position || 0, 0, 1);
-    playhead.style.left = `calc(${8 - 16 * position}px + ${position * 100}%)`;
     playhead.style.background = snapshot?.rowAppearance?.playhead || "#cabb8a";
+    if (!playhead.hidden)
+      animatedMini.push({
+        element: playhead,
+        width: playhead.parentElement.clientWidth,
+      });
   }
+  paintPlayheads(performance.now());
+}
+
+function paintPlayheads(now) {
+  const position = playbackClock.position(now);
+  const normalized = (position - zoomStart) / (zoomEnd - zoomStart);
+  const detail = $("detail-playhead");
+  detail.hidden = !snapshot?.selected || normalized < 0 || normalized > 1;
+  detail.style.transform = `translate3d(${normalized * detailWidth}px, 0, 0)`;
+  for (const { element, width } of animatedMini)
+    element.style.transform = `translate3d(${8 + position * (width - 16)}px, 0, 0)`;
+}
+
+function animatePlayback(now) {
+  playbackFrame = 0;
+  if (document.hidden) return;
+  paintPlayheads(now);
+  if (now - lastClockReadout >= 100 || !playbackClock.active(now)) {
+    updateTransportTime(now);
+    lastClockReadout = now;
+  }
+  if (playbackClock.active(now))
+    playbackFrame = requestAnimationFrame(animatePlayback);
+}
+
+function schedulePlayback() {
+  if (
+    !document.hidden &&
+    !playbackFrame &&
+    playbackClock.active(performance.now())
+  )
+    playbackFrame = requestAnimationFrame(animatePlayback);
 }
 
 async function selectAsset(asset, event = {}, autoPlay) {
@@ -1052,6 +1094,21 @@ function folderBranch(root, folder = root) {
   return branch;
 }
 
+function sidebarStateKey(state) {
+  return JSON.stringify([
+    state.libraries,
+    state.collections,
+    state.roots,
+    state.libraryId,
+    state.collectionId,
+    state.view,
+    state.savedSearches,
+    state.statusFilter,
+    state.root,
+    state.language,
+  ]);
+}
+
 function renderSidebar() {
   const views = [
     ["all", "全部声音"],
@@ -1205,6 +1262,9 @@ function renderSidebar() {
     ),
   );
   $("scope").value = snapshot.libraryId || "";
+  // Settings and navigation also render this tree. Record their completed state
+  // so the next heartbeat cannot replace a folder between pointerdown and click.
+  sidebarSignature = sidebarStateKey(snapshot);
 }
 
 function renderTabs() {
@@ -1264,6 +1324,8 @@ function applySnapshot(next) {
     pageSequence++;
   }
   snapshot = next;
+  playbackClock.accept(next, performance.now());
+  schedulePlayback();
   $("performance-stats").hidden = !next.performance;
   if (next.performance)
     $("performance-stats").textContent =
@@ -1368,7 +1430,8 @@ function applySnapshot(next) {
   if (detail?.total > 0)
     activity = `${localizer.text(taskLabels[firstTask] || firstTask)} ${detail.completed}/${detail.total}${tasks.length > 1 ? ` · +${tasks.length - 1}` : ""}`;
   else if (firstTask === "scan" && detail?.files != null)
-    activity = `${localizer.text("扫描")} · ${detail.files.toLocaleString()}${localizer.text(" 个音频")}`;
+    activity = `${localizer.text(detail.automatic ? "来源检查" : "扫描")} · ${detail.files.toLocaleString()}${localizer.text(" 个音频")}`;
+  if (detail?.paused) activity = localizer.text(detail.paused);
   if (waiting)
     activity = `${localizer.text("相似检索等待中")} · ${progress.waitingFor || ""}`;
   else if (progress?.total && next.tasks?.similar)
@@ -1410,20 +1473,7 @@ function applySnapshot(next) {
     folderCache.clear();
     sidebarSignature = null;
   }
-  const sideKey = JSON.stringify([
-    next.libraries,
-    next.collections,
-    next.roots,
-    next.libraryId,
-    next.collectionId,
-    next.view,
-    next.savedSearches,
-    next.statusFilter,
-    next.root,
-    next.language,
-  ]);
-  if (sideKey !== sidebarSignature) {
-    sidebarSignature = sideKey;
+  if (sidebarStateKey(next) !== sidebarSignature) {
     renderSidebar();
   }
   const tabKey = JSON.stringify([next.tabs, next.activeTab]);
@@ -1683,6 +1733,13 @@ function renderSimilarityProgress() {
   else $("analysis-progress").removeAttribute("value");
 }
 
+function updateTransportTime(now = performance.now()) {
+  const duration = snapshot?.selected?.duration || 0;
+  const label = `${time(playbackClock.position(now) * duration)} / ${time(duration)}`;
+  if ($("transport-time").textContent !== label)
+    $("transport-time").textContent = label;
+}
+
 function updateReadouts() {
   const duration = snapshot?.selected?.duration || 0;
   const start = regionDrag
@@ -1691,8 +1748,7 @@ function updateReadouts() {
   const end = regionDrag
     ? Math.max(regionDrag.start, regionDrag.current)
     : (snapshot?.regionEnd ?? 1);
-  $("transport-time").textContent =
-    `${time((snapshot?.position || 0) * duration)} / ${time(duration)}`;
+  updateTransportTime();
   const label = $("range-label");
   label.hidden = !duration || (start <= 1e-9 && end >= 1 - 1e-9);
   label.textContent = `${localizer.text("选区")} · ${time((end - start) * duration)}`;
@@ -1701,14 +1757,12 @@ function updateReadouts() {
 }
 
 function drawDetail() {
-  const position =
-    ((snapshot?.position || 0) - zoomStart) / (zoomEnd - zoomStart);
   const playhead = $("detail-playhead");
-  playhead.hidden = !snapshot?.selected || position < 0 || position > 1;
-  playhead.style.left = `${position * 100}%`;
   playhead.style.background = snapshot?.rowAppearance?.playhead || "#b8d6c3";
   const canvas = $("detail-wave");
   const rect = canvas.getBoundingClientRect();
+  detailWidth = rect.width;
+  paintPlayheads(performance.now());
   if (!rect.width || !rect.height) return;
   const ratio = Math.min(devicePixelRatio || 1, 2);
   const paintKey = JSON.stringify([
@@ -2745,6 +2799,8 @@ function renderTasks() {
           );
         if (detail.path)
           content.append(node("small", "task-path", detail.path));
+        if (detail.paused)
+          content.append(node("small", "muted", detail.paused));
       }
       row.append(content, cancel);
       return row;
@@ -4184,17 +4240,75 @@ document.addEventListener(
     }
   }),
 );
-const resizeObserver = new ResizeObserver(() => {
-  drawDetail();
-  requestPage();
-});
+let activityAt = -Infinity;
+let activityPending = false;
+function signalActivity(resizing = false) {
+  const now = performance.now();
+  if (!host || activityPending || now - activityAt < 250) return;
+  activityAt = now;
+  activityPending = true;
+  host
+    .request("session.activity", { resizing })
+    .catch(() => {})
+    .finally(() => {
+      activityPending = false;
+    });
+}
+for (const type of ["pointerdown", "keydown", "wheel", "scroll"])
+  document.addEventListener(type, () => signalActivity(), {
+    passive: true,
+    capture: true,
+  });
+document.addEventListener(
+  "pointermove",
+  (event) => {
+    if (event.buttons) signalActivity();
+  },
+  { passive: true },
+);
+
+let resizeFrame = 0;
+let resizeSettled;
+let viewportKey = "";
+function scheduleResize() {
+  if (resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0;
+    drawDetail();
+  });
+  clearTimeout(resizeSettled);
+  resizeSettled = setTimeout(() => {
+    // ResizeObserver can fire for both panels in the same native WM_SIZE.
+    // Reload only a changed viewport; never rebuild columns/theme per event.
+    renderRows();
+    requestPage(false);
+  }, 120);
+}
+const resizeObserver = new ResizeObserver(scheduleResize);
 resizeObserver.observe($("detail-wave-wrap"));
 resizeObserver.observe($("result-scroll"));
 window.addEventListener("resize", () => {
-  applyPreferences();
-  requestPage();
+  const key = `${innerWidth}:${innerHeight}:${devicePixelRatio}`;
+  if (key === viewportKey) return;
+  viewportKey = key;
+  signalActivity(true);
+  layoutAudition();
+  scheduleResize();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    cancelAnimationFrame(playbackFrame);
+    playbackFrame = 0;
+  } else {
+    paintPlayheads(performance.now());
+    schedulePlayback();
+  }
 });
 window.addEventListener("beforeunload", () => {
+  cancelAnimationFrame(playbackFrame);
+  cancelAnimationFrame(resizeFrame);
+  clearTimeout(resizeSettled);
+  resizeObserver.disconnect();
   localizer.close();
   clearTimeout(suggestionTimer);
   clearTimeout(pageRetry);
@@ -4249,6 +4363,7 @@ for (const [id, name] of [
   ["left-toggle", "menu"],
   ["right-toggle", "panel"],
   ["settings-open", "settings"],
+  ["fx-toggle", "fx"],
 ])
   $(id).replaceChildren(icon(name));
 for (const button of document.querySelectorAll("[data-rail]"))
@@ -4268,6 +4383,8 @@ for (const button of document.querySelectorAll("[data-rail]"))
 applyPreferences();
 try {
   host = await connectHost();
+  if (host.runtime?.status === "dock_patch_required")
+    report(host.runtime.notice);
   if (host.session.version) {
     $("app-version").textContent = host.session.version;
     document.title = `PsyReaSFX ${host.session.version}`;

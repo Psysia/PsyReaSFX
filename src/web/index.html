@@ -23,9 +23,25 @@
         </nav>
         <div class="topbar">
           <div class="brand">
-            <svg viewBox="0 0 26 26" aria-hidden="true">
-              <path d="M3 11v4m4-8v12m4-16v20m4-17v14m4-11v8m4-5v2" /></svg
-            ><strong>PsyReaSFX</strong><small id="app-version">0.9.a</small>
+            <svg class="brand-symbol" viewBox="0 0 32 32" aria-hidden="true">
+              <path
+                class="brand-layer"
+                d="M3.2 21.76 16 14.24 28.8 21.76 16 29.28Z"
+              />
+              <path
+                class="brand-layer"
+                d="M3.2 16.32 16 8.8 28.8 16.32 16 23.84Z"
+              />
+              <path
+                class="brand-top"
+                d="M3.2 10.88 16 3.36 28.8 10.88 16 18.4Z"
+              />
+              <path
+                class="brand-wave"
+                d="M8.8 9.96v1.84 M11.2 9.04v3.68 M13.6 7.96v5.84 M16 6.58v8.6 M18.4 7.96v5.84 M20.8 9.04v3.68 M23.2 9.96v1.84"
+              /></svg
+            ><strong>PsyRea<span class="brand-accent">SFX</span></strong
+            ><small id="app-version">0.9.a</small>
           </div>
           <label class="scope-control"
             ><span class="sr-only">搜索范围</span
@@ -223,9 +239,29 @@
             <button id="clear-query">清除搜索与筛选</button>
           </div>
           <div id="startup-state" role="status">
-            <svg class="startup-logo" viewBox="0 0 26 26" aria-hidden="true">
-              <path d="M3 11v4m4-8v12m4-16v20m4-17v14m4-11v8m4-5v2" /></svg
-            ><strong class="startup-brand">PsyReaSFX</strong
+            <svg
+              class="startup-logo brand-symbol"
+              viewBox="0 0 32 32"
+              aria-hidden="true"
+            >
+              <path
+                class="brand-layer"
+                d="M3.2 21.76 16 14.24 28.8 21.76 16 29.28Z"
+              />
+              <path
+                class="brand-layer"
+                d="M3.2 16.32 16 8.8 28.8 16.32 16 23.84Z"
+              />
+              <path
+                class="brand-top"
+                d="M3.2 10.88 16 3.36 28.8 10.88 16 18.4Z"
+              />
+              <path
+                class="brand-wave"
+                d="M8.8 9.96v1.84 M11.2 9.04v3.68 M13.6 7.96v5.84 M16 6.58v8.6 M18.4 7.96v5.84 M20.8 9.04v3.68 M23.2 9.96v1.84"
+              /></svg
+            ><strong class="startup-brand"
+              >PsyRea<span class="brand-accent">SFX</span></strong
             ><span>正在打开声音工作区</span
             ><span id="startup-phase">正在连接宿主…</span
             ><span id="startup-count"></span><span id="startup-elapsed"></span>
@@ -394,7 +430,13 @@
           </div>
           <div class="transport-actions">
             <button id="zoom-reset" title="复位缩放">适应</button
-            ><button id="fx-toggle" aria-expanded="false">FX⌄</button
+            ><button
+              id="fx-toggle"
+              aria-expanded="false"
+              aria-controls="fx-panel"
+              aria-label="试听效果"
+              title="试听效果：音高、速度与反向"
+            ></button
             ><button id="drag-selection" title="按住并拖到 REAPER 编排区">
               拖入选区</button
             ><button id="insert">↥ 插入 REAPER</button

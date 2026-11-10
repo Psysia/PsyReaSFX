@@ -108,12 +108,14 @@ assert(workspace_tab_by_id(first).runtime.results==nil)
 assert(workspace_tab_by_id(second).runtime.results==nil)
 -- Quiet periodic scans with no changes do not rebuild an unchanged catalog.
 local previous_state=state
-state={}
+state={watch_interval=60}
 AppState=new_state_store(state)
 local finished_scans, imports=0,0
 Jobs={finish=function() finished_scans=finished_scans+1 end}
 reaper={time_precise=function() return clock end}
 function clear_scan_checkpoint() end
+function ui_in_motion() return false end
+assert(load(region(runtime,"WatchFolders = { unchanged = 0 }","function watch_folders()")))()
 assert(load(region(runtime,"function complete_scan_finalize(scan)","function process_scan_finalize(scan)")))()
 complete_scan_finalize({pending={},removed=0,silent=true,job_token={}})
 assert(not state.results_dirty and finished_scans==1)
@@ -124,7 +126,7 @@ complete_scan_finalize({pending={{path="new.wav"}},removed=0,silent=true,reason=
 assert(state.results_dirty and state.import_session.total==1)
 -- Watch Folder periodically polls recursively via the existing scan pipeline;
 -- tab restoration has no entry point that starts a scan or recovery audit.
-state={watch_enabled=true,next_watch=10,watch_interval=60,watch_silent=true}
+state={watch_enabled=true,next_watch=10,watch_interval=60,watch_silent=true,roots={"library"}}
 AppState=new_state_store(state)
 local scan_count=0
 function start_scan(reason,roots,options)

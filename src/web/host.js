@@ -99,14 +99,21 @@ function inspectRuntime(native, policy) {
   }
   const version = typeof native.version === "string" ? native.version : "未知";
   const baseline = policy.baseline_versions?.includes(version);
+  const dockWarning = !baseline && /^0\.3\.9\.(29|30|31|32)$/.test(version);
   return {
     version,
-    status: baseline ? policy.validation_status : "external_unverified",
-    notice: baseline
-      ? policy.validation_status === "native_acceptance_pending"
-        ? "随包候选版本 · 待 REAPER 实机验收"
-        : "随包基线版本"
-      : "外部版本 · 接口检查通过，尚未完成本应用回归验证",
+    status: dockWarning
+      ? "dock_patch_required"
+      : baseline
+        ? policy.validation_status
+        : "external_unverified",
+    notice: dockWarning
+      ? "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。"
+      : baseline
+        ? policy.validation_status === "native_acceptance_pending"
+          ? "随包候选版本 · 待 REAPER 实机验收"
+          : "随包基线版本"
+        : "外部版本 · 接口检查通过，尚未完成本应用回归验证",
   };
 }
 

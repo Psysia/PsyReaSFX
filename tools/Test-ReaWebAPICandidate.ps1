@@ -12,7 +12,8 @@ if (Test-Path -LiteralPath $FixtureDirectory) { throw 'Choose a new candidate fi
 $prefix = "https://github.com/Psysia/ReaWebAPI/releases/download/v$($lock.version)/"
 $manifest = [ordered]@{
     schema = 'PsyReaSFX-ReaWebAPI-Mirror-v1'; repository = 'Psysia/ReaWebAPI'; upstream = 'zaibuyidao/ReaWebAPI'
-    modified = $false; tag = "v$($lock.version)"; commit = $lock.commit
+    modified = ($lock.version -match '-prs\.\d+$'); tag = "v$($lock.version)"; commit = $lock.commit
+    upstream_commit = $lock.upstream_commit; patches = @($lock.patches)
     contracts = @{ protocol = 1; runtime = 2; web = 1; max_message_bytes = 1048576 }
     files = @{ $lock.archive.file = $lock.archive.sha256; $lock.source.file = $lock.source.sha256; $lock.binary.file = $lock.binary.sha256 }
 }
@@ -76,6 +77,16 @@ try {
     $manifest.commit = '0' * 40
     Assert-Rejected 'commit' 'provenance does not match'
     $manifest.commit = $lock.commit
+    if ($manifest.modified) {
+        $baseCommit = $manifest.upstream_commit
+        $manifest.upstream_commit = 'invalid'
+        Assert-Rejected 'patch-base' 'must declare its upstream commit'
+        $manifest.upstream_commit = $baseCommit
+        $declaredPatches = $manifest.patches
+        $manifest.patches = @()
+        Assert-Rejected 'patch-notice' 'must declare its upstream commit'
+        $manifest.patches = $declaredPatches
+    }
     $manifest.files[$lock.binary.file] = '0' * 64
     Assert-Rejected 'manifest-hash' 'manifest digest mismatch'
     if ((Get-FileHash -LiteralPath $activePath -Algorithm SHA256).Hash -cne $activeHash) { throw 'Candidate evaluation modified the active lock.' }

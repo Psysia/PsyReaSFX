@@ -73,6 +73,8 @@ jobs:
           path: |
             dist/development/*.zip
             dist/development/runtime.lock.json
+            dist/development/upstream-candidate.lock.json
+            dist/development/*dock-compatibility.json
             dist/development/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

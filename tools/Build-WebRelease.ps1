@@ -43,6 +43,7 @@ if ($Target -eq 'reaper') {
     [IO.Directory]::CreateDirectory($documentation) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md') -Destination $documentation
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md') -Destination $documentation
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md') -Destination $documentation
     $prefix = $OutputPath.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $files = @(Get-ChildItem -LiteralPath $OutputPath -File -Recurse | Sort-Object FullName | ForEach-Object {
         [ordered]@{

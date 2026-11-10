@@ -553,6 +553,52 @@ async function main() {
     await page.locator("#play").click();
     await page.waitForSelector(".result-row.played");
     await page.waitForSelector(".mini-playhead:not([hidden])");
+    // One host anchor must yield multiple display frames without repainting
+    // waveform canvases, rebuilding result rows, or requesting catalog pages.
+    await page.waitForTimeout(180);
+    const motion = await page.evaluate(async () => {
+      window.testSetState({ position: 0.1, playing: true,
+        playback: { epoch: 77, velocity: 0.1, start: 0, end: 1, loop: false } });
+      const canvas = document.querySelector("#detail-wave");
+      const context = canvas.getContext("2d");
+      const clear = context.clearRect;
+      let paints = 0;
+      context.clearRect = function (...args) { paints++; return clear.apply(this, args); };
+      const pagesBefore = window.testCalls.filter(c => c.method === "catalog.page").length;
+      const positions = [];
+      const mini = [];
+      const started = performance.now();
+      await new Promise(resolve => {
+        function frame(now) {
+          positions.push(new DOMMatrixReadOnly(document.querySelector("#detail-playhead").style.transform).m41);
+          mini.push(new DOMMatrixReadOnly(document.querySelector(".mini-playhead:not([hidden])").style.transform).m41);
+          if (now - started < 240) requestAnimationFrame(frame); else resolve();
+        }
+        requestAnimationFrame(frame);
+      });
+      context.clearRect = clear;
+      const pagesAfter = window.testCalls.filter(c => c.method === "catalog.page").length;
+      window.testSetState({ playing: false, position: 0.124 });
+      const paused = document.querySelector("#detail-playhead").style.transform;
+      await new Promise(resolve => setTimeout(resolve, 160));
+      const held = paused === document.querySelector("#detail-playhead").style.transform;
+      window.testSetState({ playing: undefined, position: undefined, playback: undefined });
+      return { unique: new Set(positions).size, mini: new Set(mini).size,
+        monotonic: positions.every((p,i) => !i || p >= positions[i-1]), paints, pagesBefore, pagesAfter, held };
+    });
+    assert(motion.unique >= 8 && motion.mini >= 8 && motion.monotonic,
+      `Playheads must advance between host messages: ${JSON.stringify(motion)}`);
+    assert.equal(motion.paints, 0, "cursor animation must not redraw cached waveform pixels");
+    assert.equal(motion.pagesBefore, motion.pagesAfter, "cursor animation must not reload catalog data");
+    assert(motion.held, "pause must freeze the visual cursor immediately");
+    const resizePages = await page.evaluate(() => {
+      const before = window.testCalls.filter(c => c.method === "catalog.page").length;
+      for (let i=0; i<100; i++) window.dispatchEvent(new Event("resize"));
+      return before;
+    });
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => window.testCalls.filter(c => c.method === "catalog.page").length),
+      resizePages, "duplicate native resize notifications must not flood catalog RPC");
     await page.locator(".result-cell.name").nth(1).click();
     assert.equal(
       await page.locator(".result-row.played:not(.selected)").count(),
@@ -1271,10 +1317,21 @@ async function main() {
     await page.locator("#settings-close").click();
     await page.setViewportSize({ width: 1000, height: 720 });
     await page.screenshot({ path: path.join(output, "compact-window.png") });
-    // Capture seek coordinates before selection replaces the virtualized row.
+    // Await an actionable canvas after the settled resize refresh. Capture the
+    // relative seek point before selection replaces the virtualized row.
+    const miniBounds = async () => {
+      const result = await page.waitForFunction(() => {
+        const rect = document
+          .querySelectorAll(".result-cell.waveform canvas")[2]
+          ?.getBoundingClientRect();
+        return rect?.width && rect.height ? rect.toJSON() : false;
+      });
+      const rect = await result.jsonValue();
+      await result.dispose();
+      return rect;
+    };
     for (const fraction of [0.15, 0.55, 0.85]) {
-      const canvas = page.locator(".result-cell.waveform canvas").nth(2);
-      const box = await canvas.boundingBox();
+      const box = await miniBounds();
       const before = await page.evaluate(
         () =>
           window.testCalls.filter((c) => c.method === "preview.play").length,
@@ -1294,14 +1351,11 @@ async function main() {
       );
       assert(
         Math.abs(call.params.position - fraction) < 0.01,
-        "mini waveform must seek to the actual canvas position after row refresh",
+        `mini waveform must seek to the actual canvas position after row refresh: ${JSON.stringify({ fraction, box, params: call.params })}`,
       );
       assert.equal(call.params.selection, false);
     }
-    const doubleBox = await page
-      .locator(".result-cell.waveform canvas")
-      .nth(2)
-      .boundingBox();
+    const doubleBox = await miniBounds();
     const doubleBefore = await page.evaluate(
       () => window.testCalls.filter((c) => c.method === "preview.play").length,
     );
@@ -1564,7 +1618,15 @@ async function main() {
     await page.locator('[data-preference="fontSize"]').fill("13");
     await page.locator('[data-preference="leftWidth"]').fill("206");
     await page.locator('[data-preference="auditionHeight"]').fill("282");
-    await page.locator("#settings-apply").click();
+    assert(
+      await page.evaluate(async () => {
+        await document.querySelector("#settings-apply").onclick();
+        const branch = document.querySelector("#libraries .folder-branch");
+        window.testSetState({});
+        return branch.isConnected;
+      }),
+      "unchanged host updates after applying settings must preserve folder click targets",
+    );
     await page.locator("#settings-close").click();
     assert.equal(
       await page.locator("body").getAttribute("data-theme"),

@@ -9,7 +9,7 @@ $lock = Get-Content -LiteralPath $LockPath -Raw -Encoding UTF8 | ConvertFrom-Jso
 if ($lock.schema -cne 'PsyReaSFX-Dependency-Lock-v1' -or $lock.platform -cne 'windows-x64') {
     throw 'Unsupported ReaWebAPI dependency lock.'
 }
-if ($lock.version -notmatch '^\d+(\.\d+){2,3}$' -or $lock.binary.file -cne 'reaper_reawebapi-x64.dll') {
+if ($lock.version -notmatch '^\d+(\.\d+){2,3}(-prs\.\d+)?$' -or $lock.binary.file -cne 'reaper_reawebapi-x64.dll') {
     throw 'Invalid runtime version or binary name.'
 }
 if (-not $CachePath) { $CachePath = Join-Path $env:LOCALAPPDATA "PsyReaSFX/build-cache/reawebapi/$($lock.version)" }
@@ -74,6 +74,15 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $licenseDirectory $required))) { throw "Missing license material: $required" }
     }
     Copy-Item -LiteralPath $sourceArchive -Destination (Join-Path $sourceDirectory $lock.source.file) -Force
+    if ($lock.modified) {
+        $sourceZip = [IO.Compression.ZipFile]::OpenRead($sourceArchive)
+        try {
+            $notice = $sourceZip.GetEntry("ReaWebAPI-$($lock.commit)/PRS_PATCH.md")
+            if (-not $notice) { throw 'Modified runtime is missing its patch notice.' }
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($notice, (Join-Path $licenseDirectory 'PRS_PATCH.md'), $true)
+        }
+        finally { $sourceZip.Dispose() }
+    }
     Copy-Item -LiteralPath $LockPath -Destination (Join-Path $Destination 'runtime-lock.json') -Force
 }
 finally { $zip.Dispose() }
