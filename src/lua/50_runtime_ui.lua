@@ -1391,7 +1391,7 @@ function process_auxiliary_save()
   end
 end
 
-function create_collection(kind)
+function create_collection(kind, supplied_name)
   if state.root_removal_session then
     set_status("请等待来源移除完成后再新建集合", true)
     return nil
@@ -1411,13 +1411,16 @@ function create_collection(kind)
     and "当前项目"
     or "新播放列表"
 
-  local ok, name =
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       title,
       1,
       "名称:",
       default_name
     )
+  end
 
   name = trim(name)
 
@@ -1490,18 +1493,21 @@ function create_collection(kind)
   return collection
 end
 
-function rename_collection(collection)
+function rename_collection(collection, supplied_name)
   if not collection then
     return
   end
 
-  local ok, name =
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       "重命名集合",
       1,
       "名称:",
       collection.name
     )
+  end
 
   name = trim(name)
 
@@ -1759,8 +1765,10 @@ function save_saved_searches()
   return true
 end
 
-function save_current_search()
-  local ok, name =
+function save_current_search(supplied_name)
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       "保存当前搜索",
       1,
@@ -1769,6 +1777,7 @@ function save_current_search()
         and compact(state.search, 30)
         or "新搜索"
     )
+  end
 
   name = trim(name)
 
@@ -1846,18 +1855,21 @@ function activate_saved_search(saved)
   set_status("已载入搜索：" .. saved.name)
 end
 
-function rename_saved_search(saved)
+function rename_saved_search(saved, supplied_name)
   if not saved then
     return
   end
 
-  local ok, name =
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       "重命名保存搜索",
       1,
       "名称:",
       saved.name
     )
+  end
 
   name = trim(name)
 
@@ -13875,13 +13887,16 @@ function process_ucs_count_rebuild()
   end
 end
 
-function rename_library(library)
-  local ok, name = reaper.GetUserInputs(
+function rename_library(library, supplied_name)
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name = reaper.GetUserInputs(
     "重命名音效库",
     1,
     "名称:",
     library.name
   )
+  end
 
   name = trim(name or "")
 

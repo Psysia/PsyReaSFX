@@ -13,6 +13,33 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
+      <version name="0.9.3-beta7" author="Psysia" time="2026-11-10T02:31:31Z">
+        <changelog><![CDATA[
+- Rebuild navigation and settings with searchable categories, staged edits, recovery from failed saves and browser-native naming dialogs.
+- Preserve metadata and Transfer drafts across panels; add task-specific cancellation and explicit startup/error states.
+- Reduce redundant catalog requests and waveform redraws; bound mini-waveform work during paging.
+- Package the complete shared frontend, including settings and icon modules. Native acceptance of this revision is pending.
+        ]]></changelog>
+        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/PsyReaSFX_WebView.lua</source>
+        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/app.js</source>
+        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/app.json</source>
+        <source platform="win64" file="web/settings.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/settings.js</source>
+        <source platform="win64" file="web/icons.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/icons.js</source>
+        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/host.d.ts</source>
+        <source platform="win64" file="web/locale.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/locale.js</source>
+        <source platform="win64" file="web/translations.en.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/translations.en.js</source>
+        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/host.js</source>
+        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/index.html</source>
+        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/src/web/styles.css</source>
+        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/dependencies/reawebapi/windows-x64.lock.json</source>
+        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/LICENSE</source>
+        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/assets/brand/psyreasfx-hero.png</source>
+        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/assets/brand/psyreasfx-icon.png</source>
+        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/assets/fonts/OFL.txt</source>
+        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/assets/ucs/README.md</source>
+        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta7/assets/ucs/ucs-8.2.1.tsv</source>
+      </version>
       <version name="0.9.3-beta6" author="Psysia" time="2026-11-09T14:17:20Z">
         <changelog><![CDATA[
 - Restore played text/waveform colors, preview playheads, marking and workflow actions.

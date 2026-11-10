@@ -38,6 +38,10 @@ export function createLocalizer() {
         )
         .replace(/^↑ (.+)$/, (_, value) => `↑ ${english[value] || value}`)
         .replace(/^全部 (.+)$/, "All $1");
+      result = result.replace(
+        /^停止 · (.+)$/,
+        (_, value) => `Stop · ${english[value] || value}`,
+      );
     }
     return source.replace(trimmed, result);
   }

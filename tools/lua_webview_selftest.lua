@@ -468,6 +468,64 @@ assert(suggestions[1].query == "catid:AIRBrst")
 assert(#WebUI.handlers["catalog.suggestions"]({ query = "a" }) == 0)
 assert(not pcall(WebUI.handlers["settings.update"], { values = { language = "invalid" } }))
 WebUI.handlers["settings.update"]({ values = { language = "zh" } })
+-- Web names must not open a second, hidden native input dialog.
+local playlist = WebUI.handlers["collection.create"]({ kind = "playlist", name = "Web playlist" })
+assert(playlist and runtime.collection_by_id[playlist.id].kind == "playlist")
+WebUI.handlers["management.action"]({ kind = "collection", id = playlist.id, action = "rename", name = "Renamed playlist" })
+assert(runtime.collection_by_id[playlist.id].name == "Renamed playlist")
+WebUI.handlers["records.action"]({ action = "saveSearch", name = "Web search" })
+assert(runtime.saved_searches[#runtime.saved_searches].name == "Web search")
+local active_tab = runtime.workspace_tab_active
+WebUI.handlers["tab.action"]({ action = "rename", id = active_tab, name = "Web tab" })
+assert(workspace_tab_by_id(active_tab).name == "Web tab")
+
+asset.description = string.rep("完整元数据", 900)
+local full_metadata = WebUI.handlers["metadata.get"]({ path = asset.path })
+assert(not full_metadata.truncated.description and full_metadata.description == asset.description)
+WebUI.handlers["metadata.save"]({ path = asset.path, original = full_metadata, values = { description = "Long field edited safely" } })
+assert(asset.description == "Long field edited safely")
+asset.description = string.rep("x", 70000)
+local oversized = WebUI.handlers["metadata.get"]({ path = asset.path })
+assert(oversized.truncated.description and #oversized.description == 65536)
+assert(not pcall(WebUI.handlers["metadata.save"], { path = asset.path, original = oversized, values = { description = "truncated" } }))
+asset.description = "Long field edited safely"
+local previous_library, previous_library_id = asset.library, asset.library_id
+asset.library, asset.library_id = nil, "webview-fallback"
+runtime.library_by_id[asset.library_id] = { name = "Displayed library" }
+WebUI.handlers["metadata.save"]({ path = asset.path, original = { library = "Displayed library" }, values = { library = "Edited library" } })
+assert(asset.library == "Edited library", "the displayed library fallback must remain editable")
+runtime.library_by_id["webview-fallback"] = nil
+asset.library, asset.library_id = previous_library, previous_library_id
+asset.wave_error = "unreadable"
+assert(WebUI.handlers["catalog.page"]({ offset = 0, limit = 1, waveforms = false }).items[1].waveError)
+asset.wave_error = nil
+runtime.view, runtime.sort_mode = "ai_semantic", "ai_order"
+WebUI.handlers["catalog.query"]({ search = "ordinary search", keepScope = true })
+assert(runtime.view == "all" and runtime.sort_mode == "name", "ordinary search must leave stale AI ordering")
+
+WebUI.handlers["settings.update"]({ values = { watch_enabled = false, watch_interval = 60, transfer_format = "wav24" } })
+assert(runtime.watch_enabled == false and runtime.watch_interval == 60 and runtime.next_watch > reaper.time_precise())
+local old_channels = runtime.multichannel_waveform
+runtime.wave_queued = { pending = true }
+WebUI.handlers["settings.update"]({ values = { multichannel_waveform = not old_channels } })
+assert(next(runtime.wave_queued) == nil, "waveform settings must invalidate queued jobs")
+runtime.transfer_cancel_requested = false
+WebUI.handlers["tasks.cancel"]({ task = "ai" })
+assert(runtime.transfer_cancel_requested == false, "canceling AI must not cancel Transfer")
+WebUI.handlers["tasks.cancel"]({ task = "transfer" })
+assert(runtime.transfer_cancel_requested == true)
+assert(not pcall(WebUI.handlers["tasks.cancel"], { task = "unknown" }))
+
+-- Loading is a readable UI state, not an unresponsive settings button.
+runtime.startup_session = { phase = "fixture loading" }
+input = { neural_json_encode({ protocol = 1, id = "loading-settings", method = "settings.get", params = {} }) }
+webview_receive()
+local loading_response = neural_json_decode(messages[#messages])
+assert(loading_response.ok and loading_response.result.loading)
+input = { neural_json_encode({ protocol = 1, id = "loading-write", method = "settings.update", params = { values = { language = "en" } } }) }
+webview_receive()
+assert(not neural_json_decode(messages[#messages]).ok and runtime.language == "zh")
+runtime.startup_session = nil
 print(
   "WebView headless startup, bounded paging, stale selection, DSP validation, read-only and metadata regressions passed"
 )
