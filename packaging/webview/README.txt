@@ -32,6 +32,10 @@ must provide the Microsoft Edge WebView2 Runtime required by ReaWebAPI.
 
 THIRD-PARTY SOFTWARE
 ReaWebAPI is LGPL-3.0-or-later. Its license texts and third-party notices are in
-licenses/reawebapi. The matching, unmodified source archive is in sources/.
+licenses/reawebapi. The complete corresponding source archive is in sources/.
+The 0.3.9.30-prs.1 compatibility build is modified; see licenses/reawebapi/PRS_PATCH.md.
+It fixes docked WebViews overriding the DAW main window's redraw suspension.
+Updating only the PRS Lua/frontend does not update an externally managed DLL.
+ReaPack users of PsyReaSFX WebView Runtime should update it to 0.3.9.30-beta2.
 PsyReaSFX licensing does not replace these component licenses. The native DLL
 is installed as a separate, replaceable shared REAPER extension.

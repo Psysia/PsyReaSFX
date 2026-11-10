@@ -925,6 +925,27 @@ do
   for key, value in pairs(api) do reaper[key] = value[1] end
   for key, value in pairs(saved) do runtime[key] = value[1] end
 end
+-- Playback timing comes from the active native SECTION, not UI Region fields.
+do
+  local keys = { "preview", "preview_job_token", "preview_length", "preview_map_start", "preview_map_span",
+    "preview_map_reverse", "preview_seek_target", "rate", "region_start", "region_end", "loop", "interaction_until" }
+  local saved = {}
+  for _, key in ipairs(keys) do saved[key] = { runtime[key] } end
+  runtime.preview, runtime.preview_job_token = {}, { generation = 123 }
+  runtime.preview_length, runtime.preview_map_start, runtime.preview_map_span = 2, 0.25, 0.5
+  runtime.preview_map_reverse, runtime.rate, runtime.preview_seek_target, runtime.loop = true, 2, nil, true
+  runtime.region_start, runtime.region_end = 0, 1
+  local timing = WebUI.playback_timing()
+  assert(timing.epoch == 123 and timing.velocity == -0.5 and timing.start == 0.25 and timing["end"] == 0.75 and timing.loop)
+  runtime.preview_seek_target = 0.4
+  assert(WebUI.playback_timing().velocity == 0, "seek settling must not interpolate a guessed clock")
+  runtime.preview_seek_target, runtime.preview = nil, nil
+  assert(WebUI.playback_timing().velocity == 0, "stopped previews never animate")
+  WebUI.handlers["session.activity"]({ resizing = true })
+  assert(runtime.interaction_until > reaper.time_precise() and UiMotion.until_time > reaper.time_precise())
+  UiMotion.until_time = 0
+  for key, value in pairs(saved) do runtime[key] = value[1] end
+end
 if arg[3] then
   local file = assert(io.open(arg[3], "wb"))
   file:write(neural_json_encode(WebUI.handlers["settings.get"]().schema))

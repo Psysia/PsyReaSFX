@@ -33,7 +33,7 @@ function root_for_path() return "C:/audio",{library_id="lib"} end
 function set_status(message) last_status=message end
 function clamp(n,lo,hi) return math.max(lo,math.min(n,hi)) end
 function translate_ui_text(value) return value end
-assert(load(region("function set_watch_folder_enabled(enabled)","function watch_folders()")))()
+assert(load(region("WatchFolders = { unchanged = 0 }","function watch_folders()")))()
 state.import_session={done=5}
 set_watch_folder_enabled(false)
 assert(not state.watch_enabled and state.config_dirty and state.next_watch==160 and state.import_session.done==5)

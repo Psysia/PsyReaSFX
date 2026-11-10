@@ -123,6 +123,10 @@ jobs:
       - name: Verify WebView layout and interactions
         shell: pwsh
         run: |
+          node tools/playback_clock_selftest.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Playback clock regression failed.' }
+          lua tools/lua_background_budget_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Background scheduling regression failed.' }
           $webTestTools = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-tools'
           npm install --prefix $webTestTools --no-save --ignore-scripts playwright@1.56.1 eslint@9.39.1 globals@16.5.0
           if ($LASTEXITCODE -ne 0) { throw 'Browser test tooling installation failed.' }

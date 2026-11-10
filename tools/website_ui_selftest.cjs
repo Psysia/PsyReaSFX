@@ -56,15 +56,15 @@ fs.mkdirSync(output, { recursive: true });
       route.fulfill({
         json: [
           {
-            tag_name: "v0.9.3-beta13",
+            tag_name: "v0.9.3-beta14",
             prerelease: true,
             html_url:
-              "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta13",
+              "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta14",
             assets: [
               {
-                name: "PsyReaSFX_WebView_0.9.3-beta13_win_x64.zip",
+                name: "PsyReaSFX_WebView_0.9.3-beta14_win_x64.zip",
                 browser_download_url:
-                  "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta13/PsyReaSFX_WebView_0.9.3-beta13_win_x64.zip",
+                  "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta14/PsyReaSFX_WebView_0.9.3-beta14_win_x64.zip",
               },
             ],
           },
@@ -105,7 +105,7 @@ fs.mkdirSync(output, { recursive: true });
               .locator("[data-webview-download]")
               .first()
               .getAttribute("href")
-          ).endsWith("0.9.3-beta13_win_x64.zip"),
+          ).endsWith("0.9.3-beta14_win_x64.zip"),
         );
         const shot = await page.locator(".hero-visual img").boundingBox();
         assert(

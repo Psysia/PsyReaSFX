@@ -325,12 +325,21 @@ function WebUI.task_details()
         total = counter(session.phase == "collect" and session.source_total or session.total) or 0,
         -- Verification stores its file list under `files`; never serialize job arrays.
         files = counter(session.files), directories = counter(session.directories), failed = counter(session.failed),
+        automatic = session.watch == true, paused = session.paused,
         path = text(current.path or (type(current.asset) == "table" and current.asset.path)
           or session.output_directory or session.new_root or "", 1024),
       }
     end
   end
   return result
+end
+
+WebUI.handlers["session.activity"] = function(params)
+  -- Browser interaction has no ReaImGui mouse state. A throttled pulse gives
+  -- background jobs the same yield hint as the legacy native UI.
+  AppState.set("interaction_until", reaper.time_precise() + 0.6)
+  if params.resizing == true then UiMotion.until_time = reaper.time_precise() + 0.35 end
+  return true
 end
 
 WebUI.handlers["session.ready"] = function()
@@ -1185,7 +1194,7 @@ WebUI.handlers["tasks.cancel"] = function(params)
   return true
 end
 local settings_schema = {
-  { key = "watch_enabled", label = "监视已导入来源文件夹", group = "常规", kind = "boolean" },
+  { key = "watch_enabled", label = "空闲时检查来源文件夹（播放和操作时暂停）", group = "常规", kind = "boolean" },
   { key = "transfer_dir", label = "输出目录", group = "Transfer", kind = "string" },
   { key = "transfer_template", label = "文件名模板", group = "Transfer", kind = "string" },
   { key = "transfer_format", label = "格式", group = "Transfer", kind = "choice", options = { "wav16", "wav24", "wav32", "flac" } },
@@ -1265,7 +1274,7 @@ local settings_schema = {
   },
   {
     key = "watch_interval",
-    label = "检查间隔",
+    label = "最短空闲检查间隔（秒；无变化时自动延长）",
     group = "常规",
     kind = "number",
     minimum = 15.0,
@@ -1620,7 +1629,7 @@ WebUI.handlers["settings.update"] = function(params)
   updates.watch_enabled = nil
   AppState.apply(updates)
   if watch ~= nil then set_watch_folder_enabled(watch) end
-  if updates.watch_interval then AppState.set("next_watch", reaper.time_precise() + state.watch_interval) end
+  if updates.watch_interval then reset_watch_schedule(true) end
   if wave_changed then
     local job = state.wave_active
     if job then
@@ -2110,11 +2119,23 @@ function webview_receive()
       end
       if request.method ~= "catalog.page" and request.method ~= "waveform.get"
         and request.method ~= "settings.get" and request.method ~= "catalog.folders"
-        and request.method ~= "catalog.suggestions" then WebUI.next_publish = 0 end
+        and request.method ~= "catalog.suggestions" and request.method ~= "session.activity" then WebUI.next_publish = 0 end
     end
     if reaper.time_precise() >= deadline then break end
   end
   WebUI.process_arrange_drag()
+end
+
+function WebUI.playback_timing()
+  local length = state.preview_length or 0
+  local start = state.preview_map_start or 0
+  local span = state.preview_map_span or 1
+  local velocity = state.preview and not state.preview_seek_target and length > 0
+    and span / length * (state.rate or 1) * (state.preview_map_reverse and -1 or 1) or 0
+  return {
+    epoch = state.preview_job_token and state.preview_job_token.generation or 0,
+    velocity = velocity, start = start, ["end"] = start + span, loop = state.loop,
+  }
 end
 
 function webview_publish()
@@ -2247,6 +2268,7 @@ function webview_publish()
     selectedCount = selected_count(),
     arrangeDragging = WebUI.arrange_drag ~= nil,
     playing = state.preview ~= nil,
+    playback = WebUI.playback_timing(),
     paused = paused ~= nil,
     position = paused and paused.percent or state.preview_percent or 0,
     regionStart = state.region_start,

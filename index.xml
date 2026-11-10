@@ -13,36 +13,38 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
-      <version name="0.9.3-beta13" author="Psysia" time="2026-11-10T10:46:26Z">
+      <version name="0.9.3-beta14" author="Psysia" time="2026-11-10T12:38:21Z">
         <changelog><![CDATA[
-- Add all 29 Codex theme families and their 44 available variants; default to GitHub dark.
-- Center playback and volume; place activity at bottom left with hover details.
-- Start selection drags before mouse-up and finish them in the native loop, with cancellation and balanced undo cleanup.
-- Replace legacy PRS interface images throughout the website and user guides with supplied WebView captures.
+- Fix docked redraw batching with ReaWebAPI 0.3.9.30-prs.1. Update PsyReaSFX WebView Runtime to 0.3.9.30-beta2 and restart REAPER.
+- Watch Folder yields during audition, REAPER playback/recording and interaction; interval starts after completion, with backoff for unchanged sources and bounded background work.
+- Smooth detailed and row playheads between host updates without repainting waveforms. Coalesce native resize notifications.
+- Restore the layered legacy brand with accented SFX and replace FX text with an accessible effect icon.
         ]]></changelog>
-        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/PsyReaSFX_Launcher.lua</source>
-        <source platform="win64" file="PsyReaSFX_Runtime.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/PsyReaSFX_WebView.lua</source>
-        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/app.js</source>
-        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/app.json</source>
-        <source platform="win64" file="web/themes.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/themes.js</source>
-        <source platform="win64" file="web/settings.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/settings.js</source>
-        <source platform="win64" file="web/icons.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/icons.js</source>
-        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/host.d.ts</source>
-        <source platform="win64" file="web/locale.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/locale.js</source>
-        <source platform="win64" file="web/translations.en.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/translations.en.js</source>
-        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/host.js</source>
-        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/index.html</source>
-        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/src/web/styles.css</source>
-        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/dependencies/reawebapi/windows-x64.lock.json</source>
-        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/LICENSE</source>
-        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/assets/brand/psyreasfx-hero.png</source>
-        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/assets/brand/psyreasfx-icon.png</source>
-        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/assets/fonts/OFL.txt</source>
-        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/assets/ucs/README.md</source>
-        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/assets/ucs/ucs-8.2.1.tsv</source>
-        <source platform="win64" file="docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md</source>
-        <source platform="win64" file="docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta13/docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md</source>
+        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/PsyReaSFX_Launcher.lua</source>
+        <source platform="win64" file="PsyReaSFX_Runtime.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/PsyReaSFX_WebView.lua</source>
+        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/app.js</source>
+        <source platform="win64" file="web/playback.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/playback.js</source>
+        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/app.json</source>
+        <source platform="win64" file="web/themes.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/themes.js</source>
+        <source platform="win64" file="web/settings.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/settings.js</source>
+        <source platform="win64" file="web/icons.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/icons.js</source>
+        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/host.d.ts</source>
+        <source platform="win64" file="web/locale.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/locale.js</source>
+        <source platform="win64" file="web/translations.en.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/translations.en.js</source>
+        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/host.js</source>
+        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/index.html</source>
+        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/src/web/styles.css</source>
+        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/windows-x64.lock.json</source>
+        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/LICENSE</source>
+        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/assets/brand/psyreasfx-hero.png</source>
+        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/assets/brand/psyreasfx-icon.png</source>
+        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/assets/fonts/OFL.txt</source>
+        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/assets/ucs/README.md</source>
+        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/assets/ucs/ucs-8.2.1.tsv</source>
+        <source platform="win64" file="docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md</source>
+        <source platform="win64" file="docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md</source>
+        <source platform="win64" file="docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md</source>
       </version>
       <version name="0.9.3-beta6" author="Psysia" time="2026-11-09T14:17:20Z">
         <changelog><![CDATA[
@@ -415,38 +417,39 @@ and Install-NeuralSimilarity.cmd; the standalone EXE does not include the model.
     <reapack name="PsyReaSFX WebView Runtime.ext" type="extension" desc="PsyReaSFX WebView Runtime (first-time installation, Windows x64 beta)">
       <metadata>
         <description><![CDATA[
-Optional first-time installation of the pinned, unmodified ReaWebAPI runtime. Use an existing managed ReaWebAPI component when present. Upstream version 0.3.9.30, LGPL-3.0-or-later. Enable pre-releases to install. Full native acceptance is ongoing.
+PsyReaSFX compatibility build 0.3.9.30-prs.1, based on upstream 0.3.9.30 (LGPL-3.0-or-later). Fixes docked WebViews swallowing the DAW main window redraw suspension. Enable pre-releases; restart REAPER after updating. Native visual acceptance is ongoing.
 If ReaWebAPI is already managed by another repository, keep that installation and check compatibility in PsyReaSFX. Avoid two packages owning the same shared extension file.
 After installing or removing this component restart REAPER. Licenses and matching source are installed in Data/PsyReaSFX-WebView/ReaWebAPI.
         ]]></description>
         <link rel="website" href="https://github.com/zaibuyidao/ReaWebAPI">Upstream ReaWebAPI</link>
-        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta1/ReaWebAPI-source.zip">Matching source archive</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta14/ReaWebAPI-source.zip">Matching source archive</link>
       </metadata>
-      <version name="0.3.9.30-beta1" author="zaibuyidao; packaged by Psysia" time="2026-11-09T11:52:37Z">
+      <version name="0.3.9.30-beta2" author="zaibuyidao; compatibility patch by Psysia" time="2026-11-10T12:38:21Z">
         <changelog><![CDATA[
-Unmodified upstream 0.3.9.30 Windows x64 DLL, pinned by SHA-256. Full license material and matching source included. Evaluated as a companion beta component; restart REAPER after installation.
+Modified 0.3.9.30-prs.1 Windows x64 DLL: preserve top-level DAW redraw batching while protecting Docker child surfaces. Isolated Windows regression passed. SHA-256, patch notice, complete matching source and licenses included. Restart REAPER.
         ]]></changelog>
-        <source platform="win64" type="extension" file="reaper_reawebapi-x64.dll">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta1/reaper_reawebapi-x64.dll</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/sources/ReaWebAPI-source.zip">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta1/ReaWebAPI-source.zip</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/windows-x64.lock.json</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/COPYING">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/COPYING</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/COPYING.LESSER">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/COPYING.LESSER</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/LICENSE.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/LICENSE.md</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/cpp-httplib.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/cpp-httplib.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/FTL.TXT">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/FTL.TXT</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/jsfx_engine_api.hpp">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/jsfx_engine_api.hpp</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/libebur128-queue.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/libebur128-queue.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/libebur128.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/libebur128.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/loudness_meter.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/loudness_meter.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/lunasvg.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/lunasvg.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/nlohmann-json.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/nlohmann-json.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/plutovg.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/plutovg.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/reaper_plugin.h">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/reaper_plugin.h</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/stb.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/stb.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/swell.h">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/swell.h</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/WebView2-NOTICE.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/WebView2-NOTICE.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/WebView2.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/licenses/WebView2.txt</source>
-        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/THIRD_PARTY.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta1/dependencies/reawebapi/licenses/THIRD_PARTY.md</source>
+        <source platform="win64" type="extension" file="reaper_reawebapi-x64.dll">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta14/reaper_reawebapi-x64.dll</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/sources/ReaWebAPI-source.zip">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta14/ReaWebAPI-source.zip</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/windows-x64.lock.json</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/COPYING">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/COPYING</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/COPYING.LESSER">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/COPYING.LESSER</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/LICENSE.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/LICENSE.md</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/cpp-httplib.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/cpp-httplib.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/FTL.TXT">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/FTL.TXT</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/jsfx_engine_api.hpp">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/jsfx_engine_api.hpp</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/libebur128-queue.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/libebur128-queue.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/libebur128.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/libebur128.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/loudness_meter.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/loudness_meter.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/lunasvg.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/lunasvg.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/nlohmann-json.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/nlohmann-json.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/plutovg.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/plutovg.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/reaper_plugin.h">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/reaper_plugin.h</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/stb.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/stb.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/swell.h">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/swell.h</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/WebView2-NOTICE.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/WebView2-NOTICE.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/licenses/WebView2.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/licenses/WebView2.txt</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/THIRD_PARTY.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/THIRD_PARTY.md</source>
+        <source platform="win64" type="data" file="PsyReaSFX-WebView/ReaWebAPI/licenses/PRS_PATCH.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta14/dependencies/reawebapi/licenses/PRS_PATCH.md</source>
       </version>
     </reapack>
   </category>

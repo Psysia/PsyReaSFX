@@ -20,7 +20,8 @@ $packages = @($index.index.category.reapack)
 $script = $packages | Where-Object { $_.name -eq 'PsyReaSFX.lua' }
 $runtime = $packages | Where-Object { $_.name -eq 'PsyReaSFX WebView Runtime.ext' }
 $webVersion = @($script.version | Where-Object { $_.name -ceq $app.version })
-$runtimeVersion = @($runtime.version | Where-Object { $_.name -ceq ($lock.version + '-beta1') })
+$runtimeName = if ($lock.reapack_version) { $lock.reapack_version } else { $lock.version + '-beta1' }
+$runtimeVersion = @($runtime.version | Where-Object { $_.name -ceq $runtimeName })
 if ($webVersion.Count -ne 1 -or $runtimeVersion.Count -ne 1 -or $runtime.type -cne 'extension') { throw 'Missing WebView beta or runtime extension package.' }
 $binarySource = @($runtimeVersion[0].source | Where-Object { $_.type -ceq 'extension' -and $_.file -ceq 'reaper_reawebapi-x64.dll' })
 if ($binarySource.Count -ne 1 -or $binarySource[0].InnerText -cnotmatch '^https://github\.com/Psysia/PsyReaSFX/releases/download/(v\d+\.\d+\.\d+-beta\d+(?:\.\d+)?)/reaper_reawebapi-x64\.dll$') {

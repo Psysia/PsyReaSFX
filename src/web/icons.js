@@ -8,6 +8,7 @@ const paths = {
   layers: "m3 7 9-4 9 4-9 4z M3 12l9 4 9-4 M3 17l9 4 9-4",
   tag: "M3 3h8l10 10-8 8L3 11z M7 7h.01",
   settings: "M4 7h16 M4 17h16 M8 4v6 M16 14v6",
+  fx: "M4 10v4 M8 6v12 M12 3v18 M16 7v10 M20 10v4",
   columns: "M3 4h18v16H3z M9 4v16 M15 4v16",
   panel: "M3 4h18v16H3z M15 4v16",
   menu: "M4 6h16 M4 12h16 M4 18h16",

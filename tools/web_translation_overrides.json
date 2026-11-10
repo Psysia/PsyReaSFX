@@ -486,5 +486,15 @@
   "已取消拖拽": "Drag cancelled",
   "请先选择有效区间": "Select a valid range first",
   "请等待当前任务完成后再拖入素材": "Wait for the current task before dragging audio",
-  "拖入选区需要 js_ReaScriptAPI": "Dragging a selection requires js_ReaScriptAPI"
+  "拖入选区需要 js_ReaScriptAPI": "Dragging a selection requires js_ReaScriptAPI",
+  "试听效果": "Audition effects",
+  "试听效果：音高、速度与反向": "Audition effects: pitch, speed and reverse",
+  "空闲时检查来源文件夹（播放和操作时暂停）": "Check source folders when idle (pause during playback and interaction)",
+  "最短空闲检查间隔（秒；无变化时自动延长）": "Minimum idle check interval (seconds; backs off if unchanged)",
+  "来源检查": "Source check",
+  "自动检查已关闭": "Automatic checks disabled",
+  "试听时暂停来源检查": "Source check paused during audition",
+  "REAPER 播放或录音时暂停来源检查": "Source check paused during REAPER playback or recording",
+  "交互时暂停来源检查": "Source check paused during interaction",
+  "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。": "This runtime still has the docked redraw issue. Update the PsyReaSFX WebView Runtime compatibility patch and restart REAPER."
 }

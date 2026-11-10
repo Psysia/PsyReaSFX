@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^(latest|v\d+(\.\d+){2,3})$')][string]$Tag = 'latest',
+    [ValidatePattern('^(latest|v\d+(\.\d+){2,3}(-prs\.\d+)?)$')][string]$Tag = 'latest',
     [string]$OutputPath = '',
     [string]$CachePath = ''
 )
@@ -18,7 +18,7 @@ elseif ($env:GITHUB_TOKEN) { $headers.Authorization = "Bearer $env:GITHUB_TOKEN"
 $api = "https://api.github.com/repos/$repository"
 $releasePath = if ($Tag -ceq 'latest') { 'latest' } else { "tags/$Tag" }
 $release = Invoke-RestMethod -Uri "$api/releases/$releasePath" -Headers $headers
-if ($release.draft -or $release.tag_name -notmatch '^v\d+(\.\d+){2,3}$' -or ($Tag -cne 'latest' -and $release.tag_name -cne $Tag)) { throw 'Unexpected mirror release tag or publication state.' }
+if ($release.draft -or $release.tag_name -notmatch '^v\d+(\.\d+){2,3}(-prs\.\d+)?$' -or ($Tag -cne 'latest' -and $release.tag_name -cne $Tag)) { throw 'Unexpected mirror release tag or publication state.' }
 $Tag = $release.tag_name
 $version = $Tag.Substring(1)
 $commit = (Invoke-RestMethod -Uri "$api/commits/$Tag" -Headers $headers).sha
@@ -55,8 +55,11 @@ $sourceAsset = Get-MirrorAsset 'ReaWebAPI-source.zip'
 $dllAsset = Get-MirrorAsset 'reaper_reawebapi-x64.dll'
 $manifestPath = Save-VerifiedAsset (Get-MirrorAsset 'mirror-manifest.json') $work
 $mirror = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$patched = $Tag -match '-prs\.\d+$'
 if ($mirror.schema -cne 'PsyReaSFX-ReaWebAPI-Mirror-v1' -or $mirror.repository -cne $repository -or
-    $mirror.upstream -cne 'zaibuyidao/ReaWebAPI' -or $mirror.modified -cne $false -or $mirror.tag -cne $Tag -or $mirror.commit -cne $commit) { throw 'Mirror provenance does not match the release.' }
+    $mirror.upstream -cne 'zaibuyidao/ReaWebAPI' -or $mirror.modified -cne $patched -or $mirror.tag -cne $Tag -or $mirror.commit -cne $commit) { throw 'Mirror provenance does not match the release.' }
+if ($patched -and ($mirror.upstream_commit -notmatch '^[a-f0-9]{40}$' -or
+    'windows-dock-top-level-redraw' -notin $mirror.patches)) { throw 'Modified runtime must declare its upstream commit and compatibility patch.' }
 foreach ($asset in @($bundleAsset, $sourceAsset, $dllAsset)) {
     if ($mirror.files.($asset.name) -cne $asset.digest.Substring(7)) { throw "Mirror manifest digest mismatch: $($asset.name)" }
 }
@@ -84,6 +87,13 @@ $lock.binary.sha256 = $dllAsset.digest.Substring(7)
 $lock.source.url = $sourceAsset.browser_download_url
 $lock.source.file = $sourceAsset.name
 $lock.source.sha256 = $sourceAsset.digest.Substring(7)
+$lock | Add-Member -NotePropertyName modified -NotePropertyValue $patched -Force
+$lock | Add-Member -NotePropertyName upstream_commit -NotePropertyValue $(if ($patched) { $mirror.upstream_commit } else { $commit }) -Force
+$lock | Add-Member -NotePropertyName patches -NotePropertyValue $(if ($patched) { @($mirror.patches) } else { @() }) -Force
+$reapackVersion = if ($patched) {
+    [regex]::Replace($version, '-prs\.(\d+)$', { param($match) '-beta' + (1 + [int]$match.Groups[1].Value) })
+} else { $version + '-beta1' }
+$lock | Add-Member -NotePropertyName reapack_version -NotePropertyValue $reapackVersion -Force
 $lock.runtime_policy.baseline_versions = @($version)
 $lock.runtime_policy.validation_status = 'native_acceptance_pending'
 $candidate = Join-Path $work 'candidate.lock.json'

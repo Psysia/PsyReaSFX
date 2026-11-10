@@ -553,6 +553,52 @@ async function main() {
     await page.locator("#play").click();
     await page.waitForSelector(".result-row.played");
     await page.waitForSelector(".mini-playhead:not([hidden])");
+    // One host anchor must yield multiple display frames without repainting
+    // waveform canvases, rebuilding result rows, or requesting catalog pages.
+    await page.waitForTimeout(180);
+    const motion = await page.evaluate(async () => {
+      window.testSetState({ position: 0.1, playing: true,
+        playback: { epoch: 77, velocity: 0.1, start: 0, end: 1, loop: false } });
+      const canvas = document.querySelector("#detail-wave");
+      const context = canvas.getContext("2d");
+      const clear = context.clearRect;
+      let paints = 0;
+      context.clearRect = function (...args) { paints++; return clear.apply(this, args); };
+      const pagesBefore = window.testCalls.filter(c => c.method === "catalog.page").length;
+      const positions = [];
+      const mini = [];
+      const started = performance.now();
+      await new Promise(resolve => {
+        function frame(now) {
+          positions.push(new DOMMatrixReadOnly(document.querySelector("#detail-playhead").style.transform).m41);
+          mini.push(new DOMMatrixReadOnly(document.querySelector(".mini-playhead:not([hidden])").style.transform).m41);
+          if (now - started < 240) requestAnimationFrame(frame); else resolve();
+        }
+        requestAnimationFrame(frame);
+      });
+      context.clearRect = clear;
+      const pagesAfter = window.testCalls.filter(c => c.method === "catalog.page").length;
+      window.testSetState({ playing: false, position: 0.124 });
+      const paused = document.querySelector("#detail-playhead").style.transform;
+      await new Promise(resolve => setTimeout(resolve, 160));
+      const held = paused === document.querySelector("#detail-playhead").style.transform;
+      window.testSetState({ playing: undefined, position: undefined, playback: undefined });
+      return { unique: new Set(positions).size, mini: new Set(mini).size,
+        monotonic: positions.every((p,i) => !i || p >= positions[i-1]), paints, pagesBefore, pagesAfter, held };
+    });
+    assert(motion.unique >= 8 && motion.mini >= 8 && motion.monotonic,
+      `Playheads must advance between host messages: ${JSON.stringify(motion)}`);
+    assert.equal(motion.paints, 0, "cursor animation must not redraw cached waveform pixels");
+    assert.equal(motion.pagesBefore, motion.pagesAfter, "cursor animation must not reload catalog data");
+    assert(motion.held, "pause must freeze the visual cursor immediately");
+    const resizePages = await page.evaluate(() => {
+      const before = window.testCalls.filter(c => c.method === "catalog.page").length;
+      for (let i=0; i<100; i++) window.dispatchEvent(new Event("resize"));
+      return before;
+    });
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => window.testCalls.filter(c => c.method === "catalog.page").length),
+      resizePages, "duplicate native resize notifications must not flood catalog RPC");
     await page.locator(".result-cell.name").nth(1).click();
     assert.equal(
       await page.locator(".result-row.played:not(.selected)").count(),

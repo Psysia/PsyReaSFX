@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "ab647c6401e5566ced1264576a5068a9fc54bc41d66795468b477d82ba54844f",
+  source_sha256 = "4e0ed5f11f7b3be21eb0db1f50cea34e74394363470d9a85f5ebcfd186972847",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -21355,6 +21355,7 @@ function start_scan(reason, roots_override, options)
     new_assets = {},
     started = reaper.time_precise(),
     silent = silent,
+    watch = (reason or "") == "Watch Folder",
     compact_status = options and options.compact_status == true,
     force_rebuild = force_rebuild,
     checkpoint_enabled = checkpoint_enabled,
@@ -21420,8 +21421,11 @@ end
 function finish_scan()
   local scan = state.scan
   if not scan or scan.phase then return end
-  scan.phase = "finalize_prune"
-  scan.prune_job = new_catalog_prune_job(state.by_path)
+  -- Automatic discovery must not delete catalog entries/favorites because a
+  -- source went offline mid-enumeration. Explicit scans/missing-file tools
+  -- retain reconciliation; unchanged watches avoid an O(catalog) prune pass.
+  scan.phase = scan.watch and "finalize_pending" or "finalize_prune"
+  scan.prune_job = not scan.watch and new_catalog_prune_job(state.by_path) or nil
   scan.finalize_total = #state.assets
   scan.removed = 0
   scan.finalize_removed_so_far = 0
@@ -21437,6 +21441,7 @@ function complete_scan_finalize(scan)
   local pending = scan.pending
   local removed = scan.removed or 0
   state.scan = nil
+  reset_watch_schedule(#pending > 0 or removed > 0, scan.watch)
 
   if #pending > 0 then
     state.import_session = {
@@ -21450,6 +21455,7 @@ function complete_scan_finalize(scan)
       started = scan.started,
       phase = "prepare",
       silent = scan.silent,
+      watch = scan.watch,
       compact_status = scan.compact_status,
       removed = removed,
       job_token = scan.job_token,
@@ -21507,7 +21513,7 @@ function process_scan_finalize(scan)
   if scan.phase == "finalize_prune" then
     local complete = step_catalog_prune_job(
       scan.prune_job,
-      SCAN_FINALIZE_ASSETS_PER_FRAME,
+      scan.watch and 128 or SCAN_FINALIZE_ASSETS_PER_FRAME,
       function(key, asset)
         local belongs =
           scan.root_keys[path_key(asset.root or "")] == true
@@ -21540,7 +21546,7 @@ function process_scan_finalize(scan)
 
   local last = math.min(
     #scan.new_assets,
-    scan.pending_index + SCAN_FINALIZE_ASSETS_PER_FRAME - 1
+    scan.pending_index + (scan.watch and 128 or SCAN_FINALIZE_ASSETS_PER_FRAME) - 1
   )
   for index = scan.pending_index, last do
     local asset = scan.new_assets[index]
@@ -21618,6 +21624,7 @@ function process_scan_cancel(scan)
     invalidate_folder_navigation()
   end
   state.scan = nil
+  reset_watch_schedule(true)
   clear_scan_checkpoint()
   Jobs.finish(scan.job_token, true, "user canceled")
   state.results_dirty = true
@@ -21638,6 +21645,8 @@ function process_scan()
     return
   end
 
+  if not watch_step_ready(scan) then return end
+
   if scan.phase == "finalize_prune"
     or scan.phase == "finalize_pending" then
     process_scan_finalize(scan)
@@ -21645,7 +21654,7 @@ function process_scan()
   end
 
   local deadline =
-    reaper.time_precise() + SCAN_BUDGET
+    reaper.time_precise() + (scan.watch and 0.0005 or SCAN_BUDGET)
 
   local now = reaper.time_precise()
 
@@ -21656,7 +21665,10 @@ function process_scan()
     state.scan_checkpoint_last_at = now
   end
 
+  local steps = 0
   while reaper.time_precise() < deadline do
+    steps = steps + 1
+    if scan.watch and steps > 64 then break end
     local dir = scan.current
 
     if not dir then
@@ -23802,7 +23814,7 @@ function finish_import_session()
     reaper.time_precise() - session.started
 
   state.import_session = nil
-  state.next_watch = reaper.time_precise() + state.watch_interval
+  reset_watch_schedule(true)
   state.import_cancel_requested = false
   if workspace_tabs_invalidate then workspace_tabs_invalidate("background")
   else AppState.mark_dirty("results_dirty") end
@@ -23932,6 +23944,9 @@ function process_import_session()
     return
   end
 
+  if state.import_cancel_requested then cancel_import_session(); return end
+  if not watch_step_ready(session) then return end
+
   local checkpoint_now = reaper.time_precise()
 
   if checkpoint_now - (state.import_checkpoint_last_at or 0)
@@ -23939,11 +23954,6 @@ function process_import_session()
     save_database_changes()
     start_failed_tasks_save()
     state.import_checkpoint_last_at = checkpoint_now
-  end
-
-  if state.import_cancel_requested then
-    cancel_import_session()
-    return
   end
 
   if session.phase == "finalize" then
@@ -23958,7 +23968,7 @@ function process_import_session()
   -- Assets that are already indexed and whose waveform is cached finish in
   -- microseconds, so several are handled per frame; one that needs real work
   -- (metadata read, waveform build) still ends the frame.
-  local deadline = reaper.time_precise() + IMPORT_FRAME_BUDGET
+  local deadline = reaper.time_precise() + (session.watch and 0.0005 or IMPORT_FRAME_BUDGET)
   repeat
     local finished = step_import_session(session)
   until not finished
@@ -43096,9 +43106,44 @@ function autosave()
   state.last_save = now
 end
 
+WatchFolders = { unchanged = 0 }
+
+function reset_watch_schedule(changed, automatic)
+  WatchFolders.unchanged = automatic and not changed
+    and math.min(4, WatchFolders.unchanged + 1) or 0
+  local interval = state.watch_interval or WATCH_INTERVAL
+  -- Start the quiet interval after completion, never after scan start. A
+  -- catalog with no changes backs off, but an explicit interval remains the
+  -- minimum. This prevents long scans from restarting immediately.
+  local delay = math.max(interval, math.min(900, interval * 2 ^ WatchFolders.unchanged))
+  AppState.set("next_watch", reaper.time_precise() + delay)
+end
+
+function watch_wait_reason(active)
+  if not active and not state.watch_enabled then return "自动检查已关闭" end
+  if state.preview then return "试听时暂停来源检查" end
+  if reaper.GetPlayState and (reaper.GetPlayState() & 5) ~= 0 then
+    return "REAPER 播放或录音时暂停来源检查"
+  end
+  if ui_in_motion() or reaper.time_precise() < (state.interaction_until or 0) then
+    return "交互时暂停来源检查"
+  end
+end
+
+function watch_step_ready(session)
+  if not session.watch then return true end
+  local now = reaper.time_precise()
+  session.paused = watch_wait_reason(true)
+  if session.paused then session.next_step = now + 1; return false end
+  if now < (session.next_step or 0) then return false end
+  session.next_step = now + 0.1
+  return true
+end
+
 function set_watch_folder_enabled(enabled)
   AppState.set("watch_enabled", enabled == true)
-  AppState.set("next_watch", reaper.time_precise() + state.watch_interval)
+  reset_watch_schedule(true)
+  if not enabled and state.scan and state.scan.watch then Jobs.cancel(state.scan.job_token) end
   AppState.mark_dirty("config_dirty")
   set_status(enabled and "Watch Folder 已开启：自动发现新增音频"
     or "Watch Folder 已关闭；当前导入任务继续，之后不再自动检查")
@@ -43106,6 +43151,7 @@ end
 
 function watch_folders()
   if state.persistence_read_only
+    or #(state.roots or {}) == 0
     or not state.watch_enabled
     or state.scan
     or state.import_session
@@ -43118,6 +43164,8 @@ function watch_folders()
     or state.transfer_running then
     return
   end
+
+  if watch_wait_reason() then return end
 
   local now = reaper.time_precise()
 
@@ -43132,6 +43180,32 @@ function watch_folders()
     )
     state.next_watch =
       now + state.watch_interval
+  end
+end
+
+-- Co-operatively share one defer slice instead of stacking the independent
+-- budgets of every background worker on REAPER's UI thread. Round-robin
+-- resumes where the previous frame yielded, so no queue starves.
+BackgroundPump = { index = 1 }
+function process_background_slice()
+  local pump = BackgroundPump
+  pump.workers = pump.workers or {
+    { "scan", process_scan }, { "import", process_import_session },
+    { "metadata", process_metadata_queue }, { "folder-index", process_folder_navigation_build },
+    { "artwork", process_artwork_queue }, { "wave-verify", process_wave_cache_verification },
+    { "missing-audit", process_missing_audit }, { "duplicates", process_duplicate_scan },
+    { "duplicate-confirmation", process_duplicate_confirmation }, { "wave-precache", process_wave_precache },
+    { "similarity-warmup", process_similarity_warmup }, { "similarity", process_similarity_search },
+    { "wave-queue", process_wave_queue }, { "transients", process_pending_transient_detection },
+    { "loudness", process_loudness_queue },
+  }
+  local deadline = reaper.time_precise() + 0.004
+  for _ = 1, #pump.workers do
+    local work = pump.workers[pump.index]
+    pump.index = pump.index % #pump.workers + 1
+    bg_mark(work[1])
+    work[2]()
+    if reaper.time_precise() >= deadline then break end
   end
 end
 
@@ -43523,34 +43597,7 @@ function loop()
   elseif moving then
     -- The window is being moved or resized: leave the frame to drawing.
   else
-    bg_mark("scan")
-    process_scan()
-    bg_mark("import")
-    process_import_session()
-    bg_mark("metadata")
-    process_metadata_queue()
-    bg_mark("folder-index")
-    process_folder_navigation_build()
-    bg_mark("artwork")
-    process_artwork_queue()
-    bg_mark("wave-verify")
-    process_wave_cache_verification()
-    bg_mark("missing-audit")
-    process_missing_audit()
-    bg_mark("duplicates")
-    process_duplicate_scan()
-    process_duplicate_confirmation()
-    bg_mark("wave-precache")
-    process_wave_precache()
-    bg_mark("similarity")
-    process_similarity_warmup()
-    process_similarity_search()
-    bg_mark("wave-queue")
-    process_wave_queue()
-    bg_mark("transients")
-    process_pending_transient_detection()
-    bg_mark("loudness")
-    process_loudness_queue()
+    process_background_slice()
   end
   bg_mark("counts")
   process_library_count_rebuild()

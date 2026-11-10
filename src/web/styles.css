@@ -133,11 +133,40 @@ small {
 }
 .brand svg {
   align-self: center;
-  width: 25px;
-  height: 25px;
+  width: 32px;
+  height: 32px;
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.5;
+}
+.brand-accent {
+  color: var(--accent);
+}
+.brand-symbol .brand-layer {
+  fill: var(--surface);
+  stroke: var(--muted);
+  stroke-width: 1.35;
+}
+.brand-symbol .brand-top {
+  fill: var(--raised);
+  stroke: var(--accent);
+  stroke-width: 1.35;
+}
+.brand-symbol .brand-wave {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.76;
+  stroke-linecap: round;
+}
+.transport #fx-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.transport #fx-toggle[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--selected);
+  border-color: var(--accent);
 }
 .topbar {
   height: 53px;
@@ -1171,6 +1200,8 @@ body[data-tone="light"] {
 }
 .mini-playhead {
   position: absolute;
+  left: 0;
+  will-change: transform;
   top: 1px;
   bottom: 1px;
   width: 1px;
@@ -1688,6 +1719,8 @@ dialog::backdrop {
 }
 #detail-playhead {
   position: absolute;
+  left: 0;
+  will-change: transform;
   top: 26px;
   bottom: 0;
   width: 1px;

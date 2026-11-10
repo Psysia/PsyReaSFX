@@ -1,3 +1,12 @@
+## 0.9.3 Beta 14 (0.9.a WebView) — 2026-11-10
+
+- Run automatic source discovery in small idle slices; pause for audition, DAW playback/recording and interaction. Start intervals after completion and back off unchanged catalogs. Automatic checks no longer prune catalog entries/favorites.
+- Share a cooperative background budget, rotate worker queues and coalesce native resize notifications.
+- Bundle ReaWebAPI 0.3.9.30-prs.1 to preserve top-level DAW redraw batching while retaining Docker child protection. Update the ReaPack runtime component to 0.3.9.30-beta2 and restart REAPER.
+- Interpolate visual playheads between authoritative host positions without repainting waveforms or requesting catalog pages; cover pause, seek, rate, reverse, selection loops and stale-host freezing.
+- Restore layered legacy branding and accent-colored SFX; use an accessible FX icon and correct light-theme waveform ink.
+- Gate latest-upstream development packages on the native Docker regression, retaining the pinned compatibility build when a candidate fails. Corresponding modified source and notices are included.
+
 ## 0.9.3 Beta 13 (0.9.a WebView) — 2026-11-10
 
 - Add all 29 registered Codex theme families and 44 available light/dark variants, preserving original color seeds and names. GitHub dark is the default; system mode and custom colors are supported.
