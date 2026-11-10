@@ -20,10 +20,10 @@
 
 <p align="center">
   <a href="https://psysia.github.io/PsyReaSFX/">
-    <img src="website/assets/showcase/prs-workspace-0-9.png" alt="PsyReaSFX 0.9 Beta 7.10 real application interface" width="1000">
+    <img src="website/assets/showcase/prs-webview-beta11.png" alt="PsyReaSFX WebView real workspace, captured in Beta 11" width="1000">
   </a>
 </p>
-<p align="center"><em>Actual PsyReaSFX 0.9 Beta 7.10 workspace · UCS navigation, sound lists, inline waveforms and detailed audition.</em></p>
+<p align="center"><em>Actual PsyReaSFX WebView workspace, captured in Beta 11 · source folders, inline waveforms and full-width audition.</em></p>
 <p align="center"><a href="https://psysia.github.io/PsyReaSFX/">Website / 官网</a> · <a href="https://psysia.github.io/PsyReaSFX/#scripts">Live GIF demos / 动态演示</a> · <a href="https://github.com/Psysia/PsyReaSFX/releases">Releases</a></p>
 
 ## Overview
@@ -159,14 +159,14 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.1** | Default release; the complete 0.9.0 feature set with reliability and performance fixes. |
-| WebView beta | **0.9.3-beta11 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
+| WebView beta | **0.9.3-beta12 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
 | Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
 | Optional component | [PsyReaSFX Neural Similarity][neural-download] | Local neural similar-sound search for Windows x64. |
 
 PsyReaSFX keeps normal acoustic search available without the [optional neural component][neural-download]. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
 
-See the [Beta 11 acceptance checklist: 117 workflows and 73 settings (Chinese)](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md) for source mappings, entry points and native acceptance steps.
+See the [Beta 12 acceptance checklist: 117 workflows and 73 settings (Chinese)](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md) for source mappings, entry points and native acceptance steps.
 
 The [core audit record](docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md) includes the Beta 11 correction to Windows taskbar ownership checks. Close the old window once after upgrading, then keep using the public `PsyReaSFX.lua` action; subsequent invocations restore its existing runtime window.
 

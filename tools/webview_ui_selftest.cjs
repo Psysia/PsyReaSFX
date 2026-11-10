@@ -17,11 +17,22 @@ async function main() {
     const pathname = decodeURIComponent(
       new URL(request.url, "http://localhost").pathname,
     );
+    const packagedAssets = path.resolve(root, "../assets");
+    const base = pathname.startsWith("/assets/")
+      ? fs.existsSync(packagedAssets)
+        ? packagedAssets
+        : path.resolve(__dirname, "../assets")
+      : root;
     const file = path.resolve(
-      root,
-      "." + (pathname === "/" ? "/index.html" : pathname),
+      base,
+      "." +
+        (pathname.startsWith("/assets/")
+          ? pathname.slice(7)
+          : pathname === "/"
+            ? "/index.html"
+            : pathname),
     );
-    if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) {
+    if (!file.startsWith(base + path.sep) || !fs.existsSync(file)) {
       response.writeHead(404).end();
       return;
     }
@@ -32,6 +43,7 @@ async function main() {
         ".js": "text/javascript",
         ".css": "text/css",
         ".json": "application/json",
+        ".png": "image/png",
       }[path.extname(file)] || "application/octet-stream",
     );
     fs.createReadStream(file).pipe(response);
@@ -478,7 +490,7 @@ async function main() {
                 transfer_scope: "selection",
                 auto_preview: true,
               };
-            queueMicrotask(() => {
+            const deliver = () => {
               listener({
                 data: { protocol: 1, id: request.id, ok: true, result },
               });
@@ -489,7 +501,10 @@ async function main() {
                 listener({
                   data: { protocol: 1, event: "state", data: state() },
                 });
-            });
+            };
+            if (request.method === "selection.set" && window.testSelectionDelay)
+              setTimeout(deliver, window.testSelectionDelay);
+            else queueMicrotask(deliver);
           },
         },
       };
@@ -1100,9 +1115,27 @@ async function main() {
       );
       const colors = await page.locator("body").evaluate((body) => ({
         accent: getComputedStyle(body).getPropertyValue("--accent").trim(),
+        search: getComputedStyle(body).getPropertyValue("--search-bg").trim(),
+        expectedSearch: getComputedStyle(body)
+          .getPropertyValue("--input")
+          .trim(),
+        list: getComputedStyle(document.getElementById("result-scroll"))
+          .backgroundColor,
+        player: getComputedStyle(document.getElementById("audition"))
+          .backgroundColor,
         input: getComputedStyle(document.querySelector("#fx-gain-value"))
           .backgroundColor,
       }));
+      assert.equal(
+        colors.search,
+        colors.expectedSearch,
+        "search surface must follow the active palette, including light themes",
+      );
+      assert.equal(
+        colors.list,
+        colors.player,
+        "list and large waveform must share the workspace surface",
+      );
       assert.notEqual(
         colors.accent,
         "#c7b57f",
@@ -1115,7 +1148,7 @@ async function main() {
       );
       if (["slate", "frost"].includes(theme))
         await page.screenshot({
-          path: path.join(output, `beta11-theme-${theme}.png`),
+          path: path.join(output, `beta12-theme-${theme}.png`),
         });
     }
     await page.locator("#settings-open").click();
@@ -1154,6 +1187,10 @@ async function main() {
     );
     await page.locator("#settings-discard").click();
     await page.locator('[data-section="about"]').click();
+    await page.waitForFunction(
+      () => document.querySelector(".about-logo")?.naturalWidth > 0,
+    );
+    await page.screenshot({ path: path.join(output, "beta12-about.png") });
     await page
       .getByRole("button", { name: "GitHub 项目主页", exact: true })
       .click();
@@ -1165,6 +1202,98 @@ async function main() {
     await page.locator("#settings-close").click();
     await page.setViewportSize({ width: 1000, height: 720 });
     await page.screenshot({ path: path.join(output, "compact-window.png") });
+    // Capture seek coordinates before selection replaces the virtualized row.
+    for (const fraction of [0.15, 0.55, 0.85]) {
+      const canvas = page.locator(".result-cell.waveform canvas").nth(2);
+      const box = await canvas.boundingBox();
+      const before = await page.evaluate(
+        () =>
+          window.testCalls.filter((c) => c.method === "preview.play").length,
+      );
+      await page.mouse.click(
+        box.x + box.width * fraction,
+        box.y + box.height / 2,
+      );
+      await page.waitForFunction(
+        (n) =>
+          window.testCalls.filter((c) => c.method === "preview.play").length >
+          n,
+        before,
+      );
+      const call = await page.evaluate(() =>
+        window.testCalls.filter((c) => c.method === "preview.play").at(-1),
+      );
+      assert(
+        Math.abs(call.params.position - fraction) < 0.01,
+        "mini waveform must seek to the actual canvas position after row refresh",
+      );
+      assert.equal(call.params.selection, false);
+    }
+    const doubleBox = await page
+      .locator(".result-cell.waveform canvas")
+      .nth(2)
+      .boundingBox();
+    const doubleBefore = await page.evaluate(
+      () => window.testCalls.filter((c) => c.method === "preview.play").length,
+    );
+    await page.mouse.dblclick(
+      doubleBox.x + doubleBox.width * 0.6,
+      doubleBox.y + doubleBox.height / 2,
+    );
+    await page.waitForFunction(
+      (n) =>
+        window.testCalls.filter((c) => c.method === "preview.play").length > n,
+      doubleBefore,
+    );
+    await page.waitForTimeout(80);
+    const doubles = await page.evaluate(
+      (n) =>
+        window.testCalls.filter((c) => c.method === "preview.play").slice(n),
+      doubleBefore,
+    );
+    assert(
+      doubles.every((c) => Math.abs(c.params.position - 0.6) < 0.01),
+      "double click must not bubble into restart-from-zero",
+    );
+    await page.evaluate(() => {
+      window.testSelectionDelay = 180;
+    });
+    const delayedBefore = await page.evaluate(
+      () => window.testCalls.filter((c) => c.method === "preview.play").length,
+    );
+    await page.locator(".result-cell.waveform").nth(1).click();
+    await page.locator("#stop").click();
+    await page.waitForTimeout(240);
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((c) => c.method === "preview.play").length,
+      ),
+      delayedBefore,
+      "stop must cancel a pending thumbnail audition",
+    );
+    await page.evaluate(() => {
+      window.testSelectionDelay = 0;
+    });
+    const modifierBefore = await page.evaluate(
+      () => window.testCalls.filter((c) => c.method === "preview.play").length,
+    );
+    await page
+      .locator(".result-cell.waveform")
+      .nth(3)
+      .click({ modifiers: ["Control"] });
+    await page
+      .locator(".result-cell.waveform")
+      .nth(4)
+      .click({ modifiers: ["Shift"] });
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((c) => c.method === "preview.play").length,
+      ),
+      modifierBefore,
+      "modifier clicks retain range/toggle selection",
+    );
     // Beta 9: local audition keys, compact translated menus and submenu navigation.
     await page.locator(".result-cell.name").first().click();
     await page.locator("#stop").click();
@@ -2026,7 +2155,56 @@ async function main() {
       0,
       "native transport interactions must not report serialization failures",
     );
+    await page.addInitScript(() => {
+      const fixture = new URL(location.href).searchParams.get("themeFixture");
+      if (fixture) localStorage.setItem("psyreasfx.workspace.v1", fixture);
+    });
+    for (const migration of [
+      {
+        themeColorsVersion: 1,
+        surfaceColor: "#e8edf5",
+        accentColor: "#345d9d",
+        expectedSurface: "#ccd5e0",
+        expectedAccent: "#345d9d",
+      },
+      {
+        themeColorsVersion: 1,
+        surfaceColor: "#d4ded8",
+        accentColor: "#c7b57f",
+        expectedSurface: "#d4ded8",
+        expectedAccent: "#c7b57f",
+      },
+      {
+        themeColorsVersion: 0,
+        surfaceColor: "#222426",
+        accentColor: "#c7b57f",
+        expectedSurface: "#ccd5e0",
+        expectedAccent: "#345d9d",
+      },
+    ]) {
+      const migrationUrl = new URL(page.url());
+      migrationUrl.searchParams.set(
+        "themeFixture",
+        JSON.stringify({ version: 1, theme: "frost", ...migration }),
+      );
+      // Seed after the old page's unload persistence has completed.
+      await page.goto(migrationUrl.toString());
+      await page.waitForSelector(".result-row");
+      const colors = await page.locator("body").evaluate((body) => ({
+        surface: getComputedStyle(body).getPropertyValue("--surface").trim(),
+        accent: getComputedStyle(body).getPropertyValue("--accent").trim(),
+      }));
+      assert.deepEqual(
+        colors,
+        {
+          surface: migration.expectedSurface,
+          accent: migration.expectedAccent,
+        },
+        "migrate old defaults without overwriting custom colors",
+      );
+    }
     const url = new URL(page.url());
+    url.searchParams.delete("themeFixture");
     url.searchParams.set("runtimeVersion", "0.4.0");
     await page.goto(url.toString());
     await page.waitForSelector(".result-row");

@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.3-beta11
+-- @version 0.9.3-beta12
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 11"
+local VERSION = "0.9.3 Beta 12"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta11",
-  source_sha256 = "a10dd79f6b289bdbf8a6f47949a2af950c174fb27a8a44b59be999b4c2504497",
+  release_id = "PsyReaSFX/0.9.3-beta12",
+  source_sha256 = "8f65cb4addb7b47915aaee8ad8a367738a10e130b4f8ce4d888fca4dbeba71dc",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }

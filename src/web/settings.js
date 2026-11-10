@@ -42,21 +42,48 @@ const operationLabels = {
 };
 
 export const themePresets = [
-  { id: "dark", label: "经典金灰", colors: ["#1b1c1e", "#222426", "#c7b57f"] },
   {
     id: "graphite",
     label: "石墨蓝",
-    colors: ["#16181c", "#202329", "#8aafff"],
+    description: "深色工作台 · 蓝色定位线",
+    colors: ["#181d25", "#1e2530", "#8aafff"],
   },
-  { id: "slate", label: "深海青", colors: ["#101c26", "#192b38", "#6ad4ce"] },
+  {
+    id: "dark",
+    label: "经典金灰",
+    description: "中性灰阶 · 哑光金色",
+    colors: ["#1e1f21", "#252628", "#c7b57f"],
+  },
+  {
+    id: "slate",
+    label: "深海青",
+    description: "控制台分区 · 清晰行线",
+    colors: ["#152127", "#1b2a30", "#6ad4ce"],
+  },
   {
     id: "amethyst",
     label: "暮色紫",
-    colors: ["#1b1824", "#272333", "#c2a3f7"],
+    description: "柔和圆角 · 轻盈页签",
+    colors: ["#211e29", "#292532", "#c2a3f7"],
   },
-  { id: "forest", label: "松林绿", colors: ["#151e1b", "#202e28", "#9dcbb2"] },
-  { id: "paper", label: "纸白墨绿", colors: ["#eeede8", "#e4e4de", "#3d6b64"] },
-  { id: "frost", label: "雾白蓝", colors: ["#f3f5f9", "#e8edf5", "#345d9d"] },
+  {
+    id: "forest",
+    label: "松林绿",
+    description: "暖灰绿调 · 安静侧栏",
+    colors: ["#1d231f", "#252d27", "#9dcbb2"],
+  },
+  {
+    id: "paper",
+    label: "纸白墨绿",
+    description: "柔纸灰底 · 细线排版",
+    colors: ["#d8d6ce", "#d0d0c8", "#3d6b64"],
+  },
+  {
+    id: "frost",
+    label: "雾白蓝",
+    description: "雾蓝灰底 · 轻浮工具栏",
+    colors: ["#d5dce5", "#ccd5e0", "#345d9d"],
+  },
 ];
 
 // Match draw_transfer_settings_content in the legacy UI. Empty lists mean the
@@ -299,6 +326,7 @@ export function createSettings({
         preview.append(dot);
       }
       item.prepend(preview);
+      item.append(el("small", "theme-description", theme.description));
       swatches.append(item);
     }
     palette.append(swatches);
@@ -807,6 +835,12 @@ export function createSettings({
         "PsyReaSFX",
         `WebView · ${session?.version || ""} · ${session?.author || "Psysia"}`,
       );
+      project.classList.add("about-brand");
+      const logo = el("img", "about-logo");
+      logo.src = "../assets/brand/psyreasfx-icon.png";
+      logo.alt = "PsyReaSFX";
+      logo.width = logo.height = 76;
+      project.prepend(logo);
       if (session?.copyright)
         project.append(el("p", "muted", session.copyright));
       const links = el("div", "action-row");

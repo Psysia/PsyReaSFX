@@ -1,3 +1,11 @@
+## 0.9.3 Beta 12 (0.9.a WebView) — 2026-11-10
+
+- Restore click-position audition in list waveforms: capture canvas coordinates before asynchronous selection rebuilds the row. Keep Ctrl/Shift selection, prevent double-click bubbling and show a hover time guide.
+- Reject stale selection continuations after newer selections or transport/navigation actions, including Stop.
+- Default new workspaces to graphite blue. Match list/detail-waveform luminance, soften light palettes and differentiate theme tabs, rules, corners and panel hierarchy while retaining custom colors.
+- Add the brand logo to About. Refresh the bilingual website with the supplied WebView screenshot, separate Stable/WebView downloads and responsive product/install sections.
+- Cover click fractions, double-click, modifiers, delayed selection/Stop, all palettes, brand loading and website layout/download channels. Native audio start positions remain a manual acceptance check.
+
 ## 0.9.3 Beta 11 (0.9.a WebView) — 2026-11-10
 
 - Normalize fractional splitter dimensions before loading/saving integer layout controls, fixing theme saves at fractional Windows scaling levels.

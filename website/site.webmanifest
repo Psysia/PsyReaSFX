@@ -4,8 +4,8 @@
   "description": "A high-performance sound library workspace built inside REAPER.",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#07090d",
-  "theme_color": "#07090d",
+  "background_color": "#10151d",
+  "theme_color": "#10151d",
   "icons": [
     {
       "src": "assets/brand/psyreasfx-icon-64.png",

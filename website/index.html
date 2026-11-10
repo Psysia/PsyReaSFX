@@ -9,35 +9,35 @@
   <link rel="canonical" href="https://psysia.github.io/PsyReaSFX/">
   <meta property="og:title" content="PsyReaSFX — Sound Assets Organized">
   <meta property="og:description" content="Browse, classify, find similar sounds, audition and deliver large sound libraries without leaving REAPER.">
-  <meta property="og:image" content="https://psysia.github.io/PsyReaSFX/assets/brand/psyreasfx-og.jpg">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="PsyReaSFX — Sound Assets Organized">
+  <meta property="og:image" content="https://psysia.github.io/PsyReaSFX/assets/showcase/prs-webview-beta11.png">
+  <meta property="og:image:width" content="1846">
+  <meta property="og:image:height" content="1026">
+  <meta property="og:image:alt" content="PsyReaSFX WebView workspace — actual Beta 11 capture">
   <meta property="og:site_name" content="PsyReaSFX">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://psysia.github.io/PsyReaSFX/">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="PsyReaSFX — Sound Assets Organized">
   <meta name="twitter:description" content="A high-performance sound library workspace built inside REAPER.">
-  <meta name="twitter:image" content="https://psysia.github.io/PsyReaSFX/assets/brand/psyreasfx-og.jpg">
+  <meta name="twitter:image" content="https://psysia.github.io/PsyReaSFX/assets/showcase/prs-webview-beta11.png">
   <title>PsyReaSFX — Sound Assets Organized</title>
   <link rel="icon" type="image/png" href="assets/brand/psyreasfx-icon-64.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="preload" href="assets/showcase/prs-workspace-0-9.png" as="image" type="image/png">
-  <link rel="stylesheet" href="styles.css?v=20261021-8">
-  <script src="app.js?v=20261021-8" defer></script>
+  <link rel="preload" href="assets/showcase/prs-webview-beta11.png" as="image" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=20261110-12">
+  <script src="app.js?v=20261110-12" defer></script>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "PsyReaSFX",
-      "screenshot": "https://psysia.github.io/PsyReaSFX/assets/showcase/prs-workspace-0-9.png",
+      "screenshot": "https://psysia.github.io/PsyReaSFX/assets/showcase/prs-webview-beta11.png",
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Windows",
-      "softwareVersion": "0.9.1",
+      "softwareVersion": "0.9.3-beta12",
       "description": "A high-performance sound library browser, audition and delivery workflow built inside REAPER.",
       "url": "https://psysia.github.io/PsyReaSFX/",
-      "downloadUrl": "https://github.com/Psysia/PsyReaSFX/releases/latest",
+      "downloadUrl": "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta12",
       "license": "https://github.com/Psysia/PsyReaSFX/blob/main/LICENSE",
       "author": { "@type": "Person", "name": "Psysia" }
     }
@@ -80,207 +80,61 @@
     <section class="hero" id="product">
       <div class="hero-glow" aria-hidden="true"></div>
       <div class="shell hero-grid">
-        <div class="hero-copy">
+        <div class="hero-copy"><div class="hero-intro">
           <div class="eyebrow">
             <span class="status-dot"></span>
-            <span><b data-stable-version>0.9.1</b> <span data-i18n="stableChannelShort">Stable</span></span>
+            <span><b data-webview-version>0.9.3 Beta 12</b> · <span data-i18n="webviewChannel">WebView · Windows x64</span></span>
             <span class="eyebrow-divider"></span>
             <span data-i18n="builtFor">Built for REAPER</span>
           </div>
-          <h1 data-i18n="heroTitle">Your sound library,<br><span>finally in flow.</span></h1>
-          <p class="hero-lead" data-i18n="heroLead">Browse, organize, audition and deliver large sound libraries without leaving REAPER.</p>
+          <h1 data-i18n="heroTitle">Find your sound.<br><span>Stay in the session.</span></h1>
+        </div><div class="hero-summary">
+          <p class="hero-lead" data-i18n="heroLead">One workspace for your sound library, from the first audition to the final REAPER insert. Now with the WebView interface.</p>
           <div class="hero-actions">
-            <a class="button primary" href="#install" data-i18n="installReapack">Install with ReaPack</a>
+            <a class="button primary" data-webview-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta12" data-i18n="webviewDownload">Get WebView Beta ↗</a>
             <a class="button secondary" data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.1" data-i18n="downloadStable">Download Stable</a>
-            <a class="button quiet" href="#version-comparison" data-i18n="viewPreview">What’s new in 0.9 ↓</a>
+            <a class="button quiet" href="#version-comparison" data-i18n="viewPreview">Explore the WebView edition ↓</a>
           </div>
           <p class="project-home-hint"><a class="text-link" data-project-home href="https://github.com/Psysia/PsyReaSFX" data-i18n="projectHome">GitHub project ↗</a><span data-i18n="projectHomeHint"> — Full README, source code and project documentation.</span></p>
           <a class="hero-demo-link" href="#scripts"><span data-lang="en">Explore the REAPER tools in motion ↓</span><span data-lang="zh">观看 REAPER Lua 工具操作动图 ↓</span></a>
           <div class="hero-meta">
             <span data-i18n="freeUpdate">One repository · Automatic updates</span>
             <span class="meta-dot"></span>
-            <span>ReaImGui 0.10+</span>
+            <span>REAPER · ReaWebAPI</span>
           </div>
         </div>
 
+        </div>
         <div class="hero-visual">
-          <div class="interface-pill"><span class="live-dot"></span><span data-lang="en">ACTUAL PRODUCT · 0.9 BETA</span><span data-lang="zh">真实软件界面 · 0.9 测试版</span></div>
+          <div class="interface-pill"><span class="live-dot"></span><span data-i18n="webviewScreenshot">Actual workspace · captured in Beta 11</span></div>
           <div class="window-chrome">
             <div class="window-bar">
               <span></span><span></span><span></span>
-              <p>PsyReaSFX <b data-stable-version>0.9.1</b></p>
+              <p>PsyReaSFX / WEBVIEW WORKSPACE</p>
             </div>
             <picture>
-              <img src="assets/showcase/prs-workspace-0-9.png"
-                   alt="PsyReaSFX 0.9 Beta 7.10 — real working interface showing UCS library navigation, searchable sound files, inline waveforms and an audition panel / PsyReaSFX 0.9 实际界面"
-                   width="1700" height="1050" decoding="async" fetchpriority="high">
+              <img src="assets/showcase/prs-webview-beta11.png"
+                   alt="PsyReaSFX WebView Beta 11 — actual blue workspace, library folders, inline waveforms and full-width audition"
+                   width="1846" height="1026" decoding="async" fetchpriority="high">
             </picture>
-            <a class="preview-expand" href="assets/showcase/prs-workspace-0-9.png" target="_blank" rel="noopener">
+            <a class="preview-expand" href="assets/showcase/prs-webview-beta11.png" target="_blank" rel="noopener">
               <span data-lang="en">VIEW FULL RESOLUTION ↗</span><span data-lang="zh">查看原尺寸截图 ↗</span>
             </a>
           </div>
-          <div class="floating-stat stat-top">
-            <strong data-i18n="inlineWaveforms">Inline waveforms</strong>
-            <span data-i18n="visibleFirst">Visible-first caching</span>
-          </div>
-          <div class="floating-stat stat-bottom">
-            <strong data-i18n="nonDestructive">Non-destructive</strong>
-            <span data-i18n="sourceSafe">Source media stays untouched</span>
-          </div>
+
         </div>
       </div>
-    </section>
+    <div class="shell preview-legend"><a href="#workflow" data-i18n="previewOne">01 / Listen where you point</a><a href="#workflow" data-i18n="previewTwo">02 / Shape the audition</a><a href="#workflow" data-i18n="previewThree">03 / Carry it into REAPER</a></div>
+</section>
 
 
-    <section class="section script-gallery" id="scripts" aria-labelledby="scripts-heading">
-      <div class="shell">
-        <div class="gallery-heading">
-          <div>
-            <p class="kicker gallery-kicker"><span data-lang="en">THE TOOLS · IN MOTION</span><span data-lang="zh">REAPER 工具 · 动态演示</span></p>
-            <h2 id="scripts-heading"><span data-lang="en">See the workflow, not just the feature list.</span><span data-lang="zh">让工作流自己说话。</span></h2>
-            <p class="gallery-lead"><span data-lang="en">Real recordings of the Psysia ReaScripts inside REAPER. Explore twelve practical tools—then add only the ones you need through ReaPack.</span><span data-lang="zh">来自 REAPER 实际操作的十二个 Lua 工具动图。直观看到操作效果，再通过 ReaPack 安装所需脚本。</span></p>
-          </div>
-          <a class="gallery-index-link" href="#install"><span data-lang="en">Install via ReaPack ↗</span><span data-lang="zh">通过 ReaPack 安装 ↗</span></a>
-        </div>
-        <div class="gallery-featured-label"><span data-lang="en">01 — FEATURED WORKFLOWS</span><span data-lang="zh">01 — 精选工作流</span> <span> / </span> 04</div>
-        <div class="script-card-grid script-card-grid-featured">
-          <article class="script-card script-card-featured">
-            <div class="script-card-media">
-              <img src="assets/showcase/smart-bounce.gif" loading="lazy" decoding="async" width="960" height="600" alt="Smart Bounce / 智能合并渲染 — actual REAPER workflow animation">
-              <span class="card-index">01</span>
-              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Render</span><span data-lang="zh">渲染</span></span>
-              <h3><span data-lang="en">Smart Bounce</span><span data-lang="zh">智能合并渲染</span></h3><p><span data-lang="en">Render selected material to a new WAV with automated tail handling.</span><span data-lang="zh">将选中素材智能合并为 WAV，处理渲染尾音。</span></p>
-            </div>
-          </article>
-          <article class="script-card script-card-featured">
-            <div class="script-card-media">
-              <img src="assets/showcase/video-track-overlay.gif" loading="lazy" decoding="async" width="960" height="600" alt="Video item name overlay / 视频素材轨道名覆盖显示 — actual REAPER workflow animation">
-              <span class="card-index">02</span>
-              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Display</span><span data-lang="zh">显示</span></span>
-              <h3><span data-lang="en">Video item name overlay</span><span data-lang="zh">视频素材轨道名覆盖显示</span></h3><p><span data-lang="en">Make video item labels readable directly inside the arrange view.</span><span data-lang="zh">在编排区直接清晰显示视频素材对应的轨道名称。</span></p>
-            </div>
-          </article>
-          <article class="script-card script-card-featured">
-            <div class="script-card-media">
-              <img src="assets/showcase/folder-region-matrix.gif" loading="lazy" decoding="async" width="960" height="600" alt="Folder regions & render matrix / 创建文件夹区域与渲染矩阵 — actual REAPER workflow animation">
-              <span class="card-index">03</span>
-              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Rendering</span><span data-lang="zh">区域渲染</span></span>
-              <h3><span data-lang="en">Folder regions & render matrix</span><span data-lang="zh">创建文件夹区域与渲染矩阵</span></h3><p><span data-lang="en">Build regions and map them to the right render targets.</span><span data-lang="zh">根据轨道与文件夹结构批量建立区域及渲染矩阵。</span></p>
-            </div>
-          </article>
-          <article class="script-card script-card-featured">
-            <div class="script-card-media">
-              <img src="assets/showcase/cycle-folder-compact.gif" loading="lazy" decoding="async" width="960" height="600" alt="Cycle folder visibility / 统一轮换文件夹折叠状态 — actual REAPER workflow animation">
-              <span class="card-index">04</span>
-              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
-              <h3><span data-lang="en">Cycle folder visibility</span><span data-lang="zh">统一轮换文件夹折叠状态</span></h3><p><span data-lang="en">Move through folder display states without losing your hierarchy.</span><span data-lang="zh">按文件夹层级轮换折叠状态，保持工程结构清晰。</span></p>
-            </div>
-          </article>
-        </div>
-        <div class="gallery-featured-label gallery-all-label"><span data-lang="en">02 — MORE REASCRIPTS</span><span data-lang="zh">02 — 更多实用脚本</span> <span> / </span> 08</div>
-        <div class="script-card-grid script-card-grid-more">
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/sort-tracks.gif" loading="lazy" decoding="async" width="960" height="600" alt="Sort tracks by first item / 按最早素材位置排序轨道 — actual REAPER workflow animation">
-              <span class="card-index">05</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
-              <h3><span data-lang="en">Sort tracks by first item</span><span data-lang="zh">按最早素材位置排序轨道</span></h3><p><span data-lang="en">Order tracks using the earliest item in each folder-aware group.</span><span data-lang="zh">按素材最早位置排序，同时保留文件夹分组。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/parent-folder-region-matrix.gif" loading="lazy" decoding="async" width="960" height="600" alt="Nearest parent render regions / 按最近父文件夹创建区域与渲染矩阵 — actual REAPER workflow animation">
-              <span class="card-index">06</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Rendering</span><span data-lang="zh">区域渲染</span></span>
-              <h3><span data-lang="en">Nearest parent render regions</span><span data-lang="zh">按最近父文件夹创建区域与渲染矩阵</span></h3><p><span data-lang="en">Name regions from the closest parent folder and prepare the matrix.</span><span data-lang="zh">根据最近父级文件夹命名区域并配置渲染矩阵。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/rename-from-parent.gif" loading="lazy" decoding="async" width="960" height="600" alt="Rename from parent folder / 根据父级文件夹名重命名选中轨道 — actual REAPER workflow animation">
-              <span class="card-index">07</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
-              <h3><span data-lang="en">Rename from parent folder</span><span data-lang="zh">根据父级文件夹名重命名选中轨道</span></h3><p><span data-lang="en">Rename selected child tracks consistently from their parent folder.</span><span data-lang="zh">依据父文件夹名称快速批量命名所选轨道。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/split-items.gif" loading="lazy" decoding="async" width="960" height="600" alt="Split items to new tracks / 拆分选中素材到新轨道 — actual REAPER workflow animation">
-              <span class="card-index">08</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
-              <h3><span data-lang="en">Split items to new tracks</span><span data-lang="zh">拆分选中素材到新轨道</span></h3><p><span data-lang="en">Move selected audio items into their own clean tracks.</span><span data-lang="zh">将选中音频素材快速拆分到新的独立轨道。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/remove-item-gaps.gif" loading="lazy" decoding="async" width="960" height="600" alt="Remove gaps between items / 移除选中素材间隙 — actual REAPER workflow animation">
-              <span class="card-index">09</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
-              <h3><span data-lang="en">Remove gaps between items</span><span data-lang="zh">移除选中素材间隙</span></h3><p><span data-lang="en">Close empty space between selected items in one action.</span><span data-lang="zh">一键消除选中素材之间的空白间隙。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/reverse-items.gif" loading="lazy" decoding="async" width="960" height="600" alt="Reverse selected items / 原位反转选中素材 — actual REAPER workflow animation">
-              <span class="card-index">10</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
-              <h3><span data-lang="en">Reverse selected items</span><span data-lang="zh">原位反转选中素材</span></h3><p><span data-lang="en">Reverse selected items in place with a single reversible action.</span><span data-lang="zh">在当前位置快速反转选中素材。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/toggle-lufs-spectrogram.gif" loading="lazy" decoding="async" width="960" height="600" alt="LUFS-M / spectrogram / 切换 LUFS-M 与频谱图 — actual REAPER workflow animation">
-              <span class="card-index">11</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Analysis</span><span data-lang="zh">分析显示</span></span>
-              <h3><span data-lang="en">LUFS-M / spectrogram</span><span data-lang="zh">切换 LUFS-M 与频谱图</span></h3><p><span data-lang="en">Switch the visible waveform analysis without breaking your flow.</span><span data-lang="zh">在 LUFS-M 与频谱显示之间快速切换。</span></p>
-            </div>
-          </article>
-          <article class="script-card">
-            <div class="script-card-media">
-              <img src="assets/showcase/create-folder-prol2.gif" loading="lazy" decoding="async" width="960" height="600" alt="Create bus with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2 — actual REAPER workflow animation">
-              <span class="card-index">12</span>
-              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
-            </div>
-            <div class="script-card-content"><span class="card-category"><span data-lang="en">Routing</span><span data-lang="zh">路由处理</span></span>
-              <h3><span data-lang="en">Create bus with Pro-L 2</span><span data-lang="zh">从选中轨道创建文件夹并挂载 Pro-L 2</span></h3><p><span data-lang="en">Wrap selected tracks in a parent bus with Pro-L 2 ready.</span><span data-lang="zh">为选中轨道创建父级文件夹并加载 Pro-L 2。</span></p>
-            </div>
-          </article>
-        </div>
-        <div class="gallery-footer">
-          <div><strong><span data-lang="en">Built for people who work in REAPER.</span><span data-lang="zh">为真实 REAPER 工作流而设计。</span></strong><p><span data-lang="en">Each utility is independently installable. Detailed behavior, requirements and shortcuts are documented in the tool guide.</span><span data-lang="zh">所有工具均可独立安装；使用方法、依赖及快捷键见工具手册。</span></p></div>
-          <a class="button secondary" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/REAPER_TOOLS_GUIDE_en-US.md" data-lang="en">REAPER tools guide ↗</a>
-          <a class="button secondary" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/REAPER_TOOLS_GUIDE_zh-CN.md" data-lang="zh">REAPER 工具手册 ↗</a>
-        </div>
-      </div>
-    </section>
+
 
     <section class="release-strip" id="status" aria-labelledby="release-heading">
       <div class="shell release-grid">
         <div class="release-heading">
-          <p class="kicker" data-i18n="releaseKicker">0.9 IS NOW STABLE</p>
-          <h2 id="release-heading" data-i18n="releaseHeading">The complete 0.9 workspace, now Stable.</h2>
+          <p class="kicker" data-i18n="releaseKicker">CHOOSE YOUR WORKSPACE</p>
+          <h2 id="release-heading" data-i18n="releaseHeading">A new interface.<br>A familiar workflow.</h2>
         </div>
         <article class="release-card stable-release">
           <div class="release-card-head">
@@ -288,17 +142,17 @@
             <span data-i18n="stableChannel">Stable channel</span>
           </div>
           <strong data-stable-version>0.9.1</strong>
-          <p data-i18n="stableSummary">The default ReaPack release for everyday production work.</p>
+          <p data-i18n="stableSummary">The classic ReaImGui interface. The default ReaPack channel for established production workflows.</p>
           <a data-stable-download href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.1" data-i18n="getStable">Get Stable ↗</a>
         </article>
         <article class="release-card preview-release">
           <div class="release-card-head">
             <span class="release-dot"></span>
-            <span data-i18n="previewChannel">New in 0.9</span>
+            <span data-i18n="previewChannel">WebView Beta</span>
           </div>
-          <strong data-stable-version>0.9.1</strong>
-          <p data-i18n="previewSummary">UCS classification, acoustic/neural similarity, independent AI semantic search and named API presets, scalable fonts, folder navigation, browsing tabs with snapshots, Watch Folder controls and precise publisher-product browsing. All Beta 8.7 features are included in Stable.</p>
-          <a href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.0" data-i18n="getPreview">Read 0.9 release notes ↗</a>
+          <strong data-webview-version>0.9.3 Beta 12</strong>
+          <p data-i18n="previewSummary">The new Windows interface: full-width waveforms, precise click-to-audition, resumable playback, compact FX, searchable UCS and seven quieter themes.</p>
+          <a data-webview-release href="https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta12" data-i18n="getPreview">WebView release notes ↗</a>
           <a class="release-sub-link" data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip" data-i18n="neuralAddon">Download complete neural ZIP · Windows x64 ↗</a>
           <a class="release-sub-link" href="#neural-install" data-i18n="neuralGuideLink">Neural package: ReaPack / ZIP instructions ↓</a>
         </article>
@@ -310,46 +164,7 @@
           <p class="release-context-note" data-i18n="neuralInstallNote">Normal ReaPack synchronization now updates PsyReaSFX.lua to 0.9.1 Stable. Neural retrieval requires the separate <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">PsyReaSFX Neural Similarity package</a>; neither package requires pre-release opt-in. Versions retains 0.9.0, 0.8.5 and 0.7.23 Stable.</p>
     </div>
 
-    <section class="section comparison-section" id="version-comparison" aria-labelledby="comparison-heading">
-      <div class="shell">
-        <div class="section-heading">
-          <p class="kicker" data-i18n="comparisonKicker">WHAT CHANGED</p>
-          <h2 id="comparison-heading" data-i18n="comparisonHeading">What does 0.9 Stable add?</h2>
-          <p data-i18n="comparisonLead">REAPER / Lua editions only, not the Desktop companion. 0.9 includes the earlier Stable feature set; “—” means unavailable in that version.</p>
-        </div>
-        <p class="comparison-scroll-note" data-i18n="comparisonScroll">On small screens, swipe the table horizontally to compare all versions.</p>
-        <div class="comparison-scroll" role="region" tabindex="0" aria-labelledby="comparison-heading">
-          <table class="comparison-table">
-            <caption data-i18n="comparisonCaption">Feature overview · 0.7.23 / 0.8.5 / 0.9.0 Stable</caption>
-            <thead><tr>
-              <th scope="col" data-i18n="comparisonFeature">Feature</th>
-              <th scope="col">0.7.23 <span data-i18n="stableChannelShort">Stable</span></th>
-              <th scope="col">0.8.5 <span data-i18n="stableChannelShort">Stable</span></th>
-              <th scope="col"><span data-i18n="comparisonLatest">Current Stable</span><br><span data-stable-version>0.9.1</span></th>
-            </tr></thead>
-            <tbody>
-              <tr><th scope="row" data-i18n="compareCore">Browse, waveform audition, metadata, collections and Transfer</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareRetained">Retained</td><td data-i18n="compareRetained">Retained</td></tr>
-              <tr><th scope="row" data-i18n="compareRecovery">Interrupted-scan recovery, retries, backups and cache checks</th><td data-i18n="compareNone">—</td><td data-i18n="compareAdded">Added</td><td data-i18n="compareRefined">Retained and refined</td></tr>
-              <tr><th scope="row" data-i18n="compareMaintenance">Missing/duplicate checks, source relinking and project usage</th><td data-i18n="compareNone">—</td><td data-i18n="compareAdded">Added</td><td data-i18n="compareRetained">Retained</td></tr>
-              <tr><th scope="row" data-i18n="comparePerformance">Incremental persistence and frame-budgeted large-library tasks</th><td data-i18n="compareEarly">Earlier implementation</td><td data-i18n="compareHardened">Hardened</td><td data-i18n="compareStartup">Further startup optimization</td></tr>
-              <tr><th scope="row" data-i18n="compareUcs">Official UCS classification, review queue and virtual folders</th><td data-i18n="compareUcsFields">Basic UCS fields only</td><td data-i18n="compareUcsFields">Basic UCS fields only</td><td data-i18n="compareAdded">Added</td></tr>
-              <tr><th scope="row" data-i18n="compareSpectral">Spectral peak coloring</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareOptIn">Added; opt-in</td></tr>
-              <tr><th scope="row" data-i18n="compareAcoustic">Audio-content similar-sound retrieval</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compare15Features">Built-in 15-feature acoustic retrieval</td></tr>
-              <tr><th scope="row" data-i18n="compareNeural">EfficientAT local neural similarity</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareAddon"><a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Required neural package · Windows x64 ZIP ↗</a></td></tr>
-              <tr><th scope="row" data-i18n="compareAi">AI semantic search: local recall, paging and named API presets</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareApi">Your API key/model; no <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">neural package</a> needed</td></tr>
-              <tr><th scope="row" data-i18n="compareAnimation">Branded startup animation and live loading status</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareNoDelay">Added; no fixed intro delay</td></tr>
-              <tr><th scope="row" data-i18n="compareFont">10–24 px font scaling and adaptive waveform columns</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareWorkspaceEntry">Added; Settings → Font & navigation</td></tr>
-              <tr><th scope="row" data-i18n="compareFolders">Sidebar hierarchy / roots-only and module visibility</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareWorkspaceEntry">Added; Settings → Font & navigation</td></tr>
-              <tr><th scope="row" data-i18n="compareTabs">Independent search / browsing tabs</th><td data-i18n="compareNone">—</td><td data-i18n="compareNone">—</td><td data-i18n="compareTabsEntry">Added; + under search / Ctrl+N</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="comparison-links">
-          <a class="text-link" href="#beta-install" data-i18n="betaGuideLink">Update to 0.9 Stable: illustrated guide ↓</a>
-          <a class="text-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/CHANGELOG_en-US.md" data-i18n="comparisonDetails">Detailed version history ↗</a>
-        </div>
-      </div>
-    </section>
+
 
     <section class="trust-strip" aria-label="Core product characteristics">
       <div class="shell trust-grid">
@@ -439,6 +254,7 @@
       <div class="shell split-layout">
         <div class="media-card portrait-media">
           <img src="assets/screenshots/logical-library-workflow.gif" alt="A logical PsyReaSFX library expanding to show independent source folders" loading="lazy" decoding="async" width="528" height="318">
+          <p class="legacy-demo-note" data-i18n="legacyDemo">Earlier native interface · the workflow is retained in WebView</p>
         </div>
         <div class="feature-copy">
           <p class="kicker" data-i18n="librariesKicker">LIBRARIES THAT MATCH REAL STORAGE</p>
@@ -467,6 +283,7 @@
         </div>
         <div class="media-card wide-media">
           <img src="assets/screenshots/waveform-edit-drag-reaper.gif" alt="Selecting a range in the PsyReaSFX waveform and dragging it into REAPER" loading="lazy" decoding="async" width="1262" height="726">
+          <p class="legacy-demo-note" data-i18n="legacyDemo">Earlier native interface · the workflow is retained in WebView</p>
         </div>
       </div>
     </section>
@@ -479,6 +296,7 @@
           <p data-i18n="transferLead">Turn the full source, a waveform selection or a controlled batch of variants into new files with repeatable settings.</p>
         </div>
         <div class="transfer-stage">
+          <p class="legacy-demo-note" data-i18n="legacyDemo">Earlier native interface · the workflow is retained in WebView</p>
           <picture>
             <source data-transfer-source type="image/webp" srcset="assets/screenshots/transfer-settings-en-960.webp 960w, assets/screenshots/transfer-settings-en.webp 1700w" sizes="(max-width: 1060px) calc(100vw - 40px), 1210px">
             <img data-transfer-image src="assets/screenshots/transfer-settings-en.png" alt="PsyReaSFX Transfer settings" loading="lazy" decoding="async" width="1700" height="1050">
@@ -507,6 +325,192 @@
           <article><h3 data-i18n="performanceTitle">Large-library performance</h3><p data-i18n="performanceText">Visible-first work, bounded queues and persistent waveform caches keep browsing responsive.</p></article>
           <article><h3 data-i18n="channelTitle">Channel-aware preview</h3><p data-i18n="channelText">Read mono, stereo and up to eight detailed waveform lanes with focused views.</p></article>
           <article><h3 data-i18n="reaperTitle">REAPER delivery</h3><p data-i18n="reaperText">Insert on the current track, a new track, the BWF position or drag the selected range.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section comparison-section" id="version-comparison" aria-labelledby="comparison-heading">
+      <div class="shell">
+        <div class="section-heading">
+          <p class="kicker" data-i18n="comparisonKicker">EDITIONS AT A GLANCE</p>
+          <h2 id="comparison-heading" data-i18n="comparisonHeading">Choose the interface. Keep your library.</h2>
+          <p data-i18n="comparisonLead">Classic Stable, the previous native preview, and the new WebView edition. Optional neural retrieval and cloud AI search remain separate services.</p>
+        </div>
+        <p class="comparison-scroll-note" data-i18n="comparisonScroll">On small screens, swipe the table horizontally to compare all versions.</p>
+        <div class="comparison-scroll" role="region" tabindex="0" aria-labelledby="comparison-heading">
+          <table class="comparison-table">
+            <caption data-i18n="comparisonCaption">REAPER editions · classic / native preview / WebView</caption>
+            <thead><tr>
+              <th scope="col" data-i18n="comparisonFeature">Feature</th>
+              <th scope="col"><span data-stable-version>0.9.1</span> · Stable</th>
+              <th scope="col">0.9.2 Beta 4 · ReaImGui</th>
+              <th scope="col"><span data-i18n="comparisonLatest">WebView Beta</span><br><span data-webview-version>0.9.3 Beta 12</span></th>
+            </tr></thead>
+            <tbody>
+              <tr><th scope="row" data-i18n="compareCore">Browse, waveform audition, metadata, collections and Transfer</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareRecovery">Interrupted-scan recovery, retries, backups and cache checks</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareMaintenance">Missing/duplicate checks, source relinking and project usage</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="comparePerformance">Incremental persistence and frame-budgeted large-library tasks</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareUcs">Official UCS classification, review queue and virtual folders</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareSpectral">Spectral peak coloring</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareAcoustic">Audio-content similar-sound retrieval</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareNeural">EfficientAT local neural similarity</th><td data-i18n="compareAddon"><a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Separate local package ↗</a></td><td data-i18n="compareAddon"><a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Separate local package ↗</a></td><td data-i18n="compareAddon"><a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Separate local package ↗</a></td></tr>
+              <tr><th scope="row" data-i18n="compareAi">AI semantic search: local recall, paging and named API presets</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareAnimation">Interface and layout</th><td data-i18n="compareClassicUi">Classic native interface</td><td data-i18n="compareClassicUi">Classic native interface</td><td data-i18n="compareWebUi">Full-width player · compact FX</td></tr>
+              <tr><th scope="row" data-i18n="compareFont">Fonts and appearance</th><td data-i18n="compareNativeTheme">Scalable fonts · native palette</td><td data-i18n="compareNativeTheme">Scalable fonts · native palette</td><td data-i18n="compareWebTheme">Seven themes · custom colors</td></tr>
+              <tr><th scope="row" data-i18n="compareFolders">Sidebar hierarchy / roots-only and module visibility</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+              <tr><th scope="row" data-i18n="compareTabs">Independent search / browsing tabs</th><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td><td data-i18n="compareIncluded">Included</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="comparison-links">
+          <a class="text-link" href="#beta-install" data-i18n="betaGuideLink">Install WebView: illustrated guide ↓</a>
+          <a class="text-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/CHANGELOG_en-US.md" data-i18n="comparisonDetails">Detailed version history ↗</a>
+        </div>
+      </div>
+    </section>
+    <section class="section script-gallery" id="scripts" aria-labelledby="scripts-heading">
+      <div class="shell">
+        <div class="gallery-heading">
+          <div>
+            <p class="kicker gallery-kicker"><span data-lang="en">THE TOOLS · IN MOTION</span><span data-lang="zh">REAPER 工具 · 动态演示</span></p>
+            <h2 id="scripts-heading"><span data-lang="en">See the workflow, not just the feature list.</span><span data-lang="zh">让工作流自己说话。</span></h2>
+            <p class="gallery-lead"><span data-lang="en">Real recordings of the Psysia ReaScripts inside REAPER. Explore twelve practical tools—then add only the ones you need through ReaPack.</span><span data-lang="zh">来自 REAPER 实际操作的十二个 Lua 工具动图。直观看到操作效果，再通过 ReaPack 安装所需脚本。</span></p>
+          </div>
+          <a class="gallery-index-link" href="#install"><span data-lang="en">Install via ReaPack ↗</span><span data-lang="zh">通过 ReaPack 安装 ↗</span></a>
+        </div>
+        <div class="gallery-featured-label"><span data-lang="en">01 — FEATURED WORKFLOWS</span><span data-lang="zh">01 — 精选工作流</span> <span> / </span> 04</div>
+        <div class="script-card-grid script-card-grid-featured">
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/smart-bounce.gif" loading="lazy" decoding="async" width="960" height="600" alt="Smart Bounce / 智能合并渲染 — actual REAPER workflow animation">
+              <span class="card-index">01</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Render</span><span data-lang="zh">渲染</span></span>
+              <h3><span data-lang="en">Smart Bounce</span><span data-lang="zh">智能合并渲染</span></h3><p><span data-lang="en">Render selected material to a new WAV with automated tail handling.</span><span data-lang="zh">将选中素材智能合并为 WAV，处理渲染尾音。</span></p>
+            </div>
+          </article>
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/video-track-overlay.gif" loading="lazy" decoding="async" width="960" height="600" alt="Video item name overlay / 视频素材轨道名覆盖显示 — actual REAPER workflow animation">
+              <span class="card-index">02</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Display</span><span data-lang="zh">显示</span></span>
+              <h3><span data-lang="en">Video item name overlay</span><span data-lang="zh">视频素材轨道名覆盖显示</span></h3><p><span data-lang="en">Make video item labels readable directly inside the arrange view.</span><span data-lang="zh">在编排区直接清晰显示视频素材对应的轨道名称。</span></p>
+            </div>
+          </article>
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/folder-region-matrix.gif" loading="lazy" decoding="async" width="960" height="600" alt="Folder regions & render matrix / 创建文件夹区域与渲染矩阵 — actual REAPER workflow animation">
+              <span class="card-index">03</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Rendering</span><span data-lang="zh">区域渲染</span></span>
+              <h3><span data-lang="en">Folder regions & render matrix</span><span data-lang="zh">创建文件夹区域与渲染矩阵</span></h3><p><span data-lang="en">Build regions and map them to the right render targets.</span><span data-lang="zh">根据轨道与文件夹结构批量建立区域及渲染矩阵。</span></p>
+            </div>
+          </article>
+          <article class="script-card script-card-featured">
+            <div class="script-card-media">
+              <img src="assets/showcase/cycle-folder-compact.gif" loading="lazy" decoding="async" width="960" height="600" alt="Cycle folder visibility / 统一轮换文件夹折叠状态 — actual REAPER workflow animation">
+              <span class="card-index">04</span>
+              <span class="media-badge"><span data-lang="en">GIF · REAL REAPER</span><span data-lang="zh">GIF · 实机演示</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
+              <h3><span data-lang="en">Cycle folder visibility</span><span data-lang="zh">统一轮换文件夹折叠状态</span></h3><p><span data-lang="en">Move through folder display states without losing your hierarchy.</span><span data-lang="zh">按文件夹层级轮换折叠状态，保持工程结构清晰。</span></p>
+            </div>
+          </article>
+        </div>
+        <details class="tool-more"><summary><span data-lang="en">Explore 8 more REAPER tools</span><span data-lang="zh">展开另外 8 个 REAPER 工具</span></summary>
+        <div class="gallery-featured-label gallery-all-label"><span data-lang="en">02 — MORE REASCRIPTS</span><span data-lang="zh">02 — 更多实用脚本</span> <span> / </span> 08</div>
+        <div class="script-card-grid script-card-grid-more">
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/sort-tracks.gif" loading="lazy" decoding="async" width="960" height="600" alt="Sort tracks by first item / 按最早素材位置排序轨道 — actual REAPER workflow animation">
+              <span class="card-index">05</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
+              <h3><span data-lang="en">Sort tracks by first item</span><span data-lang="zh">按最早素材位置排序轨道</span></h3><p><span data-lang="en">Order tracks using the earliest item in each folder-aware group.</span><span data-lang="zh">按素材最早位置排序，同时保留文件夹分组。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/parent-folder-region-matrix.gif" loading="lazy" decoding="async" width="960" height="600" alt="Nearest parent render regions / 按最近父文件夹创建区域与渲染矩阵 — actual REAPER workflow animation">
+              <span class="card-index">06</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Rendering</span><span data-lang="zh">区域渲染</span></span>
+              <h3><span data-lang="en">Nearest parent render regions</span><span data-lang="zh">按最近父文件夹创建区域与渲染矩阵</span></h3><p><span data-lang="en">Name regions from the closest parent folder and prepare the matrix.</span><span data-lang="zh">根据最近父级文件夹命名区域并配置渲染矩阵。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/rename-from-parent.gif" loading="lazy" decoding="async" width="960" height="600" alt="Rename from parent folder / 根据父级文件夹名重命名选中轨道 — actual REAPER workflow animation">
+              <span class="card-index">07</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Organization</span><span data-lang="zh">轨道整理</span></span>
+              <h3><span data-lang="en">Rename from parent folder</span><span data-lang="zh">根据父级文件夹名重命名选中轨道</span></h3><p><span data-lang="en">Rename selected child tracks consistently from their parent folder.</span><span data-lang="zh">依据父文件夹名称快速批量命名所选轨道。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/split-items.gif" loading="lazy" decoding="async" width="960" height="600" alt="Split items to new tracks / 拆分选中素材到新轨道 — actual REAPER workflow animation">
+              <span class="card-index">08</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
+              <h3><span data-lang="en">Split items to new tracks</span><span data-lang="zh">拆分选中素材到新轨道</span></h3><p><span data-lang="en">Move selected audio items into their own clean tracks.</span><span data-lang="zh">将选中音频素材快速拆分到新的独立轨道。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/remove-item-gaps.gif" loading="lazy" decoding="async" width="960" height="600" alt="Remove gaps between items / 移除选中素材间隙 — actual REAPER workflow animation">
+              <span class="card-index">09</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
+              <h3><span data-lang="en">Remove gaps between items</span><span data-lang="zh">移除选中素材间隙</span></h3><p><span data-lang="en">Close empty space between selected items in one action.</span><span data-lang="zh">一键消除选中素材之间的空白间隙。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/reverse-items.gif" loading="lazy" decoding="async" width="960" height="600" alt="Reverse selected items / 原位反转选中素材 — actual REAPER workflow animation">
+              <span class="card-index">10</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Editing</span><span data-lang="zh">素材编辑</span></span>
+              <h3><span data-lang="en">Reverse selected items</span><span data-lang="zh">原位反转选中素材</span></h3><p><span data-lang="en">Reverse selected items in place with a single reversible action.</span><span data-lang="zh">在当前位置快速反转选中素材。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/toggle-lufs-spectrogram.gif" loading="lazy" decoding="async" width="960" height="600" alt="LUFS-M / spectrogram / 切换 LUFS-M 与频谱图 — actual REAPER workflow animation">
+              <span class="card-index">11</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Analysis</span><span data-lang="zh">分析显示</span></span>
+              <h3><span data-lang="en">LUFS-M / spectrogram</span><span data-lang="zh">切换 LUFS-M 与频谱图</span></h3><p><span data-lang="en">Switch the visible waveform analysis without breaking your flow.</span><span data-lang="zh">在 LUFS-M 与频谱显示之间快速切换。</span></p>
+            </div>
+          </article>
+          <article class="script-card">
+            <div class="script-card-media">
+              <img src="assets/showcase/create-folder-prol2.gif" loading="lazy" decoding="async" width="960" height="600" alt="Create bus with Pro-L 2 / 从选中轨道创建文件夹并挂载 Pro-L 2 — actual REAPER workflow animation">
+              <span class="card-index">12</span>
+              <span class="media-badge"><span data-lang="en">ACTION DEMO</span><span data-lang="zh">操作动图</span></span>
+            </div>
+            <div class="script-card-content"><span class="card-category"><span data-lang="en">Routing</span><span data-lang="zh">路由处理</span></span>
+              <h3><span data-lang="en">Create bus with Pro-L 2</span><span data-lang="zh">从选中轨道创建文件夹并挂载 Pro-L 2</span></h3><p><span data-lang="en">Wrap selected tracks in a parent bus with Pro-L 2 ready.</span><span data-lang="zh">为选中轨道创建父级文件夹并加载 Pro-L 2。</span></p>
+            </div>
+          </article>
+        </div>
+        </details>
+        <div class="gallery-footer">
+          <div><strong><span data-lang="en">Built for people who work in REAPER.</span><span data-lang="zh">为真实 REAPER 工作流而设计。</span></strong><p><span data-lang="en">Each utility is independently installable. Detailed behavior, requirements and shortcuts are documented in the tool guide.</span><span data-lang="zh">所有工具均可独立安装；使用方法、依赖及快捷键见工具手册。</span></p></div>
+          <a class="button secondary" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/REAPER_TOOLS_GUIDE_en-US.md" data-lang="en">REAPER tools guide ↗</a>
+          <a class="button secondary" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/REAPER_TOOLS_GUIDE_zh-CN.md" data-lang="zh">REAPER 工具手册 ↗</a>
         </div>
       </div>
     </section>
@@ -546,26 +550,27 @@
     <section class="beta-install-section" aria-labelledby="beta-install-heading">
       <div class="shell beta-install-guide" id="beta-install" aria-labelledby="beta-install-heading">
         <div class="beta-install-copy">
-          <p class="kicker" data-i18n="betaGuideKicker">UPDATE TO STABLE</p>
-          <h2 id="beta-install-heading" data-i18n="betaGuideHeading">Get 0.9.1 through normal ReaPack sync.</h2>
-          <p class="beta-install-callout" data-i18n="betaGuideLead">0.9.1 is now the default Stable release. No pre-release opt-in is required. If an older version is pinned, unpin it first.</p>
+          <p class="kicker" data-i18n="betaGuideKicker">WEBVIEW QUICK START</p>
+          <h2 id="beta-install-heading" data-i18n="betaGuideHeading">Install the new workspace.</h2>
+          <p class="beta-install-callout" data-i18n="betaGuideLead">WebView is a Windows x64 pre-release. Enable pre-releases for the script and install its ReaWebAPI runtime dependency. Your existing catalog and source files stay in place.</p>
           <ol class="install-steps">
-            <li data-i18n="betaStepOne">Run Extensions → ReaPack → Synchronize packages, then open Browse packages and search for PsyReaSFX.</li>
-            <li data-i18n="betaStepTwo">Right-click the main PsyReaSFX.lua package and uncheck <strong>Pin current version</strong> if an older version is pinned.</li>
-            <li data-i18n="betaStepThree">Choose <strong>Install</strong>, or <strong>Versions → 0.9.1</strong> (Stable). The pre-release checkbox is only for future test builds.</li>
-            <li data-i18n="betaStepFour">Click <strong>Apply</strong>, or <strong>OK</strong> to confirm installation. Once downloads finish, close the old PsyReaSFX window and rerun it from REAPER's Action List.</li>
+            <li data-i18n="betaStepOne">Import the repository above, synchronize, then open <strong>ReaPack → Browse packages</strong> and search for PsyReaSFX.</li>
+            <li data-i18n="betaStepTwo">For <strong>PsyReaSFX.lua</strong>, enable <strong>Enable pre-releases</strong>; unpin an older version if necessary.</li>
+            <li data-i18n="betaStepThree">Choose <strong>Versions → 0.9.3-beta12</strong>. Also install <strong>PsyReaSFX WebView Runtime</strong>. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.</li>
+            <li data-i18n="betaStepFour">Apply the update, close the old PRS window, then run <strong>PsyReaSFX.lua</strong>. Restart REAPER when a native extension is newly installed. Running the same action again brings the existing window back.</li>
           </ol>
+          <p><a class="text-link" href="https://github.com/Psysia/PsyReaSFX/blob/main/docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md" data-i18n="checklist">Open the feature acceptance checklist ↗</a></p><p class="muted" data-i18n="webviewRequirements">WebView: Windows x64 · ReaWebAPI · js_ReaScriptAPI</p>
           <div class="beta-feature-requirements">
             <p data-i18n="betaNeuralNote"><strong>Local neural similarity requires a separate package:</strong> Windows x64 only. <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download the complete PsyReaSFX Neural Similarity ZIP</a> (about 42.4 MB, includes model and installers), or install the separate data package through ReaPack. Updating the main script does not install it. <a href="#neural-install">Exact installation steps ↓</a>. Without it, similar-sound search uses the built-in 15-feature acoustic method.</p>
-            <p data-i18n="betaAiNote"><strong>AI semantic search:</strong> no <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">neural package</a> required. In Settings, create, save and switch named DeepSeek / OpenAI / compatible API presets, each with an independent key and model. Enter runs normal search; the gold AI button runs semantic search. Audio is not uploaded.</p>
-            <p data-i18n="betaDataNote">No mandatory library rebuild. Beta 8.5 or newer neural components and existing caches remain compatible with 0.9.0.</p>
+            <p data-i18n="betaAiNote"><strong>AI semantic search:</strong> no <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">neural package</a> required. In Settings, create, save and switch named DeepSeek / OpenAI / compatible API presets, each with an independent key and model. Enter runs normal search; the AI button runs semantic search. Audio is not uploaded.</p>
+            <p data-i18n="betaDataNote">Your catalog, waveform cache and local neural cache carry over to WebView. No full rescan is required for this interface update.</p>
           </div>
         </div>
         <figure class="beta-install-figure">
           <a href="assets/screenshots/reapack-enable-beta.jpg" target="_blank" rel="noopener" aria-label="View the ReaPack Beta installation screenshot at full resolution" data-i18n-aria-label="betaScreenshotLabel">
             <img src="assets/screenshots/reapack-enable-beta.jpg" width="1079" height="1020" loading="lazy" decoding="async" alt="ReaPack: Enable pre-releases (bleeding-edge), Versions, Pin current version, Apply / OK">
           </a>
-          <figcaption data-i18n="betaScreenshotCaption">Historical Beta screenshot showing menu locations. Versions now lists 0.9.0, 0.8.5 and 0.7.23 Stable; older Betas remain on GitHub Releases. Enable pre-releases is not required for 0.9.0.</figcaption>
+          <figcaption data-i18n="betaScreenshotCaption">Earlier ReaPack screenshot showing the menu locations. After synchronization, enable pre-releases and select 0.9.3-beta12 for WebView. Stable remains 0.9.1.</figcaption>
         </figure>
       </div>
 

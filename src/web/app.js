@@ -6,8 +6,8 @@ import { icon } from "./icons.js";
 const $ = (id) => document.getElementById(id);
 const defaults = {
   version: 1,
-  themeColorsVersion: 1,
-  theme: "dark",
+  themeColorsVersion: 2,
+  theme: "graphite",
   language: "zh",
   left: false,
   right: true,
@@ -17,10 +17,10 @@ const defaults = {
   rowHeight: 29,
   fontSize: 13,
   fontFamily: "Segoe UI",
-  accentColor: "#c7b57f",
-  surfaceColor: "#222426",
+  accentColor: "#8aafff",
+  surfaceColor: "#1e2530",
   waveformColorMode: "theme",
-  waveformSelectionColor: "#c7b57f",
+  waveformSelectionColor: "#8aafff",
   navigationPanel: "libraries",
   navigation: {},
   collapsedLibraries: [],
@@ -69,14 +69,26 @@ try {
 }
 // Older preferences stored the dark palette's defaults for every theme.
 // Migrate once; later explicit custom colors (including gold) must be preserved.
-if (prefs.themeColorsVersion !== 1) {
+if (prefs.themeColorsVersion !== 2) {
   const theme =
     themePresets.find((item) => item.id === prefs.theme) || themePresets[0];
-  if (prefs.accentColor === defaults.accentColor)
+  if (!prefs.themeColorsVersion && prefs.accentColor === "#c7b57f")
     prefs.accentColor = theme.colors[2];
-  if (prefs.surfaceColor === defaults.surfaceColor)
+  const previousSurfaces = {
+    dark: "#222426",
+    graphite: "#202329",
+    slate: "#192b38",
+    amethyst: "#272333",
+    forest: "#202e28",
+    paper: "#e4e4de",
+    frost: "#e8edf5",
+  };
+  if (
+    prefs.surfaceColor === previousSurfaces[theme.id] ||
+    (!prefs.themeColorsVersion && prefs.surfaceColor === "#222426")
+  )
     prefs.surfaceColor = theme.colors[1];
-  prefs.themeColorsVersion = 1;
+  prefs.themeColorsVersion = 2;
 }
 
 const localizer = createLocalizer();
@@ -85,6 +97,7 @@ let host;
 let snapshot;
 let page;
 let pageSequence = 0;
+let selectionIntent = 0;
 let pageRequestAgain = false;
 let waveSequence = 0;
 let detailWave;
@@ -182,6 +195,18 @@ function action(callback) {
 
 function command(method, params) {
   if (!host) return Promise.reject(new Error("宿主尚未连接"));
+  if (
+    [
+      "selection.move",
+      "selection.all",
+      "tab.action",
+      "catalog.query",
+      "preview.play",
+      "preview.stop",
+      "preview.toggle",
+    ].includes(method)
+  )
+    selectionIntent++;
   if (
     method === "records.action" &&
     params?.action === "saveSearch" &&
@@ -549,6 +574,23 @@ function renderRows() {
         const playhead = node("span", "mini-playhead");
         playhead.setAttribute("aria-hidden", "true");
         cell.append(playhead);
+        const seekGuide = node("span", "mini-seek-guide");
+        seekGuide.hidden = true;
+        cell.append(seekGuide);
+        cell.onpointermove = (event) => {
+          const rect = canvas.getBoundingClientRect();
+          const position = clamp(
+            (event.clientX - rect.left) / Math.max(1, rect.width),
+            0,
+            0.999,
+          );
+          seekGuide.hidden = false;
+          seekGuide.style.left = `${event.clientX - cell.getBoundingClientRect().left}px`;
+          cell.title = `${time(asset.duration * position)} · ${localizer.text("点击此处试听")}`;
+        };
+        cell.onpointerleave = () => {
+          seekGuide.hidden = true;
+        };
         waveCanvases.push([canvas, asset.waveform, selected, asset]);
         if (!asset.waveform && asset.waveError) {
           const retry = node("button", "mini-wave-retry", "重试波形");
@@ -567,14 +609,26 @@ function renderRows() {
         }
         cell.onclick = action(async (event) => {
           event.stopPropagation();
-          await selectAsset(asset, event, false);
-          const rect = cell.getBoundingClientRect();
+          if (event.ctrlKey || event.metaKey || event.shiftKey)
+            return selectAsset(asset, event);
+          // Selection refreshes/replaces this row. Capture geometry while the
+          // canvas is still attached, before crossing the host request boundary.
+          const rect = canvas.getBoundingClientRect();
+          if (!rect.width) return;
+          const position = clamp(
+            (event.clientX - rect.left) / rect.width,
+            0,
+            0.999,
+          );
+          if (!(await selectAsset(asset, event, false))) return;
           await command("preview.play", {
             path: asset.path,
-            position: clamp((event.clientX - rect.left) / rect.width, 0, 1),
+            position,
             selection: false,
           });
         });
+        cell.ondblclick = (event) => event.stopPropagation();
+        cell.title = "点击波形任意位置试听；Ctrl / Shift 点击多选";
       } else if (key === "artwork_path") {
         if (
           snapshot?.artworkEnabled !== false &&
@@ -650,12 +704,14 @@ function updateMiniPlayheads() {
     if (!playhead) continue;
     playhead.hidden =
       !snapshot?.playing || snapshot.previewPath !== row.dataset.path;
-    playhead.style.left = `${clamp(snapshot?.position || 0, 0, 1) * 100}%`;
+    const position = clamp(snapshot?.position || 0, 0, 1);
+    playhead.style.left = `calc(${8 - 16 * position}px + ${position * 100}%)`;
     playhead.style.background = snapshot?.rowAppearance?.playhead || "#cabb8a";
   }
 }
 
 async function selectAsset(asset, event = {}, autoPlay) {
+  const intent = ++selectionIntent;
   let result = await command("selection.set", {
     index: asset.index,
     path: asset.path,
@@ -664,8 +720,10 @@ async function selectAsset(asset, event = {}, autoPlay) {
     shift: event.shiftKey || false,
     autoPlay,
   });
+  if (intent !== selectionIntent) return false;
   if (result?.stale) {
     await requestPage();
+    if (intent !== selectionIntent) return false;
     const current = page?.items.find((item) => item.path === asset.path);
     if (!current) throw new Error("所选声音已离开当前结果，请重新选择");
     result = await command("selection.set", {
@@ -676,9 +734,11 @@ async function selectAsset(asset, event = {}, autoPlay) {
       shift: event.shiftKey || false,
       autoPlay,
     });
+    if (intent !== selectionIntent) return false;
     if (result?.stale) throw new Error("列表仍在更新，请稍后选择");
   }
   await requestPage();
+  return intent === selectionIntent;
 }
 
 function requestPage(force = true) {
