@@ -239,7 +239,6 @@ async function main() {
                       },
                     ],
                   };
-              window.testFolderPending = false;
             }
             if (request.method === "catalog.ucs")
               result = [
@@ -955,6 +954,9 @@ async function main() {
       .locator("#libraries .folder-state")
       .filter({ hasText: "正在整理文件夹索引" })
       .waitFor();
+    await page.evaluate(() => {
+      window.testFolderPending = false;
+    });
     await page.locator("#libraries .folder-branch .folder-branch").waitFor();
     await page
       .locator(
