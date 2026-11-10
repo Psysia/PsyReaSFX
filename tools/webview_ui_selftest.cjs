@@ -1152,6 +1152,14 @@ async function main() {
     const rootLabel = page.locator(
       "#libraries > .folder-branch > summary > .nav-item",
     );
+    await rootLabel.dblclick({ delay: 100 });
+    await page.waitForFunction(
+      () => !document.querySelector("#libraries > .folder-branch").open,
+    );
+    await rootLabel.dblclick({ delay: 100 });
+    await page.waitForFunction(
+      () => document.querySelector("#libraries > .folder-branch").open,
+    );
     const rootArrow = page.locator(
       "#libraries > .folder-branch > summary > .folder-toggle",
     );

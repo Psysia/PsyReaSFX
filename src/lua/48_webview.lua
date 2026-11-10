@@ -1465,8 +1465,7 @@ WebUI.handlers["asset.action"] = function(params)
     redetectArtwork = function()
       asset.artwork_path = ""
       asset.artwork_checked = false
-      state.artwork_folder_cache = {}
-      state.artwork_dimension_cache = {}
+      AppState.apply({ artwork_folder_cache = {}, artwork_dimension_cache = {} })
       queue_artwork(asset, true)
       mark_asset_database_change(asset, "display")
     end,
@@ -1709,9 +1708,7 @@ WebUI.handlers["records.action"] = function(params)
     clearArtwork = clear_artwork_cache,
     retryFailed = retry_failed_tasks,
     clearFailed = function()
-      state.failed_tasks = {}
-      state.failed_tasks_dirty = true
-      state.last_save = 0
+      AppState.apply({ failed_tasks = {}, failed_tasks_dirty = true, last_save = 0 })
       schedule_auxiliary_save()
       set_status("失败任务记录已清除")
     end,

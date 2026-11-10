@@ -221,7 +221,7 @@ local VERSION = "0.9.3 Beta 9"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.3-beta9",
-  source_sha256 = "ce6c76ea0113407c3b2cbb93d28139ea564be3e75b8bc62cd1671638d1ca2d21",
+  source_sha256 = "6392a406c6ddcdaaea9b0baf6d0243106018bad7967800781434320ed4d03132",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -18590,8 +18590,7 @@ WebUI.handlers["asset.action"] = function(params)
     redetectArtwork = function()
       asset.artwork_path = ""
       asset.artwork_checked = false
-      state.artwork_folder_cache = {}
-      state.artwork_dimension_cache = {}
+      AppState.apply({ artwork_folder_cache = {}, artwork_dimension_cache = {} })
       queue_artwork(asset, true)
       mark_asset_database_change(asset, "display")
     end,
@@ -18834,9 +18833,7 @@ WebUI.handlers["records.action"] = function(params)
     clearArtwork = clear_artwork_cache,
     retryFailed = retry_failed_tasks,
     clearFailed = function()
-      state.failed_tasks = {}
-      state.failed_tasks_dirty = true
-      state.last_save = 0
+      AppState.apply({ failed_tasks = {}, failed_tasks_dirty = true, last_save = 0 })
       schedule_auxiliary_save()
       set_status("失败任务记录已清除")
     end,
