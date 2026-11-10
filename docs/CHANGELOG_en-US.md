@@ -1,3 +1,11 @@
+## 0.9.3 Beta 8 (0.9.a WebView) — 2026-11-10
+
+- Repair waveform cache queue starvation, selection rejection during background refresh, failed-waveform retries and oversized multichannel responses.
+- Switch dedicated navigation panels from the icon rail; support nested folder browsing and uniform UCS typography; remove the duplicate settings entry.
+- Use theme-matched waveform backgrounds with custom selection colors. Separate FX, loudness and transport rows; scroll artwork with metadata.
+- Add current-results/all-libraries similarity scope, background progress and cancellation. Hide the console of already-installed neural sidecars.
+- Extend cache, folder, scroll, small-window and real process-launch regressions. Full native REAPER acceptance remains pending.
+
 ## 0.9.3 Beta 6 (0.9.a WebView) — 2026-11-09
 
 - Include Beta 5 workflow parity and add Chinese/English switching with generated shared translations and literal catalog content.

@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "410d6597ac445f20d1a83a0b3d57c657237e2338f4a2a3fbaca59a7ce1de5bac",
+  source_sha256 = "f94b24e483f32b8d5d04cd2af8604910e1583289bed5e408350ea128368b54cc",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -14503,14 +14503,45 @@ function neural_similarity_paths()
   }
 end
 
+local function neural_base64(value)
+  local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  local output = {}
+  for offset = 1, #value, 3 do
+    local a, b, c = value:byte(offset, offset + 2)
+    local bits = (a << 16) | ((b or 0) << 8) | (c or 0)
+    for shift = 18, 0, -6 do
+      local index = ((bits >> shift) & 63) + 1
+      output[#output + 1] = alphabet:sub(index, index)
+    end
+    if not c then output[#output] = "=" end
+    if not b then output[#output - 1] = "=" end
+  end
+  return table.concat(output)
+end
+
+function neural_windows_hidden_command(arguments)
+  assert(type(arguments[1]) == "string" and arguments[1] ~= "", "missing executable")
+  local quoted = {}
+  for index = 2, #arguments do
+    quoted[#quoted + 1] = neural_windows_quote_argument(arguments[index])
+  end
+  -- Keep paths and arguments as UTF-8 data, never executable PowerShell text.
+  -- ExecProcess(-2) only minimizes console programs; CreateNoWindow also hides
+  -- existing console-subsystem sidecars already installed through ReaPack.
+  local payload = neural_base64(neural_json_encode({ file = arguments[1], arguments = table.concat(quoted, " ") }))
+  local script = "$ErrorActionPreference='Stop';$j=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
+    .. payload .. "'))|ConvertFrom-Json;$p=New-Object Diagnostics.ProcessStartInfo;"
+    .. "$p.FileName=$j.file;$p.Arguments=$j.arguments;$p.UseShellExecute=$false;"
+    .. "$p.CreateNoWindow=$true;$p.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden;"
+    .. "[void][Diagnostics.Process]::Start($p)"
+  local utf16 = script:gsub(".", function(character) return character .. "\0" end)
+  return "powershell.exe -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand " .. neural_base64(utf16)
+end
+
 local function neural_launch(arguments)
   local host = neural_host_api()
   if not host or type(host.ExecProcess) ~= "function" then return false, "exec_unavailable" end
-  local command = {}
-  for _, argument in ipairs(arguments) do
-    command[#command + 1] = neural_windows_quote_argument(argument)
-  end
-  local ok, result = pcall(host.ExecProcess, table.concat(command, " "), -2)
+  local ok, result = pcall(host.ExecProcess, neural_windows_hidden_command(arguments), -2)
   if not ok or result == nil then return false, tostring(result or "launch_failed") end
   return true
 end
@@ -22987,11 +23018,7 @@ function store_wave_memory(key, waveform)
   end
 end
 
-function queue_wave(asset, points, priority, preserve_channels, spectral)
-  if asset.wave_error then
-    return nil
-  end
-
+function queue_wave(asset, points, priority, preserve_channels, spectral, defer_disk)
   preserve_channels = preserve_channels == true
   spectral = spectral == true
 
@@ -23005,7 +23032,9 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
     return cached.waveform
   end
 
-  if not state.wave_checked[key] then
+  if asset.wave_error then return nil end
+
+  if not defer_disk and not state.wave_checked[key] then
     state.wave_checked[key] = true
 
     local disk_wave =
@@ -23039,6 +23068,7 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
       points = points,
       preserve_channels = preserve_channels,
       spectral = spectral,
+      probe_disk = defer_disk == true,
     }
 
     if priority then
@@ -23074,6 +23104,17 @@ function process_wave_queue()
       return
     end
 
+    -- WebView queues every visible row without doing disk I/O in the RPC.
+    -- Probe one queued cache per background tick, so later rows cannot starve.
+    if job.probe_disk and not state.wave_checked[job.key] then
+      state.wave_checked[job.key] = true
+      local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+      if cached then
+        store_wave_memory(job.key, cached)
+        state.wave_queued[job.key] = nil
+        return
+      end
+    end
     state.wave_active = job
     job.job_token =
       Jobs.begin(

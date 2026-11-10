@@ -159,7 +159,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.1** | Default release; the complete 0.9.0 feature set with reliability and performance fixes. |
-| WebView beta | **0.9.3-beta4 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
+| WebView beta | **0.9.3-beta8 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
 | Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
 | Optional component | [PsyReaSFX Neural Similarity][neural-download] | Local neural similar-sound search for Windows x64. |

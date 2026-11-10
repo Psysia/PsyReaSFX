@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.3-beta7
+-- @version 0.9.3-beta8
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 7"
+local VERSION = "0.9.3 Beta 8"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta7",
-  source_sha256 = "3fe70e26a820433e79cff80b8e62ed21c2e8dd975754a8a917995746725e5380",
+  release_id = "PsyReaSFX/0.9.3-beta8",
+  source_sha256 = "344017391acdf13cf373592c18396220d00af759be97c814c65995e75fc34f68",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -14503,14 +14503,45 @@ function neural_similarity_paths()
   }
 end
 
+local function neural_base64(value)
+  local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  local output = {}
+  for offset = 1, #value, 3 do
+    local a, b, c = value:byte(offset, offset + 2)
+    local bits = (a << 16) | ((b or 0) << 8) | (c or 0)
+    for shift = 18, 0, -6 do
+      local index = ((bits >> shift) & 63) + 1
+      output[#output + 1] = alphabet:sub(index, index)
+    end
+    if not c then output[#output] = "=" end
+    if not b then output[#output - 1] = "=" end
+  end
+  return table.concat(output)
+end
+
+function neural_windows_hidden_command(arguments)
+  assert(type(arguments[1]) == "string" and arguments[1] ~= "", "missing executable")
+  local quoted = {}
+  for index = 2, #arguments do
+    quoted[#quoted + 1] = neural_windows_quote_argument(arguments[index])
+  end
+  -- Keep paths and arguments as UTF-8 data, never executable PowerShell text.
+  -- ExecProcess(-2) only minimizes console programs; CreateNoWindow also hides
+  -- existing console-subsystem sidecars already installed through ReaPack.
+  local payload = neural_base64(neural_json_encode({ file = arguments[1], arguments = table.concat(quoted, " ") }))
+  local script = "$ErrorActionPreference='Stop';$j=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
+    .. payload .. "'))|ConvertFrom-Json;$p=New-Object Diagnostics.ProcessStartInfo;"
+    .. "$p.FileName=$j.file;$p.Arguments=$j.arguments;$p.UseShellExecute=$false;"
+    .. "$p.CreateNoWindow=$true;$p.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden;"
+    .. "[void][Diagnostics.Process]::Start($p)"
+  local utf16 = script:gsub(".", function(character) return character .. "\0" end)
+  return "powershell.exe -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand " .. neural_base64(utf16)
+end
+
 local function neural_launch(arguments)
   local host = neural_host_api()
   if not host or type(host.ExecProcess) ~= "function" then return false, "exec_unavailable" end
-  local command = {}
-  for _, argument in ipairs(arguments) do
-    command[#command + 1] = neural_windows_quote_argument(argument)
-  end
-  local ok, result = pcall(host.ExecProcess, table.concat(command, " "), -2)
+  local ok, result = pcall(host.ExecProcess, neural_windows_hidden_command(arguments), -2)
   if not ok or result == nil then return false, tostring(result or "launch_failed") end
   return true
 end
@@ -17204,7 +17235,7 @@ end
 
 local function waveform(asset, points, channels)
   local preserve = channels and state.multichannel_waveform ~= false
-  local wave = queue_wave(asset, points, channels, preserve, channels and state.spectral_peaks_enabled)
+  local wave = queue_wave(asset, points, channels, preserve, channels and state.spectral_peaks_enabled, true)
   if not wave then
     return nil
   end
@@ -17381,13 +17412,12 @@ WebUI.handlers["catalog.page"] = function(params)
   local limit = math.floor(number(params.limit or 60, 1, 100))
   local items = {}
   local bytes = 0
-  local wave_deadline = reaper.time_precise() + 0.003
   for index = offset + 1, math.min(offset + limit, #state.results) do
     local asset = state.results[index]
     local item = asset_data(asset)
     item.index = index
     item.selected = state.selected_set[asset_path_sort_key(asset)] == true
-    if params.waveforms ~= false and reaper.time_precise() < wave_deadline then
+    if params.waveforms ~= false then
       item.waveform = waveform(asset, state.mini_wave_points, false)
     end
     local size = #neural_json_encode(item)
@@ -17550,9 +17580,13 @@ end
 
 WebUI.handlers["selection.set"] = function(params)
   refresh_revision()
-  assert(params.revision == WebUI.revision, "结果已更新，请重试选择")
-  local index = math.floor(number(params.index, 1, #state.results))
-  assert(state.results[index].path == params.path, "结果位置已改变")
+  local index = math.floor(number(params.index, 1, 100000000))
+  -- Playback/metadata can publish a new result table without moving the row.
+  -- Its identity is sufficient for a single click; ranges need a fresh page.
+  if not state.results[index] or state.results[index].path ~= params.path
+    or (params.shift and params.revision ~= WebUI.revision) then
+    return { stale = true, revision = WebUI.revision }
+  end
   select_result_with_modifiers(index, params.ctrl == true, params.shift == true, params.autoPlay)
   queue_artwork(state.results[index], true)
   return asset_data(selected_asset())
@@ -17574,11 +17608,19 @@ WebUI.handlers["selection.all"] = function()
 end
 WebUI.handlers["waveform.get"] = function(params)
   local asset = asset_for(params.path)
+  if params.retry then
+    asset.wave_error = nil
+    clear_failed_task(asset)
+  end
+  local points = math.floor(number(params.points or 1024, 64, 4096))
+  if state.multichannel_waveform ~= false then
+    points = math.min(points, math.max(64, math.floor(24000 / (math.max(1, asset.channels or 1) + 3))))
+  end
   return {
     path = asset.path,
     duration = asset.duration or 0,
-    waveform = waveform(asset, math.floor(number(params.points or 1024, 64, 4096)), true),
-    error = asset.wave_error and "无法生成波形，请检查源文件是否可读取" or nil,
+    waveform = waveform(asset, points, true),
+    error = asset.wave_error and ("波形读取失败：" .. text(asset.wave_error, 250)) or nil,
   }
 end
 WebUI.handlers["preview.play"] = function(params)
@@ -17914,7 +17956,7 @@ WebUI.handlers["search.more"] = function()
 end
 WebUI.handlers["search.similar"] = function(params)
   assert(selected_asset(), "请先选择素材")
-  start_similarity_search(selected_asset(), params.scope == "current" and "current" or "all")
+  assert(start_similarity_search(selected_asset(), params.scope == "current" and "current" or "all"), state.status)
   return true
 end
 WebUI.handlers["maintenance"] = function(params)
@@ -18007,7 +18049,7 @@ local settings_schema = {
   { key = "artwork_enabled", label = "启用封面", group = "外观", kind = "boolean" },
   {
     key = "inspector_artwork_pinned",
-    label = "检查器封面固定在顶部",
+    label = "封面置于详细信息前",
     group = "外观",
     kind = "boolean",
   },
@@ -18426,7 +18468,16 @@ WebUI.handlers["settings.update"] = function(params)
   if watch ~= nil then set_watch_folder_enabled(watch) end
   if updates.watch_interval then AppState.set("next_watch", reaper.time_precise() + state.watch_interval) end
   if wave_changed then
-    AppState.apply({ wave_queue = {}, wave_queued = {}, wave_checked = {} })
+    local job = state.wave_active
+    if job then
+      destroy_wave_job(job)
+      if job.job_token then
+        Jobs.cancel(job.job_token)
+        Jobs.finish(job.job_token, true, "waveform settings changed")
+      end
+    end
+    AppState.apply({ wave_active = nil, wave_queue = {}, wave_queued = {}, wave_checked = {} })
+    AppState.set("wave_active", nil)
   end
   if loudness_changed then
     if state.show_loudness_metrics then request_loudness_analysis(selected_asset(), false)
@@ -18499,7 +18550,7 @@ WebUI.handlers["asset.action"] = function(params)
       remove_assets_from_collection(collection, targets)
     end,
     similar = function()
-      start_similarity_search(asset, params.scope == "current" and "current" or "all")
+      assert(start_similarity_search(asset, params.scope == "current" and "current" or "all"), state.status)
     end,
     loudness = function()
       request_loudness_analysis(asset, true)
@@ -18893,7 +18944,8 @@ function webview_publish()
     tabs[#tabs + 1] = { id = tab.id, name = workspace_tab_title(tab) }
   end
   for _, root in ipairs(state.root_records) do
-    roots[#roots + 1] = { id = root.id, libraryId = root.library_id, path = root.path }
+    roots[#roots + 1] = { id = root.id, libraryId = root.library_id, path = root.path,
+      name = root.alias ~= "" and root.alias or basename(root.path), enabled = root.enabled ~= false }
   end
   local asset = selected_asset()
   local selected = asset_data(asset)
@@ -18901,6 +18953,7 @@ function webview_publish()
     selected.regions = asset_regions(asset)
     selected.index = state.selected_index
     selected.loudness = collect_loudness_summary_items(asset)
+    selected.loudnessEnabled = state.show_loudness_metrics
     selected.channelsSelected = ensure_preview_channel_selection(asset)
     selected.channelMode = state.preview_channel_mode
     selected.ucsCandidates = {}
@@ -18919,6 +18972,16 @@ function webview_publish()
     statuses[#statuses + 1] = { id = id, label = WORKFLOW_STATUS[id].label }
   end
   local snapshot = {
+    similarityProgress = state.similarity_session and {
+      phase = state.similarity_session.neural_progress and state.similarity_session.neural_progress.phase or state.similarity_session.phase,
+      completed = state.similarity_session.neural_progress and state.similarity_session.neural_progress.completed
+        or state.similarity_session.processed or 0,
+      total = state.similarity_session.neural_progress and state.similarity_session.neural_progress.total
+        or state.similarity_session.total or 0,
+      reference = text(state.similarity_session.reference and state.similarity_session.reference.name or "", 160),
+      engine = state.similarity_session.neural_attempted and not state.similarity_session.neural_failure and "neural" or "acoustic",
+      failure = state.similarity_session.neural_failure,
+    } or nil,
     workflowStatuses = statuses,
     language = state.language,
     statusFilter = state.status_filter,
@@ -24923,11 +24986,7 @@ function store_wave_memory(key, waveform)
   end
 end
 
-function queue_wave(asset, points, priority, preserve_channels, spectral)
-  if asset.wave_error then
-    return nil
-  end
-
+function queue_wave(asset, points, priority, preserve_channels, spectral, defer_disk)
   preserve_channels = preserve_channels == true
   spectral = spectral == true
 
@@ -24941,7 +25000,9 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
     return cached.waveform
   end
 
-  if not state.wave_checked[key] then
+  if asset.wave_error then return nil end
+
+  if not defer_disk and not state.wave_checked[key] then
     state.wave_checked[key] = true
 
     local disk_wave =
@@ -24975,6 +25036,7 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
       points = points,
       preserve_channels = preserve_channels,
       spectral = spectral,
+      probe_disk = defer_disk == true,
     }
 
     if priority then
@@ -25010,6 +25072,17 @@ function process_wave_queue()
       return
     end
 
+    -- WebView queues every visible row without doing disk I/O in the RPC.
+    -- Probe one queued cache per background tick, so later rows cannot starve.
+    if job.probe_disk and not state.wave_checked[job.key] then
+      state.wave_checked[job.key] = true
+      local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+      if cached then
+        store_wave_memory(job.key, cached)
+        state.wave_queued[job.key] = nil
+        return
+      end
+    end
     state.wave_active = job
     job.job_token =
       Jobs.begin(

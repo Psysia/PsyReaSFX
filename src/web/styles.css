@@ -231,14 +231,15 @@ small {
 #app {
   height: 100dvh;
   display: grid;
-  grid-template-rows: 87px minmax(145px, 1fr) 5px var(--audition-height) 25px;
+  grid-template-rows: 115px minmax(145px, 1fr) 5px var(--audition-height) 27px;
 }
 #browser {
   display: grid;
   min-height: 0;
-  grid-template-columns: var(--sidebar-left) 5px minmax(160px, 1fr) 5px var(
-      --sidebar-right
-    );
+  grid-template-columns: 44px var(--sidebar-left) 5px minmax(
+      160px,
+      1fr
+    ) 5px var(--sidebar-right);
   overflow: hidden;
 }
 #sources,
@@ -249,6 +250,23 @@ small {
 }
 #sources {
   padding: 8px 7px;
+  font-size: var(--font-size);
+}
+.source-heading {
+  padding: 6px 9px 12px;
+  border-bottom: 1px solid var(--quiet);
+  margin-bottom: 5px;
+  font-size: inherit;
+}
+.sidebar-empty,
+.folder-state {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.folder-state button {
+  margin-left: 5px;
 }
 #sources button.nav-item {
   display: flex;
@@ -259,6 +277,7 @@ small {
   background: transparent;
   align-items: center;
   min-height: 29px;
+  font-size: inherit;
   padding: 4px 9px;
   overflow: hidden;
 }
@@ -278,7 +297,7 @@ small {
 }
 .nav-item.root {
   padding-left: 23px !important;
-  font-size: 12px;
+  font-size: inherit;
 }
 .section-label {
   display: flex;
@@ -310,13 +329,13 @@ small {
   background: var(--accent);
 }
 body.left-hidden #browser {
-  grid-template-columns: 0 0 minmax(160px, 1fr) 5px var(--sidebar-right);
+  grid-template-columns: 44px 0 0 minmax(160px, 1fr) 5px var(--sidebar-right);
 }
 body.right-hidden #browser {
-  grid-template-columns: var(--sidebar-left) 5px minmax(160px, 1fr) 0 0;
+  grid-template-columns: 44px var(--sidebar-left) 5px minmax(160px, 1fr) 0 0;
 }
 body.left-hidden.right-hidden #browser {
-  grid-template-columns: 0 0 minmax(160px, 1fr) 0 0;
+  grid-template-columns: 44px 0 0 minmax(160px, 1fr) 0 0;
 }
 body.left-hidden #sources,
 body.right-hidden #inspector {
@@ -481,9 +500,19 @@ body.right-hidden #inspector {
   margin: 4px auto;
   flex-shrink: 0;
 }
+#inspector {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
 .inspector-tabs {
-  position: sticky;
-  top: 0;
+  flex: none;
   display: flex;
   gap: 1px;
   padding: 4px 5px;
@@ -613,7 +642,7 @@ body.right-hidden #inspector {
   display: flex;
   flex-direction: column;
   padding: 0 10px 4px;
-  background: #1c1e20;
+  background: var(--bg);
   overflow: hidden;
 }
 .audition-heading {
@@ -648,21 +677,21 @@ body.right-hidden #inspector {
   font-variant-numeric: tabular-nums;
 }
 #wave-area {
-  min-height: 45px;
-  flex: 1;
+  min-height: 80px;
+  flex: 1 1 0;
   display: grid;
   grid-template-columns: 128px minmax(0, 1fr);
   gap: 12px;
   padding: 4px 0;
 }
 #wave-readouts {
-  padding: 8px;
+  padding: 6px 8px;
   border: 1px solid var(--line);
   align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 6px;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  min-height: 0;
+  overflow: hidden;
   font-size: 11px;
 }
 #wave-readouts label {
@@ -671,6 +700,7 @@ body.right-hidden #inspector {
   gap: 5px;
   color: var(--muted);
   white-space: nowrap;
+  align-items: center;
 }
 #wave-readouts output {
   color: var(--text);
@@ -682,6 +712,8 @@ body.right-hidden #inspector {
   position: relative;
 }
 #detail-wave {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
@@ -696,31 +728,117 @@ body.right-hidden #inspector {
   color: var(--muted);
   pointer-events: none;
 }
+#wave-retry {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 25px);
+  transform: translateX(-50%);
+  font-size: 12px;
+}
+.mini-wave-retry {
+  position: absolute;
+  inset: 2px 8px 2px auto;
+  min-height: 0;
+  padding: 0 6px;
+  font-size: 11px;
+}
+#loudness-strip,
+#analysis-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: none;
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  border-top: 1px solid var(--quiet);
+}
+.loudness-heading,
+.loudness-metric > span {
+  color: var(--muted);
+}
+.loudness-metric {
+  display: inline-flex;
+  gap: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.loudness-metric strong {
+  color: var(--text);
+}
+#loudness-strip button,
+#analysis-bar button {
+  min-height: 22px;
+  padding: 1px 7px;
+  font-size: inherit;
+}
+.loudness-analyze {
+  margin-left: auto;
+  background: transparent;
+  border-color: transparent;
+}
+#analysis-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#analysis-bar progress {
+  flex: 1;
+  min-width: 40px;
+  max-width: 260px;
+  height: 5px;
+  accent-color: var(--accent);
+}
+#analysis-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 #fx-panel {
   border-top: 1px solid var(--quiet);
   flex-shrink: 0;
+  min-height: 0;
+  max-height: min(150px, var(--fx-max-height, 150px));
+  overflow: auto;
+  background: var(--surface);
 }
-#fx-panel summary {
+#fx-panel:not([open]) {
   display: none;
 }
-#fx-panel[open] summary {
+#fx-panel > summary {
+  display: none;
+}
+#fx-panel[open] > summary {
   display: block;
   padding: 4px 7px;
   color: var(--accent);
   cursor: pointer;
   font-size: 12px;
 }
-#fx-panel summary span {
+#fx-panel > summary span {
   font-size: 11px;
   color: var(--muted);
   margin-left: 10px;
 }
 .fx-controls {
   display: flex;
-  gap: 18px;
+  gap: 8px 18px;
   align-items: center;
   flex-wrap: wrap;
   padding: 2px 8px 7px;
+}
+#fx-panel .settings-section {
+  display: inline-block;
+  vertical-align: top;
+  margin: 0 8px 6px;
+}
+#fx-panel .settings-section summary {
+  padding: 4px 0;
+  font-size: 11px;
+}
+#fx-panel .settings-section button {
+  font-size: 11px;
+  min-height: 23px;
+  margin-right: 3px;
 }
 .fx-controls label {
   display: flex;
@@ -1009,24 +1127,60 @@ body[data-theme="paper"] #wave-readouts output {
 .folder-branch {
   margin-left: 12px;
 }
-.folder-branch summary {
-  cursor: pointer;
+#sources .folder-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  list-style: none;
+  min-width: 0;
 }
-.folder-branch summary .nav-item {
-  display: inline-flex;
-  width: calc(100% - 18px);
+#sources .folder-row::-webkit-details-marker {
+  display: none;
+}
+#sources .folder-row .nav-item {
+  flex: 1;
+  min-width: 0;
+  width: 0;
+  display: flex;
+  padding-left: 4px;
+}
+#sources .folder-toggle {
+  flex: none;
+  width: 18px;
+  padding: 0;
+  min-height: 26px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+}
+#sources .folder-toggle[aria-expanded="true"] {
+  transform: rotate(90deg);
+}
+#sources .folder-toggle:disabled {
+  visibility: hidden;
+}
+#sources .folder-count {
+  margin-left: auto;
+}
+#ucs-directory > summary {
+  display: none;
+}
+#ucs-categories > details > summary {
+  cursor: pointer;
+  font-size: inherit;
+  letter-spacing: 0;
+  padding: 7px 9px;
+  font-weight: 500;
+}
+#ucs-categories button.nav-item {
+  font-size: inherit;
+  min-height: 29px;
 }
 
 .row-artwork {
   height: 100%;
   max-width: 100%;
   object-fit: contain;
-}
-.artwork-cover.pinned {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
 }
 .result-cell.waveform {
   position: relative;
@@ -1064,9 +1218,6 @@ body[data-theme="paper"] #wave-readouts output {
 [hidden] {
   display: none !important;
 }
-#app {
-  grid-template-rows: 115px minmax(145px, 1fr) 5px var(--audition-height) 27px;
-}
 #main-menu {
   height: 28px;
   display: flex;
@@ -1091,20 +1242,6 @@ body[data-theme="paper"] #wave-readouts output {
   font-size: 11px;
   letter-spacing: 1px;
   padding-right: 7px;
-}
-#browser {
-  grid-template-columns:
-    44px var(--sidebar-left) 5px minmax(160px, 1fr)
-    5px var(--sidebar-right);
-}
-body.left-hidden #browser {
-  grid-template-columns: 44px 0 0 minmax(160px, 1fr) 5px var(--sidebar-right);
-}
-body.right-hidden #browser {
-  grid-template-columns: 44px var(--sidebar-left) 5px minmax(160px, 1fr) 0 0;
-}
-body.left-hidden.right-hidden #browser {
-  grid-template-columns: 44px 0 0 minmax(160px, 1fr) 0 0;
 }
 #navigation-rail {
   display: flex;

@@ -5893,11 +5893,7 @@ function store_wave_memory(key, waveform)
   end
 end
 
-function queue_wave(asset, points, priority, preserve_channels, spectral)
-  if asset.wave_error then
-    return nil
-  end
-
+function queue_wave(asset, points, priority, preserve_channels, spectral, defer_disk)
   preserve_channels = preserve_channels == true
   spectral = spectral == true
 
@@ -5911,7 +5907,9 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
     return cached.waveform
   end
 
-  if not state.wave_checked[key] then
+  if asset.wave_error then return nil end
+
+  if not defer_disk and not state.wave_checked[key] then
     state.wave_checked[key] = true
 
     local disk_wave =
@@ -5945,6 +5943,7 @@ function queue_wave(asset, points, priority, preserve_channels, spectral)
       points = points,
       preserve_channels = preserve_channels,
       spectral = spectral,
+      probe_disk = defer_disk == true,
     }
 
     if priority then
@@ -5980,6 +5979,17 @@ function process_wave_queue()
       return
     end
 
+    -- WebView queues every visible row without doing disk I/O in the RPC.
+    -- Probe one queued cache per background tick, so later rows cannot starve.
+    if job.probe_disk and not state.wave_checked[job.key] then
+      state.wave_checked[job.key] = true
+      local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+      if cached then
+        store_wave_memory(job.key, cached)
+        state.wave_queued[job.key] = nil
+        return
+      end
+    end
     state.wave_active = job
     job.job_token =
       Jobs.begin(
