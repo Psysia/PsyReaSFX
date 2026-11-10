@@ -4,7 +4,9 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { chromium } = require(process.argv[2] || "playwright");
-const root = path.resolve(__dirname, "../src/web");
+const root = path.resolve(
+  process.argv[3] || path.join(__dirname, "../src/web"),
+);
 const displayVersion = JSON.parse(
   fs.readFileSync(path.join(root, "app.json"), "utf8"),
 ).version.replace("-beta", " Beta ");
@@ -65,6 +67,16 @@ async function main() {
       let playingPath = null;
       let language = "zh";
       const calls = [];
+      let stateOverrides = {};
+      window.testSetState = (patch) => {
+        stateOverrides = { ...stateOverrides, ...patch };
+        for (const key of Object.keys(patch)) {
+          if (patch[key] === undefined) delete stateOverrides[key];
+        }
+        listener({ data: { protocol: 1, event: "state", data: state() } });
+      };
+      window.testEmitState = () =>
+        listener({ data: { protocol: 1, event: "state", data: state() } });
       window.testCalls = calls;
       const peaks = Array.from(
         { length: 128 },
@@ -166,6 +178,7 @@ async function main() {
           fx,
           tasks: {},
           aiHasMore: false,
+          ...stateOverrides,
         };
       }
       window.chrome = {
@@ -176,7 +189,10 @@ async function main() {
           removeEventListener() {},
           postMessage(request) {
             calls.push(request);
-            if (request.method === "settings.get" && window.testSettingsError) {
+            if (
+              (request.method === "settings.get" && window.testSettingsError) ||
+              (request.method === "settings.update" && window.testUpdateError)
+            ) {
               queueMicrotask(() =>
                 listener({
                   data: {
@@ -202,7 +218,29 @@ async function main() {
                       },
                     ]
                   : [];
-            if (request.method === "management.get") result = [];
+            if (request.method === "management.get")
+              result = [
+                {
+                  kind: "library",
+                  label: "音效库",
+                  items: [{ id: "lib1", name: "Mechanical Motion" }],
+                  actions: ["add", "rename", "scan", "remove"],
+                },
+                {
+                  kind: "collection",
+                  label: "集合",
+                  items: [
+                    { id: "c1", name: "机械场景素材箱", kind: "project" },
+                  ],
+                  actions: ["addSelection", "rename", "bind"],
+                },
+                {
+                  kind: "search",
+                  label: "保存的搜索",
+                  items: [],
+                  actions: ["activate", "rename"],
+                },
+              ];
             if (request.method === "session.ready")
               result = {
                 protocol: 1,
@@ -268,7 +306,42 @@ async function main() {
               fx = { ...fx, ...request.params };
             if (request.method === "settings.get")
               result = {
+                loading: Boolean(stateOverrides.startup),
                 schema: [
+                  {
+                    key: "insert_fade_ms",
+                    label: "插入淡化",
+                    kind: "number",
+                    group: "常规",
+                    minimum: 0,
+                    maximum: 100,
+                  },
+                  {
+                    key: "waveform_hex",
+                    label: "普通波形颜色",
+                    kind: "color",
+                    group: "试听颜色",
+                  },
+                  {
+                    key: "multichannel_waveform",
+                    label: "多声道波形",
+                    kind: "boolean",
+                    group: "波形与分析",
+                  },
+                  {
+                    key: "auto_backup",
+                    label: "自动备份",
+                    kind: "boolean",
+                    group: "维护",
+                  },
+                  {
+                    key: "transfer_fade_in_ms",
+                    label: "淡入",
+                    kind: "number",
+                    group: "Transfer",
+                    minimum: 0,
+                    maximum: 1000,
+                  },
                   {
                     key: "language",
                     label: "语言",
@@ -283,7 +356,15 @@ async function main() {
                     group: "试听颜色",
                   },
                 ],
-                values: { played_text_enabled: playedText, language },
+                values: {
+                  played_text_enabled: playedText,
+                  language,
+                  insert_fade_ms: 10,
+                  waveform_hex: "#c7b57f",
+                  multichannel_waveform: true,
+                  auto_backup: true,
+                  transfer_fade_in_ms: 5,
+                },
                 transfer_dir: "D:\\Exports",
                 transfer_template: "{name}",
                 transfer_format: "wav24",
@@ -338,26 +419,51 @@ async function main() {
       await page.locator(".result-row.played:not(.selected)").count(),
       1,
     );
+    await page.evaluate(() =>
+      window.testSetState({
+        rowAppearance: { textEnabled: false, waveformEnabled: true },
+      }),
+    );
+    assert.equal(
+      await page.locator(".result-row.played").count(),
+      0,
+      "appearance snapshots must redraw unchanged catalog data",
+    );
+    await page.evaluate(() =>
+      window.testSetState({
+        rowAppearance: {
+          textEnabled: true,
+          waveformEnabled: true,
+          text: "#aabbcc",
+        },
+      }),
+    );
+    assert.equal(await page.locator(".result-row.played").count(), 1);
+    assert.equal(
+      await page
+        .locator(".result-row.played")
+        .evaluate((element) => element.style.getPropertyValue("--played-text")),
+      "#aabbcc",
+    );
+    await page.evaluate(() =>
+      window.testSetState({ rowAppearance: undefined }),
+    );
     await page.locator("#settings-open").click();
     await page.waitForSelector("#settings-dialog[open]", { timeout: 3000 });
-    await page
-      .locator("#settings-body summary")
-      .filter({ hasText: "试听颜色" })
-      .click();
+    await page.locator('[data-section="appearance"]').click();
     await page.locator('[data-setting="played_text_enabled"]').uncheck();
+    await page.locator("#settings-apply").click();
     await page.waitForFunction(
       () => document.querySelectorAll(".result-row.played").length === 0,
     );
     await page.locator('[data-setting="played_text_enabled"]').check();
-    await page
-      .locator("#settings-body summary")
-      .filter({ hasText: "常规" })
-      .click();
+    await page.locator('[data-section="general"]').click();
     const originalDescription = await page
       .locator(".result-cell.description")
       .first()
       .textContent();
     await page.locator('[data-setting="language"]').selectOption("en");
+    await page.locator("#settings-apply").click();
     await page.waitForFunction(() => document.documentElement.lang === "en-US");
     await page
       .getByRole("button", { name: "Close settings", exact: true })
@@ -370,8 +476,220 @@ async function main() {
     fs.mkdirSync(output, { recursive: true });
     await page.screenshot({ path: path.join(output, "english-settings.png") });
     await page.locator('[data-setting="language"]').selectOption("zh");
+    await page.locator("#settings-apply").click();
     await page.waitForFunction(() => document.documentElement.lang === "zh-CN");
     await page.getByRole("button", { name: "关闭设置" }).click();
+    // The migrated menus and settings must work as actual workflows, not just render.
+    const initialPageCalls = await page.evaluate(
+      () =>
+        window.testCalls.filter((call) => call.method === "catalog.page")
+          .length,
+    );
+    await page.evaluate(() => {
+      for (let i = 0; i < 25; i++) window.testEmitState();
+    });
+    await page.waitForTimeout(150);
+    const idlePageCalls = await page.evaluate(
+      () =>
+        window.testCalls.filter((call) => call.method === "catalog.page")
+          .length,
+    );
+    assert.equal(
+      idlePageCalls,
+      initialPageCalls,
+      "unchanged playback snapshots must not reload the catalog",
+    );
+    for (const key of ["file", "library", "edit", "view", "transfer", "help"]) {
+      await page.locator(`[data-menu="${key}"]`).click();
+      assert(
+        (await page.locator("#popover:popover-open button").count()) > 0,
+        `${key} menu must open`,
+      );
+      await page.keyboard.press("Escape");
+    }
+    await page.evaluate(() =>
+      window.testSetState({ startup: { phase: "读取素材索引" } }),
+    );
+    await page.locator("#startup-state").waitFor();
+    assert(
+      await page.locator("#play").isDisabled(),
+      "startup must disable asset actions",
+    );
+    const loadingCalls = await page.evaluate(
+      () =>
+        window.testCalls.filter((call) => call.method === "catalog.page")
+          .length,
+    );
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="general"]').click();
+    await page.locator('[data-setting="insert_fade_ms"]').fill("18");
+    assert(
+      await page.locator("#settings-apply").isDisabled(),
+      "settings writes must wait for startup",
+    );
+    assert.match(await page.locator("#dialog-status").textContent(), /加载/);
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((call) => call.method === "catalog.page")
+            .length,
+      ),
+      loadingCalls,
+      "loading must not poll the catalog",
+    );
+    await page.evaluate(() => window.testSetState({ startup: null }));
+    await page.waitForFunction(
+      () => !document.querySelector("#settings-apply").disabled,
+    );
+    await page.locator("#settings-discard").click();
+    await page.locator("#settings-close").click();
+    await page.locator("#settings-open").click();
+    for (const key of [
+      "general",
+      "appearance",
+      "waveform",
+      "libraries",
+      "collections",
+      "transfer",
+      "ai",
+      "maintenance",
+      "about",
+    ]) {
+      await page.locator(`[data-section="${key}"]`).click();
+      await page.locator("#settings-body > h2").waitFor();
+      assert(
+        (await page.locator("#settings-body .settings-card").count()) > 0,
+        `${key} settings must have content`,
+      );
+    }
+    await page.locator('[data-section="ai"]').click();
+    await page
+      .locator('#settings-body input[data-field="name"]')
+      .fill("Unsaved preset");
+    await page.locator('[data-section="appearance"]').click();
+    await page.locator('[data-section="ai"]').click();
+    assert.equal(
+      await page
+        .locator('#settings-body input[data-field="name"]')
+        .inputValue(),
+      "Unsaved preset",
+      "AI draft must survive navigation",
+    );
+    await page.locator("#settings-close").click();
+    assert(
+      await page
+        .locator("#settings-dialog")
+        .evaluate((element) => element.open),
+      "closing must preserve an unsaved AI preset",
+    );
+    await page.locator("#settings-discard").click();
+    await page.locator('[data-section="general"]').click();
+    const updatesBefore = await page.evaluate(
+      () =>
+        window.testCalls.filter((call) => call.method === "settings.update")
+          .length,
+    );
+    await page.locator('[data-setting="insert_fade_ms"]').fill("25");
+    await page.locator('[data-setting="insert_fade_ms"]').press("Enter");
+    assert(
+      await page
+        .locator("#settings-dialog")
+        .evaluate((element) => element.open),
+      "Enter in a setting must not close the panel",
+    );
+    await page.locator('[data-section="appearance"]').click();
+    await page.locator('[data-section="general"]').click();
+    assert.equal(
+      await page.locator('[data-setting="insert_fade_ms"]').inputValue(),
+      "25",
+      "draft must survive category navigation",
+    );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((call) => call.method === "settings.update")
+            .length,
+      ),
+      updatesBefore,
+      "settings are staged until Apply",
+    );
+    await page.evaluate(() => {
+      window.testUpdateError = true;
+    });
+    await page.locator("#settings-apply").click();
+    await page.locator("#dialog-status.error").waitFor();
+    assert.equal(
+      await page.locator('[data-setting="insert_fade_ms"]').inputValue(),
+      "25",
+      "a failed save must retain the draft",
+    );
+    await page.evaluate(() => {
+      window.testUpdateError = false;
+    });
+    await page.locator("#settings-apply").click();
+    await page.waitForFunction(
+      () => document.querySelector("#settings-apply").disabled,
+    );
+    await page.locator("#settings-search").fill("波形");
+    await page.locator('[data-setting="waveform_hex"]').waitFor();
+    await page.locator("#settings-search").fill("");
+    await page.locator('[data-section="appearance"]').click();
+    await page.screenshot({ path: path.join(output, "settings-rewrite.png") });
+    await page.locator("#settings-close").click();
+    await page.locator('[data-menu="library"]').click();
+    await page
+      .getByRole("button", { name: "新建播放列表", exact: true })
+      .click();
+    await page.locator("#input-value").fill("My playlist");
+    await page.locator("#input-value").press("Enter");
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "collection.create" &&
+          call.params.kind === "playlist" &&
+          call.params.name === "My playlist",
+      ),
+    );
+    await page.locator("#save-region").click();
+    await page.locator("#input-value").fill("Metal tail");
+    await page.locator("#input-value").press("Enter");
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "region.action" && call.params.name === "Metal tail",
+      ),
+    );
+    await page.locator("#transfer-open").click();
+    await page
+      .locator('[data-field="transfer_template"]')
+      .fill("{name}_edited");
+    await page.evaluate(() => window.testEmitState());
+    assert.equal(
+      await page.locator('[data-field="transfer_template"]').inputValue(),
+      "{name}_edited",
+      "playback snapshots must not destroy Transfer input",
+    );
+    await page.locator('[data-inspector="metadata"]').click();
+    await page.locator('[data-inspector="transfer"]').click();
+    assert.equal(
+      await page.locator('[data-field="transfer_template"]').inputValue(),
+      "{name}_edited",
+      "Transfer draft must survive inspector tabs",
+    );
+    await page.locator('[data-inspector="metadata"]').click();
+    await page.evaluate(() =>
+      window.testSetState({ tasks: { transfer: true, scan: true } }),
+    );
+    await page.locator("#tasks-open").click();
+    await page
+      .getByRole("button", { name: "停止 · 扫描", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) => call.method === "tasks.cancel" && call.params.task === "scan",
+      ),
+    );
+    await page.evaluate(() => window.testSetState({ tasks: {} }));
     await page.locator("#search").fill("mech");
     await page.waitForSelector(
       '#search-suggestions:popover-open [role="option"]',
@@ -413,7 +731,8 @@ async function main() {
       window.testSettingsError = false;
     });
     await page.getByRole("button", { name: "重新读取设置" }).click();
-    await page.locator('#settings-body input[data-field="url"]').waitFor();
+    await page.locator('[data-section="ai"]').click();
+    await page.locator('#settings-body input[type="password"]').waitFor();
     await page.getByRole("button", { name: "关闭设置" }).click();
     const before = await page.locator("#detail-wave").boundingBox();
     await page.locator("#left-toggle").click();
@@ -661,7 +980,7 @@ async function main() {
     );
     assert.deepEqual(errors, [], "UI must not raise JavaScript errors");
     console.log(
-      "WebView UI verified: bounded 500k viewport, full-width waveform across sidebar/FX changes, optional columns, search, theme persistence",
+      "WebView UI verified: bounded 500k viewport, full-width waveform, menus, startup/settings drafts and retries, AI drafts, Transfer drafts, task cancellation, localization, theme persistence",
     );
     console.log(output);
   } finally {

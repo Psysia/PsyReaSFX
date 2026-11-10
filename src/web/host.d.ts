@@ -40,6 +40,14 @@ export interface Asset {
   truncated?: Record<string, boolean>;
   selected?: boolean;
   waveform?: Waveform | null;
+  waveError?: boolean;
+}
+
+export interface DetailWaveform {
+  path: string;
+  duration: number;
+  waveform?: Waveform | null;
+  error?: string;
 }
 
 export interface CatalogPage {

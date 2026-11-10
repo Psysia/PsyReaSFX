@@ -1,5 +1,5 @@
 -- @description PsyReaSFX - 高性能内联波形音效浏览器
--- @version 0.9.3-beta6
+-- @version 0.9.3-beta7
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 6"
+local VERSION = "0.9.3 Beta 7"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta6",
-  source_sha256 = "5aaceb0a86c8f26fff881426e596c7f45e3f3520da0a853cbde2b050bbd49b3f",
+  release_id = "PsyReaSFX/0.9.3-beta7",
+  source_sha256 = "a8dd36abc9f58ad7de8cc3c9643b0dbaa4d5a85ed8d145afa06a9d57f980c8a7",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -17147,6 +17147,7 @@ local function asset_data(asset)
     favorite = state.favorites[asset_path_sort_key(asset)] == true,
     marked = asset.marked == true,
     played = asset_is_session_played(asset) == true,
+    waveError = not not asset.wave_error,
     previewCount = asset.preview_count or 0,
     usedCount = asset.used_count or 0,
     workflowLabel = workflow_label(asset.workflow_status or "none"),
@@ -17202,7 +17203,8 @@ local function send(message)
 end
 
 local function waveform(asset, points, channels)
-  local wave = queue_wave(asset, points, channels, channels, state.spectral_peaks_enabled)
+  local preserve = channels and state.multichannel_waveform ~= false
+  local wave = queue_wave(asset, points, channels, preserve, channels and state.spectral_peaks_enabled)
   if not wave then
     return nil
   end
@@ -17379,12 +17381,13 @@ WebUI.handlers["catalog.page"] = function(params)
   local limit = math.floor(number(params.limit or 60, 1, 100))
   local items = {}
   local bytes = 0
+  local wave_deadline = reaper.time_precise() + 0.003
   for index = offset + 1, math.min(offset + limit, #state.results) do
     local asset = state.results[index]
     local item = asset_data(asset)
     item.index = index
     item.selected = state.selected_set[asset_path_sort_key(asset)] == true
-    if params.waveforms ~= false then
+    if params.waveforms ~= false and reaper.time_precise() < wave_deadline then
       item.waveform = waveform(asset, state.mini_wave_points, false)
     end
     local size = #neural_json_encode(item)
@@ -17430,6 +17433,11 @@ WebUI.handlers["catalog.query"] = function(params)
     assert(value == nil or type(value) == "string", "无效筛选参数")
   end
   if params.search ~= nil then
+    if state.ai_semantic_session then ai_semantic_cancel() end
+    if state.view == "ai_semantic" then
+      AppState.set("view", "all")
+      if state.sort_mode == "ai_order" then AppState.apply({ sort_mode = "name", sort_desc = false }) end
+    end
     AppState.set("search", text(params.search, 4096))
   end
   if params.view then
@@ -17464,6 +17472,7 @@ WebUI.handlers["catalog.sort"] = function(params)
     used = true,
     previewed = true,
     similarity = true,
+    ai_order = true,
   }
   assert(sorts[params.field], "未知排序字段")
   AppState.apply({
@@ -17569,6 +17578,7 @@ WebUI.handlers["waveform.get"] = function(params)
     path = asset.path,
     duration = asset.duration or 0,
     waveform = waveform(asset, math.floor(number(params.points or 1024, 64, 4096)), true),
+    error = asset.wave_error and "无法生成波形，请检查源文件是否可读取" or nil,
   }
 end
 WebUI.handlers["preview.play"] = function(params)
@@ -17688,10 +17698,20 @@ WebUI.handlers["metadata.batch"] = function(params)
   return true
 end
 
+WebUI.handlers["metadata.get"] = function(params)
+  local asset = asset_for(params.path)
+  local result = { path = asset.path, truncated = {} }
+  for _, field in ipairs(metadata_edit_fields()) do
+    local value = tostring(asset[field.key] or "")
+    result[field.key] = text(value, 65536)
+    if result[field.key] ~= value then result.truncated[field.key] = true end
+  end
+  return result
+end
 WebUI.handlers["metadata.save"] = function(params)
   writable()
   local asset = asset_for(params.path)
-  local current = asset_data(asset)
+  local current = WebUI.handlers["metadata.get"]({ path = asset.path })
   for key, value in pairs(params.values or {}) do
     local allowed = false
     for _, field in ipairs(metadata_edit_fields()) do
@@ -17702,13 +17722,16 @@ WebUI.handlers["metadata.save"] = function(params)
     assert(allowed, "不可编辑的元数据字段")
     assert(
       not current.truncated[key],
-      "字段超出当前编辑长度，请使用原元数据编辑器处理完整内容"
+      "字段超过 64 KiB，不能用摘要覆盖完整内容"
     )
+    local original = (params.original or {})[key]
+    local library_fallback = key == "library" and asset.library == nil
+      and original == ((state.library_by_id[asset.library_id] or {}).name or "")
     assert(
-      current[key] == (params.original or {})[key],
+      current[key] == original or library_fallback,
       "后台已更新此字段，请重新载入后编辑"
     )
-    assert(type(value) == "string" and #value <= 8192, "元数据文本过长")
+    assert(type(value) == "string" and #value <= 65536, "元数据文本过长")
   end
   state.metadata_editor.signature = ""
   sync_metadata_editor({ asset })
@@ -17760,7 +17783,8 @@ WebUI.handlers["library.add"] = function(params)
 end
 WebUI.handlers["collection.create"] = function(params)
   writable()
-  local collection = create_collection(params.kind)
+  assert(params.kind == "project" or params.kind == "playlist", "未知集合类型")
+  local collection = create_collection(params.kind, params.name and text(params.name, 128))
   return collection and { id = collection.id, name = collection.name } or false
 end
 WebUI.handlers["collection.add"] = function(params)
@@ -17784,7 +17808,8 @@ WebUI.handlers["tab.action"] = function(params)
     workspace_tab_move(params.id, number(params.direction, -1, 1))
   elseif params.action == "rename" then
     local tab = assert(workspace_tab_by_id(params.id), "标签页已关闭")
-    local ok, name = reaper.GetUserInputs("重命名标签页", 1, "名称:", tab.name or "")
+    local ok, name = true, params.name
+    if name == nil then ok, name = reaper.GetUserInputs("重命名标签页", 1, "名称:", tab.name or "") end
     if ok then
       tab.name = text(name, 128)
       AppState.mark_dirty("config_dirty")
@@ -17812,8 +17837,21 @@ WebUI.handlers["insert"] = function(params)
   end
   return true
 end
+WebUI.handlers["transfer.directory"] = function(params)
+  if params.action == "choose" then prompt_transfer_directory()
+  elseif params.action == "default" then AppState.apply({ transfer_dir = DEFAULT_TRANSFER_DIR, config_dirty = true })
+  elseif params.action == "open" then
+    local path = text(params.path or state.transfer_dir)
+    assert(path ~= "", "请先设置输出目录")
+    open_folder(path)
+  else error("未知输出目录操作") end
+  return state.transfer_dir
+end
 WebUI.handlers["transfer.start"] = function(params)
   writable()
+  assert(not state.transfer_running, "正在交付，请等待当前任务完成")
+  local targets = selected_assets()
+  assert(#targets > 0, "请先选择素材")
   local choices = {
     transfer_format = { wav16 = true, wav24 = true, wav32 = true, flac = true },
     transfer_sample_rate = {
@@ -17839,8 +17877,9 @@ WebUI.handlers["transfer.start"] = function(params)
   if params.transfer_template then
     updates.transfer_template = text(params.transfer_template, 512)
   end
+  if params.values then WebUI.handlers["settings.update"]({ values = params.values }) end
   AppState.apply(updates)
-  run_transfer(selected_assets(), #selected_assets() > 1)
+  run_transfer(targets, #targets > 1)
   return true
 end
 WebUI.handlers["region.action"] = function(params)
@@ -17848,7 +17887,14 @@ WebUI.handlers["region.action"] = function(params)
   local asset = selected_asset()
   assert(asset, "请先选择素材")
   if params.action == "save" then
-    save_current_selection_as_region(asset)
+    assert(not params.path or params.path == asset.path, "选择已改变，请重新建立选区")
+    if params.name ~= nil then
+      assert(has_selection(), "请先在大波形中建立有效选区")
+      assert(add_saved_region(asset, state.region_start, state.region_end, text(params.name, 128)), "该 Region 已存在或选区无效")
+      set_status("Region 已保存")
+    else
+      save_current_selection_as_region(asset)
+    end
   elseif params.action == "activate" then
     activate_saved_region(asset, params.index, params.play == true)
   elseif params.action == "delete" then
@@ -17895,25 +17941,30 @@ WebUI.handlers["maintenance"] = function(params)
   assert(actions[params.action], "未知维护操作")()
   return true
 end
-WebUI.handlers["tasks.cancel"] = function()
-  if state.scan then
+WebUI.handlers["tasks.cancel"] = function(params)
+  local task = params and params.task
+  local known = { scan=true, import=true, similar=true, ai=true, transfer=true, precache=true,
+    classify=true, transients=true, relink=true, remove=true, verify=true, missing=true, duplicates=true, loudness=true }
+  assert(task == nil or known[task], "未知任务")
+  local function cancel(name) return task == nil or task == name end
+  if cancel("scan") and state.scan then
     begin_scan_cancel(state.scan)
   end
-  if state.import_session then
+  if cancel("import") and state.import_session then
     cancel_import_session()
   end
-  if state.similarity_session then
+  if cancel("similar") and state.similarity_session then
     cancel_similarity_search()
   end
-  ai_semantic_cancel()
-  AppState.set("transfer_cancel_requested", true)
-  cancel_wave_precache()
-  cancel_ucs_reclassification()
-  cancel_pending_transient_detection()
-  if state.relink_plan_session then
+  if cancel("ai") then ai_semantic_cancel() end
+  if cancel("transfer") then AppState.set("transfer_cancel_requested", true) end
+  if cancel("precache") then cancel_wave_precache() end
+  if cancel("classify") then cancel_ucs_reclassification() end
+  if cancel("transients") then cancel_pending_transient_detection() end
+  if cancel("relink") and state.relink_plan_session then
     cancel_relink_plan(state.relink_plan_session, "canceled")
   end
-  if state.root_removal_session then
+  if cancel("remove") and state.root_removal_session then
     cancel_root_removal(state.root_removal_session, "canceled")
   end
   for _, field in ipairs({
@@ -17923,16 +17974,29 @@ WebUI.handlers["tasks.cancel"] = function()
     "duplicate_confirmation",
   }) do
     local job = state[field]
-    if job then
+    local owner = ({ cache_verify_session="verify", missing_audit="missing", duplicate_scan="duplicates", duplicate_confirmation="duplicates" })[field]
+    if job and cancel(owner) then
       close_duplicate_confirmation_session(job)
       Jobs.cancel(job.job_token)
       Jobs.finish(job.job_token, true, "canceled")
       AppState.set(field, nil)
     end
   end
+  if cancel("loudness") then
+    destroy_loudness_job(state.loudness_active)
+    AppState.set("loudness_active", nil)
+    AppState.apply({ loudness_queue = {}, loudness_queued = {} })
+  end
   return true
 end
 local settings_schema = {
+  { key = "watch_enabled", label = "监视已导入来源文件夹", group = "常规", kind = "boolean" },
+  { key = "transfer_dir", label = "输出目录", group = "Transfer", kind = "string" },
+  { key = "transfer_template", label = "文件名模板", group = "Transfer", kind = "string" },
+  { key = "transfer_format", label = "格式", group = "Transfer", kind = "choice", options = { "wav16", "wav24", "wav32", "flac" } },
+  { key = "transfer_sample_rate", label = "采样率", group = "Transfer", kind = "choice", options = { "source", "44100", "48000", "96000", "192000" } },
+  { key = "transfer_channels", label = "声道", group = "Transfer", kind = "choice", options = { "source", "mono", "stereo" } },
+  { key = "transfer_scope", label = "范围", group = "Transfer", kind = "choice", options = { "selection", "full" } },
   {
     key = "language",
     label = "语言",
@@ -18294,7 +18358,7 @@ WebUI.handlers["settings.get"] = function()
     values[definition.key] = state[definition.key]
   end
   local presets = {}
-  for _, preset in ipairs(state.ai_presets) do
+  for _, preset in ipairs(state.ai_presets or {}) do
     presets[#presets + 1] = { id = preset.id, name = preset.name }
   end
   return {
@@ -18312,6 +18376,8 @@ WebUI.handlers["settings.get"] = function()
     ai_key_saved = ai_semantic_preset_key_usable(),
     ai_status = state.ai_preset_status,
     ai_presets = presets,
+    loading = state.startup_session ~= nil,
+    wave_cache_dir = state.wave_cache_dir,
     schema = settings_schema,
     values = values,
     ai_active_preset_id = state.ai_active_preset_id,
@@ -18351,7 +18417,25 @@ WebUI.handlers["settings.update"] = function(params)
     end
     updates[key] = value
   end
+  local wave_changed = updates.mini_wave_points and updates.mini_wave_points ~= state.mini_wave_points
+    or updates.multichannel_waveform ~= nil and updates.multichannel_waveform ~= state.multichannel_waveform
+  local loudness_changed = updates.show_loudness_metrics ~= nil and updates.show_loudness_metrics ~= state.show_loudness_metrics
+  local watch = updates.watch_enabled
+  updates.watch_enabled = nil
   AppState.apply(updates)
+  if watch ~= nil then set_watch_folder_enabled(watch) end
+  if updates.watch_interval then AppState.set("next_watch", reaper.time_precise() + state.watch_interval) end
+  if wave_changed then
+    AppState.apply({ wave_queue = {}, wave_queued = {}, wave_checked = {} })
+  end
+  if loudness_changed then
+    if state.show_loudness_metrics then request_loudness_analysis(selected_asset(), false)
+    else
+      destroy_loudness_job(state.loudness_active)
+      AppState.apply({ loudness_active = nil, loudness_queue = {}, loudness_queued = {} })
+      AppState.set("loudness_active", nil)
+    end
+  end
   AppState.mark_dirty("config_dirty")
   apply_waveform_palette()
   update_preview_parameters()
@@ -18561,7 +18645,7 @@ WebUI.handlers["management.action"] = function(params)
         add_root(target.id)
       end,
       rename = function()
-        rename_library(target)
+        rename_library(target, params.name and text(params.name, 128))
       end,
       scan = function()
         start_scan("手动扫描", roots_for_library(target.id))
@@ -18603,7 +18687,7 @@ WebUI.handlers["management.action"] = function(params)
         bind_project_bin(target, state.current_project_path)
       end,
       rename = function()
-        rename_collection(target)
+        rename_collection(target, params.name and text(params.name, 128))
       end,
       remove = function()
         delete_collection(target)
@@ -18625,7 +18709,7 @@ WebUI.handlers["management.action"] = function(params)
         activate_saved_search(target)
       end,
       rename = function()
-        rename_saved_search(target)
+        rename_saved_search(target, params.name and text(params.name, 128))
       end,
       remove = function()
         delete_saved_search(target)
@@ -18643,7 +18727,7 @@ WebUI.handlers["records.action"] = function(params)
     restorePlayed = restore_last_session_played_highlights,
     clearPlayed = clear_session_played_highlights,
     clearSavedPlayed = clear_saved_session_played_highlights,
-    saveSearch = save_current_search,
+    saveSearch = function() save_current_search(params.name and text(params.name, 128)) end,
     clearSimilarity = clear_similarity_cache,
     clearWaveforms = clear_wave_cache,
     clearArtwork = clear_artwork_cache,
@@ -18736,7 +18820,8 @@ WebUI.handlers["settings.ai"] = function(params)
 end
 
 function webview_receive()
-  for _ = 1, 8 do
+  local deadline = reaper.time_precise() + 0.004
+  for _ = 1, 4 do
     local raw = reaper.ReaWeb_Receive(WebUI.window)
     if raw == "" then
       break
@@ -18751,7 +18836,7 @@ function webview_receive()
     then
       local handler = WebUI.handlers[request.method]
       local ok, result
-      if state.startup_session and request.method ~= "session.ready" then
+      if state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get" then
         ok, result = false, "素材库正在加载，请稍后重试"
       elseif handler then
         ok, result = pcall(handler, request.params or {})
@@ -18765,8 +18850,11 @@ function webview_receive()
         response.error = ai_semantic_redact(tostring(result))
       end
       send(response)
-      WebUI.next_publish = 0
+      if request.method ~= "catalog.page" and request.method ~= "waveform.get"
+        and request.method ~= "settings.get" and request.method ~= "catalog.folders"
+        and request.method ~= "catalog.suggestions" then WebUI.next_publish = 0 end
     end
+    if reaper.time_precise() >= deadline then break end
   end
 end
 
@@ -18869,6 +18957,11 @@ function webview_publish()
     regionStart = state.region_start,
     regionEnd = state.region_end,
     autoPreview = state.auto_preview,
+    root = state.root_filter,
+    category = state.ucs_filter_category,
+    catid = state.ucs_filter_catid,
+    selectionRevision = SelectionIndex.revision,
+    aiConnectionStatus = state.ai_preset_status,
     multichannelWaveform = state.multichannel_waveform,
     detailPoints = state.precache_points,
     spectralPeaks = state.spectral_peaks_enabled,
@@ -20328,7 +20421,7 @@ function process_auxiliary_save()
   end
 end
 
-function create_collection(kind)
+function create_collection(kind, supplied_name)
   if state.root_removal_session then
     set_status("请等待来源移除完成后再新建集合", true)
     return nil
@@ -20348,13 +20441,16 @@ function create_collection(kind)
     and "当前项目"
     or "新播放列表"
 
-  local ok, name =
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       title,
       1,
       "名称:",
       default_name
     )
+  end
 
   name = trim(name)
 
@@ -20427,18 +20523,21 @@ function create_collection(kind)
   return collection
 end
 
-function rename_collection(collection)
+function rename_collection(collection, supplied_name)
   if not collection then
     return
   end
 
-  local ok, name =
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       "重命名集合",
       1,
       "名称:",
       collection.name
     )
+  end
 
   name = trim(name)
 
@@ -20696,8 +20795,10 @@ function save_saved_searches()
   return true
 end
 
-function save_current_search()
-  local ok, name =
+function save_current_search(supplied_name)
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       "保存当前搜索",
       1,
@@ -20706,6 +20807,7 @@ function save_current_search()
         and compact(state.search, 30)
         or "新搜索"
     )
+  end
 
   name = trim(name)
 
@@ -20783,18 +20885,21 @@ function activate_saved_search(saved)
   set_status("已载入搜索：" .. saved.name)
 end
 
-function rename_saved_search(saved)
+function rename_saved_search(saved, supplied_name)
   if not saved then
     return
   end
 
-  local ok, name =
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name =
     reaper.GetUserInputs(
       "重命名保存搜索",
       1,
       "名称:",
       saved.name
     )
+  end
 
   name = trim(name)
 
@@ -32812,13 +32917,16 @@ function process_ucs_count_rebuild()
   end
 end
 
-function rename_library(library)
-  local ok, name = reaper.GetUserInputs(
+function rename_library(library, supplied_name)
+  local ok, name = true, supplied_name
+  if supplied_name == nil then
+    ok, name = reaper.GetUserInputs(
     "重命名音效库",
     1,
     "名称:",
     library.name
   )
+  end
 
   name = trim(name or "")
 

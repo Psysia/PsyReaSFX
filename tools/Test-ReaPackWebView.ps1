@@ -82,7 +82,7 @@ $generated = Join-Path $PackagePath 'PsyReaSFX.lua'
 if ((Payload-Hash $main) -cne (Payload-Hash $generated)) { throw 'ReaPack main script differs from the assembled WebView release.' }
 $text = Get-Content -LiteralPath $main -Raw -Encoding UTF8
 if ($text -notmatch 'local WEBVIEW_MODE = true' -or $text -notmatch ('(?m)^-- @version ' + [regex]::Escape($app.version) + '\r?$')) { throw 'ReaPack entry is not the expected WebView beta.' }
-foreach ($required in @('web/index.html','web/app.json','web/host.js','web/app.js','web/styles.css','runtime-lock.json','assets/brand/psyreasfx-icon.png','assets/ucs/ucs-8.2.1.tsv')) {
+foreach ($required in @('web/index.html','web/app.json','web/host.js','web/app.js','web/settings.js','web/icons.js','web/styles.css','runtime-lock.json','assets/brand/psyreasfx-icon.png','assets/ucs/ucs-8.2.1.tsv')) {
     if (-not (Test-Path -LiteralPath (Join-Path $FixtureDirectory "Scripts/Psysia/$required"))) { throw "Missing script asset: $required" }
 }
 if ((Get-FileHash -LiteralPath (Join-Path $FixtureDirectory 'UserPlugins/reaper_reawebapi-x64.dll')).Hash.ToLowerInvariant() -cne $lock.binary.sha256) { throw 'Native extension checksum mismatch.' }
