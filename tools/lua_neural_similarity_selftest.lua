@@ -17,7 +17,7 @@ Host = {
   end,
   RecursiveCreateDirectory = function() return 1 end,
   ExecProcess = function(command, timeout)
-    assert(timeout == -2 and command:find("capabilities", 1, true))
+    assert(timeout == -2 and command:match("^powershell%.exe .*%-WindowStyle Hidden %-EncodedCommand [A-Za-z0-9+/=]+$"))
     return ""
   end,
 }

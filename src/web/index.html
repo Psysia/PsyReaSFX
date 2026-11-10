@@ -99,7 +99,7 @@
           >
             ▱
           </button>
-          <button data-rail="all" title="全部声音" aria-label="全部声音">
+          <button data-rail="all" title="浏览与筛选" aria-label="浏览与筛选">
             ≡
           </button>
           <button data-rail="favorites" title="收藏" aria-label="收藏">
@@ -114,44 +114,58 @@
           <button data-rail="collections" title="集合" aria-label="集合">
             ▧
           </button>
-          <span class="workspace-spacer"></span>
-          <button
-            data-rail="settings"
-            title="设置与维护"
-            aria-label="设置与维护"
-          >
-            ⚙
-          </button>
         </nav>
         <aside id="sources" aria-label="来源与集合">
-          <div class="section-label">浏览</div>
-          <div id="views"></div>
-          <div class="section-label">
-            音效库
-            <button id="add-library" title="添加音效库" aria-label="添加音效库">
-              ＋
-            </button>
+          <div class="source-heading">
+            <strong id="source-title">音效库与文件夹</strong>
           </div>
-          <div id="libraries"></div>
-          <details id="ucs-directory">
-            <summary class="section-label">UCS 分类</summary>
-            <div id="ucs-categories"></div>
-          </details>
-          <div class="section-label">
-            集合
-            <button id="new-collection" title="新建集合" aria-label="新建集合">
-              ＋
-            </button>
-          </div>
-          <div id="collections"></div>
-          <details>
-            <summary class="section-label">保存的搜索</summary>
-            <div id="saved-searches"></div>
-          </details>
-          <details>
-            <summary class="section-label">工作流筛选</summary>
-            <div id="workflow-filters"></div>
-          </details>
+          <section data-source-panel="all favorites previewed">
+            <div id="views"></div>
+          </section>
+          <section data-source-panel="libraries">
+            <div class="section-label">
+              音效库
+              <button
+                id="add-library"
+                title="添加音效库"
+                aria-label="添加音效库"
+              >
+                ＋
+              </button>
+            </div>
+            <div id="libraries"></div>
+          </section>
+          <section data-source-panel="ucs">
+            <details id="ucs-directory">
+              <summary class="section-label">UCS 分类</summary>
+              <div id="ucs-categories"></div>
+            </details>
+          </section>
+          <section data-source-panel="collections">
+            <div class="section-label">
+              集合
+              <button
+                id="new-collection"
+                title="新建集合"
+                aria-label="新建集合"
+              >
+                ＋
+              </button>
+            </div>
+            <div id="collections"></div>
+          </section>
+          <section data-source-panel="all favorites">
+            <details>
+              <summary class="section-label">保存的搜索</summary>
+              <div id="saved-searches"></div>
+            </details>
+          </section>
+          <section data-source-panel="all">
+            <details>
+              <summary class="section-label">工作流筛选</summary>
+              <div id="workflow-filters"></div>
+            </details>
+          </section>
         </aside>
         <div
           class="vertical-splitter"
@@ -243,6 +257,12 @@
             ＋ Region</button
           ><span id="range-label"></span>
         </div>
+        <div id="analysis-bar" hidden role="status">
+          <span id="analysis-label"></span
+          ><progress id="analysis-progress"></progress>
+          <span id="analysis-count"></span
+          ><button id="analysis-cancel">取消分析</button>
+        </div>
         <div id="wave-area">
           <div id="wave-readouts">
             <label>当前位置 <output id="current-time">00:00.000</output></label
@@ -258,8 +278,10 @@
             ></canvas
             ><span id="detail-playhead" hidden></span
             ><span id="wave-status">等待选择素材</span>
+            <button id="wave-retry" hidden>重试波形</button>
           </div>
         </div>
+        <div id="loudness-strip" aria-label="响度读数" hidden></div>
         <details id="fx-panel">
           <summary>FX <span>变调 · 变速 · 增益</span></summary>
           <div class="fx-controls">

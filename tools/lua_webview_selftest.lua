@@ -391,10 +391,12 @@ assert(not pcall(WebUI.handlers["metadata.save"], {
 }), "truncated fields must not be silently overwritten")
 asset.description = "original"
 assert(not pcall(WebUI.handlers["catalog.page"], { limit = 100000 }), "page size must be bounded")
-assert(
-  not pcall(WebUI.handlers["selection.set"], { revision = -1, index = 1, path = asset.path }),
-  "stale selections must fail"
-)
+assert(WebUI.handlers["selection.set"]({ revision = -1, index = 1, path = asset.path, autoPlay = false }).path == asset.path,
+  "a harmless revision change must not block an identity-matched click")
+assert(WebUI.handlers["selection.set"]({ revision = -1, index = 1, path = asset.path, shift = true }).stale,
+  "range selection must request a fresh page after reordering")
+assert(WebUI.handlers["selection.set"]({ revision = WebUI.revision, index = 1, path = "different.wav" }).stale,
+  "a stale row must never select a different asset")
 assert(
   not pcall(WebUI.handlers["preview.parameters"], { pitch = 100 }),
   "invalid DSP range must fail"
@@ -517,6 +519,56 @@ assert(runtime.transfer_cancel_requested == true)
 assert(not pcall(WebUI.handlers["tasks.cancel"], { task = "unknown" }))
 
 -- Loading is a readable UI state, not an unresponsive settings button.
+do
+  local saved = {}
+  for _, key in ipairs({ "results", "assets", "wave_cache", "wave_cache_count", "wave_clock", "wave_checked", "wave_queued", "wave_queue", "wave_active", "next_wave_job", "precache_session", "import_session", "scan", "transfer_running", "root_records", "folder_navigation_trees", "folder_navigation_ready", "folder_navigation_job", "folder_navigation_revision", "folder_navigation_built_revision" }) do saved[key] = { runtime[key] } end
+  local disk_loader, decoder, heavy, clock = load_wave_from_disk, step_wave_job, can_run_heavy_job, reaper.time_precise
+  local reads, ticks = 0, 100
+  reaper.time_precise = function() ticks = ticks + 0.004; return ticks end
+  can_run_heavy_job = function() return true end
+  load_wave_from_disk = function() reads = reads + 1; return { count = 2, peaks = { 0.2, 0.8 } } end
+  step_wave_job = function() error("warm cache must not decode source audio") end
+  runtime.wave_cache, runtime.wave_checked, runtime.wave_queued, runtime.wave_queue = {}, {}, {}, {}
+  runtime.wave_cache_count, runtime.wave_clock, runtime.next_wave_job = 0, 0, 0
+  runtime.wave_active, runtime.precache_session, runtime.import_session, runtime.scan, runtime.transfer_running = nil, nil, nil, nil, false
+  runtime.results = {}
+  for index = 1, 32 do
+    runtime.results[index] = { path = fixture .. "\\cached-" .. index .. ".wav", name = "cached", ready = true, channels = 2 }
+  end
+  WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
+  assert(reads == 0 and #runtime.wave_queue == 32, "all visible waves must enqueue without blocking RPC on disk reads")
+  runtime.import_session = { phase = "index" }
+  process_wave_queue()
+  runtime.import_session, runtime.precache_session = nil, { phase = "collect" }
+  process_wave_queue()
+  assert(reads == 2 and #runtime.wave_queue == 30, "existing disk waves must remain readable during import and precache")
+  runtime.precache_session = nil
+  for _ = 1, 30 do process_wave_queue() end
+  local cached_page = WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
+  assert(reads == 32 and #runtime.wave_queue == 0)
+  for _, row in ipairs(cached_page.items) do assert(row.waveform and row.waveform.peaks[2] == 0.8, "later rows must not starve") end
+  local channels, multichannel = asset.channels, runtime.multichannel_waveform
+  asset.channels = 128
+  runtime.multichannel_waveform = true
+  WebUI.handlers["waveform.get"]({ path = asset.path, points = 4096 })
+  assert(runtime.wave_queue[1].points <= 183, "high-channel waveforms must fit a bounded native response")
+  asset.channels = channels
+  runtime.multichannel_waveform = multichannel
+  runtime.root_records = { { id = "web-folders", library_id = "lib", alias = "", path = "D:\\Fixture", enabled = true } }
+  runtime.assets = { { path = "D:\\Fixture\\Child\\Nested\\a.wav", folder = "D:\\Fixture\\Child\\Nested", root_id = "web-folders", ready = true } }
+  runtime.folder_navigation_trees, runtime.folder_navigation_ready, runtime.folder_navigation_job = {}, false, nil
+  runtime.folder_navigation_revision = 100
+  assert(WebUI.handlers["catalog.folders"]({ rootId = "web-folders", path = "D:\\Fixture" }).pending)
+  for _ = 1, 30 do process_folder_navigation_build() end
+  local folders = WebUI.handlers["catalog.folders"]({ rootId = "web-folders", path = "D:\\Fixture" })
+  assert(not folders.pending and folders.items[1].name == "Child" and folders.items[1].count == 1)
+  local children = WebUI.handlers["catalog.folders"]({ rootId = "web-folders", path = "D:\\Fixture\\Child" })
+  assert(children.items[1].name == "Nested" and not children.items[1].children, "nested folder browsing must resolve actual index nodes")
+  assert(not pcall(WebUI.handlers["catalog.folders"], { rootId = "web-folders", path = "D:\\Outside" }), "folder traversal must remain within its source")
+  for key, value in pairs(saved) do runtime[key] = value[1] end
+  load_wave_from_disk, step_wave_job, can_run_heavy_job, reaper.time_precise = disk_loader, decoder, heavy, clock
+end
+
 runtime.startup_session = { phase = "fixture loading" }
 input = { neural_json_encode({ protocol = 1, id = "loading-settings", method = "settings.get", params = {} }) }
 webview_receive()

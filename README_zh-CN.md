@@ -158,7 +158,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 | 通道 | 版本 | 说明 |
 |---|---|---|
 | 正式版 | **0.9.1** | 默认更新版本，包含 0.9.0 全部功能及可靠性与性能修复。 |
-| WebView 测试版 | **0.9.3-beta4（0.9.a）** | Windows x64 新界面，需要 ReaWebAPI，供预发布测试。 |
+| WebView 测试版 | **0.9.3-beta8（0.9.a）** | Windows x64 新界面，需要 ReaWebAPI，供预发布测试。 |
 | 旧界面测试版 | **0.9.2-beta4** | 可在 Versions 中选择回退。 |
 | 历史稳定版 | **0.9.0 / 0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
 | 可选组件 | [PsyReaSFX Neural Similarity][neural-download] | Windows x64 本地神经相似声音检索组件。 |

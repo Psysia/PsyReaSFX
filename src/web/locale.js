@@ -33,6 +33,12 @@ export function createLocalizer() {
         )
         .replace(/^确认 UCS · /, "Confirm UCS · ")
         .replace(
+          /^相似声音 · (.+)$/,
+          (_, phase) => `Similar sounds · ${english[phase] || phase}`,
+        )
+        .replace(/^展开文件夹 /, "Expand folder ")
+        .replace(/^已切换为音频特征分析：/, "Using acoustic analysis: ")
+        .replace(
           /^应用 (.+)$/,
           (_, value) => `Apply ${english[value] || value}`,
         )

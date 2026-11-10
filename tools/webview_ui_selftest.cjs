@@ -77,6 +77,10 @@ async function main() {
       };
       window.testEmitState = () =>
         listener({ data: { protocol: 1, event: "state", data: state() } });
+      window.testPatchSelected = (patch) => {
+        selected = { ...selected, ...patch };
+        window.testEmitState();
+      };
       window.testCalls = calls;
       const peaks = Array.from(
         { length: 128 },
@@ -119,6 +123,11 @@ async function main() {
           played: played.has(index),
           favorite: index % 5 === 0,
           selected: selected?.index === index,
+          loudnessEnabled: true,
+          loudness: [
+            { label: "LUFS-I", value: "-18.4" },
+            { label: "TP", value: "-1.2 dBTP" },
+          ],
           waveform: {
             count: 128,
             peaks: peaks.map(
@@ -171,6 +180,7 @@ async function main() {
             played: "#8fb8d8",
             marked: "#f0c85a",
             selected: "#eaf3ff",
+            selection: "#2789E9",
           },
           position: 0.24,
           regionStart: 0.12,
@@ -206,6 +216,41 @@ async function main() {
               return;
             }
             let result = true;
+            if (request.method === "artwork.url")
+              result =
+                "data:image/svg+xml," +
+                encodeURIComponent(
+                  '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><rect width="128" height="128" fill="#c7b57f"/><text x="12" y="64" fill="#222">Test Library</text></svg>',
+                );
+            if (request.method === "catalog.folders") {
+              const child = request.params.path.endsWith("Child");
+              result = window.testFolderPending
+                ? { pending: true, items: [] }
+                : {
+                    pending: false,
+                    total: 1,
+                    items: [
+                      {
+                        name: child ? "Leaf" : "Child",
+                        path:
+                          request.params.path + (child ? "\\Leaf" : "\\Child"),
+                        count: 12,
+                        children: !child,
+                      },
+                    ],
+                  };
+            }
+            if (request.method === "catalog.ucs")
+              result = [
+                {
+                  name: "COMPUTERS",
+                  label: "电脑",
+                  entries: [
+                    { catid: "CMPTDriv", name: "Drive", label: "硬盘" },
+                    { catid: "CMPTKey", name: "Keyboard", label: "键盘" },
+                  ],
+                },
+              ];
             if (request.method === "catalog.suggestions")
               result =
                 request.params.query === "mech"
@@ -285,10 +330,17 @@ async function main() {
             )
               selected.channelMode = request.params.mode;
             if (request.method === "selection.set") {
-              selected = asset(request.params.index);
-              result = selected;
+              if (window.testStaleOnce) {
+                window.testStaleOnce = false;
+                revision++;
+                result = { stale: true };
+              } else {
+                selected = asset(request.params.index);
+                result = selected;
+              }
             }
-            if (request.method === "waveform.get")
+            if (request.method === "waveform.get") {
+              if (request.params.retry) window.testWaveFailure = false;
               result = {
                 path: request.params.path,
                 duration: selected?.duration || 8.24,
@@ -298,6 +350,14 @@ async function main() {
                   channels: [detailPeaks, detailPeaks],
                 },
               };
+              if (window.testWaveFailure) {
+                result.waveform = null;
+                result.error = "波形读取失败：临时不可读";
+              } else if (window.testWaveMisses > 0) {
+                window.testWaveMisses--;
+                result.waveform = null;
+              }
+            }
             if (request.method === "catalog.query") {
               count = 125;
               revision++;
@@ -855,6 +915,289 @@ async function main() {
     await page.screenshot({ path: path.join(output, "optional-paper.png") });
     await page.setViewportSize({ width: 1000, height: 720 });
     await page.screenshot({ path: path.join(output, "compact-window.png") });
+    // Real reported failures: nested navigation, late cache results, scrolling
+    // artwork, stale row identity, loudness visibility and constrained FX layout.
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.reload();
+    await page.waitForSelector(".result-row");
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="appearance"]').click();
+    await page.locator('[data-preference="theme"]').selectOption("dark");
+    await page.locator('[data-preference="left"]').check();
+    await page.locator('[data-preference="right"]').check();
+    await page.locator('[data-preference="fx"]').uncheck();
+    await page.locator('[data-preference="fontSize"]').fill("13");
+    await page.locator('[data-preference="leftWidth"]').fill("206");
+    await page.locator('[data-preference="auditionHeight"]').fill("282");
+    await page.locator("#settings-apply").click();
+    await page.locator("#settings-close").click();
+    assert.equal(await page.locator("body").getAttribute("data-theme"), "dark");
+    assert.equal(
+      await page.locator('[data-rail="settings"]').count(),
+      0,
+      "settings must have one toolbar entry",
+    );
+    await page.locator('[data-rail="libraries"]').click();
+    assert(await page.locator("#libraries").isVisible());
+    assert(!(await page.locator("#views").isVisible()));
+    const navFont = await page
+      .locator("#libraries > .nav-item")
+      .first()
+      .evaluate((el) => getComputedStyle(el).fontSize);
+    await page.evaluate(() => {
+      window.testFolderPending = true;
+    });
+    await page
+      .locator("#libraries > .folder-branch > summary > .folder-toggle")
+      .click();
+    await page
+      .locator("#libraries .folder-state")
+      .filter({ hasText: "正在整理文件夹索引" })
+      .waitFor();
+    await page.evaluate(() => {
+      window.testFolderPending = false;
+    });
+    await page.locator("#libraries .folder-branch .folder-branch").waitFor();
+    await page
+      .locator(
+        "#libraries .folder-branch .folder-branch > summary > .folder-toggle",
+      )
+      .click();
+    await page
+      .locator("#libraries .folder-row .nav-item")
+      .filter({ hasText: "Leaf" })
+      .waitFor();
+    const rootLabel = page.locator(
+      "#libraries > .folder-branch > summary > .nav-item",
+    );
+    const rootArrow = page.locator(
+      "#libraries > .folder-branch > summary > .folder-toggle",
+    );
+    const labelBox = await rootLabel.boundingBox(),
+      arrowBox = await rootArrow.boundingBox();
+    assert(
+      Math.abs(
+        labelBox.y + labelBox.height / 2 - arrowBox.y - arrowBox.height / 2,
+      ) < 2,
+      `folder disclosure and name must share one row: ${JSON.stringify({ labelBox, arrowBox })}`,
+    );
+    await page
+      .locator("#libraries .folder-row .nav-item")
+      .filter({ hasText: "Leaf" })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "catalog.query" &&
+          call.params.root?.endsWith("\\Child\\Leaf"),
+      ),
+    );
+    await page.locator('[data-rail="ucs"]').click();
+    assert(!(await page.locator("#libraries").isVisible()));
+    await page.locator("#ucs-categories > details > summary").click();
+    const ucsItem = page
+      .locator("#ucs-categories .nav-item")
+      .filter({ hasText: "CMPTDriv" });
+    assert.equal(
+      await ucsItem.evaluate((el) => getComputedStyle(el).fontSize),
+      navFont,
+      "expanded UCS typography must match ordinary navigation",
+    );
+    await ucsItem.click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "catalog.query" && call.params.catid === "CMPTDriv",
+      ),
+    );
+    await page.locator('[data-rail="collections"]').click();
+    assert(await page.locator("#collections").isVisible());
+    assert(!(await page.locator("#ucs-directory").isVisible()));
+    await page.locator('[data-rail="all"]').click();
+    await page.evaluate(() => {
+      window.testStaleOnce = true;
+    });
+    await page.locator(".result-cell.name").first().click();
+    await page.waitForFunction(
+      () =>
+        window.testCalls.filter((call) => call.method === "selection.set")
+          .length >= 2,
+    );
+    assert.equal(
+      await page.locator("#toast:not([hidden])").count(),
+      0,
+      "stale selection should refresh and retry without a false error",
+    );
+    await page
+      .locator("#loudness-strip")
+      .filter({ hasText: "LUFS-I" })
+      .waitFor();
+    assert.match(
+      await page.locator("#loudness-strip").textContent(),
+      /-18.4.*-1.2 dBTP/,
+    );
+    await page.evaluate(() =>
+      window.testPatchSelected({ artwork_path: "fixture-cover.png" }),
+    );
+    await page.locator(".artwork-cover:not([hidden])").waitFor();
+    const coverTop = (await page.locator(".artwork-cover").boundingBox()).y;
+    const tabsTop = (await page.locator(".inspector-tabs").boundingBox()).y;
+    await page.locator("#inspector-body").evaluate((el) => {
+      el.scrollTop = 450;
+    });
+    assert(
+      (await page.locator(".artwork-cover").boundingBox()).y < coverTop - 200,
+      "cover must scroll with metadata, not hover over fields",
+    );
+    assert.equal(
+      (await page.locator(".inspector-tabs").boundingBox()).y,
+      tabsTop,
+    );
+    await page.evaluate(() => {
+      window.testWaveFailure = true;
+    });
+    await page.locator(".result-cell.name").nth(1).click();
+    await page.locator("#wave-retry:not([hidden])").waitFor();
+    await page.locator("#wave-retry").click();
+    await page.waitForFunction(
+      () => document.getElementById("wave-status").hidden,
+    );
+    await page.evaluate(() => {
+      window.testWaveMisses = 2;
+    });
+    await page.locator(".result-cell.name").nth(2).click();
+    await page.waitForFunction(
+      () =>
+        window.testWaveMisses === 0 &&
+        document.getElementById("wave-status").hidden,
+    );
+    await page.evaluate(() =>
+      window.testSetState({ regionStart: 0, regionEnd: 1 }),
+    );
+    const backgroundPixel = await page
+      .locator("#detail-wave")
+      .evaluate((canvas) =>
+        Array.from(canvas.getContext("2d").getImageData(95, 34, 1, 1).data),
+      );
+    assert.equal(
+      backgroundPixel[3],
+      0,
+      "full-file range must not inherit the legacy blue fill",
+    );
+    await page.locator("#similar-search").click();
+    await page
+      .getByRole("button", { name: "在当前结果内查找相似声音", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "search.similar" && call.params.scope === "current",
+      ),
+    );
+    await page.evaluate(() =>
+      window.testSetState({
+        tasks: { similar: true },
+        similarityProgress: {
+          phase: "building-cache",
+          completed: 27,
+          total: 125,
+          reference: "fixture.wav",
+        },
+      }),
+    );
+    assert.match(
+      await page.locator("#analysis-bar").textContent(),
+      /建立声音特征缓存.*27 \/ 125/s,
+    );
+    await page.locator("#analysis-cancel").click();
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "tasks.cancel" && call.params.task === "similar",
+      ),
+    );
+    await page.locator("#fx-toggle").click();
+    for (const size of [
+      { width: 1600, height: 1000 },
+      { width: 1000, height: 720 },
+      { width: 900, height: 620 },
+    ]) {
+      await page.setViewportSize(size);
+      await page.waitForTimeout(80);
+      const boxes = await page.evaluate(() =>
+        Object.fromEntries(
+          [
+            "detail-wave",
+            "wave-readouts",
+            "fx-panel",
+            "audition",
+            "loudness-strip",
+          ]
+            .map((id) => {
+              const r = document.getElementById(id).getBoundingClientRect();
+              return [id, { top: r.top, bottom: r.bottom, height: r.height }];
+            })
+            .concat([
+              [
+                "transport",
+                (() => {
+                  const r = document
+                    .querySelector(".transport")
+                    .getBoundingClientRect();
+                  return { top: r.top, bottom: r.bottom };
+                })(),
+              ],
+            ]),
+        ),
+      );
+      assert(
+        boxes["detail-wave"].height >= 60,
+        "FX must leave a usable waveform",
+      );
+      assert(
+        boxes["detail-wave"].bottom <= boxes["fx-panel"].top + 1,
+        "FX must never overlap the waveform",
+      );
+      assert(
+        boxes["wave-readouts"].bottom <= boxes["loudness-strip"].top + 1,
+        "readouts must fit their waveform row",
+      );
+      assert(
+        boxes["fx-panel"].bottom <= boxes.transport.top + 1,
+        "FX must not cover transport controls",
+      );
+      assert(
+        boxes.transport.bottom <= boxes.audition.bottom + 1,
+        "transport must stay inside the player",
+      );
+      if (size.height === 620) {
+        const rail = page.locator("#navigation-rail");
+        assert.equal(
+          await rail.evaluate((el) => getComputedStyle(el).overflowY),
+          "auto",
+          "short windows must allow access to every navigation icon",
+        );
+        await page
+          .locator('[data-rail="collections"]')
+          .scrollIntoViewIfNeeded();
+        const railBox = await rail.boundingBox();
+        const lastIcon = await page
+          .locator('[data-rail="collections"]')
+          .boundingBox();
+        assert(lastIcon.y + lastIcon.height <= railBox.y + railBox.height + 1);
+        await rail.evaluate((el) => {
+          el.scrollTop = 0;
+        });
+      }
+      await page.screenshot({
+        path: path.join(output, `beta8-fx-${size.width}.png`),
+      });
+    }
+    await page.locator("#fx-toggle").click();
+    await page.evaluate(() =>
+      window.testSetState({ tasks: {}, similarityProgress: undefined }),
+    );
+    await page.setViewportSize({ width: 1000, height: 720 });
     await page.addInitScript(() => {
       Object.defineProperty(window, "reaper", {
         value: {

@@ -245,12 +245,26 @@ export function createSettings({
         key: "auditionHeight",
         label: "试听区域高度",
         kind: "number",
-        minimum: 160,
+        minimum: 220,
         maximum: 700,
         integer: true,
       },
       { key: "accentColor", label: "强调色", kind: "color" },
       { key: "surfaceColor", label: "框架底色", kind: "color" },
+      {
+        key: "waveformColorMode",
+        label: "波形选区配色",
+        kind: "choice",
+        options: [
+          ["theme", "跟随主题"],
+          ["custom", "自定义"],
+        ],
+      },
+      {
+        key: "waveformSelectionColor",
+        label: "自定义波形选区颜色",
+        kind: "color",
+      },
     ];
     for (const definition of definitions)
       display.append(

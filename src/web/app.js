@@ -18,6 +18,9 @@ const defaults = {
   fontFamily: "Segoe UI",
   accentColor: "#c7b57f",
   surfaceColor: "#222426",
+  waveformColorMode: "theme",
+  waveformSelectionColor: "#c7b57f",
+  navigationPanel: "libraries",
   navigation: {},
   fx: false,
   columns: {
@@ -191,8 +194,8 @@ function applyPreferences() {
   prefs.rightWidth = clamp(prefs.rightWidth, 220, 480);
   prefs.auditionHeight = clamp(
     prefs.auditionHeight,
-    160,
-    Math.max(160, innerHeight - 270),
+    220,
+    Math.max(220, innerHeight - 300),
   );
   prefs.rowHeight = clamp(
     prefs.rowHeight,
@@ -206,7 +209,12 @@ function applyPreferences() {
   const style = document.documentElement.style;
   style.setProperty("--sidebar-left", `${prefs.leftWidth}px`);
   style.setProperty("--sidebar-right", `${prefs.rightWidth}px`);
-  style.setProperty("--audition-height", `${prefs.auditionHeight}px`);
+  const playerHeight = prefs.fx
+    ? Math.max(prefs.auditionHeight, Math.min(390, innerHeight - 300))
+    : prefs.auditionHeight;
+  style.setProperty("--audition-height", `${playerHeight}px`);
+  style.setProperty("--fx-max-height", `${Math.max(60, playerHeight - 235)}px`);
+  document.body.classList.toggle("fx-open", Boolean(prefs.fx));
   style.setProperty("--row-height", `${prefs.rowHeight}px`);
   style.setProperty("--font-size", `${prefs.fontSize}px`);
   if (prefs.fontFamily) document.body.style.fontFamily = prefs.fontFamily;
@@ -223,6 +231,7 @@ function applyPreferences() {
   }
   renderColumns();
   renderRows();
+  updateNavigation();
   requestAnimationFrame(drawDetail);
 }
 
@@ -496,6 +505,21 @@ function renderRows() {
         playhead.setAttribute("aria-hidden", "true");
         cell.append(playhead);
         waveCanvases.push([canvas, asset.waveform, selected, asset]);
+        if (!asset.waveform && asset.waveError) {
+          const retry = node("button", "mini-wave-retry", "重试波形");
+          retry.onclick = action(async (event) => {
+            event.stopPropagation();
+            await command("waveform.get", {
+              path: asset.path,
+              points: 512,
+              retry: true,
+            });
+            await requestPage();
+            if (snapshot?.selected?.path === asset.path)
+              await requestDetailWave();
+          });
+          cell.append(retry);
+        }
         cell.onclick = action(async (event) => {
           event.stopPropagation();
           await selectAsset(asset, event, false);
@@ -576,7 +600,7 @@ function updateMiniPlayheads() {
 }
 
 async function selectAsset(asset, event = {}, autoPlay) {
-  await command("selection.set", {
+  let result = await command("selection.set", {
     index: asset.index,
     path: asset.path,
     revision: page?.revision,
@@ -584,6 +608,20 @@ async function selectAsset(asset, event = {}, autoPlay) {
     shift: event.shiftKey || false,
     autoPlay,
   });
+  if (result?.stale) {
+    await requestPage();
+    const current = page?.items.find((item) => item.path === asset.path);
+    if (!current) throw new Error("所选声音已离开当前结果，请重新选择");
+    result = await command("selection.set", {
+      index: current.index,
+      path: current.path,
+      revision: page.revision,
+      ctrl: event.ctrlKey || event.metaKey || false,
+      shift: event.shiftKey || false,
+      autoPlay,
+    });
+    if (result?.stale) throw new Error("列表仍在更新，请稍后选择");
+  }
   await requestPage();
 }
 
@@ -672,15 +710,62 @@ function query(params) {
   });
 }
 
+const navigationTitles = {
+  libraries: "音效库与文件夹",
+  all: "浏览与筛选",
+  favorites: "收藏与保存的搜索",
+  previewed: "试听历史",
+  ucs: "UCS 分类",
+  collections: "集合与素材箱",
+};
+function updateNavigation() {
+  const mode = navigationTitles[prefs.navigationPanel]
+    ? prefs.navigationPanel
+    : "libraries";
+  prefs.navigationPanel = mode;
+  if ($("source-title").textContent !== navigationTitles[mode])
+    $("source-title").textContent = navigationTitles[mode];
+  for (const panel of document.querySelectorAll("[data-source-panel]"))
+    panel.hidden = !panel.dataset.sourcePanel.split(" ").includes(mode);
+  for (const button of document.querySelectorAll("[data-rail]")) {
+    const selected = button.dataset.rail === mode;
+    button.classList.toggle("active", selected);
+    if (button.getAttribute("aria-pressed") !== String(selected))
+      button.setAttribute("aria-pressed", String(selected));
+  }
+}
+
+function openNavigation(mode) {
+  prefs.navigationPanel = mode;
+  prefs.left = true;
+  if (snapshot) renderSidebar();
+  applyPreferences();
+  persist();
+  $("sources").scrollTop = 0;
+  if (mode === "ucs") $("ucs-directory").open = true;
+}
+
 function folderBranch(root, folder = root) {
   const branch = node("details", "folder-branch");
-  const summary = node("summary");
+  const summary = node("summary", "folder-row");
   branch.dataset.path = folder.path;
   branch.open = folderOpen.has(folder.path);
-  const label = node(
-    "button",
-    "nav-item",
-    folder.name || folder.path.split(/[\\/]/).filter(Boolean).pop(),
+  const toggle = node("button", "folder-toggle", "›");
+  toggle.setAttribute("aria-label", `展开文件夹 ${folder.name || folder.path}`);
+  toggle.setAttribute("aria-expanded", String(branch.open));
+  toggle.disabled = folder.children === false;
+  toggle.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    branch.open = !branch.open;
+  };
+  const label = node("button", "nav-item");
+  label.append(
+    node(
+      "span",
+      null,
+      folder.name || folder.path.split(/[\\/]/).filter(Boolean).pop(),
+    ),
   );
   label.onclick = action((event) => {
     event.preventDefault();
@@ -694,36 +779,68 @@ function folderBranch(root, folder = root) {
       event.preventDefault();
       managementMenu(event, "root", { ...root, name: root.path });
     };
-  summary.append(label);
+  label.title = folder.path;
+  if (folder.count !== undefined)
+    label.append(node("small", "folder-count", folder.count));
+  summary.onclick = (event) => event.preventDefault();
+  summary.append(toggle, label);
   branch.append(summary);
-  let loaded = false;
+  let loaded = folder.children === false;
+  let loading = false;
+  let retry;
+  const message = node("div", "folder-state");
   const load = async (offset = 0) => {
-    const result = await command("catalog.folders", {
-      rootId: root.id,
-      path: folder.path,
-      offset,
-    });
-    if (!branch.isConnected || !branch.open) return;
-    if (result.pending) {
-      setTimeout(() => {
-        if (branch.isConnected && branch.open) load(offset).catch(report);
-      }, 650);
-      return;
-    }
-    loaded = true;
-    for (const child of result.items) branch.append(folderBranch(root, child));
-    if (offset + result.items.length < result.total) {
-      const more = node("button", "nav-item", "更多文件夹…");
-      more.onclick = action(async () => {
-        more.remove();
-        await load(offset + result.items.length);
+    if (loading || !branch.open || !branch.isConnected) return;
+    loading = true;
+    message.textContent = "正在读取文件夹…";
+    branch.append(message);
+    try {
+      const result = await command("catalog.folders", {
+        rootId: root.id,
+        path: folder.path,
+        offset,
       });
-      branch.append(more);
+      if (!branch.isConnected || !branch.open) return;
+      if (result.pending) {
+        message.textContent = "正在整理文件夹索引…";
+        retry = setTimeout(() => {
+          if (branch.isConnected && branch.open) load(offset).catch(report);
+        }, 650);
+        return;
+      }
+      loaded = true;
+      message.remove();
+      for (const child of result.items)
+        branch.append(folderBranch(root, child));
+      if (offset + result.items.length < result.total) {
+        const more = node("button", "nav-item", "更多文件夹…");
+        more.onclick = action(async () => {
+          more.remove();
+          await load(offset + result.items.length);
+        });
+        branch.append(more);
+      }
+      if (!offset && !result.total) {
+        toggle.disabled = true;
+        message.textContent = "此文件夹没有已索引的子文件夹";
+        branch.append(message);
+      }
+    } catch (error) {
+      message.textContent = error.message;
+      const retryButton = node("button", null, "重试");
+      retryButton.onclick = action(() => load(offset));
+      message.append(retryButton);
+    } finally {
+      loading = false;
     }
   };
   branch.ontoggle = action(() => {
+    toggle.setAttribute("aria-expanded", String(branch.open));
     if (branch.open) folderOpen.add(folder.path);
-    else folderOpen.delete(folder.path);
+    else {
+      folderOpen.delete(folder.path);
+      clearTimeout(retry);
+    }
     if (branch.open && !loaded) return load();
   });
   return branch;
@@ -741,13 +858,23 @@ function renderSidebar() {
     ["duplicates", "重复检查"],
   ];
   $("views").replaceChildren(
-    ...views.map(([view, label]) =>
-      navItem(
-        label,
-        () => query({ view }),
-        snapshot.view === view && !snapshot.libraryId && !snapshot.collectionId,
+    ...views
+      .filter(([view]) =>
+        prefs.navigationPanel === "favorites"
+          ? view === "favorites"
+          : prefs.navigationPanel === "previewed"
+            ? ["previewed", "recent"].includes(view)
+            : true,
+      )
+      .map(([view, label]) =>
+        navItem(
+          label,
+          () => query({ view }),
+          snapshot.view === view &&
+            !snapshot.libraryId &&
+            !snapshot.collectionId,
+        ),
       ),
-    ),
   );
   const libraries = [];
   for (const library of snapshot.libraries) {
@@ -765,7 +892,7 @@ function renderSidebar() {
       managementMenu(event, "library", library);
     };
     for (const root of snapshot.roots.filter(
-      (root) => root.libraryId === library.id,
+      (root) => root.libraryId === library.id && root.enabled !== false,
     )) {
       if (prefs.navigation?.folders !== false)
         libraries.push(folderBranch(root));
@@ -787,6 +914,10 @@ function renderSidebar() {
       return item;
     }),
   );
+  if (!snapshot.collections.length)
+    $("collections").append(
+      node("p", "sidebar-empty", "新建集合，将常用声音整理到一起。"),
+    );
   $("saved-searches").replaceChildren(
     ...(snapshot.savedSearches || []).map((saved) => {
       const item = navItem(
@@ -945,8 +1076,7 @@ function applySnapshot(next) {
     $(id).disabled = !ready || !next.selected;
   $("ai-search").disabled = !ready || Boolean(next.tasks?.ai);
   renderFilterBar();
-  for (const button of document.querySelectorAll("[data-rail]"))
-    button.classList.toggle("active", button.dataset.rail === next.view);
+  updateNavigation();
   $("ai-more").hidden = next.view !== "ai_semantic" || !next.aiHasMore;
   const tasks = Object.entries(next.tasks)
     .filter(([, running]) => running)
@@ -1071,6 +1201,8 @@ function applySnapshot(next) {
   $("asset-info").textContent = next.selected
     ? `${next.selected.channels} ch · ${Math.round(next.selected.sampleRate / 1000)} kHz · ${next.selected.bitDepth} bit · ${next.selected.library}`
     : "";
+  renderLoudness();
+  renderSimilarityProgress();
   for (const [key, field] of [
     ["pitch", "pitch"],
     ["rate", "rate"],
@@ -1089,7 +1221,7 @@ function applySnapshot(next) {
   drawDetail();
 }
 
-async function requestDetailWave() {
+async function requestDetailWave(retry = false) {
   const selected = snapshot?.selected;
   const sequence = ++waveSequence;
   clearTimeout(waveRetry);
@@ -1101,6 +1233,7 @@ async function requestDetailWave() {
     const result = await command("waveform.get", {
       path: selected.path,
       points: snapshot?.detailPoints >= 4096 ? 4096 : 2048,
+      retry: retry === true,
     });
     if (sequence !== waveSequence || snapshot?.selected?.path !== result.path)
       return;
@@ -1110,8 +1243,106 @@ async function requestDetailWave() {
     if (!detailWave && !waveFailure)
       waveRetry = setTimeout(requestDetailWave, 850);
   } catch (error) {
+    if (sequence !== waveSequence) return;
+    waveFailure = error.message || String(error);
+    drawDetail();
     report(error);
   }
+}
+
+let loudnessKey;
+let similarityProgressKey;
+function renderLoudness() {
+  const asset = snapshot?.selected;
+  const strip = $("loudness-strip");
+  strip.hidden = !asset;
+  const key = JSON.stringify([
+    asset?.path,
+    asset?.loudness,
+    asset?.loudnessEnabled,
+  ]);
+  if (key === loudnessKey) return;
+  loudnessKey = key;
+  const heading = node("span", "loudness-heading", "响度");
+  const content = [heading];
+  for (const item of asset?.loudness || []) {
+    const metric = node("span", "loudness-metric");
+    const label =
+      { M: "LUFS-M", S: "LUFS-S", TP: "True Peak", LOUDNESS: "响度" }[
+        item.label
+      ] || item.label;
+    metric.append(node("span", null, label), node("strong", null, item.value));
+    metric.title =
+      {
+        "LUFS-I": "综合响度",
+        M: "最大瞬时响度",
+        S: "最大短时响度",
+        TP: "真峰值",
+      }[item.label] || label;
+    content.push(metric);
+  }
+  if (!asset?.loudness?.length)
+    content.push(
+      node(
+        "span",
+        "muted",
+        asset?.loudnessEnabled === false ? "响度显示已关闭" : "尚无响度数据",
+      ),
+    );
+  const analyze = node(
+    "button",
+    "loudness-analyze",
+    asset?.loudnessEnabled === false ? "启用并分析" : "重新分析",
+  );
+  analyze.onclick = action(async () => {
+    if (snapshot?.selected?.loudnessEnabled === false)
+      await command("settings.update", {
+        values: { show_loudness_metrics: true },
+      });
+    await command("asset.action", { action: "loudness" });
+  });
+  content.push(analyze);
+  strip.replaceChildren(...content);
+}
+
+function renderSimilarityProgress() {
+  const progress = snapshot?.similarityProgress;
+  $("analysis-bar").hidden = !progress && !snapshot?.tasks?.similar;
+  $("similar-search").disabled ||= Boolean(snapshot?.tasks?.similar);
+  const key = JSON.stringify(progress);
+  if (key === similarityProgressKey) return;
+  similarityProgressKey = key;
+  if (!progress) return;
+  const phase =
+    {
+      prepare: "准备分析",
+      load_cache: "读取特征缓存",
+      reference: "分析参考声音",
+      index_candidates: "整理候选声音",
+      neural_prepare: "准备神经分析",
+      neural_manifest: "准备索引清单",
+      neural_wait: "等待后台分析",
+      "building-cache": "建立声音特征缓存",
+      "building-index": "建立相似索引",
+      "querying-hnsw": "检索相似声音",
+      "querying-exact": "检索相似声音",
+      "querying-exact-filtered": "检索当前范围",
+      neural_rerank: "整理相似结果",
+      analyze_missing: "分析候选声音",
+      rank_buckets: "整理相似结果",
+    }[progress.phase] || "分析声音";
+  $("analysis-label").textContent = `相似声音 · ${phase}`;
+  $("analysis-label").title = progress.failure
+    ? `已切换为音频特征分析：${progress.failure}`
+    : progress.reference || "";
+  const total = Math.max(0, Number(progress.total) || 0);
+  const completed = Math.max(0, Number(progress.completed) || 0);
+  $("analysis-count").textContent = total
+    ? `${completed.toLocaleString()} / ${total.toLocaleString()}`
+    : "准备中…";
+  $("analysis-progress").max = Math.max(1, total);
+  if (total && completed) $("analysis-progress").value = completed;
+  else $("analysis-progress").removeAttribute("value");
 }
 
 function updateReadouts() {
@@ -1160,6 +1391,8 @@ function drawDetail() {
     waveFailure,
     prefs.theme,
     prefs.accentColor,
+    prefs.waveformColorMode,
+    prefs.waveformSelectionColor,
     snapshot?.rowAppearance,
     snapshot?.multichannelWaveform,
   ]);
@@ -1174,10 +1407,12 @@ function drawDetail() {
   const color = palette.getPropertyValue("--text").trim();
   const muted = palette.getPropertyValue("--muted").trim();
   const accent =
-    snapshot?.rowAppearance?.selection ||
-    palette.getPropertyValue("--accent").trim();
+    prefs.waveformColorMode === "custom"
+      ? prefs.waveformSelectionColor || defaults.waveformSelectionColor
+      : palette.getPropertyValue("--accent").trim();
   const duration = snapshot?.selected?.duration || 0;
   $("wave-status").hidden = Boolean(detailWave);
+  $("wave-retry").hidden = !waveFailure || !snapshot?.selected;
   $("wave-status").textContent = snapshot?.selected
     ? waveFailure || "正在读取波形缓存…"
     : "等待选择素材";
@@ -1201,14 +1436,17 @@ function drawDetail() {
       rect.height - top,
     );
   }
+  // The default full-file range has a neutral background; only a deliberate
+  // partial selection receives the theme tint.
   context.fillStyle = accent;
-  context.globalAlpha = 0.14;
-  context.fillRect(
-    xFor(start),
-    top,
-    xFor(end) - xFor(start),
-    rect.height - top,
-  );
+  context.globalAlpha = 0.12;
+  if (start > 0 || end < 1)
+    context.fillRect(
+      xFor(start),
+      top,
+      xFor(end) - xFor(start),
+      rect.height - top,
+    );
   context.globalAlpha = 1;
   context.font = '10px "Segoe UI",sans-serif';
   context.fillStyle = muted;
@@ -1380,15 +1618,6 @@ function renderInspector() {
     renderBulkMetadata(container).catch(report);
     return;
   }
-  if (asset.loudness?.length) {
-    container.append(
-      node(
-        "p",
-        "muted",
-        asset.loudness.map((item) => `${item.label} ${item.value}`).join(" · "),
-      ),
-    );
-  }
   for (const candidate of asset.ucsCandidates || []) {
     const button = node(
       "button",
@@ -1458,6 +1687,7 @@ function renderInspector() {
     container.append(channelControls);
   }
   if (inspectorTab === "metadata") {
+    let cover;
     if (
       snapshot.artworkEnabled !== false &&
       asset.artwork_path &&
@@ -1465,9 +1695,9 @@ function renderInspector() {
     ) {
       const image = node("img", "artwork-cover");
       image.alt = asset.library || "音效库封面";
-      image.classList.toggle("pinned", Boolean(snapshot.artworkPinned));
       image.hidden = true;
-      container.append(image);
+      cover = image;
+      if (snapshot.artworkPinned !== false) container.append(image);
       host
         .artworkUrl(asset.artwork_path)
         .then((url) => {
@@ -1498,6 +1728,7 @@ function renderInspector() {
       technical.append(node("dt", null, label), node("dd", null, value || "—"));
     }
     container.append(technical);
+    if (cover && snapshot.artworkPinned === false) container.append(cover);
     const previousOriginal = originalFields;
     originalFields = {};
     for (const [key, label, multiline] of [
@@ -1961,16 +2192,9 @@ $("toast-close").onclick = () => {
 for (const button of document.querySelectorAll("[data-rail]"))
   button.onclick = action(async () => {
     const target = button.dataset.rail;
-    if (target === "settings") return settingsDialog();
-    if (["libraries", "ucs", "collections"].includes(target)) {
-      prefs.left = true;
-      applyPreferences();
-      persist();
-      if (target === "ucs") $("ucs-directory").open = true;
-      (target === "ucs" ? $("ucs-directory") : $(target)).scrollIntoView({
-        block: "nearest",
-      });
-    } else await query({ view: target });
+    openNavigation(target);
+    if (["all", "favorites", "previewed"].includes(target))
+      await query({ view: target });
   });
 for (const button of document.querySelectorAll("[data-menu]"))
   button.onclick = () => {
@@ -2626,9 +2850,22 @@ $("auto-preview").onchange = action(() =>
   command("preview.parameters", { auto_preview: $("auto-preview").checked }),
 );
 $("insert").onclick = action(() => command("insert"));
-$("similar-search").onclick = action(() =>
-  command("search.similar", { scope: "all" }),
+$("similar-search").onclick = () =>
+  menu($("similar-search"), [
+    [
+      "在当前结果内查找相似声音",
+      () => command("search.similar", { scope: "current" }),
+    ],
+    [
+      "在全部音效库中查找相似声音",
+      () => command("search.similar", { scope: "all" }),
+    ],
+    ["首次分析会建立缓存，可在后台运行", () => {}, "", false],
+  ]);
+$("analysis-cancel").onclick = action(() =>
+  command("tasks.cancel", { task: "similar" }),
 );
+$("wave-retry").onclick = action(() => requestDetailWave(true));
 $("save-region").onclick = action(saveRegion);
 $("cancel-tasks").onclick = action(() => command("tasks.cancel"));
 $("settings-open").onclick = action(settingsDialog);
