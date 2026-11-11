@@ -996,6 +996,7 @@ export default {
   "此文件夹没有已索引的子文件夹": "No indexed subfolders in this folder",
   "此素材的音效库来源已失效，请检查来源路径": "This asset's library is unavailable; check its source path",
   "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。": "This runtime still has the docked redraw issue. Update the PsyReaSFX WebView Runtime compatibility patch and restart REAPER.",
+  "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30-beta3，并完全重启 REAPER。": "This runtime is missing the dock/float transition fix. Update PsyReaSFX WebView Runtime to 0.3.9.30-beta3 in ReaPack, then fully restart REAPER.",
   "每个变体参数最多允许 16 个数值": "Each variant parameter accepts at most 16 values",
   "每个文件夹建立一个音效库": "Create one library per folder",
   "每个素材将生成": "Variants per asset:",
