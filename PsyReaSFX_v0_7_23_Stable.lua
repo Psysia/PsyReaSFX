@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "4e0ed5f11f7b3be21eb0db1f50cea34e74394363470d9a85f5ebcfd186972847",
+  source_sha256 = "8a95456a11e7fa47e96cf07d06d436bd70aa3b477c4edf7647c8a32023523d2d",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -21350,6 +21350,9 @@ function start_scan(reason, roots_override, options)
     current = nil,
     seen = {},
     files = 0,
+    added = 0,
+    created_keys = {},
+    skipped_directories = 0,
     ignored = 0,
     directories = 0,
     new_assets = {},
@@ -21457,6 +21460,8 @@ function complete_scan_finalize(scan)
       silent = scan.silent,
       watch = scan.watch,
       compact_status = scan.compact_status,
+      created_keys = scan.created_keys,
+      added = scan.added,
       removed = removed,
       job_token = scan.job_token,
     }
@@ -21566,6 +21571,9 @@ function process_scan_finalize(scan)
 end
 
 function begin_scan_cancel(scan)
+  -- Every entry point (including the WebView RPC) must cancel the owner,
+  -- not just change its phase. Cancellation bypasses watch interaction pauses.
+  if scan.job_token then Jobs.cancel(scan.job_token) end
   if scan.phase == "cancel_collect"
     or scan.phase == "cancel_prune" then
     return
@@ -21574,7 +21582,27 @@ function begin_scan_cancel(scan)
   scan.cancel_index = 1
   scan.cancel_keys = {}
   scan.prune_job = nil
+  scan.paused = nil
   set_status("正在取消扫描并清理未完成素材…")
+end
+
+function complete_scan_cancel(scan, removed)
+  local catalog_changed = (removed or 0) > 0
+    or (scan.finalize_removed_so_far or 0) > 0
+  if catalog_changed then
+    if scan.prune_job then state.assets = scan.prune_job.kept end
+    invalidate_similarity_index()
+    state.database_ordered_assets = nil
+    mark_database_snapshot_dirty()
+    invalidate_library_counts()
+    invalidate_folder_navigation()
+    state.results_dirty = true
+  end
+  state.scan = nil
+  reset_watch_schedule(true)
+  clear_scan_checkpoint()
+  Jobs.finish(scan.job_token, true, "user canceled")
+  set_status(scan.watch and "已取消来源检查" or "已取消扫描")
 end
 
 function process_scan_cancel(scan)
@@ -21585,12 +21613,21 @@ function process_scan_cancel(scan)
     )
     for index = scan.cancel_index, last do
       local asset = scan.new_assets[index]
-      if asset and not asset.ready and not scan.compact_status then
+      -- Do not delete an unfinished asset that existed before this scan.
+      if asset and not asset.ready and not scan.compact_status
+        and scan.created_keys and scan.created_keys[asset_path_sort_key(asset)] then
         scan.cancel_keys[asset_path_sort_key(asset)] = true
+        watch_forget_directory(dirname(asset.path))
+      elseif asset then
+        asset.pending_batch = nil
       end
     end
     scan.cancel_index = last + 1
     if scan.cancel_index > #scan.new_assets then
+      if next(scan.cancel_keys) == nil and (scan.finalize_removed_so_far or 0) == 0 then
+        complete_scan_cancel(scan, 0)
+        return
+      end
       scan.phase = "cancel_prune"
       scan.prune_job = new_catalog_prune_job(state.by_path)
       scan.cancel_total = #state.assets
@@ -21612,23 +21649,7 @@ function process_scan_cancel(scan)
   )
   if not complete then return end
 
-  local removed = scan.prune_job.removed
-  local catalog_changed = removed > 0
-    or (scan.finalize_removed_so_far or 0) > 0
-  if catalog_changed then
-    state.assets = scan.prune_job.kept
-    invalidate_similarity_index()
-    state.database_ordered_assets = nil
-    mark_database_snapshot_dirty()
-    invalidate_library_counts()
-    invalidate_folder_navigation()
-  end
-  state.scan = nil
-  reset_watch_schedule(true)
-  clear_scan_checkpoint()
-  Jobs.finish(scan.job_token, true, "user canceled")
-  state.results_dirty = true
-  set_status("已取消扫描")
+  complete_scan_cancel(scan, scan.prune_job.removed)
 end
 
 function process_scan()
@@ -21638,8 +21659,8 @@ function process_scan()
     return
   end
 
-  if scan.job_token
-    and scan.job_token.cancel_requested then
+  if (scan.job_token and scan.job_token.cancel_requested)
+    or scan.phase == "cancel_collect" or scan.phase == "cancel_prune" then
     begin_scan_cancel(scan)
     process_scan_cancel(scan)
     return
@@ -21683,9 +21704,15 @@ function process_scan()
 
       scan.directories =
         scan.directories + 1
+      watch_begin_directory(scan, dir)
     end
 
-    if dir.stage == "files" then
+    if dir.stage == "refresh_files" then
+      -- REAPER caches enumerations independently of our directory signatures.
+      -- Invalidate only directories that actually require a new listing.
+      reaper.EnumerateFiles(dir.path, -1)
+      dir.stage = "files"
+    elseif dir.stage == "files" then
       local filename =
         reaper.EnumerateFiles(
           dir.path,
@@ -21715,6 +21742,8 @@ function process_scan()
 
               scan.new_assets[#scan.new_assets + 1] =
                 asset
+              scan.created_keys[key] = true
+              scan.added = scan.added + 1
 
               mark_asset_database_change(asset)
             elseif scan.force_rebuild then
@@ -21723,15 +21752,28 @@ function process_scan()
               asset.indexed = false
               asset.meta_failed_at = nil
               scan.new_assets[#scan.new_assets + 1] = asset
-            elseif not state.by_path[key].ready
-              and (scan.reason ~= "Watch Folder" or not state.failed_tasks[key]) then
+            elseif not scan.watch and not state.by_path[key].ready then
               scan.new_assets[#scan.new_assets + 1] =
                 state.by_path[key]
             end
           end
         end
       else
-        dir.stage = "subdirs"
+        dir.stage = "refresh_subdirs"
+      end
+    elseif dir.stage == "refresh_subdirs" then
+      reaper.EnumerateSubdirectories(dir.path, -1)
+      dir.stage = "subdirs"
+    elseif dir.stage == "cached" then
+      local child = dir.cached_children[dir.sub_index + 1]
+      if child then
+        dir.sub_index = dir.sub_index + 1
+        scan.dirs[#scan.dirs + 1] = {
+          path = join_path(dir.path, child), root = dir.root,
+          file_index = 0, sub_index = 0, stage = "files",
+        }
+      else
+        scan.current = nil
       end
     else
       local subdir =
@@ -21744,6 +21786,7 @@ function process_scan()
         dir.sub_index = dir.sub_index + 1
 
         if not is_ignored_directory_name(subdir) then
+          dir.children[#dir.children + 1] = subdir
           scan.dirs[#scan.dirs + 1] = {
             path = join_path(dir.path, subdir),
             root = dir.root,
@@ -21753,6 +21796,7 @@ function process_scan()
           }
         end
       else
+        watch_finish_directory(dir)
         scan.current = nil
       end
     end
@@ -23877,8 +23921,10 @@ function cancel_import_session()
     for index = session.cleanup_index, last do
       local asset = session.assets[index]
       if asset then
-        if not asset.ready and not session.compact_status then
+        if not asset.ready and not session.compact_status
+          and session.created_keys and session.created_keys[asset_path_sort_key(asset)] then
           state.by_path[asset_path_sort_key(asset)] = nil
+          watch_forget_directory(dirname(asset.path))
         else
           asset.pending_batch = nil
         end
@@ -23906,6 +23952,7 @@ function cancel_import_session()
   invalidate_folder_navigation()
   state.import_session = nil
   state.import_cancel_requested = false
+  reset_watch_schedule(true)
   mark_database_snapshot_dirty()
   state.clear_scan_checkpoint_after_database_save = true
   Jobs.finish(session.job_token, true, "canceled")
@@ -43107,6 +43154,68 @@ function autosave()
 end
 
 WatchFolders = { unchanged = 0 }
+
+-- Cache directory listings, never an assumed list of new file timestamps.
+-- A parent timestamp does not describe its descendants: cached children still
+-- get their own stat check. First visits and unavailable stats use enumeration.
+function watch_directory_signature(path)
+  if type(reaper.JS_File_Stat) ~= "function" then return nil end
+  local ok, result, _, _, modified, created, device, _, inode, mode =
+    pcall(reaper.JS_File_Stat, path)
+  if not ok or result ~= 0 or type(mode) ~= "number" or (mode & 0xF000) ~= 0x4000
+    or type(modified) ~= "string" then return nil end
+  local year, month, day, hour, minute, second = modified:match("^(%d+)%.(%d+)%.(%d+) (%d+):(%d+):(%d+)$")
+  if not year then return nil end
+  local changed_at = os.time({year=tonumber(year), month=tonumber(month), day=tonumber(day),
+    hour=tonumber(hour), min=tonumber(minute), sec=tonumber(second)})
+  return table.concat({modified, tostring(created), tostring(device), tostring(inode)}, "|"),
+    changed_at and os.time() - changed_at > 3
+end
+
+function watch_forget_directory(path)
+  local directories = WatchFolders.directories
+  local key = path_key(path)
+  if directories and directories[key] then
+    directories[key] = nil
+    WatchFolders.directory_count = math.max(0, (WatchFolders.directory_count or 1) - 1)
+  end
+end
+
+function watch_begin_directory(scan, dir)
+  if WatchFolders.catalog ~= state.by_path then
+    WatchFolders.catalog = state.by_path
+    WatchFolders.directories, WatchFolders.directory_count = {}, 0
+  end
+  dir.children = {}
+  dir.stage = "refresh_files"
+  dir.signature = watch_directory_signature(dir.path)
+  local cached = WatchFolders.directories[path_key(dir.path)]
+  if scan.watch and not scan.force_rebuild and dir.signature and cached
+    and cached.signature == dir.signature and cached.stable
+    and reaper.time_precise() - cached.checked < 1800 then
+    dir.stage, dir.cached_children = "cached", cached.children
+    scan.skipped_directories = scan.skipped_directories + 1
+  end
+end
+
+function watch_finish_directory(dir)
+  local signature, stable = watch_directory_signature(dir.path)
+  if not signature or signature ~= dir.signature then
+    watch_forget_directory(dir.path)
+    return
+  end
+  local key = path_key(dir.path)
+  if not WatchFolders.directories[key] then
+    if WatchFolders.directory_count >= 50000 then return end
+    WatchFolders.directory_count = WatchFolders.directory_count + 1
+  end
+  -- Second-resolution stat values need one later check when a directory was
+  -- modified during the current second. An occasional full check also catches
+  -- filesystems/tools that preserve directory timestamps.
+  WatchFolders.directories[key] = {
+    signature=signature, stable=stable, children=dir.children, checked=reaper.time_precise(),
+  }
+end
 
 function reset_watch_schedule(changed, automatic)
   WatchFolders.unchanged = automatic and not changed

@@ -317,15 +317,23 @@ function WebUI.task_details()
     ai = state.ai_semantic_session, verify = state.cache_verify_session }) do
     if type(session) == "table" then
       local current = type(session.current) == "table" and session.current or {}
+      local canceling = (session.job_token and session.job_token.cancel_requested == true)
+        or (type(session.phase) == "string" and session.phase:sub(1, 7) == "cancel_")
       result[name] = {
-        label = text(translate_ui_text(session.label or session.reason or ""), 160),
+        label = text(translate_ui_text(session.watch
+          and (name == "scan" and "检查来源新增素材" or "分析新增素材")
+          or session.label or session.reason or ""), 160),
         phase = text(session.phase or "", 80),
         completed = counter(session.done) or counter(session.completed) or counter(session.processed)
           or math.max(0, (counter(session.phase == "collect" and session.collect_index or session.index) or 1) - 1),
         total = counter(session.phase == "collect" and session.source_total or session.total) or 0,
         -- Verification stores its file list under `files`; never serialize job arrays.
         files = counter(session.files), directories = counter(session.directories), failed = counter(session.failed),
-        automatic = session.watch == true, paused = session.paused,
+        added = counter(session.added), skippedDirectories = counter(session.skipped_directories),
+        jobId = (name == "scan" or name == "import") and session.job_token
+          and counter(session.job_token.generation) or nil,
+        automatic = session.watch == true, canceling = canceling == true,
+        paused = not canceling and session.paused or nil,
         path = text(current.path or (type(current.asset) == "table" and current.asset.path)
           or session.output_directory or session.new_root or "", 1024),
       }
@@ -1146,6 +1154,14 @@ WebUI.handlers["tasks.cancel"] = function(params)
   local known = { scan=true, import=true, similar=true, ai=true, transfer=true, precache=true,
     classify=true, transients=true, relink=true, remove=true, verify=true, missing=true, duplicates=true, loudness=true }
   assert(task == nil or known[task], "未知任务")
+  if params and params.jobId ~= nil and (task == "scan" or task == "import") then
+    local id = number(params.jobId, 1, 9007199254740991)
+    local session = task == "scan" and state.scan or state.import_session
+    -- Discovery can hand the same owner to metadata import between a snapshot
+    -- and its click. Follow that owner, but never cancel a newer unrelated job.
+    if task == "scan" and not state.scan then task, session = "import", state.import_session end
+    if not session or not session.job_token or session.job_token.generation ~= id then return false end
+  end
   local function cancel(name) return task == nil or task == name end
   if cancel("scan") and state.scan then
     begin_scan_cancel(state.scan)
@@ -1194,7 +1210,8 @@ WebUI.handlers["tasks.cancel"] = function(params)
   return true
 end
 local settings_schema = {
-  { key = "watch_enabled", label = "空闲时检查来源文件夹（播放和操作时暂停）", group = "常规", kind = "boolean" },
+  { key = "watch_enabled", label = "空闲时检查来源文件夹（播放和操作时暂停）", group = "常规", kind = "boolean",
+    description = "首次核对文件名；之后跳过未变化目录，只分析新增素材。定期（约 30 分钟）重新核对，避免漏掉文件。取消当前检查不会关闭自动监视。" },
   { key = "transfer_dir", label = "输出目录", group = "Transfer", kind = "string" },
   { key = "transfer_template", label = "文件名模板", group = "Transfer", kind = "string" },
   { key = "transfer_format", label = "格式", group = "Transfer", kind = "choice", options = { "wav16", "wav24", "wav32", "flac" } },

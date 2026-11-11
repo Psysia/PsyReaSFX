@@ -518,6 +518,38 @@ WebUI.handlers["tasks.cancel"]({ task = "transfer" })
 assert(runtime.transfer_cancel_requested == true)
 assert(not pcall(WebUI.handlers["tasks.cancel"], { task = "unknown" }))
 
+-- The actual RPC must set the job cancellation flag. The previous WebView
+-- handler only changed scan.phase, leaving a paused scan and its lock alive.
+do
+  local saved_scan, saved_preview, saved_interaction = runtime.scan, runtime.preview, runtime.interaction_until
+  local old_active, old_history = Jobs.active, Jobs.history
+  Jobs.active, Jobs.history = {}, {}
+  local token = assert(Jobs.begin("catalog_pipeline", "catalog_exclusive", false))
+  runtime.scan = {watch=true, job_token=token, new_assets={}, created_keys={}, paused="交互时暂停来源检查"}
+  runtime.preview, runtime.interaction_until = {}, reaper.time_precise()+100
+  WebUI.handlers["tasks.cancel"]({task="scan"})
+  assert(token.cancel_requested and WebUI.task_details().scan.canceling)
+  assert(WebUI.task_details().scan.paused==nil, "cancellation must replace the paused message")
+  process_scan()
+  assert(not runtime.scan and not Jobs.active.catalog_pipeline and token.state=="canceled")
+  assert(runtime.next_watch>reaper.time_precise(), "cancel must not immediately restart automatic discovery")
+  local import, cancel_import = runtime.import_session, cancel_import_session
+  local next_token = assert(Jobs.begin("catalog_pipeline", "catalog_exclusive", false))
+  runtime.scan = {job_token=next_token}
+  local published_id = WebUI.task_details().scan.jobId
+  runtime.scan, runtime.import_session = nil, {job_token=next_token}
+  local imports_canceled=0
+  cancel_import_session=function() imports_canceled=imports_canceled+1; Jobs.cancel(next_token) end
+  assert(WebUI.handlers["tasks.cancel"]({task="scan",jobId=token.generation})==false)
+  assert(imports_canceled==0 and not next_token.cancel_requested, "stale UI cannot cancel a newer task")
+  WebUI.handlers["tasks.cancel"]({task="scan",jobId=published_id})
+  assert(imports_canceled==1 and next_token.cancel_requested, "cancel follows the same scan owner into import")
+  Jobs.finish(next_token,true)
+  runtime.import_session, cancel_import_session = import, cancel_import
+  Jobs.active, Jobs.history = old_active, old_history
+  runtime.scan, runtime.preview, runtime.interaction_until = saved_scan, saved_preview, saved_interaction
+end
+
 -- Loading is a readable UI state, not an unresponsive settings button.
 do
   local saved = {}
