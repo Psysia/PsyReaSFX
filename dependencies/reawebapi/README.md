@@ -4,7 +4,7 @@
 
 验证历史 ReaPack 在线载荷时，`Test-ReaPackWebView.ps1 -Online` 从对应发行 tag 读取原始锁定清单；浅克隆需先获取这些 tag，避免将主分支新的镜像地址误认为历史载荷被修改。
 
-当前锁定 0.3.9.30，状态为 `native_acceptance_pending`，需要完成 REAPER 实机验收。
+当前锁定 0.3.9.30-prs.2（ReaPack 包版本 0.3.9.30-beta3），状态为 `native_acceptance_pending`，需要完成 REAPER 实机验收。
 
 安装器默认拒绝新增或替换尚未通过实机验收的运行时。维护者在独立 REAPER 资源目录进行候选测试时，可显式传入 `-AllowUnverifiedRuntime`。正式发行需要将验收结果记录完整并晋升为 `native_accepted`。
 
@@ -57,3 +57,5 @@ DLL 没有可读取的 PE 产品版本字段，因此安装器按 SHA-256 识别
 安装器兼容 Windows PowerShell 5.1，并在写入安装状态前检查目标与备份路径长度。资源目录过深时需改用较短路径。
 
 上游资料见 [ReaWebAPI 仓库](https://github.com/zaibuyidao/ReaWebAPI) 和 [固定版本许可证](https://github.com/zaibuyidao/ReaWebAPI/blob/f3d83ee333a5df0f1242b20efc706ce5a893dabf/LICENSE.md)。
+
+停靠切回浮动窗口的时序补丁和验证范围见 [Beta 15 排查说明](../../docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md)。候选源码同时检查结构切换时的重绘配对；不具备已验证行为的上游版本保留为候选，开发包使用已锁定的兼容补丁。

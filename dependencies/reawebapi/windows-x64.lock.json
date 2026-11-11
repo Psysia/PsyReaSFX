@@ -2,25 +2,25 @@
   "schema": "PsyReaSFX-Dependency-Lock-v1",
   "name": "ReaWebAPI",
   "platform": "windows-x64",
-  "version": "0.3.9.30-prs.1",
+  "version": "0.3.9.30-prs.2",
   "repository": "https://github.com/Psysia/ReaWebAPI",
   "upstream": "https://github.com/zaibuyidao/ReaWebAPI",
-  "commit": "0e0dbf55074f4ea39a8931d7e9cee443e82c69ff",
+  "commit": "0269fb82493ce7a9666146675054ba342db86fc4",
   "license": "LGPL-3.0-or-later",
   "archive": {
-    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.1/ReaWebAPI-windows-x64-v0.3.9.30-prs.1.zip",
-    "file": "ReaWebAPI-windows-x64-v0.3.9.30-prs.1.zip",
-    "sha256": "508a34c799f97bc135cae24f8b0a206a0bd82792dc124246e4bd95d31f6b206a"
+    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.2/ReaWebAPI-windows-x64-v0.3.9.30-prs.2.zip",
+    "file": "ReaWebAPI-windows-x64-v0.3.9.30-prs.2.zip",
+    "sha256": "205c13f63d2ec01b252ed2191ad5406a0163a9b2e4b08919a12f7737df3b0c00"
   },
   "binary": {
     "entry": "UserPlugins/reaper_reawebapi-x64.dll",
     "file": "reaper_reawebapi-x64.dll",
-    "sha256": "c3a98f56dcd13788b40b8755eac6b2acc82d66aa2e22d37c6c0818b9aa21f04d"
+    "sha256": "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30"
   },
   "source": {
-    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.1/ReaWebAPI-source.zip",
+    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.2/ReaWebAPI-source.zip",
     "file": "ReaWebAPI-source.zip",
-    "sha256": "3dac68cba700c26b4d038891d1e799d06efe8ed416cdc96ff234c0f6ca8e1754"
+    "sha256": "9399466e4f10e9427881bd2ca0a5cdb0359231950e1ddddcd75181e2a9fc8dd2"
   },
   "runtime_policy": {
     "protocol": 1,
@@ -32,7 +32,7 @@
     ],
     "minimum_message_bytes": 900000,
     "baseline_versions": [
-      "0.3.9.30-prs.1"
+      "0.3.9.30-prs.2"
     ],
     "validation_status": "native_acceptance_pending",
     "external_versions": "capability_check_with_notice"
@@ -40,6 +40,9 @@
   "upgrade_policy": "Build from this lock. Prepare candidate locks separately. Promote after regression and native REAPER acceptance.",
   "modified": true,
   "upstream_commit": "f3d83ee333a5df0f1242b20efc706ce5a893dabf",
-  "patches": "windows-dock-top-level-redraw",
-  "reapack_version": "0.3.9.30-beta2"
+  "patches": [
+    "windows-dock-top-level-redraw",
+    "windows-dock-transition-lifetime"
+  ],
+  "reapack_version": "0.3.9.30-beta3"
 }

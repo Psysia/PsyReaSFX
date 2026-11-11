@@ -496,5 +496,6 @@
   "试听时暂停来源检查": "Source check paused during audition",
   "REAPER 播放或录音时暂停来源检查": "Source check paused during REAPER playback or recording",
   "交互时暂停来源检查": "Source check paused during interaction",
-  "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。": "This runtime still has the docked redraw issue. Update the PsyReaSFX WebView Runtime compatibility patch and restart REAPER."
+  "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。": "This runtime still has the docked redraw issue. Update the PsyReaSFX WebView Runtime compatibility patch and restart REAPER.",
+  "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30-beta3，并完全重启 REAPER。": "This runtime is missing the dock/float transition fix. Update PsyReaSFX WebView Runtime to 0.3.9.30-beta3 in ReaPack, then fully restart REAPER."
 }

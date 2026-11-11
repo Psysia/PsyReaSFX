@@ -5,8 +5,8 @@ const STABLE_FALLBACK = {
   url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.1",
 };
 const WEBVIEW_FALLBACK = {
-  version: "0.9.3 Beta 14",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta14",
+  version: "0.9.3 Beta 15",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta15",
 };
 const NEURAL_FALLBACK_URL =
   "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip";
@@ -163,9 +163,9 @@ const messages = {
     betaStepTwo:
       "For <strong>PsyReaSFX.lua</strong>, enable <strong>Enable pre-releases</strong>; unpin an older version if necessary.",
     betaStepThree:
-      "Choose <strong>Versions → 0.9.3-beta14</strong>. Also install <strong>PsyReaSFX WebView Runtime</strong>. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.",
+      "Choose <strong>Versions → 0.9.3-beta15</strong>. Update <strong>PsyReaSFX WebView Runtime to 0.3.9.30-beta3</strong> in the same repository. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.",
     betaStepFour:
-      "Apply the update, close the old PRS window, then run <strong>PsyReaSFX.lua</strong>. Restart REAPER when a native extension is newly installed. Running the same action again brings the existing window back.",
+      "After installing or updating the runtime, fully quit and restart REAPER, then run <strong>PsyReaSFX.lua</strong>. Restarting the script alone keeps the old DLL loaded. Running the same action again brings the existing window back.",
     betaNeuralNote:
       '<strong>Local neural similarity requires a separate package:</strong> Windows x64 only. <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download the complete PsyReaSFX Neural Similarity ZIP</a> (about 42.4 MB, includes model and installers), or install the separate data package through ReaPack. Updating the main script does not install it. <a href="#neural-install">Exact installation steps ↓</a>. Without it, similar-sound search uses the built-in 15-feature acoustic method.',
     betaAiNote:
@@ -175,7 +175,7 @@ const messages = {
     betaScreenshotLabel:
       "View the historical ReaPack menu example at full resolution",
     betaScreenshotCaption:
-      "Earlier ReaPack screenshot showing the menu locations. After synchronization, enable pre-releases and select 0.9.3-beta14 for WebView. Stable remains 0.9.1.",
+      "Earlier ReaPack screenshot showing the menu locations. After synchronization, enable pre-releases and select 0.9.3-beta15 for WebView. Stable remains 0.9.1.",
     compareIncluded: "Included",
     compareRetained: "Retained",
     compareNone: "—",
@@ -426,9 +426,9 @@ const messages = {
     betaStepTwo:
       "在 <strong>PsyReaSFX.lua</strong> 右键菜单中启用 <strong>Enable pre-releases</strong>；如固定了旧版，先取消固定。",
     betaStepThree:
-      "选择 <strong>Versions → 0.9.3-beta14</strong>，同时安装 <strong>PsyReaSFX WebView Runtime</strong>。js_ReaScriptAPI 用于系统目录选择与 Windows 任务栏入口。",
+      "选择 <strong>Versions → 0.9.3-beta15</strong>，同时将同一仓库的 <strong>PsyReaSFX WebView Runtime 更新到 0.3.9.30-beta3</strong>。js_ReaScriptAPI 用于系统目录选择与 Windows 任务栏入口。",
     betaStepFour:
-      "应用更新，关闭旧 PRS 窗口后运行 <strong>PsyReaSFX.lua</strong>；首次安装原生扩展后需重启 REAPER。之后重复运行同一动作即可唤回窗口。",
+      "安装或更新运行库后，必须完全退出并重启 REAPER，再运行 <strong>PsyReaSFX.lua</strong>。仅重跑脚本仍会使用旧 DLL。之后重复运行同一动作即可唤回窗口。",
     betaNeuralNote:
       '<strong>本地神经相似检索必须另装包：</strong>仅支持 Windows x64。<a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">直接下载完整 PsyReaSFX Neural Similarity ZIP</a>（约 42.4 MB，含模型与安装脚本），或在 ReaPack 安装独立数据包；更新主脚本不会自动安装。<a href="#neural-install">具体安装步骤 ↓</a>。未安装时使用内置 15 维声学检索。',
     betaAiNote:
@@ -437,7 +437,7 @@ const messages = {
       "WebView 沿用已有目录索引、波形与本地神经缓存；这次界面更新无需全库重扫。",
     betaScreenshotLabel: "查看历史 ReaPack 菜单示例原图",
     betaScreenshotCaption:
-      "早期 ReaPack 截图，仅用于说明菜单位置。同步后启用预发布，选择 0.9.3-beta14 安装 WebView；稳定通道仍是 0.9.1。",
+      "早期 ReaPack 截图，仅用于说明菜单位置。同步后启用预发布，选择 0.9.3-beta15 安装 WebView；稳定通道仍是 0.9.1。",
     compareIncluded: "有",
     compareRetained: "保留",
     compareNone: "—",

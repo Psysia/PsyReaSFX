@@ -99,7 +99,8 @@ function inspectRuntime(native, policy) {
   }
   const version = typeof native.version === "string" ? native.version : "未知";
   const baseline = policy.baseline_versions?.includes(version);
-  const dockWarning = !baseline && /^0\.3\.9\.(29|30|31|32)$/.test(version);
+  const dockWarning =
+    !baseline && /^0\.3\.9\.(29|30|31|32)(?:-prs\.1)?$/.test(version);
   return {
     version,
     status: dockWarning
@@ -108,7 +109,7 @@ function inspectRuntime(native, policy) {
         ? policy.validation_status
         : "external_unverified",
     notice: dockWarning
-      ? "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。"
+      ? "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30-beta3，并完全重启 REAPER。"
       : baseline
         ? policy.validation_status === "native_acceptance_pending"
           ? "随包候选版本 · 待 REAPER 实机验收"
