@@ -497,5 +497,14 @@
   "REAPER 播放或录音时暂停来源检查": "Source check paused during REAPER playback or recording",
   "交互时暂停来源检查": "Source check paused during interaction",
   "此运行时仍有停靠重绘问题。请更新 PsyReaSFX WebView Runtime 兼容补丁并重启 REAPER。": "This runtime still has the docked redraw issue. Update the PsyReaSFX WebView Runtime compatibility patch and restart REAPER.",
-  "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30-beta3，并完全重启 REAPER。": "This runtime is missing the dock/float transition fix. Update PsyReaSFX WebView Runtime to 0.3.9.30-beta3 in ReaPack, then fully restart REAPER."
+  "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30-beta3，并完全重启 REAPER。": "This runtime is missing the dock/float transition fix. Update PsyReaSFX WebView Runtime to 0.3.9.30-beta3 in ReaPack, then fully restart REAPER.",
+  "检查来源新增素材": "Check source folders for new sounds",
+  "分析新增素材": "Analyze new sounds",
+  "已取消来源检查": "Source check canceled",
+  "已核对文件名": "Filenames checked",
+  "跳过未变化目录": "Unchanged folders skipped",
+  "正在取消…": "Canceling…",
+  "新增": "New",
+  "目录": "Folders",
+  "首次核对文件名；之后跳过未变化目录，只分析新增素材。定期（约 30 分钟）重新核对，避免漏掉文件。取消当前检查不会关闭自动监视。": "The first pass checks filenames. Later checks skip unchanged folders and analyze only new sounds. A periodic check (about 30 minutes) catches missed changes. Canceling a check keeps automatic monitoring enabled."
 }

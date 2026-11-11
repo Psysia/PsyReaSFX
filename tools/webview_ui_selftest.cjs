@@ -557,48 +557,99 @@ async function main() {
     // waveform canvases, rebuilding result rows, or requesting catalog pages.
     await page.waitForTimeout(180);
     const motion = await page.evaluate(async () => {
-      window.testSetState({ position: 0.1, playing: true,
-        playback: { epoch: 77, velocity: 0.1, start: 0, end: 1, loop: false } });
+      window.testSetState({
+        position: 0.1,
+        playing: true,
+        playback: { epoch: 77, velocity: 0.1, start: 0, end: 1, loop: false },
+      });
       const canvas = document.querySelector("#detail-wave");
       const context = canvas.getContext("2d");
       const clear = context.clearRect;
       let paints = 0;
-      context.clearRect = function (...args) { paints++; return clear.apply(this, args); };
-      const pagesBefore = window.testCalls.filter(c => c.method === "catalog.page").length;
+      context.clearRect = function (...args) {
+        paints++;
+        return clear.apply(this, args);
+      };
+      const pagesBefore = window.testCalls.filter(
+        (c) => c.method === "catalog.page",
+      ).length;
       const positions = [];
       const mini = [];
       const started = performance.now();
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         function frame(now) {
-          positions.push(new DOMMatrixReadOnly(document.querySelector("#detail-playhead").style.transform).m41);
-          mini.push(new DOMMatrixReadOnly(document.querySelector(".mini-playhead:not([hidden])").style.transform).m41);
-          if (now - started < 240) requestAnimationFrame(frame); else resolve();
+          positions.push(
+            new DOMMatrixReadOnly(
+              document.querySelector("#detail-playhead").style.transform,
+            ).m41,
+          );
+          mini.push(
+            new DOMMatrixReadOnly(
+              document.querySelector(
+                ".mini-playhead:not([hidden])",
+              ).style.transform,
+            ).m41,
+          );
+          if (now - started < 240) requestAnimationFrame(frame);
+          else resolve();
         }
         requestAnimationFrame(frame);
       });
       context.clearRect = clear;
-      const pagesAfter = window.testCalls.filter(c => c.method === "catalog.page").length;
+      const pagesAfter = window.testCalls.filter(
+        (c) => c.method === "catalog.page",
+      ).length;
       window.testSetState({ playing: false, position: 0.124 });
       const paused = document.querySelector("#detail-playhead").style.transform;
-      await new Promise(resolve => setTimeout(resolve, 160));
-      const held = paused === document.querySelector("#detail-playhead").style.transform;
-      window.testSetState({ playing: undefined, position: undefined, playback: undefined });
-      return { unique: new Set(positions).size, mini: new Set(mini).size,
-        monotonic: positions.every((p,i) => !i || p >= positions[i-1]), paints, pagesBefore, pagesAfter, held };
+      await new Promise((resolve) => setTimeout(resolve, 160));
+      const held =
+        paused === document.querySelector("#detail-playhead").style.transform;
+      window.testSetState({
+        playing: undefined,
+        position: undefined,
+        playback: undefined,
+      });
+      return {
+        unique: new Set(positions).size,
+        mini: new Set(mini).size,
+        monotonic: positions.every((p, i) => !i || p >= positions[i - 1]),
+        paints,
+        pagesBefore,
+        pagesAfter,
+        held,
+      };
     });
-    assert(motion.unique >= 8 && motion.mini >= 8 && motion.monotonic,
-      `Playheads must advance between host messages: ${JSON.stringify(motion)}`);
-    assert.equal(motion.paints, 0, "cursor animation must not redraw cached waveform pixels");
-    assert.equal(motion.pagesBefore, motion.pagesAfter, "cursor animation must not reload catalog data");
+    assert(
+      motion.unique >= 8 && motion.mini >= 8 && motion.monotonic,
+      `Playheads must advance between host messages: ${JSON.stringify(motion)}`,
+    );
+    assert.equal(
+      motion.paints,
+      0,
+      "cursor animation must not redraw cached waveform pixels",
+    );
+    assert.equal(
+      motion.pagesBefore,
+      motion.pagesAfter,
+      "cursor animation must not reload catalog data",
+    );
     assert(motion.held, "pause must freeze the visual cursor immediately");
     const resizePages = await page.evaluate(() => {
-      const before = window.testCalls.filter(c => c.method === "catalog.page").length;
-      for (let i=0; i<100; i++) window.dispatchEvent(new Event("resize"));
+      const before = window.testCalls.filter(
+        (c) => c.method === "catalog.page",
+      ).length;
+      for (let i = 0; i < 100; i++) window.dispatchEvent(new Event("resize"));
       return before;
     });
     await page.waitForTimeout(200);
-    assert.equal(await page.evaluate(() => window.testCalls.filter(c => c.method === "catalog.page").length),
-      resizePages, "duplicate native resize notifications must not flood catalog RPC");
+    assert.equal(
+      await page.evaluate(
+        () =>
+          window.testCalls.filter((c) => c.method === "catalog.page").length,
+      ),
+      resizePages,
+      "duplicate native resize notifications must not flood catalog RPC",
+    );
     await page.locator(".result-cell.name").nth(1).click();
     assert.equal(
       await page.locator(".result-row.played:not(.selected)").count(),
@@ -974,6 +1025,57 @@ async function main() {
       window.testCalls.some(
         (call) => call.method === "tasks.cancel" && call.params.task === "scan",
       ),
+    );
+    await page.evaluate(() =>
+      window.testSetState({
+        tasks: { scan: true },
+        taskDetails: {
+          scan: {
+            automatic: true,
+            jobId: 771,
+            files: 3918,
+            added: 2,
+            directories: 276,
+            skippedDirectories: 270,
+          },
+        },
+      }),
+    );
+    assert.match(
+      await page.locator("#activity-text").textContent(),
+      /来源检查.*新增 2/,
+    );
+    assert.match(
+      await page.locator("#task-list").textContent(),
+      /已核对文件名 3,918.*新增 2.*跳过未变化目录 270/s,
+    );
+    await page
+      .getByRole("button", { name: "停止 · 来源检查", exact: true })
+      .evaluate((button) => button.click());
+    await page.waitForFunction(() =>
+      window.testCalls.some(
+        (call) =>
+          call.method === "tasks.cancel" &&
+          call.params.task === "scan" &&
+          call.params.jobId === 771,
+      ),
+    );
+    await page.evaluate(() =>
+      window.testSetState({
+        tasks: { scan: true },
+        taskDetails: {
+          scan: { automatic: true, canceling: true, files: 3918, added: 2 },
+        },
+      }),
+    );
+    assert(
+      await page
+        .getByRole("button", { name: "停止 · 来源检查", exact: true })
+        .isDisabled(),
+    );
+    assert.match(
+      await page.locator("#activity-text").textContent(),
+      /正在取消/,
     );
     await page.evaluate(() => window.testSetState({ tasks: {} }));
     await page.locator("#search").fill("mech");

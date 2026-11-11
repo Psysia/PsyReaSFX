@@ -1430,8 +1430,11 @@ function applySnapshot(next) {
   if (detail?.total > 0)
     activity = `${localizer.text(taskLabels[firstTask] || firstTask)} ${detail.completed}/${detail.total}${tasks.length > 1 ? ` · +${tasks.length - 1}` : ""}`;
   else if (firstTask === "scan" && detail?.files != null)
-    activity = `${localizer.text(detail.automatic ? "来源检查" : "扫描")} · ${detail.files.toLocaleString()}${localizer.text(" 个音频")}`;
+    activity = detail.automatic
+      ? `${localizer.text("来源检查")} · ${localizer.text("新增")} ${detail.added || 0} · ${localizer.text("目录")} ${detail.directories || 0}`
+      : `${localizer.text("扫描")} · ${detail.files.toLocaleString()}${localizer.text(" 个音频")}`;
   if (detail?.paused) activity = localizer.text(detail.paused);
+  if (detail?.canceling) activity = localizer.text("正在取消…");
   if (waiting)
     activity = `${localizer.text("相似检索等待中")} · ${progress.waitingFor || ""}`;
   else if (progress?.total && next.tasks?.similar)
@@ -2768,13 +2771,34 @@ function renderTasks() {
     .filter(([task]) => task !== "similar")
     .map(([task]) => {
       const row = node("div", "task-row");
-      const label = taskLabels[task] || task;
-      const cancel = node("button", null, "取消");
+      const detail = snapshot?.taskDetails?.[task];
+      const label =
+        task === "scan" && detail?.automatic
+          ? "来源检查"
+          : taskLabels[task] || task;
+      const cancel = node(
+        "button",
+        null,
+        detail?.canceling ? "正在取消…" : "取消",
+      );
+      cancel.disabled = Boolean(detail?.canceling);
       cancel.setAttribute("aria-label", `停止 · ${label}`);
-      cancel.onclick = action(() => command("tasks.cancel", { task }));
+      cancel.onclick = action(async () => {
+        cancel.disabled = true;
+        cancel.textContent = localizer.text("正在取消…");
+        try {
+          await command("tasks.cancel", {
+            task,
+            ...(detail?.jobId != null ? { jobId: detail.jobId } : {}),
+          });
+        } catch (error) {
+          cancel.disabled = false;
+          cancel.textContent = localizer.text("取消");
+          throw error;
+        }
+      });
       const content = node("div", "task-description");
       content.append(node("strong", null, label));
-      const detail = snapshot?.taskDetails?.[task];
       if (detail) {
         if (detail.label) content.append(node("span", null, detail.label));
         if (detail.total > 0)
@@ -2790,7 +2814,17 @@ function renderTasks() {
             node(
               "span",
               null,
-              `${detail.files.toLocaleString()}${localizer.text(" 个音频")} · ${(detail.directories || 0).toLocaleString()}${localizer.text(" 个目录")}`,
+              detail.automatic
+                ? `${localizer.text("已核对文件名")} ${detail.files.toLocaleString()} · ${localizer.text("新增")} ${detail.added || 0}`
+                : `${detail.files.toLocaleString()}${localizer.text(" 个音频")} · ${(detail.directories || 0).toLocaleString()}${localizer.text(" 个目录")}`,
+            ),
+          );
+        if (detail.automatic)
+          content.append(
+            node(
+              "small",
+              "muted",
+              `${localizer.text("目录")} ${detail.directories || 0} · ${localizer.text("跳过未变化目录")} ${detail.skippedDirectories || 0}`,
             ),
           );
         if (detail.failed)
