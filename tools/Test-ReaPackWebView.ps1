@@ -42,10 +42,28 @@ function Resolve-Payload([string]$Url) {
                 # Release tags are immutable. Changing build download mirrors on main
                 # must not change the expected provenance of an already released lock.
                 $pinnedTag = $prefix.TrimEnd('/').Split('/')[-1]
-                $pinnedLock = & git -C $repoRoot show "${pinnedTag}:$relative"
-                if ($LASTEXITCODE -ne 0) { throw "Fetch release tag $pinnedTag before checking its published lock." }
+                # Native output captured as PowerShell lines loses the final
+                # newline state. Read the Git blob without adding a newline:
+                # candidate locks written by WriteAllText need not have one.
+                $start = New-Object Diagnostics.ProcessStartInfo
+                $start.FileName = 'git'
+                $start.WorkingDirectory = $repoRoot
+                $start.Arguments = "show `"${pinnedTag}:$relative`""
+                $start.UseShellExecute = $false
+                $start.CreateNoWindow = $true
+                $start.RedirectStandardOutput = $true
+                $start.RedirectStandardError = $true
+                $start.StandardOutputEncoding = New-Object Text.UTF8Encoding($false)
+                $process = [Diagnostics.Process]::Start($start)
+                try {
+                    $pinnedLock = $process.StandardOutput.ReadToEnd()
+                    $gitError = $process.StandardError.ReadToEnd()
+                    $process.WaitForExit()
+                    if ($process.ExitCode -ne 0) { throw "Fetch release tag $pinnedTag before checking its published lock. $gitError" }
+                }
+                finally { $process.Dispose() }
                 $expected = Join-Path $FixtureDirectory "$pinnedTag-expected-runtime-lock.json"
-                [IO.File]::WriteAllText($expected, (($pinnedLock -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+                [IO.File]::WriteAllText($expected, $pinnedLock, (New-Object Text.UTF8Encoding($false)))
                 return $expected
             }
             return Join-Path $repoRoot $relative
