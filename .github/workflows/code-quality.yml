@@ -268,6 +268,13 @@ jobs:
         run: |
           lua tools/lua_preview_seek_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua')
 
+      - name: Verify loudness browsing does not trigger native dialogs
+        shell: pwsh
+        run: |
+          lua tools/lua_loudness_selftest.lua
+          lua tools/lua_loudness_selftest.lua PsyReaSFX_v0_7_23_Stable.lua PsyReaSFX_v0_7_23_Stable.lua
+          lua tools/lua_loudness_selftest.lua PsyReaSFX_WebView.lua PsyReaSFX_WebView.lua
+
       - name: Run Lua spectral cache self-test
         shell: pwsh
         run: |

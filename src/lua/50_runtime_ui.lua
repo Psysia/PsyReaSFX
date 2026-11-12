@@ -20278,7 +20278,7 @@ function draw_loudness_summary(asset)
   end
 
   if not entry then
-    metric_chip("Loudness", "等待", false)
+    metric_chip("Loudness", "未分析", false)
     return
   end
 
@@ -23985,6 +23985,8 @@ function draw_settings_waveforms()
       "显示响度统计",
       state.show_loudness_metrics
     )
+
+  ImGui.TextWrapped(ctx, "浏览和试听读取已缓存的响度；点击重新分析按钮计算当前素材。")
 
   if loudness_changed then
     state.config_dirty = true
