@@ -1411,6 +1411,7 @@ local settings_schema = {
   {
     key = "show_loudness_metrics",
     label = "显示响度统计",
+    description = "浏览和试听读取已缓存的响度；点击重新分析按钮计算当前素材。",
     group = "波形与分析",
     kind = "boolean",
   },

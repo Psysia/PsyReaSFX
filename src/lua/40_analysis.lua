@@ -533,6 +533,13 @@ function loudness_value_from_gain(gain, target)
 end
 
 function request_loudness_analysis(asset, force)
+  -- REAPER's CalculateNormalization opens a modal progress dialog and blocks
+  -- the defer loop. Browsing/painting must only read the cache; run the native
+  -- calculation exclusively for the explicit Analyze/Reanalyze action.
+  if force ~= true then
+    return
+  end
+
   if not state.show_loudness_metrics
     or not asset
     or not HostApi.file_exists(asset.path)

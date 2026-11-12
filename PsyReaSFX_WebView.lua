@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.3-beta16
+-- @version 0.9.3-beta17
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 16"
+local VERSION = "0.9.3 Beta 17"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta16",
-  source_sha256 = "9f176eec2d8619ab4c07c6658fa0f174d49fb213f5d5dc1b5bd055cd0bf134c3",
+  release_id = "PsyReaSFX/0.9.3-beta17",
+  source_sha256 = "fa5dae8c3e296a94374160b764526f29c3db6e9f741ca92645058e190b89c49a",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1905,6 +1905,9 @@ I18N_EN = {
   ["Region 后置"] = "Region post-roll",
   ["使用 REAPER CalculateNormalization 按需计算；结果写入 loudness_v1.tsv。"] =
     "Calculated on demand with REAPER CalculateNormalization and cached in loudness_v1.tsv.",
+  ["浏览和试听读取已缓存的响度；点击重新分析按钮计算当前素材。"] =
+    "Browsing and auditioning use cached loudness; click Reanalyze to measure the current asset.",
+  ["未分析"] = "Not analyzed",
   ["响度匹配仍使用快速波形估算，仅影响试听；上方显示值使用 REAPER 精确响度计算。"] =
     "Loudness matching uses a fast waveform estimate and affects preview only; displayed metrics use REAPER's precise loudness calculation.",
   ["256 点：缓存较小；512 点：细节更多。"] =
@@ -12203,6 +12206,13 @@ function loudness_value_from_gain(gain, target)
 end
 
 function request_loudness_analysis(asset, force)
+  -- REAPER's CalculateNormalization opens a modal progress dialog and blocks
+  -- the defer loop. Browsing/painting must only read the cache; run the native
+  -- calculation exclusively for the explicit Analyze/Reanalyze action.
+  if force ~= true then
+    return
+  end
+
   if not state.show_loudness_metrics
     or not asset
     or not HostApi.file_exists(asset.path)
@@ -18648,6 +18658,7 @@ local settings_schema = {
   {
     key = "show_loudness_metrics",
     label = "显示响度统计",
+    description = "浏览和试听读取已缓存的响度；点击重新分析按钮计算当前素材。",
     group = "波形与分析",
     kind = "boolean",
   },
@@ -39885,7 +39896,7 @@ function draw_loudness_summary(asset)
   end
 
   if not entry then
-    metric_chip("Loudness", "等待", false)
+    metric_chip("Loudness", "未分析", false)
     return
   end
 
@@ -43592,6 +43603,8 @@ function draw_settings_waveforms()
       "显示响度统计",
       state.show_loudness_metrics
     )
+
+  ImGui.TextWrapped(ctx, "浏览和试听读取已缓存的响度；点击重新分析按钮计算当前素材。")
 
   if loudness_changed then
     state.config_dirty = true

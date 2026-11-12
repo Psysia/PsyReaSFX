@@ -444,7 +444,7 @@ The SWS preview API does not expose arbitrary source-channel isolation for multi
 
 ### Loudness display
 
-The preview header can show LUFS-I, maximum momentary LUFS, maximum short-term LUFS and True Peak. Analysis runs on demand and is cached. Estimated preview matching is intended for fast comparison, not standards-compliant delivery measurement.
+The preview header can show LUFS-I, maximum momentary LUFS, maximum short-term LUFS and True Peak. Browsing and auditioning only read cached values and do not automatically open REAPER's loudness analysis progress dialog. Click the reanalyze button in the loudness area or Reanalyze current asset in Settings to run and cache a precise analysis; REAPER may display progress for this explicit action. Estimated preview matching is intended for fast comparison, not standards-compliant delivery measurement.
 
 ## 11. Regions and transient suggestions
 

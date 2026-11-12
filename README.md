@@ -159,16 +159,16 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.1** | Default release; the complete 0.9.0 feature set with reliability and performance fixes. |
-| WebView beta | **0.9.3-beta16 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
+| WebView beta | **0.9.3-beta17 (0.9.a)** | Windows x64 interface migration, using ReaWebAPI, available through pre-releases. |
 | Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
 | Optional component | [PsyReaSFX Neural Similarity][neural-download] | Local neural similar-sound search for Windows x64. |
 
 PsyReaSFX keeps normal acoustic search available without the [optional neural component][neural-download]. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
 
-See the [Beta 16 acceptance checklist: 117 workflows and 73 settings (Chinese)](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md) for source mappings, entry points and native acceptance steps.
+See the [Beta 17 acceptance checklist: 117 workflows and 73 settings (Chinese)](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md) for source mappings, entry points and native acceptance steps.
 
-Beta 16 fixes cancellation of paused source checks and skips filename enumeration in unchanged directories. Automatic analysis handles newly discovered sounds only; task details distinguish checked names from additions. Initial and periodic filename checks remain as a fallback.
+Beta 17 fixes cancellation of paused source checks and skips filename enumeration in unchanged directories. Automatic analysis handles newly discovered sounds only; task details distinguish checked names from additions. Initial and periodic filename checks remain as a fallback.
 
 Beta 15 targets dock-to-floating freezes and crashes. Update **PsyReaSFX WebView Runtime 0.3.9.30-beta3** and fully restart REAPER (actual DLL `0.3.9.30-prs.2`). [Findings, regression coverage and native acceptance](docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md).
 

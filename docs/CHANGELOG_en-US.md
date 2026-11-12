@@ -1,3 +1,10 @@
+## 0.9.3 Beta 17 (0.9.a WebView) — 2026-11-12
+
+- Browsing and auditioning only read cached loudness, preventing repeated native REAPER analysis dialogs for new assets. Analyze/Reanalyze explicitly measures and caches the current asset; manual analysis may still show progress.
+- Preserve cached LUFS-I/M/S and True Peak readings and estimated preview matching.
+- Add regression coverage for quiet uncached browsing, cached display, explicit analysis, stale caches and source cleanup in the modular source and both generated backends.
+- Update ReaPack and the offline package to 0.9.3-beta17. Runtime remains 0.3.9.30-prs.2; close and reopen PRS after updating.
+
 ## 0.9.3 Beta 14 (0.9.a WebView) — 2026-11-10
 
 - Run automatic source discovery in small idle slices; pause for audition, DAW playback/recording and interaction. Start intervals after completion and back off unchanged catalogs. Automatic checks no longer prune catalog entries/favorites.
