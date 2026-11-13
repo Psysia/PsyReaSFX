@@ -4,12 +4,8 @@ run-name: WebView development · ${{ github.ref_name }}
 on:
   push:
     branches: [main, 'codex/**', 'beta/**']
-    paths:
-      - 'src/**'
-      - 'tools/**'
-      - 'packaging/webview/**'
-      - 'dependencies/reawebapi/**'
-      - '.github/workflows/development-webview.yml'
+    # A required check must report for every head commit, including package
+    # metadata and checkout attributes; path filtering leaves it pending.
   workflow_dispatch:
   schedule:
     - cron: '17,47 * * * *'
