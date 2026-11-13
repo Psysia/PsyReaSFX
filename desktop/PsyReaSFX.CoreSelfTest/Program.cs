@@ -274,7 +274,7 @@ async Task TestDecoderPipe(string mode)
         if (task is not null) try { await task.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         Environment.SetEnvironmentVariable("PSYREASFX_TEST_ENCODER_PID", null);
         Environment.SetEnvironmentVariable("PSYREASFX_TEST_ENCODER_MODE", null);
-        File.Delete(fakeEncoder);
+        await DeleteFixtureExecutable(fakeEncoder);
     }
 }
 
@@ -392,11 +392,12 @@ async Task TestEncoder(string mode)
     Environment.SetEnvironmentVariable("PATH", AppContext.BaseDirectory + Path.PathSeparator + oldPath);
     Environment.SetEnvironmentVariable("PSYREASFX_TEST_ENCODER_PID", pidFile);
     Environment.SetEnvironmentVariable("PSYREASFX_TEST_ENCODER_MODE", mode);
+    using var cancellation = new CancellationTokenSource();
+    Task<TransferRunResult>? task = null;
     int? childId = null;
     try
     {
-        using var cancellation = new CancellationTokenSource();
-        var task = new TransferEngine().RunAsync(
+        task = new TransferEngine().RunAsync(
             [new TransferRequest(new AudioAsset { FilePath = source }, -1, -1, new(0, 1, 0, false, 1), 1)],
             new TransferOptions { OutputDirectory = directory, NamingTemplate = "export", Format = "flac",
                 PreserveMetadata = false, CollisionPolicy = "overwrite" }, null, cancellation.Token);
@@ -415,16 +416,35 @@ async Task TestEncoder(string mode)
     }
     finally
     {
+        cancellation.Cancel();
         if (childId is int pid && IsRunning(pid))
         {
             using var child = Process.GetProcessById(pid);
             child.Kill(true);
             await child.WaitForExitAsync();
         }
+        if (task is not null) try { await task.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         Environment.SetEnvironmentVariable("PATH", oldPath);
         Environment.SetEnvironmentVariable("PSYREASFX_TEST_ENCODER_PID", null);
         Environment.SetEnvironmentVariable("PSYREASFX_TEST_ENCODER_MODE", null);
-        File.Delete(fakeEncoder);
+        await DeleteFixtureExecutable(fakeEncoder);
+    }
+}
+
+static async Task DeleteFixtureExecutable(string path)
+{
+    // Windows can retain an executable mapping briefly after process exit.
+    // Retry only fixture deletion, after the child and service task have ended;
+    // a persistent lock must still fail the regression.
+    var clock = Stopwatch.StartNew();
+    while (true)
+    {
+        try { File.Delete(path); return; }
+        catch (Exception error) when ((error is IOException or UnauthorizedAccessException)
+            && clock.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(50);
+        }
     }
 }
 
