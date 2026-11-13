@@ -411,6 +411,30 @@ assert(
 WebUI.handlers["preview.region"]({ start = 0.25, finish = 0.75 })
 assert(runtime.region_start == 0.25 and runtime.region_end == 0.75)
 assert(not pcall(WebUI.handlers["preview.region"], { start = 0.8, finish = 0.2 }))
+do
+  local previous_regions = runtime.regions_by_path
+  local first = { start = 0.1, finish = 0.3, name = "first" }
+  local last = { start = 0.4, finish = 0.7, name = "last" }
+  runtime.regions_by_path = { [path_key(asset.path)] = { first, last } }
+  assert(not pcall(WebUI.handlers["region.action"], {
+    action = "delete", path = second.path, index = 1, expected = first,
+  }), "a stale Region button must not mutate the newly selected asset")
+  assert(not pcall(WebUI.handlers["region.action"], {
+    action = "delete", path = asset.path, index = 1.5, expected = first,
+  }), "Region indexes must be integers")
+  WebUI.handlers["region.action"]({ action = "delete", path = asset.path, index = 1, expected = first })
+  assert(not pcall(WebUI.handlers["region.action"], {
+    action = "delete", path = asset.path, index = 1, expected = first,
+  }), "a reordered Region list must reject the old identity")
+  assert(asset_regions(asset)[1] == last, "stale deletion must preserve the remaining Region")
+  WebUI.handlers["region.action"]({ action = "activate", path = asset.path, index = 1, expected = last })
+  assert(runtime.region_start == last.start and runtime.region_end == last.finish)
+  assert(not pcall(WebUI.handlers["region.action"], {
+    action = "save", path = asset.path, name = "stale", expected = { start = 0.2, finish = 0.6 },
+  }), "a naming dialog must not save a subsequently changed selection")
+  runtime.regions_by_path = previous_regions
+  runtime.region_start, runtime.region_end = 0.25, 0.75
+end
 runtime.persistence_read_only = true
 assert(
   not pcall(WebUI.handlers["favorite.toggle"], { path = asset.path }),
@@ -445,7 +469,7 @@ assert(runtime.status_filter == "approved")
 WebUI.handlers["catalog.query"]({ search = "", view = "all" })
 assert(runtime.root_filter == nil and runtime.status_filter == nil)
 local input = {
-  neural_json_encode({ protocol = 1, id = "invalid-method", method = "unknown", params = {} }),
+  neural_json_encode({ protocol = 1, id = "invalid-method", method = "unknown" }),
   "{bad",
 }
 reaper.ReaWeb_Receive = function()
@@ -602,7 +626,7 @@ do
 end
 
 runtime.startup_session = { phase = "fixture loading" }
-input = { neural_json_encode({ protocol = 1, id = "loading-settings", method = "settings.get", params = {} }) }
+input = { neural_json_encode({ protocol = 1, id = "loading-settings", method = "settings.get" }) }
 webview_receive()
 local loading_response = neural_json_decode(messages[#messages])
 assert(loading_response.ok and loading_response.result.loading)
@@ -706,8 +730,8 @@ do
     runtime.preview_percent, runtime.preview_position = 0, 0
   end
   local resumed
-  play_preview = function(item, _, selection, position)
-    resumed = { item = item, selection = selection, position = position }
+  play_preview = function(item, _, selection, position, range)
+    resumed = { item = item, selection = selection, position = position, range = range }
     runtime.preview, runtime.preview_path = "resumed", item.path
   end
   WebUI.handlers["preview.toggle"]({})
@@ -715,6 +739,7 @@ do
   assert(WebUI.paused_preview.percent == 0.59375 and WebUI.paused_preview.reverse)
   WebUI.handlers["preview.toggle"]({})
   assert(resumed.item == asset and resumed.position == 1.25 and resumed.selection)
+  assert(resumed.range.start == 0.25 and resumed.range.finish == 0.75)
   assert(WebUI.paused_preview == nil)
   WebUI.handlers["preview.toggle"]({ behavior = "stop" })
   WebUI.handlers["preview.toggle"]({ behavior = "stop" })
@@ -723,6 +748,12 @@ do
   WebUI.handlers["preview.toggle"]({})
   WebUI.handlers["preview.toggle"]({})
   assert(resumed.position == 1.25 and resumed.selection == false, "full-file preview must not resume inside a stale Region")
+  runtime.region_start, runtime.region_end = 0.1, 0.3
+  runtime.preview_map_start, runtime.preview_map_span = 0.4, 0.4
+  WebUI.handlers["preview.toggle"]({})
+  WebUI.handlers["preview.toggle"]({})
+  assert(resumed.range.start == 0.4 and resumed.range.finish == 0.8,
+    "pause/resume must retain the playing audio range after the UI selection changes")
   WebUI.handlers["preview.toggle"]({})
   WebUI.handlers["preview.stop"]({})
   assert(WebUI.paused_preview == nil, "explicit Stop must clear the bookmark")

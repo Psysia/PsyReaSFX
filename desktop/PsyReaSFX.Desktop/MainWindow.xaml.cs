@@ -2315,7 +2315,7 @@ public partial class MainWindow : Window
         var selected = SelectedAssets();
         var window = new TransferWindow(_preferences, _selected, selected,
             _selectionStartRatio, _selectionEndRatio, _pitchSemitones, _playbackRate,
-            _gainDb, _reverseAudition, _preservePitch) { Owner = this };
+            _gainDb, _reverseAudition, _preservePitch, _assets.Select(asset => asset.FilePath).ToArray()) { Owner = this };
         window.ShowDialog();
         ApplyPreferences(_preferences, false);
     }

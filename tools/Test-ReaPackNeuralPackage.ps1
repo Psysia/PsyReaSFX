@@ -29,12 +29,27 @@ if ($sources.Count -lt 10) { throw "Neural ReaPack package is incomplete." }
 
 $targets = @{}
 
-function Resolve-SourceFile([string]$url) {
+function Resolve-SourceFile([string]$url, [string]$expectedHash) {
     if ($url -match '/releases/download/[^/]+/PsyReaSFX\.NeuralSidecar_.*_win_x64\.exe$') {
         return $sidecar
     }
-    if ($url -match '/PsyReaSFX/[^/]+/(.+)$') {
-        return Join-Path $repoRoot ($Matches[1] -replace '/', [IO.Path]::DirectorySeparatorChar)
+    if ($url -match '^https://raw\.githubusercontent\.com/Psysia/PsyReaSFX/([^/]+)/(.+)$') {
+        $ref = $Matches[1]
+        $relative = $Matches[2]
+        if ($relative -match '(^|/)\.\.(/|$)' -or $relative.Contains(':')) { throw 'Unsafe source path.' }
+        if ($ref -notmatch '^([a-f0-9]{40}|v\d+\.\d+\.\d+(?:-beta\d+(?:\.\d+)?)?)$') {
+            throw 'Repository sources must use an immutable release tag or commit.'
+        }
+        $local = Join-Path $repoRoot ($relative -replace '/', [IO.Path]::DirectorySeparatorChar)
+        if ((Test-Path -LiteralPath $local -PathType Leaf) -and
+            ('1220' + (Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash.ToLowerInvariant()) -ceq $expectedHash) {
+            return $local
+        }
+        # Historical releases keep their historical bytes. A current README
+        # cannot stand in for a pinned old README after its content changes.
+        $download = Join-Path $fixture ('source-' + [guid]::NewGuid().ToString('N'))
+        Invoke-WebRequest -UseBasicParsing $url -OutFile $download
+        return $download
     }
     if ($url -eq 'https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE') {
         $download = Join-Path $fixture "source-onnxruntime-license.txt"
@@ -64,7 +79,7 @@ try {
         }
         $targets[$target] = $true
 
-        $local = Resolve-SourceFile $url
+        $local = Resolve-SourceFile $url $hash
         if (-not (Test-Path -LiteralPath $local -PathType Leaf)) { throw "Missing local source for $target`: $local" }
         if (-not [string]::IsNullOrWhiteSpace($hash)) {
             $actual = "1220" + (Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash.ToLowerInvariant()

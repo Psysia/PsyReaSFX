@@ -22,6 +22,8 @@ internal static class DesktopSelfTest
     {
         var working = Path.Combine(Path.GetTempPath(), "PsyReaSFX-Desktop-SelfTest-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(working);
+        var initialCacheDirectory = LuaWaveCache.CacheDirectory;
+        LuaWaveCache.Configure(Path.Combine(working, "isolated-wave-cache"));
         try
         {
             var wavPath = Path.Combine(working, "desktop_self_test.wav");
@@ -823,6 +825,7 @@ internal static class DesktopSelfTest
         }
         finally
         {
+            LuaWaveCache.Configure(initialCacheDirectory);
             try { Directory.Delete(working, true); } catch { }
         }
     }

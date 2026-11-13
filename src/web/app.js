@@ -125,6 +125,8 @@ let ucsLoading;
 const ucsOpen = new Set();
 const tabScroll = new Map();
 const metadataDrafts = new Map();
+const metadataSaving = new Set();
+const metadataLoading = new Set();
 const playbackClock = new PlaybackClock();
 let playbackFrame = 0;
 let detailWidth = 0;
@@ -215,6 +217,7 @@ function command(method, params) {
     return saveSearch();
   if (["catalog.query", "catalog.sort", "tab.action"].includes(method))
     pageSequence++;
+  if (method === "preview.parameters") return sendPreviewParameters(params);
   if (method === "diagnostics.get")
     return host.request(method, params).then(async (text) => {
       const keyboard = await host.keyboardState?.().catch((error) => ({
@@ -373,6 +376,11 @@ function resizeColumn(event, key) {
   };
   const finish = () => {
     grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", finish);
+    grip.removeEventListener("pointercancel", finish);
+    grip.removeEventListener("lostpointercapture", finish);
+    if (grip.hasPointerCapture(event.pointerId))
+      grip.releasePointerCapture(event.pointerId);
     persist();
     renderColumns();
     renderRows();
@@ -380,6 +388,7 @@ function resizeColumn(event, key) {
   grip.addEventListener("pointermove", move);
   grip.addEventListener("pointerup", finish, { once: true });
   grip.addEventListener("pointercancel", finish, { once: true });
+  grip.addEventListener("lostpointercapture", finish, { once: true });
 }
 
 function spectralColor(wave, index, fallback) {
@@ -859,7 +868,25 @@ function requestPage(force = true) {
           limit,
           waveforms: prefs.columns.waveform,
         });
-        if (sequence !== pageSequence) {
+        let stalePage = false;
+        // The backend may stop a page at its byte budget before it fills the
+        // viewport. Read the remaining bounded rows instead of leaving a gap.
+        while (result.items.length > 0 && result.items.length < limit &&
+          offset + result.items.length < result.total && sequence === pageSequence &&
+          result.revision >= snapshot.revision) {
+          const remainder = await command("catalog.page", {
+            offset: offset + result.items.length,
+            limit: limit - result.items.length,
+            waveforms: prefs.columns.waveform,
+          });
+          if (remainder.revision !== result.revision) {
+            stalePage = true;
+            break;
+          }
+          if (!remainder.items.length) break;
+          result.items.push(...remainder.items);
+        }
+        if (stalePage || sequence !== pageSequence || result.revision < snapshot.revision) {
           pageRequestAgain = true;
           continue;
         }
@@ -1314,6 +1341,15 @@ function renderTabs() {
 
 function applySnapshot(next) {
   const previous = snapshot;
+  const previousEditor = metadataContextKey(previous);
+  const nextEditor = metadataContextKey(next);
+  if (previousEditor !== nextEditor) {
+    if (previousEditor && Object.keys(dirtyFields).length)
+      metadataDrafts.set(previousEditor, { dirtyFields, originalFields });
+    const draft = metadataDrafts.get(nextEditor);
+    dirtyFields = draft?.dirtyFields || {};
+    originalFields = draft?.originalFields || {};
+  }
   if (previous && previous.activeTab !== next.activeTab) {
     tabScroll.set(previous.activeTab, {
       top: $("result-scroll").scrollTop,
@@ -1489,26 +1525,22 @@ function applySnapshot(next) {
     (previous?.search !== next.search || previous?.activeTab !== next.activeTab)
   )
     $("search").value = next.search;
+  let refreshPage = false;
+  let refreshInspector = false;
   if (
     ready &&
     (!previous || previous.startup || previous.revision !== next.revision)
   )
-    requestPage();
+    refreshPage = true;
   if (previous && previous.activeTab !== next.activeTab) {
     const position = tabScroll.get(next.activeTab) || { top: 0, left: 0 };
     $("result-space").style.height = `${next.count * prefs.rowHeight}px`;
     $("result-scroll").scrollTop = position.top;
     $("result-scroll").scrollLeft = position.left;
-    requestPage();
+    refreshPage = true;
   }
   if (!previous || previous?.selected?.path !== next.selected?.path) {
     regionDrag = null;
-    if (previous?.selected?.path && Object.keys(dirtyFields).length) {
-      metadataDrafts.set(previous.selected.path, {
-        dirtyFields,
-        originalFields,
-      });
-    }
     detailWave = detailWaveCache.get(detailWaveKey(next.selected)) || null;
     if (!detailWave) {
       const overview = page?.items.find(
@@ -1520,12 +1552,9 @@ function applySnapshot(next) {
     waveFailure = "";
     zoomStart = 0;
     zoomEnd = 1;
-    const savedDraft = metadataDrafts.get(next.selected?.path);
-    dirtyFields = savedDraft?.dirtyFields || {};
-    originalFields = savedDraft?.originalFields || {};
-    if (inspectorTab !== "transfer") renderInspector();
+    refreshInspector = true;
     requestDetailWave();
-    requestPage();
+    refreshPage = true;
   } else if (
     next.selected &&
     inspectorTab !== "transfer" &&
@@ -1533,7 +1562,7 @@ function applySnapshot(next) {
     !Object.keys(dirtyFields).length &&
     JSON.stringify(previous?.selected) !== JSON.stringify(next.selected)
   ) {
-    renderInspector();
+    refreshInspector = true;
   }
   if (
     previous?.spectralPeaks !== next.spectralPeaks ||
@@ -1542,10 +1571,11 @@ function applySnapshot(next) {
   )
     requestDetailWave();
   if (
-    previous?.selectedCount !== next.selectedCount &&
+    (previous?.selectedCount !== next.selectedCount || previousEditor !== nextEditor) &&
     inspectorTab !== "transfer"
   )
-    renderInspector();
+    refreshInspector = true;
+  if (refreshInspector && inspectorTab !== "transfer") renderInspector();
   if (
     JSON.stringify(previous?.rowAppearance) !==
       JSON.stringify(next.rowAppearance) ||
@@ -1557,7 +1587,8 @@ function applySnapshot(next) {
     previous?.selectedCount !== next.selectedCount ||
     previous?.playedCount !== next.playedCount
   )
-    requestPage();
+    refreshPage = true;
+  if (refreshPage) requestPage();
   $("asset-name").textContent = next.selected?.name || "选择一个声音";
   $("asset-info").textContent = next.selected
     ? `${next.selected.channels} ch · ${Math.round(next.selected.sampleRate / 1000)} kHz · ${next.selected.bitDepth} bit · ${next.selected.library}`
@@ -1573,14 +1604,17 @@ function applySnapshot(next) {
       ![$(`fx-${key}`), $(`fx-${key}-value`)].includes(
         document.activeElement,
       ) &&
-      pendingFx[field] === undefined
+      pendingFx[field] === undefined &&
+      queuedFx[field] === undefined && sendingFx[field] === undefined
     ) {
       $(`fx-${key}`).value = next.fx[field];
       $(`fx-${key}-value`).value = next.fx[field];
     }
   }
-  $("preserve-pitch").checked = next.fx.preserve_pitch;
-  $("reverse").checked = next.fx.reverse;
+  for (const [id, key] of [["preserve-pitch", "preserve_pitch"], ["reverse", "reverse"]]) {
+    if (queuedFx[key] === undefined && sendingFx[key] === undefined)
+      $(id).checked = next.fx[key];
+  }
   updateReadouts();
   updateMiniPlayheads();
   renderClassificationReview();
@@ -1959,9 +1993,32 @@ function field(label, key, value, multiline = false) {
   return [wrapper, input];
 }
 
+function metadataContextKey(state = snapshot) {
+  if (!state?.selected) return null;
+  return state.selectedCount > 1
+    ? JSON.stringify(["bulk", state.activeTab, state.selectionRevision])
+    : state.selected.path;
+}
+
+function acknowledgeMetadata(context, values, saved = values) {
+  const current = context === metadataContextKey();
+  const draft = current
+    ? { dirtyFields, originalFields }
+    : metadataDrafts.get(context);
+  if (!draft) return;
+  for (const [key, value] of Object.entries(values)) {
+    draft.originalFields[key] = saved[key] ?? value;
+    // Only acknowledge the submitted value. A later edit still needs saving.
+    if (draft.dirtyFields[key] === value) delete draft.dirtyFields[key];
+  }
+  if (Object.keys(draft.dirtyFields).length) metadataDrafts.set(context, draft);
+  else metadataDrafts.delete(context);
+}
+
 async function renderBulkMetadata(container) {
+  const context = metadataContextKey();
   const selection = await command("metadata.selection");
-  if (!container.isConnected) return;
+  if (!container.isConnected || context !== metadataContextKey()) return;
   container.append(node("h3", null, `编辑 ${selection.count} 个素材`));
   container.append(node("p", "muted", "仅将勾选的字段应用到全部所选素材。"));
   const inputs = [];
@@ -1969,11 +2026,12 @@ async function renderBulkMetadata(container) {
     const [wrapper, input] = field(
       definition.label,
       definition.key,
-      selection.values[definition.key],
+      dirtyFields[definition.key] ?? selection.values[definition.key],
       true,
     );
     const enabled = node("input");
     enabled.type = "checkbox";
+    enabled.checked = dirtyFields[definition.key] !== undefined;
     enabled.setAttribute("aria-label", `应用 ${definition.label}`);
     if (selection.truncated?.[definition.key]) {
       input.readOnly = true;
@@ -1982,10 +2040,12 @@ async function renderBulkMetadata(container) {
     }
     if (selection.mixed[definition.key]) input.placeholder = "多个不同值";
     input.oninput = () => {
+      if (!input.isConnected || context !== metadataContextKey()) return;
       enabled.checked = true;
       dirtyFields[definition.key] = input.value;
     };
     enabled.onchange = () => {
+      if (!enabled.isConnected || context !== metadataContextKey()) return;
       if (enabled.checked) dirtyFields[definition.key] = input.value;
       else delete dirtyFields[definition.key];
     };
@@ -1994,43 +2054,64 @@ async function renderBulkMetadata(container) {
     inputs.push({ key: definition.key, input, enabled });
   }
   const save = node("button", null, "应用到所选素材");
+  save.disabled = snapshot.readOnly || metadataSaving.has(context);
   save.onclick = action(async () => {
+    if (context !== metadataContextKey() || metadataSaving.has(context)) return;
     const values = {};
     for (const item of inputs)
       if (item.enabled.checked) values[item.key] = item.input.value;
-    await command("metadata.batch", {
-      token: selection.token,
-      count: selection.count,
-      values,
-    });
-    dirtyFields = {};
-    renderInspector();
+    metadataSaving.add(context);
+    save.disabled = true;
+    try {
+      await command("metadata.batch", {
+        token: selection.token,
+        count: selection.count,
+        values,
+      });
+      acknowledgeMetadata(context, values);
+      fullMetadata.clear();
+      requestPage();
+    } finally {
+      metadataSaving.delete(context);
+      if (context === metadataContextKey()) renderInspector();
+    }
   });
   container.append(save);
 }
 
 function renderInspector() {
+  const context = metadataContextKey();
   if (artworkUrl) {
     URL.revokeObjectURL(artworkUrl);
     artworkUrl = null;
   }
   const container = node("div", "inspector-content");
   const selected = snapshot?.selected;
-  const expanded = fullMetadata.get(selected?.path);
+  let expanded = fullMetadata.get(selected?.path);
+  if (expanded && expanded.metadataRevision !== selected?.metadataRevision) {
+    fullMetadata.delete(selected.path);
+    expanded = null;
+  }
   const asset = expanded ? { ...selected, ...expanded } : selected;
-  if (selected && Object.keys(selected.truncated || {}).length && !expanded) {
+  const loadingKey = JSON.stringify([selected?.path, selected?.metadataRevision]);
+  if (selected && Object.keys(selected.truncated || {}).length && !expanded && !metadataLoading.has(loadingKey)) {
+    metadataLoading.add(loadingKey);
     command("metadata.get", { path: selected.path })
       .then((result) => {
+        if (result.metadataRevision !== selected.metadataRevision) return;
+        fullMetadata.delete(selected.path);
         fullMetadata.set(selected.path, result);
         if (fullMetadata.size > 16)
           fullMetadata.delete(fullMetadata.keys().next().value);
         if (
           snapshot?.selected?.path === selected.path &&
+          snapshot?.selected?.metadataRevision === result.metadataRevision &&
           !Object.keys(dirtyFields).length
         )
           renderInspector();
       })
-      .catch(report);
+      .catch(report)
+      .finally(() => metadataLoading.delete(loadingKey));
   }
   if (!asset && inspectorTab !== "transfer") {
     container.append(node("p", "muted", "选择声音以查看详情"));
@@ -2185,6 +2266,7 @@ function renderInspector() {
           "此字段超过 64 KiB，当前显示摘要，已禁用覆盖以保留完整内容。";
       }
       input.oninput = () => {
+        if (!input.isConnected || context !== metadataContextKey()) return;
         dirtyFields[key] = input.value;
       };
       if (!["artwork_path", "notes"].includes(key)) {
@@ -2203,21 +2285,31 @@ function renderInspector() {
       container.append(wrapper);
     }
     const save = node("button", null, "保存元数据");
-    save.disabled = snapshot.readOnly;
+    save.disabled = snapshot.readOnly || metadataSaving.has(context);
     save.onclick = action(async () => {
-      const saved = await command("metadata.save", {
-        path: asset.path,
-        original: originalFields,
-        values: dirtyFields,
-      });
-      if (snapshot?.selected?.path === asset.path) {
-        dirtyFields = {};
-        metadataDrafts.delete(asset.path);
+      if (context !== metadataContextKey() || metadataSaving.has(context)) return;
+      const values = { ...dirtyFields };
+      const original = { ...originalFields };
+      metadataSaving.add(context);
+      save.disabled = true;
+      try {
+        const saved = await command("metadata.save", {
+          path: asset.path,
+          original,
+          values,
+        });
+        acknowledgeMetadata(context, values, saved);
         fullMetadata.delete(asset.path);
-        snapshot.selected = { ...snapshot.selected, ...saved };
-        renderInspector();
+        if (context === metadataContextKey()) {
+          snapshot.selected = { ...snapshot.selected, ...saved };
+        }
+        requestPage();
+      } finally {
+        metadataSaving.delete(context);
+        if (context === metadataContextKey() && !Object.keys(dirtyFields).length)
+          renderInspector();
+        else if (save.isConnected) save.disabled = snapshot.readOnly;
       }
-      requestPage();
     });
     const reveal = node("button", null, "显示文件");
     reveal.onclick = action(() => host.reveal(asset.path));
@@ -2251,6 +2343,11 @@ function renderInspector() {
     container.append(actions, node("p", "path-label", asset.path));
   } else if (inspectorTab === "regions") {
     for (const [index, region] of (asset.regions || []).entries()) {
+      const identity = {
+        path: asset.path,
+        index: index + 1,
+        expected: { start: region.start, finish: region.finish, name: region.name || "" },
+      };
       const row = node("div", "region-row");
       const activate = node(
         "button",
@@ -2258,18 +2355,18 @@ function renderInspector() {
         region.name || `Region ${index + 1}`,
       );
       activate.onclick = action(() =>
-        command("region.action", { action: "activate", index: index + 1 }),
+        command("region.action", { action: "activate", ...identity }),
       );
       activate.ondblclick = action(() =>
         command("region.action", {
           action: "activate",
-          index: index + 1,
+          ...identity,
           play: true,
         }),
       );
       const remove = node("button", null, "×");
       remove.onclick = action(() =>
-        command("region.action", { action: "delete", index: index + 1 }),
+        command("region.action", { action: "delete", ...identity }),
       );
       row.append(
         activate,
@@ -3445,16 +3542,23 @@ async function saveRegion() {
     snapshot.regionEnd - snapshot.regionStart >= 0.998
   )
     throw new Error("请先在大波形中建立有效选区");
+  const path = snapshot.selected.path;
+  const expected = { start: snapshot.regionStart, finish: snapshot.regionEnd };
   const name = await promptName(
     "保存当前选区为 Region",
     `Region ${(snapshot.selected.regions?.length || 0) + 1}`,
   );
-  if (name !== null)
+  if (name !== null) {
+    if (snapshot?.selected?.path !== path || snapshot.regionStart !== expected.start
+      || snapshot.regionEnd !== expected.finish)
+      throw new Error("选择已改变，请重新建立选区");
     return command("region.action", {
       action: "save",
       name,
-      path: snapshot.selected.path,
+      path,
+      expected,
     });
+  }
 }
 
 function editSelection(anchor = $("range-label")) {
@@ -3693,6 +3797,7 @@ $("similar-search").onclick = () =>
   ]);
 $("audition-more").onclick = action(async () => {
   const { values } = await command("settings.get");
+  const selectionPath = snapshot?.selected?.path;
   const checked = (key, label) => [
     `${values[key] ? "✓ " : ""}${label}`,
     () => command("settings.update", { values: { [key]: !values[key] } }),
@@ -3731,7 +3836,7 @@ $("audition-more").onclick = action(async () => {
     ["保存当前选区为 Region", saveRegion, "", Boolean(snapshot?.selected)],
     [
       "清除波形选区",
-      () => command("preview.clearRegion"),
+      () => command("preview.clearRegion", { path: selectionPath }),
       "",
       Boolean(snapshot?.selected),
     ],
@@ -3902,6 +4007,50 @@ $("fx-presets").onclick = () =>
   ]);
 let fxTimer;
 let pendingFx = {};
+let sendingFx = {};
+let queuedFx = {};
+let fxTask;
+let fxWaiters = [];
+
+function flushFxQueue() {
+  if (fxTask || !Object.keys(queuedFx).length) return;
+  const values = queuedFx;
+  const waiters = fxWaiters;
+  queuedFx = {};
+  fxWaiters = [];
+  sendingFx = values;
+  fxTask = host.request("preview.parameters", values)
+    .then(
+      (result) => waiters.forEach(({ resolve }) => resolve(result)),
+      (error) => waiters.forEach(({ reject }) => reject(error)),
+    )
+    .finally(() => {
+      sendingFx = {};
+      fxTask = null;
+      flushFxQueue();
+    });
+}
+
+function sendPreviewParameters(values) {
+  if (!Object.keys(values).length) return Promise.resolve(true);
+  for (const [key, value] of Object.entries(values)) {
+    // A reset/preset supersedes debounced input for the same field, while
+    // preserving unrelated pending volume changes.
+    delete pendingFx[key];
+    queuedFx[key] = value;
+  }
+  if (!Object.keys(pendingFx).length) clearTimeout(fxTimer);
+  for (const [label, key] of [["pitch", "pitch"], ["rate", "rate"], ["gain", "gain_db"]]) {
+    if (values[key] === undefined) continue;
+    $(`fx-${label}`).value = values[key];
+    if (document.activeElement !== $(`fx-${label}-value`))
+      $(`fx-${label}-value`).value = values[key];
+  }
+  return new Promise((resolve, reject) => {
+    fxWaiters.push({ resolve, reject });
+    flushFxQueue();
+  });
+}
 for (const [label, key] of [
   ["pitch", "pitch"],
   ["rate", "rate"],
@@ -4013,6 +4162,7 @@ detailCanvas.onpointermove = (event) => {
   ) {
     lastScrub = performance.now();
     command("preview.play", {
+      path: snapshot?.selected?.path,
       position: wavePercent(event),
       selection: false,
     }).catch(report);
@@ -4077,12 +4227,18 @@ function attachSplitter(element, key, dimension, multiplier) {
     };
     const finish = () => {
       element.removeEventListener("pointermove", move);
+      element.removeEventListener("pointerup", finish);
+      element.removeEventListener("pointercancel", finish);
+      element.removeEventListener("lostpointercapture", finish);
+      if (element.hasPointerCapture(event.pointerId))
+        element.releasePointerCapture(event.pointerId);
       persist();
       requestPage();
     };
     element.addEventListener("pointermove", move);
     element.addEventListener("pointerup", finish, { once: true });
     element.addEventListener("pointercancel", finish, { once: true });
+    element.addEventListener("lostpointercapture", finish, { once: true });
   };
   element.onkeydown = (event) => {
     const sign = ["ArrowLeft", "ArrowUp"].includes(event.key)

@@ -1,8 +1,14 @@
 # PsyReaSFX 神经相似度组件
 
-这是 PsyReaSFX 0.9.0 正式版 的可选 Windows x64 本地组件。它使用冻结的
+本包是可选 Windows x64 本地组件 **0.9.1-beta1**，包含 sidecar **0.5.2**，兼容 PsyReaSFX 正式版与 WebView Beta。它使用冻结的
 EfficientAT `mn04_as` 模型生成音频 embedding，并通过 HNSW 加速全库相似声音召回。
 音频始终留在本机，不会上传。
+
+## 0.9.1-beta1 解码修订
+
+NAudio 读取和 FFmpeg 解码阶段检查取消；stderr 独立读取，float PCM 直接流入有界结果数组。单文件解码结果限制为 512 MiB，解码时限为 10 分钟；取消或失败后关闭本任务的 FFmpeg 进程树和管道。模型、embedding 与缓存格式继续兼容。
+
+在 ReaPack 启用预发布并另选独立数据包 **0.9.1-beta1**，或[下载完整新版 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta18/PsyReaSFX_Neural_Similarity_v0_9_1_beta1_win_x64.zip)。下方链接仍提供 0.9.0 正式组件。
 
 ## 推荐：通过 ReaPack 安装
 

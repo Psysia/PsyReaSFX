@@ -1,5 +1,14 @@
 ## 0.9.3 Beta 17 (0.9.a WebView) — 2026-11-12
 
+## 0.9.3 Beta 18 (0.9.a WebView) — 2026-11-13
+
+- Preserve metadata drafts across delayed saves, detached controls and selection changes; merge duplicate inspector/list refreshes.
+- Order FX updates and reset, preserve active SECTION preview during reverse/resume, validate Region identity and fill byte-limited pages.
+- Harden host lifecycle/FIFO, RPC/JSON boundaries, export source protection, captured batch settings, encoder cancellation and SQLite restore.
+- Publish independent neural 0.9.1-beta1 / sidecar 0.5.2 decoder fixes and Desktop Alpha 8 Light RC2.
+- Add production-service regressions and fail-closed NuGet audits; keep runtime 0.3.9.30-prs.2, compatible model/cache formats and cached-only ordinary loudness reads.
+- [Evidence, synthetic measurements and verification limits](WEBVIEW_HARDENING_BETA18_zh-CN.md).
+
 - Browsing and auditioning only read cached loudness, preventing repeated native REAPER analysis dialogs for new assets. Analyze/Reanalyze explicitly measures and caches the current asset; manual analysis may still show progress.
 - Preserve cached LUFS-I/M/S and True Peak readings and estimated preview matching.
 - Add regression coverage for quiet uncached browsing, cached display, explicit analysis, stale caches and source cleanup in the modular source and both generated backends.

@@ -19,8 +19,16 @@ public sealed record TransferRequest(
 
 public sealed class TransferOptions
 {
+    internal TransferOptions Capture()
+    {
+        var captured = (TransferOptions)MemberwiseClone();
+        captured.SourcePaths = SourcePaths.ToArray();
+        return captured;
+    }
+
     public string OutputDirectory { get; set; } = "";
     public string NamingTemplate { get; set; } = "{name}";
+    public IReadOnlyList<string> SourcePaths { get; set; } = [];
     public bool Lowercase { get; set; }
     public string Scope { get; set; } = "selection";
     public string Format { get; set; } = "wav24";

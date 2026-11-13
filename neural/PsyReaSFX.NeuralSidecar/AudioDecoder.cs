@@ -15,6 +15,8 @@ internal readonly record struct DecodedAudio(
 internal static class AudioDecoder
 {
     internal const int DecoderVersion = 1;
+    internal const int MaximumDecodedSamples = 128 * 1024 * 1024;
+    private static readonly TimeSpan DecodeTimeout = TimeSpan.FromMinutes(10);
     private static readonly string[] WindowsExtensions =
     [
         "wav", "wave", "aif", "aiff", "flac", "mp3", "m4a",
@@ -30,16 +32,19 @@ internal static class AudioDecoder
     internal static string[] SupportedExtensions =>
         (FfmpegAvailable ? FfmpegExtensions : WindowsExtensions).ToArray();
 
-    internal static DecodedAudio DecodeMono32k(string path)
+    internal static DecodedAudio DecodeMono32k(string path, Func<bool>? cancelled = null)
     {
+        var clock = Stopwatch.StartNew();
+        ThrowIfStopped(cancelled, clock);
         var fullPath = Path.GetFullPath(path);
         Program.Require(File.Exists(fullPath), $"Audio file was not found: {fullPath}");
         var nativeErrors = new List<string>();
         foreach (var factory in ReaderFactories(fullPath))
         {
+            ThrowIfStopped(cancelled, clock);
             try
             {
-                return DecodeWithNAudio(factory);
+                return DecodeWithNAudio(factory, cancelled, clock);
             }
             catch (Exception error) when (IsDecodeFailure(error))
             {
@@ -51,9 +56,9 @@ internal static class AudioDecoder
         {
             try
             {
-                return DecodeWithFfmpeg(fullPath, FfmpegPath.Value);
+                return DecodeWithFfmpegAsync(fullPath, FfmpegPath.Value, cancelled, clock).GetAwaiter().GetResult();
             }
-            catch (Exception ffmpegError)
+            catch (Exception ffmpegError) when (ffmpegError is not OperationCanceledException and not TimeoutException)
             {
                 throw new InvalidDataException(
                     $"Could not decode audio with Windows or FFmpeg. Windows: {string.Join(" | ", nativeErrors)}; "
@@ -102,12 +107,20 @@ internal static class AudioDecoder
                     decoded.Decoder,
                 });
             }
+            var cancelChecks = 0;
+            try
+            {
+                DecodeMono32k(Path.Combine(root, "pcm16-44100-mono.wav"), () => ++cancelChecks > 4);
+                throw new InvalidOperationException("Native audio decoding ignored cancellation.");
+            }
+            catch (OperationCanceledException) { }
             return new
             {
                 result = "passed",
                 decoderVersion = DecoderVersion,
                 ffmpegAvailable = FfmpegAvailable,
                 cases,
+                cancellation = "passed",
             };
         }
         finally
@@ -116,7 +129,7 @@ internal static class AudioDecoder
         }
     }
 
-    private static DecodedAudio DecodeWithNAudio(Func<WaveStream> factory)
+    private static DecodedAudio DecodeWithNAudio(Func<WaveStream> factory, Func<bool>? cancelled, Stopwatch clock)
     {
         using var reader = factory();
         var sourceRate = reader.WaveFormat.SampleRate;
@@ -137,9 +150,9 @@ internal static class AudioDecoder
         var expectedSamples = reader.TotalTime.TotalSeconds > 0
             ? checked((long)Math.Ceiling(reader.TotalTime.TotalSeconds * Program.ExpectedSampleRate) + 32)
             : 0;
-        Program.Require(expectedSamples <= int.MaxValue,
-            "Decoded audio is too large for the current embedding pipeline.");
-        var samples = ReadAll(provider, expectedSamples);
+        Program.Require(expectedSamples <= MaximumDecodedSamples,
+            "Decoded audio exceeds the 512 MiB limit; split it into smaller files.");
+        var samples = ReadAll(provider, expectedSamples, cancelled, clock);
         Program.Require(samples.Length > 0, "The decoder returned no audio samples.");
         return new DecodedAudio(samples, sourceRate, sourceChannels,
             reader is WaveFileReader ? "naudio-wave"
@@ -173,10 +186,10 @@ internal static class AudioDecoder
         or IOException
         or COMException;
 
-    private static float[] ReadAll(ISampleProvider provider, long expectedSamples)
+    private static float[] ReadAll(ISampleProvider provider, long expectedSamples, Func<bool>? cancelled, Stopwatch clock)
     {
         var initial = expectedSamples > 0 && expectedSamples <= int.MaxValue
-            ? checked((int)expectedSamples)
+            ? checked((int)Math.Min(expectedSamples, 1_048_576))
             : 32_768;
         initial = Math.Max(Program.MinimumSamples, initial);
         var output = new float[initial];
@@ -184,16 +197,17 @@ internal static class AudioDecoder
         var count = 0;
         while (true)
         {
+            ThrowIfStopped(cancelled, clock);
             var read = provider.Read(buffer, 0, buffer.Length);
             if (read <= 0) break;
-            if (count > int.MaxValue - read)
+            if (count > MaximumDecodedSamples - read)
             {
-                throw new InvalidDataException("Decoded audio is too large for the current embedding pipeline.");
+                throw new InvalidDataException("Decoded audio exceeds the 512 MiB limit; split it into smaller files.");
             }
             var required = count + read;
             if (required > output.Length)
             {
-                var grown = Math.Max(required, checked(output.Length + Math.Max(output.Length / 2, 32_768)));
+                var grown = Math.Min(MaximumDecodedSamples, Math.Max(required, output.Length + Math.Max(output.Length / 2, 32_768)));
                 Array.Resize(ref output, grown);
             }
             for (var index = 0; index < read; index++)
@@ -207,8 +221,12 @@ internal static class AudioDecoder
         return output;
     }
 
-    private static DecodedAudio DecodeWithFfmpeg(string path, string ffmpegPath)
+    internal static DecodedAudio DecodeWithFfmpeg(string path, string ffmpegPath, Func<bool>? cancelled = null) =>
+        DecodeWithFfmpegAsync(path, ffmpegPath, cancelled, Stopwatch.StartNew()).GetAwaiter().GetResult();
+
+    private static async Task<DecodedAudio> DecodeWithFfmpegAsync(string path, string ffmpegPath, Func<bool>? cancelled, Stopwatch clock)
     {
+        ThrowIfStopped(cancelled, clock);
         var start = new ProcessStartInfo
         {
             FileName = ffmpegPath,
@@ -228,27 +246,94 @@ internal static class AudioDecoder
 
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("Could not start FFmpeg.");
-        var errorTask = process.StandardError.ReadToEndAsync();
-        using var output = new MemoryStream();
-        process.StandardOutput.BaseStream.CopyTo(output);
-        process.WaitForExit();
-        var error = errorTask.GetAwaiter().GetResult().Trim();
-        if (process.ExitCode != 0)
+        using var stop = new CancellationTokenSource();
+        var outputTask = ReadFloatPcmAsync(process.StandardOutput.BaseStream, stop.Token);
+        var errorTask = ReadErrorAsync(process.StandardError, stop.Token);
+        var exitTask = process.WaitForExitAsync(stop.Token);
+        var completion = Task.WhenAll(outputTask, errorTask, exitTask);
+        try
         {
-            throw new InvalidDataException(string.IsNullOrWhiteSpace(error)
-                ? $"FFmpeg exited with code {process.ExitCode}."
-                : error);
+            while (!completion.IsCompleted)
+            {
+                // A failed reader must abort immediately; otherwise a child
+                // blocked on its full stdout pipe could keep WhenAll pending.
+                if (outputTask.IsFaulted || outputTask.IsCanceled) await outputTask.ConfigureAwait(false);
+                if (errorTask.IsFaulted || errorTask.IsCanceled) await errorTask.ConfigureAwait(false);
+                ThrowIfStopped(cancelled, clock);
+                await Task.WhenAny(completion, Task.Delay(50)).ConfigureAwait(false);
+            }
+            await completion.ConfigureAwait(false);
+            ThrowIfStopped(cancelled, clock);
+            var error = (await errorTask.ConfigureAwait(false)).Trim();
+            if (process.ExitCode != 0)
+                throw new InvalidDataException(string.IsNullOrWhiteSpace(error)
+                    ? $"FFmpeg exited with code {process.ExitCode}." : error);
+            var samples = await outputTask.ConfigureAwait(false);
+            Program.Require(samples.Length > 0, "FFmpeg returned no audio samples.");
+            return new DecodedAudio(samples, 0, 0, "ffmpeg");
         }
-        var bytes = output.ToArray();
-        Program.Require(bytes.Length % sizeof(float) == 0, "FFmpeg returned truncated float PCM.");
-        var samples = new float[bytes.Length / sizeof(float)];
-        for (var index = 0; index < samples.Length; index++)
+        finally
         {
-            var sample = BinaryPrimitives.ReadSingleLittleEndian(
-                bytes.AsSpan(index * sizeof(float), sizeof(float)));
-            samples[index] = float.IsFinite(sample) ? Math.Clamp(sample, -1f, 1f) : 0;
+            stop.Cancel();
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                await process.WaitForExitAsync().ConfigureAwait(false);
+            }
+            try { await completion.ConfigureAwait(false); } catch { }
         }
-        return new DecodedAudio(samples, 0, 0, "ffmpeg");
+    }
+
+    private static void ThrowIfStopped(Func<bool>? cancelled, Stopwatch clock)
+    {
+        if (cancelled?.Invoke() == true) throw new OperationCanceledException("Audio decoding was cancelled.");
+        if (clock.Elapsed >= DecodeTimeout) throw new TimeoutException("Audio decoding exceeded its 10-minute time limit.");
+    }
+
+    private static async Task<float[]> ReadFloatPcmAsync(Stream stream, CancellationToken token)
+    {
+        var bytes = new byte[32_768];
+        var output = new float[32_768];
+        var count = 0;
+        var carry = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(bytes.AsMemory(carry, bytes.Length - carry), token).ConfigureAwait(false);
+            if (read == 0) break;
+            var available = carry + read;
+            var samples = available / sizeof(float);
+            if (count > MaximumDecodedSamples - samples)
+                throw new InvalidDataException("Decoded audio exceeds the 512 MiB limit; split it into smaller files.");
+            var required = count + samples;
+            if (required > output.Length)
+                Array.Resize(ref output, Math.Min(MaximumDecodedSamples,
+                    Math.Max(required, output.Length + Math.Max(output.Length / 2, 32_768))));
+            for (var index = 0; index < samples; index++)
+            {
+                var sample = BinaryPrimitives.ReadSingleLittleEndian(bytes.AsSpan(index * sizeof(float), sizeof(float)));
+                output[count + index] = float.IsFinite(sample) ? Math.Clamp(sample, -1f, 1f) : 0;
+            }
+            count = required;
+            carry = available % sizeof(float);
+            if (carry > 0) Buffer.BlockCopy(bytes, available - carry, bytes, 0, carry);
+        }
+        Program.Require(carry == 0, "FFmpeg returned truncated float PCM.");
+        Array.Resize(ref output, count);
+        return output;
+    }
+
+    private static async Task<string> ReadErrorAsync(StreamReader reader, CancellationToken token)
+    {
+        var summary = new System.Text.StringBuilder();
+        var buffer = new char[4096];
+        while (true)
+        {
+            var read = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false);
+            if (read == 0) break;
+            var retained = Math.Min(read, 16_384 - summary.Length);
+            if (retained > 0) summary.Append(buffer, 0, retained);
+        }
+        return summary.ToString();
     }
 
     private static string? FindFfmpeg()

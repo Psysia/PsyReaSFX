@@ -56,6 +56,7 @@ local function asset_data(asset)
     waveError = not not asset.wave_error,
     previewCount = asset.preview_count or 0,
     usedCount = asset.used_count or 0,
+    metadataRevision = asset._metadata_revision or 0,
     workflowLabel = workflow_label(asset.workflow_status or "none"),
   }
   local similarity = "similar" == state.view and similarity_result_for_asset(asset)
@@ -96,7 +97,9 @@ local function send(message)
       error = "响应过大，请缩小请求范围",
     })
   end
-  if reaper.ReaWeb_Send(WebUI.window, encoded) then
+  -- Once backpressure starts, append every message until publish drains the
+  -- queue. A recovered native channel must not overtake older snapshots/RPCs.
+  if #WebUI.outbox == 0 and reaper.ReaWeb_Send(WebUI.window, encoded) then
     return true
   end
   if #WebUI.outbox >= 64 then
@@ -672,7 +675,9 @@ WebUI.handlers["preview.toggle"] = function(params)
     -- A full-file click preview must resume as a full-file preview even if a
     -- Region is still selected in the UI.
     local selection = not resume or not (bookmark.map_start == 0 and bookmark.map_span == 1)
-    play_preview(asset, nil, selection, resume and bookmark.position or nil)
+    local range = resume and { start = bookmark.map_start or 0,
+      finish = (bookmark.map_start or 0) + (bookmark.map_span or 1) } or nil
+    play_preview(asset, nil, selection, resume and bookmark.position or nil, range)
     if state.preview or not resume then WebUI.paused_preview = nil end
   end
   return true
@@ -693,7 +698,7 @@ WebUI.handlers["preview.parameters"] = function(params)
   local reverse_changed = updates.reverse ~= nil and updates.reverse ~= state.reverse
   AppState.apply(updates)
   if reverse_changed and state.preview then
-    play_preview(selected_asset(), state.preview_percent, false)
+    restart_preview_direction()
   else
     update_preview_parameters()
   end
@@ -714,7 +719,10 @@ WebUI.handlers["preview.region"] = function(params)
   end
   return true
 end
-WebUI.handlers["preview.clearRegion"] = function()
+WebUI.handlers["preview.clearRegion"] = function(params)
+  if params.path then
+    assert(selected_asset() == asset_for(params.path), "所选素材已改变，请重新设置选区")
+  end
   WebUI.paused_preview = nil
   AppState.apply({ region_start = 0, region_end = 1, active_region_index = 0 })
   return true
@@ -727,15 +735,16 @@ end
 local function metadata_selection()
   local assets = selected_assets()
   local values, mixed, truncated = {}, {}, {}
-  local signature = 2166136261
-  for _, asset in ipairs(assets) do
-    signature = fnv1a_feed(signature, asset.path .. "\0")
-    for _, field in ipairs(metadata_edit_fields()) do
+  local fields, columns, paths = metadata_edit_fields(), {}, {}
+  for _, field in ipairs(fields) do columns[field.key] = {} end
+  for index, asset in ipairs(assets) do
+    paths[index] = asset.path
+    for _, field in ipairs(fields) do
       local value = tostring(asset[field.key] or "")
-      signature = fnv1a_feed(signature, field.key .. "\0" .. value .. "\0")
+      columns[field.key][index] = value
       if values[field.key] == nil then
         values[field.key] = value
-      elseif values[field.key] ~= value then
+      elseif not mixed[field.key] and values[field.key] ~= value then
         mixed[field.key] = true
       end
     end
@@ -749,13 +758,21 @@ local function metadata_selection()
       truncated[key] = true
     end
   end
+  -- Retain references to the exact values shown by this editor. Comparing
+  -- strings avoids re-hashing every byte and a colliding 32-bit token cannot
+  -- authorize a stale overwrite. Column arrays keep the snapshot compact.
+  WebUI.metadata_token = (WebUI.metadata_token or 0) + 1
+  local token = tostring(WebUI.metadata_token)
+  WebUI.metadata_edit = { token = token, assets = assets, paths = paths,
+    columns = columns, truncated = truncated, revision = SelectionIndex.revision,
+    tab = state.workspace_tab_active }
   return {
     count = #assets,
-    token = tostring(signature),
+    token = token,
     values = values,
     mixed = mixed,
     truncated = truncated,
-    fields = metadata_edit_fields(),
+    fields = fields,
   },
     assets
 end
@@ -766,11 +783,21 @@ end
 WebUI.handlers["metadata.batch"] = function(params)
   writable()
   assert(type(params.values) == "table", "缺少元数据字段")
-  local current, assets = metadata_selection()
+  local current, assets = WebUI.metadata_edit, selected_assets()
   assert(
-    current.token == params.token and current.count == params.count,
+    current and current.token == params.token and #current.assets == params.count
+      and #assets == params.count and current.tab == state.workspace_tab_active,
     "选择或元数据已改变，请重新打开编辑器"
   )
+  local fields = metadata_edit_fields()
+  for index, asset in ipairs(assets) do
+    assert(current.assets[index] == asset and current.paths[index] == asset.path,
+      "选择或元数据已改变，请重新打开编辑器")
+    for _, field in ipairs(fields) do
+      assert(current.columns[field.key][index] == tostring(asset[field.key] or ""),
+        "选择或元数据已改变，请重新打开编辑器")
+    end
+  end
   local allowed = {}
   for _, field in ipairs(metadata_edit_fields()) do
     allowed[field.key] = true
@@ -788,13 +815,14 @@ WebUI.handlers["metadata.batch"] = function(params)
     end
   end
   apply_metadata_editor(assets)
+  WebUI.metadata_edit = nil
   WebUI.revision = WebUI.revision + 1
   return true
 end
 
 WebUI.handlers["metadata.get"] = function(params)
   local asset = asset_for(params.path)
-  local result = { path = asset.path, truncated = {} }
+  local result = { path = asset.path, metadataRevision = asset._metadata_revision or 0, truncated = {} }
   for _, field in ipairs(metadata_edit_fields()) do
     local value = tostring(asset[field.key] or "")
     result[field.key] = text(value, 65536)
@@ -833,7 +861,13 @@ WebUI.handlers["metadata.save"] = function(params)
     state.metadata_editor.values[key] = value
   end
   apply_metadata_editor({ asset })
-  return asset_data(asset)
+  -- Acknowledgements need the full committed field, including long text that
+  -- the browsing snapshot deliberately abbreviates.
+  local result = asset_data(asset)
+  for key, value in pairs(WebUI.handlers["metadata.get"]({ path = asset.path })) do
+    result[key] = value
+  end
+  return result
 end
 WebUI.handlers["library.drop"] = function(params)
   writable()
@@ -1043,8 +1077,14 @@ WebUI.handlers["region.action"] = function(params)
   writable()
   local asset = selected_asset()
   assert(asset, "请先选择素材")
+  if params.path then
+    assert(asset == asset_for(params.path), "选择已改变，请重新建立选区")
+  end
   if params.action == "save" then
-    assert(not params.path or params.path == asset.path, "选择已改变，请重新建立选区")
+    if params.expected then
+      assert(type(params.expected) == "table" and params.expected.start == state.region_start
+        and params.expected.finish == state.region_end, "选择已改变，请重新建立选区")
+    end
     if params.name ~= nil then
       assert(has_selection(), "请先在大波形中建立有效选区")
       assert(add_saved_region(asset, state.region_start, state.region_end, text(params.name, 128)), "该 Region 已存在或选区无效")
@@ -1052,10 +1092,16 @@ WebUI.handlers["region.action"] = function(params)
     else
       save_current_selection_as_region(asset)
     end
-  elseif params.action == "activate" then
-    activate_saved_region(asset, params.index, params.play == true)
-  elseif params.action == "delete" then
-    delete_saved_region(asset, params.index)
+  elseif params.action == "activate" or params.action == "delete" then
+    local regions = asset_regions(asset)
+    local index = number(params.index, 1, #regions)
+    assert(index % 1 == 0, "无效区域序号")
+    local region, expected = regions[index], params.expected
+    assert(params.path and type(expected) == "table" and expected.start == region.start
+      and expected.finish == region.finish and expected.name == (region.name or ""),
+      "Region 列表已改变，请重新选择")
+    if params.action == "activate" then activate_saved_region(asset, index, params.play == true)
+    else delete_saved_region(asset, index) end
   else
     error("未知区域操作")
   end
@@ -2098,6 +2144,18 @@ WebUI.handlers["settings.ai"] = function(params)
   return failure == "pending" and state.ai_key_save_session or true
 end
 
+local function rpc_params_valid(params, request)
+  if params == nil then
+    local meta = getmetatable(request)
+    return not (meta and meta.__json_members and meta.__json_members.params)
+  end
+  if type(params) ~= "table" then return false end
+  local meta = getmetatable(params)
+  if meta and meta.__json_kind == "array" then return false end
+  for key in pairs(params) do if type(key) ~= "string" then return false end end
+  return true
+end
+
 function webview_receive()
   local deadline = reaper.time_precise() + 0.004
   for _ = 1, 4 do
@@ -2105,17 +2163,25 @@ function webview_receive()
     if raw == "" then
       break
     end
-    local parsed, request = pcall(neural_json_decode, raw)
+    local parsed, request
+    if type(raw) == "string" and #raw <= 900000 then
+      parsed, request = pcall(neural_json_decode, raw, true)
+    end
     if
       parsed
       and type(request) == "table"
       and type(request.id) == "string"
+      and #request.id > 0
       and #request.id <= 80
       and request.protocol == WebUI.protocol
     then
-      local handler = WebUI.handlers[request.method]
+      local valid = type(request.method) == "string" and #request.method > 0
+        and #request.method <= 128 and rpc_params_valid(request.params, request)
+      local handler = valid and WebUI.handlers[request.method]
       local ok, result
-      if state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get" then
+      if not valid then
+        ok, result = false, "无效宿主请求"
+      elseif state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get" then
         ok, result = false, "素材库正在加载，请稍后重试"
       elseif handler then
         ok, result = pcall(handler, request.params or {})
@@ -2157,6 +2223,8 @@ function WebUI.playback_timing()
 end
 
 function webview_publish()
+  if WebUI.metadata_edit and (WebUI.metadata_edit.revision ~= SelectionIndex.revision
+    or WebUI.metadata_edit.tab ~= state.workspace_tab_active) then WebUI.metadata_edit = nil end
   local pending = WebUI.pending_key_response
   if pending and pending.job.complete then
     local job = pending.job

@@ -13,39 +13,41 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">Neural package installation steps / 神经包安装步骤</link>
       </metadata>
-      <version name="0.9.3-beta17" author="Psysia" time="2026-11-12T07:41:07Z">
+      <version name="0.9.3-beta18" author="Psysia" time="2026-11-13T09:23:38Z">
         <changelog><![CDATA[
-- Stop native loudness analysis dialogs during browsing and auditioning by reading cached metrics only.
-- Measure and cache precise LUFS/True Peak values only when the user clicks Analyze/Reanalyze. Manual analysis may display REAPER progress.
-- Keep existing loudness readings, preview matching and source cleanup; add focused quiet-browsing regression coverage.
-- Runtime remains 0.3.9.30-prs.2 (ReaPack 0.3.9.30-beta3). Close and reopen PRS after the script update.
+- Preserve metadata drafts, order FX reset/updates, keep SECTION resume and validate Region identity.
+- Harden host FIFO/JSON/RPC, byte-limited paging, captured Transfer batches and source protection.
+- Decoder cancellation and bounded streaming ship in neural 0.9.1-beta1 / sidecar 0.5.2; Desktop service fixes ship in Alpha 8 Light RC2.
+- Runtime remains 0.3.9.30-prs.2. Cached-only ordinary loudness behavior is retained.
+- 修复编辑、试听与交付竞争；新增隔离回归及完整加固记录。
         ]]></changelog>
-        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/PsyReaSFX_Launcher.lua</source>
-        <source platform="win64" file="PsyReaSFX_Runtime.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/PsyReaSFX_WebView.lua</source>
-        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/app.js</source>
-        <source platform="win64" file="web/playback.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/playback.js</source>
-        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/app.json</source>
-        <source platform="win64" file="web/themes.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/themes.js</source>
-        <source platform="win64" file="web/settings.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/settings.js</source>
-        <source platform="win64" file="web/icons.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/icons.js</source>
-        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/host.d.ts</source>
-        <source platform="win64" file="web/locale.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/locale.js</source>
-        <source platform="win64" file="web/translations.en.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/translations.en.js</source>
-        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/host.js</source>
-        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/index.html</source>
-        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/src/web/styles.css</source>
-        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/dependencies/reawebapi/windows-x64.lock.json</source>
-        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/LICENSE</source>
-        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/assets/brand/psyreasfx-hero.png</source>
-        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/assets/brand/psyreasfx-icon.png</source>
-        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/assets/fonts/OFL.txt</source>
-        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
-        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/assets/ucs/README.md</source>
-        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/assets/ucs/ucs-8.2.1.tsv</source>
-        <source platform="win64" file="docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md</source>
-        <source platform="win64" file="docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md</source>
-        <source platform="win64" file="docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md</source>
-        <source platform="win64" file="docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta17/docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md</source>
+        <source main="main" platform="win64" file="PsyReaSFX.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/PsyReaSFX_Launcher.lua</source>
+        <source platform="win64" file="PsyReaSFX_Runtime.lua">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/PsyReaSFX_WebView.lua</source>
+        <source platform="win64" file="web/app.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/app.js</source>
+        <source platform="win64" file="web/playback.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/playback.js</source>
+        <source platform="win64" file="web/app.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/app.json</source>
+        <source platform="win64" file="web/themes.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/themes.js</source>
+        <source platform="win64" file="web/settings.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/settings.js</source>
+        <source platform="win64" file="web/icons.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/icons.js</source>
+        <source platform="win64" file="web/host.d.ts">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/host.d.ts</source>
+        <source platform="win64" file="web/locale.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/locale.js</source>
+        <source platform="win64" file="web/translations.en.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/translations.en.js</source>
+        <source platform="win64" file="web/host.js">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/host.js</source>
+        <source platform="win64" file="web/index.html">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/index.html</source>
+        <source platform="win64" file="web/styles.css">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/src/web/styles.css</source>
+        <source platform="win64" file="runtime-lock.json">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/dependencies/reawebapi/windows-x64.lock.json</source>
+        <source platform="win64" file="LICENSE">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/LICENSE</source>
+        <source platform="win64" file="assets/brand/psyreasfx-hero.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/assets/brand/psyreasfx-hero.png</source>
+        <source platform="win64" file="assets/brand/psyreasfx-icon.png">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/assets/brand/psyreasfx-icon.png</source>
+        <source platform="win64" file="assets/fonts/OFL.txt">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/assets/fonts/OFL.txt</source>
+        <source platform="win64" file="assets/fonts/Orbitron-VariableFont_wght.ttf">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/assets/fonts/Orbitron-VariableFont_wght.ttf</source>
+        <source platform="win64" file="assets/ucs/README.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/assets/ucs/README.md</source>
+        <source platform="win64" file="assets/ucs/ucs-8.2.1.tsv">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/assets/ucs/ucs-8.2.1.tsv</source>
+        <source platform="win64" file="docs/WEBVIEW_HARDENING_BETA18_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/docs/WEBVIEW_HARDENING_BETA18_zh-CN.md</source>
+        <source platform="win64" file="docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md</source>
+        <source platform="win64" file="docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md</source>
+        <source platform="win64" file="docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md</source>
+        <source platform="win64" file="docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md</source>
       </version>
       <version name="0.9.3-beta6" author="Psysia" time="2026-11-09T14:17:20Z">
         <changelog><![CDATA[
@@ -154,6 +156,28 @@ and Install-NeuralSimilarity.cmd; the standalone EXE does not include the model.
         <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">Download complete neural package ZIP (Windows x64)</link>
         <link rel="website" href="https://psysia.github.io/PsyReaSFX/#neural-install">ReaPack and manual installation steps / 安装说明</link>
       </metadata>
+      <version name="0.9.1-beta1" author="Psysia" time="2026-11-13T09:23:38Z">
+        <changelog><![CDATA[
+- Sidecar 0.5.2: cancellation during decoding, bounded streaming PCM, independent stderr draining and child-process cleanup.
+- Frozen model, embedding protocol and existing caches remain compatible. Stable 0.9.0 stays available.
+- 解码阶段响应取消，限制内存／时限并清理管道；模型与缓存兼容。
+        ]]></changelog>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/PsyReaSFX.NeuralSidecar.exe">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta18/PsyReaSFX.NeuralSidecar_v0_9_1_beta1_win_x64.exe</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/manifest-v1.json" hash="1220c9bf94a7bc7cef61f15b416e7866d376b957574569c0b31878d4223048d4cdd8">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/manifest-v1.json</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx" hash="12205efdf45af4562190f8a8076b0460ecb51200b52e2080a5e250e25af577a79054">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav" hash="1220a72b5e8574318217ccfb55928bd7317c00909f1ebe48f166a43d6b4863488e84">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/chirp_impulse_1p5s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/evolving_scene_12s.wav" hash="122097379fb8a8656cb39d6c620ec74237460cd80925f474f2cbb7edd35e36961008">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/evolving_scene_12s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/modulated_texture_3s.wav" hash="122015a5227098377e9374b9eb0be5676028fb3837a5d3c7207a455a7cc53efefe69">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/modulated_texture_3s.wav</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/golden-v1.json" hash="122003923df2754bf8a0c67b8dd72ffb1b23236a4a76124316c381117cd8fab9464d">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/golden-v1.json</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/models/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt" hash="12207fecf57238d733faf76a0d178f4973e9d3423e49e400d312a43e647700ce41ff">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/assets/neural/mn04_as_scene_320_v1/LICENSE-EfficientAT.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-PsyReaSFX.txt" hash="122005be34eded8eb138b703f604fd219e4e997c6a4b8be8725b18df6f817cd7c5a4">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/LICENSE</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-NAudio.txt" hash="122004b12da4303b43ee14d72b17d1157f53ad5e0082a48d74b9afdfdb3f5d2ab499">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.0/neural/package/LICENSE-NAudio.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/LICENSE-ONNXRuntime.txt" hash="12202f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/ThirdPartyNotices-ONNXRuntime.txt" hash="1220143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3">https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/ThirdPartyNotices.txt</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README.md" hash="1220b564539b6e99fb422f7cae8b8f963772d505b5dd56bbac398ac6db522b22b587">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/neural/package/README.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/README_zh-CN.md" hash="122041692508e59ddab37f75bce42cdbe2ba24de3b0bad9a7f2f54e52a56fccbcb7a">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/neural/package/README_zh-CN.md</source>
+        <source platform="win64" file="PsyReaSFX/neural_similarity/package.json" hash="12200f5cd31a86c97e6f5ed72dad5fd7e4839a1d937a5a75881fa8659fc4ca04353e">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.3-beta18/neural/package/package.json</source>
+      </version>
       <version name="0.9.0" author="Psysia" time="2026-10-29T06:48:32Z">
         <changelog><![CDATA[
 - Stable 0.9.0 component; executable/model unchanged from Beta 8.5.

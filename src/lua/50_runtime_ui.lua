@@ -188,6 +188,7 @@ function mark_asset_database_change(asset, result_change)
   if not asset or not asset.path or asset.path == "" then
     return false
   end
+  asset._metadata_revision = (asset._metadata_revision or 0) + 1
   if workspace_tabs_invalidate then workspace_tabs_invalidate(result_change or "background", asset) end
   if SelectionIndex then SelectionIndex.meta_epoch = SelectionIndex.meta_epoch + 1 end
   if state.root_removal_session then
@@ -7274,7 +7275,8 @@ function play_preview(
   asset,
   start_percent,
   use_selection,
-  resume_position
+  resume_position,
+  captured_range
 )
   if state.root_removal_session then
     set_status("请等待来源移除完成后再试听", true)
@@ -7328,8 +7330,10 @@ function play_preview(
   duration =
     is_qn and 0 or (duration or asset.duration or 0)
 
-  local selection =
-    use_selection and has_selection()
+  local range_start = captured_range and captured_range.start or state.region_start
+  local range_finish = captured_range and captured_range.finish or state.region_end
+  local range_span = range_finish - range_start
+  local selection = use_selection and range_span > 0.002 and range_span < 0.998
 
   -- Always wrap audio previews in a SECTION source when SWS supports it.
   -- The section's source-boundary fade protects files whose first sample is
@@ -7344,13 +7348,13 @@ function play_preview(
     if section then
       local offset =
         selection
-          and duration * state.region_start
+          and duration * range_start
           or 0
 
       local length =
         selection
           and duration
-            * (state.region_end - state.region_start)
+            * range_span
           or duration
 
       local call_ok, section_ok =
@@ -7428,9 +7432,9 @@ function play_preview(
     configure_preview_instance(companion, 1)
   end
 
-  local map_start = selection and state.region_start or 0
+  local map_start = selection and range_start or 0
   local map_span = selection
-      and (state.region_end - state.region_start)
+      and range_span
     or 1
   local map_reverse = state.reverse
   local preview_length = selection
@@ -7441,9 +7445,7 @@ function play_preview(
   if resume_position ~= nil then
     -- Resume in source/SECTION time, independent of audition rate and direction.
     seek_position = clamp(resume_position, 0, math.max(0, preview_length - 0.001))
-  elseif not selection
-    and start_percent
-    and start_percent > 0 then
+  elseif start_percent and (captured_range or (not selection and start_percent > 0)) then
     seek_position = preview_position_from_percent(
       clamp(start_percent, 0, 1),
       preview_length,
@@ -7555,6 +7557,16 @@ function play_preview(
       )
       or "试听：" .. asset.name
   )
+end
+
+function restart_preview_direction()
+  if not state.preview then return end
+  local asset = state.preview_path and state.by_path[path_key(state.preview_path)]
+  if not asset then request_preview_stop(); return end
+  local start = state.preview_map_start or 0
+  local span = state.preview_map_span or 1
+  play_preview(asset, state.preview_percent or start, span < 0.998, nil,
+    { start = start, finish = start + span })
 end
 
 function update_preview_parameters()
@@ -8106,7 +8118,7 @@ function parse_transfer_variant_values(
     had_token = true
     local value = tonumber(token)
 
-    if not value then
+    if not value or value ~= value or value == math.huge or value == -math.huge then
       return nil,
         string.format(
           "%s: %s",
@@ -8357,9 +8369,42 @@ function transfer_normalize_flags()
   return flags
 end
 
-function resolve_transfer_output(asset, index, variant)
+function transfer_path_key(path)
+  path = normalize_slashes(trim(path or ""))
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
+  end
+  local root, remaining
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+  end
+  if not root then return nil end
+  remaining = path:sub(#root + 1)
+  local segments = {}
+  for segment in remaining:gmatch("[^\\/]+") do
+    if segment == ".." then
+      segments[#segments] = nil
+    elseif segment ~= "." and segment ~= "" then
+      segments[#segments + 1] = SEP == "\\" and segment:gsub("[ .]+$", "") or segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return path_key(root .. table.concat(segments, SEP))
+end
+
+function transfer_output_is_source(path, asset)
+  local key = transfer_path_key(path)
+  if not key then return true end -- Ambiguous relative/device paths cannot be proven safe.
+  return (asset and transfer_path_key(asset.path) == key)
+    or (state.by_path and state.by_path[key] ~= nil) or false
+end
+
+function resolve_transfer_output(asset, index, variant, captured_name)
   local extension_name = transfer_format_info()
-  local base = expand_transfer_template(asset, index, variant)
+  local base = captured_name or expand_transfer_template(asset, index, variant)
   local directory = normalize_slashes(trim(state.transfer_dir or ""))
 
   if directory == "" then
@@ -8370,6 +8415,10 @@ function resolve_transfer_output(asset, index, variant)
     directory,
     base .. "." .. extension_name
   )
+
+  if transfer_output_is_source(candidate, asset) then
+    return nil, "source", candidate
+  end
 
   if not reaper.file_exists(candidate) then
     return candidate, "new"
@@ -8394,7 +8443,7 @@ function resolve_transfer_output(asset, index, variant)
       )
     )
 
-    if not reaper.file_exists(next_path) then
+    if not transfer_output_is_source(next_path, asset) and not reaper.file_exists(next_path) then
       return next_path, "increment"
     end
 
@@ -8949,6 +8998,9 @@ function commit_transfer_output(
   replace_existing,
   task_index
 )
+  if transfer_output_is_source(output_path) then
+    return false, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名")
+  end
   if not temporary_path
     or not reaper.file_exists(temporary_path) then
     return false, translate_ui_text("未找到临时渲染文件")
@@ -9009,7 +9061,8 @@ function render_transfer_asset(task)
     resolve_transfer_output(
       asset,
       task.asset_index,
-      task.variant
+      task.variant,
+      task.output_name
     )
 
   if collision == "skip" then
@@ -9017,6 +9070,8 @@ function render_transfer_asset(task)
       nil,
       translate_ui_text("已跳过已有文件：") .. existing,
       true
+  elseif collision == "source" then
+    return false, nil, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名"), false
   elseif not output_path then
     return false,
       nil,
@@ -9131,10 +9186,10 @@ function render_transfer_asset(task)
 end
 
 function write_transfer_report(job, canceled)
-  local handle = io.open(TRANSFER_REPORT_FILE, "wb")
+  local handle, failure = atomic_file_writer(TRANSFER_REPORT_FILE)
 
   if not handle then
-    return false
+    return false, failure
   end
 
   handle:write(
@@ -9171,8 +9226,7 @@ function write_transfer_report(job, canceled)
     )
   end
 
-  handle:close()
-  return true
+  return handle:close()
 end
 
 function finish_transfer_job(job, canceled)
@@ -9180,7 +9234,7 @@ function finish_transfer_job(job, canceled)
     return
   end
 
-  write_transfer_report(job, canceled)
+  local report_ok, report_error = write_transfer_report(job, canceled)
 
   if canceled then
     Jobs.cancel(job.job_token)
@@ -9221,6 +9275,14 @@ function finish_transfer_job(job, canceled)
     set_status(summary)
   end
 
+  if not report_ok then
+    summary = summary .. " · " .. translate_ui_text("交付报告保存失败")
+    AppState.set("transfer_last_error", (state.transfer_last_error or "")
+      .. "\n" .. tostring(report_error or ""))
+    AppState.set("transfer_last_summary", summary)
+    set_status(summary, true)
+  end
+
   if not canceled
     and (job.success_count or 0) > 0
     and state.transfer_open_dir_after then
@@ -9233,10 +9295,32 @@ function finish_transfer_job(job, canceled)
   end
 end
 
+local TRANSFER_CAPTURED_KEYS = {
+  "transfer_dir", "transfer_template", "transfer_lowercase", "transfer_collision",
+  "transfer_format", "transfer_sample_rate", "transfer_channels", "transfer_scope",
+  "transfer_preserve_metadata", "transfer_normalize", "transfer_normalize_target",
+  "transfer_fade_in_ms", "transfer_fade_out_ms", "transfer_dither", "transfer_noise_shaping",
+  "transfer_smart_tail", "transfer_tail_threshold_db", "transfer_tail_max_ms", "transfer_tail_hold_ms",
+  "transfer_variants_enabled", "transfer_variant_auto_suffix", "transfer_insert_after",
+  "pitch", "rate", "gain_db", "reverse", "preserve_pitch", "region_start", "region_end", "active_region_index",
+}
+
+function capture_transfer_settings()
+  local values = {}
+  for _, key in ipairs(TRANSFER_CAPTURED_KEYS) do values[key] = state[key] end
+  return values
+end
+
 function process_transfer_job()
   local job = state.transfer_job
 
   if not job then
+    return
+  end
+
+  if job.project and job.project ~= reaper.EnumProjects(-1, "") then
+    finish_transfer_job(job, true)
+    set_status("Transfer 已停止：工程已切换", true)
     return
   end
 
@@ -9265,8 +9349,11 @@ function process_transfer_job()
   end
 
   local started_at = reaper.time_precise()
-  local ok, output, message, skipped =
-    render_transfer_asset(task)
+  local live_settings = capture_transfer_settings()
+  if job.settings then AppState.apply(job.settings) end
+  local call_ok, ok, output, message, skipped = pcall(render_transfer_asset, task)
+  AppState.apply(live_settings)
+  if not call_ok then ok, output, message, skipped = false, nil, tostring(ok), false end
   local elapsed =
     math.max(0, reaper.time_precise() - started_at)
 
@@ -9331,6 +9418,10 @@ function run_transfer(assets, batch_mode)
 
   if directory == "" then
     set_status("请选择有效的输出目录", true)
+    return
+  end
+  if not transfer_path_key(directory) then
+    set_status("请选择绝对路径的输出目录", true)
     return
   end
 
@@ -9443,6 +9534,7 @@ function run_transfer(assets, batch_mode)
         use_selection = use_selection,
         variant = variant,
         task_index = task_index,
+        output_name = expand_transfer_template(asset, asset_index, variant),
       }
     end
   end
@@ -9477,6 +9569,8 @@ function run_transfer(assets, batch_mode)
     records = {},
     started_at = reaper.time_precise(),
     output_directory = state.transfer_dir,
+    settings = capture_transfer_settings(),
+    project = reaper.EnumProjects(-1, ""),
     job_token = job_token,
   }
   set_status(
@@ -19434,7 +19528,7 @@ function draw_more_actions_popup(asset)
     state.reverse = not state.reverse
 
     if state.preview then
-      play_preview(asset, nil, has_selection())
+      restart_preview_direction()
     end
   end
 
@@ -19718,7 +19812,7 @@ function draw_preview_toggle_icons(asset, button_size)
     state.reverse = not state.reverse
 
     if state.preview then
-      play_preview(asset, nil, has_selection())
+      restart_preview_direction()
     end
   end
 

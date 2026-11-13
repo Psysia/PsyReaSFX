@@ -22,7 +22,15 @@ if (-not $displayMatch.Success -or $displayMatch.Groups[1].Value -cne $expectedD
 
 # The optional neural component is versioned independently: script-only
 # releases (e.g. 0.9.1) keep the 0.9.0 component, whose protocol is unchanged.
-$neuralVersion = "0.9.0"
+$neuralMetadata = Get-Content -LiteralPath (Join-Path $repoRoot 'neural/package/package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$neuralVersion = $neuralMetadata.version
+if ($neuralVersion -notmatch '^0\.9\.\d+-beta\d+(?:\.\d+)?$') { throw "Unexpected neural preview version: $neuralVersion" }
+[xml]$neuralProject = Get-Content -LiteralPath (Join-Path $repoRoot 'neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj') -Raw
+$neuralProgram = Get-Content -LiteralPath (Join-Path $repoRoot 'neural/PsyReaSFX.NeuralSidecar/Program.cs') -Raw
+if ($neuralProject.Project.PropertyGroup.Version -cne $neuralMetadata.sidecarVersion -or
+    $neuralProgram -notmatch ('SidecarVersion = "' + [regex]::Escape($neuralMetadata.sidecarVersion) + '"')) {
+    throw 'Neural package, assembly and protocol versions must agree.'
+}
 $webVersion = (Get-Content -LiteralPath (Join-Path $repoRoot 'src/web/app.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 if ($webVersion -notmatch '^0\.9\.\d+-beta\d+(?:\.\d+)?$') { throw "Unexpected WebView beta version: $webVersion" }
 # The legacy renderer remains available while the independently versioned WebView beta is evaluated.
@@ -36,7 +44,7 @@ foreach ($archived in @("0.9.1", "0.9.0", "0.8.5", "0.7.23")) {
 $packages = @($document.index.category.reapack)
 foreach ($policy in @(
     @{ Name = "PsyReaSFX.lua"; Versions = $mainVersions },
-    @{ Name = "PsyReaSFX Neural Similarity"; Versions = @($neuralVersion) }
+    @{ Name = "PsyReaSFX Neural Similarity"; Versions = @($neuralVersion, '0.9.0') }
     @{ Name = "PsyReaSFX WebView Runtime.ext"; Versions = @($runtimeVersion) }
 )) {
     $package = @($packages | Where-Object { $_.name -eq $policy.Name })
@@ -49,4 +57,4 @@ foreach ($policy in @(
         if (@($version.source).Count -eq 0) { throw "Version has no download sources: $($version.name)" }
     }
 }
-Write-Host "ReaPack version policy passed: $($mainVersions -join ' + '); optional neural package $neuralVersion only."
+Write-Host "ReaPack version policy passed: $($mainVersions -join ' + '); neural $neuralVersion + 0.9.0 Stable."

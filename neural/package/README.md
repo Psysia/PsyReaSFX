@@ -1,9 +1,15 @@
 # PsyReaSFX Neural Similarity component
 
-This is the optional Windows x64 local component for PsyReaSFX 0.9.0 Stable.
+This package is the optional Windows x64 local component **0.9.1-beta1**, with sidecar **0.5.2**, compatible with PsyReaSFX Stable and WebView Beta.
 It generates audio embeddings with the frozen EfficientAT `mn04_as` model and
 uses HNSW for fast full-library similar-sound recall. Audio stays on this
 computer and is never uploaded.
+
+## 0.9.1-beta1 decoder update
+
+The updated decoder checks cancellation during NAudio reads and FFmpeg decoding, drains stderr independently and streams float PCM directly into a bounded result array. Decode results are limited to 512 MiB and each file has a 10-minute decoding deadline. Cancelled/failed FFmpeg processes and their streams are closed before the job returns. Model, embeddings and cache formats remain compatible.
+
+Enable pre-releases in ReaPack and choose the independent data package version **0.9.1-beta1**, or [download its complete ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta18/PsyReaSFX_Neural_Similarity_v0_9_1_beta1_win_x64.zip). Stable 0.9.0 remains available through the links below.
 
 ## Recommended: install with ReaPack
 
