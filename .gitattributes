@@ -5,6 +5,7 @@
 /assets/neural/mn04_as_scene_320_v1/*.txt -text
 /neural/package/*.md -text
 /neural/package/*.txt -text
+/neural/package/package.json -text
 # Preserve upstream license bytes, including their original spacing and line endings.
 /dependencies/reawebapi/licenses/** -text -whitespace
 /desktop/licenses/** -text -whitespace
