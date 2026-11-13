@@ -197,20 +197,27 @@ async Task TestCapturedTransfer()
     Directory.CreateDirectory(directory);
     var source = Path.Combine(directory, "fixture.wav");
     WriteWave(source);
+    var laterSource = Path.Combine(directory, "later.wav");
+    WriteWave(laterSource);
     var output = Path.Combine(directory, "output");
     var changed = Path.Combine(directory, "later-edit");
-    var options = new TransferOptions { OutputDirectory = output, NamingTemplate = "first", PreserveMetadata = false };
+    var asset = new AudioAsset { FilePath = source, FileName = "fixture.wav", LibraryName = "batch" };
+    var options = new TransferOptions { OutputDirectory = output, NamingTemplate = "{name}_{library}", PreserveMetadata = false };
     var progress = new InlineProgress<TransferProgress>(_ =>
     {
         options.OutputDirectory = changed;
         options.NamingTemplate = "changed";
         options.FadeInMs = double.NaN;
+        asset.FilePath = laterSource;
+        asset.FileName = "later.wav";
+        asset.LibraryName = "edited";
     });
     var result = await new TransferEngine().RunAsync(
-        [new TransferRequest(new AudioAsset { FilePath = source, FileName = "fixture.wav" }, -1, -1, new(0, 1, 0, false, 1), 1)],
+        [new TransferRequest(asset, -1, -1, new(0, 1, 0, false, 1), 1)],
         options, progress, CancellationToken.None);
-    Require(result.SuccessCount == 1 && result.LastOutput == Path.Combine(output, "first.wav") && !Directory.Exists(changed),
-        "Later UI edits changed a running export's destination or parameters.");
+    Require(result.SuccessCount == 1 && result.LastOutput == Path.Combine(output, "fixture_batch.wav")
+        && result.Items[0].SourcePath == source && !Directory.Exists(changed),
+        "Later UI edits changed a running export's source, destination or parameters.");
 }
 
 async Task TestTransferBoundary()

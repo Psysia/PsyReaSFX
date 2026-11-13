@@ -55,7 +55,7 @@ public sealed class TransferEngine : ITransferService
     {
         token.ThrowIfCancellationRequested();
         options = options.Capture();
-        requests = requests.ToArray();
+        requests = requests.Select(request => request.Capture()).ToArray();
         foreach (var (value, name) in new[]
         {
             (options.FadeInMs, nameof(options.FadeInMs)), (options.FadeOutMs, nameof(options.FadeOutMs)),

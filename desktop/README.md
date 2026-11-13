@@ -283,7 +283,7 @@ migration is not repeated on every launch.
 
 ## Alpha 8 Light RC2 service fixes
 
-RC2 captures Transfer batch settings, protects ordinary normalized source paths, stages outputs before replacement and cleans up cancelled encoders. Bridge requests use cancellation-aware queue cleanup and monotonic deadlines. SQLite restore validates staging/schema, checkpoints WAL and retains an intact rollback generation. Self-tests and benchmarks isolate user preferences, logs and waveform caches.
+RC2 captures Transfer batch settings and mutable asset/template inputs, protects ordinary normalized source paths, stages outputs before replacement and cleans up cancelled encoders. Bridge requests use cancellation-aware queue cleanup and monotonic deadlines. SQLite restore validates staging/schema, checkpoints WAL and retains an intact rollback generation. Self-tests and benchmarks isolate user preferences, logs and waveform caches.
 
 See [the Beta18 hardening record](../docs/WEBVIEW_HARDENING_BETA18_zh-CN.md) for regression evidence and physical path/native REAPER verification limits. Build the complete Light ZIP with `./tools/Build-DesktopPackage.ps1 -OutputDirectory dist/desktop-fresh`.
 

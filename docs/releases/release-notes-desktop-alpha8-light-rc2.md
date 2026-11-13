@@ -1,6 +1,6 @@
 # PsyReaSFX Desktop 0.7.23 Alpha 8 Light RC2
 
-- Transfer captures each batch's settings and source paths, blocks ordinary normalized source-path overwrite, stages WAV/FLAC before commit, and retains existing outputs on failure or cancellation.
+- Transfer captures each batch's settings, source paths and naming metadata, blocks ordinary normalized source-path overwrite, stages WAV/FLAC before commit, and retains existing outputs on failure or cancellation.
 - FFmpeg stderr drains independently; cancelled jobs kill and wait for their own encoder process tree before cleaning temporary media.
 - REAPER Bridge uses cancellation-aware requests, monotonic deadlines, response identity/size/number checks and unconditional queue cleanup. A rejected job no longer cancels a valid earlier task.
 - Restore validates staged SQLite integrity and schema, checkpoints WAL, excludes concurrent readers/writers until replacement and retains a valid rollback copy. Rapid backups use unique names.
