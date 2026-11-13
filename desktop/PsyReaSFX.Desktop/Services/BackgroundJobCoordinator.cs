@@ -77,7 +77,6 @@ public sealed class BackgroundJobCoordinator : IJobCoordinator
             if (_current.TryGetValue(kind, out var previous))
             {
                 if (!replaceSameKind) return null;
-                previous.RequestCancellation();
             }
 
             if (_active.Values.Any(job =>
@@ -85,6 +84,9 @@ public sealed class BackgroundJobCoordinator : IJobCoordinator
                     resource != BackgroundJobResource.None &&
                     (job.Resource & resource) != 0))
                 return null;
+
+            // A failed start must leave the current operation running.
+            previous?.RequestCancellation();
 
             if (_active.Count == 0)
                 _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

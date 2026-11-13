@@ -8,14 +8,20 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        AppDiagnostics.Write("Desktop startup entered.");
-        try
+        var validationMode = e.Args.Length > 0 && new[]
         {
-            var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PsyReaSFX");
-            CatalogReliabilityService.ApplyPendingRestore(dataDirectory);
+            "--self-test", "--hardening-benchmark", "--hardening-capacity-benchmark"
+        }.Contains(e.Args[0], StringComparer.OrdinalIgnoreCase);
+        if (validationMode)
+        {
+            AppDiagnostics.ConfigureDirectory(Path.Combine(Path.GetTempPath(),
+                "PsyReaSFX-validation-logs", Environment.ProcessId.ToString()));
+            LuaWaveCache.Configure(Path.Combine(AppDiagnostics.LogDirectory, "wave-cache"));
+            ThemeManager.Apply(new DesktopPreferences());
+            // The invisible test host can close without ending the harness.
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
         }
-        catch (Exception exception) { AppDiagnostics.Write("Pending catalog restore could not be applied.", exception); }
-        ThemeManager.Apply(new DesktopPreferencesStore().Load());
+        AppDiagnostics.Write("Desktop startup entered.");
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             AppDiagnostics.Write("Unhandled AppDomain exception.", args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) =>
@@ -78,6 +84,14 @@ public partial class App : System.Windows.Application
             }
             return;
         }
+
+        try
+        {
+            var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PsyReaSFX");
+            await CatalogReliabilityService.ApplyPendingRestoreAsync(dataDirectory);
+        }
+        catch (Exception exception) { AppDiagnostics.Write("Pending catalog restore could not be applied.", exception); }
+        ThemeManager.Apply(new DesktopPreferencesStore().Load());
 
         DispatcherUnhandledException += (_, args) =>
         {

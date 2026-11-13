@@ -15,12 +15,33 @@ public sealed record TransferRequest(
     double SelectionStartRatio,
     double SelectionEndRatio,
     TransferVariant Variant,
-    int AssetIndex);
+    int AssetIndex)
+{
+    internal TransferRequest Capture() => this with
+    {
+        // Freeze the media and template inputs before UI/relink events can
+        // change the mutable asset object while the queue is running.
+        Asset = new AudioAsset
+        {
+            FilePath = Asset.FilePath, FileName = Asset.FileName,
+            LibraryName = Asset.LibraryName, Category = Asset.Category,
+            Subcategory = Asset.Subcategory
+        }
+    };
+}
 
 public sealed class TransferOptions
 {
+    internal TransferOptions Capture()
+    {
+        var captured = (TransferOptions)MemberwiseClone();
+        captured.SourcePaths = SourcePaths.ToArray();
+        return captured;
+    }
+
     public string OutputDirectory { get; set; } = "";
     public string NamingTemplate { get; set; } = "{name}";
+    public IReadOnlyList<string> SourcePaths { get; set; } = [];
     public bool Lowercase { get; set; }
     public string Scope { get; set; } = "selection";
     public string Format { get; set; } = "wav24";

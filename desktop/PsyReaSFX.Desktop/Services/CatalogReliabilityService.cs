@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using PsyReaSFX.Data;
 
 namespace PsyReaSFX.Desktop.Services;
@@ -72,14 +73,19 @@ public sealed class CatalogReliabilityService
     public async Task<string> CreateBackupAsync(string databasePath, int retention, CancellationToken token = default)
     {
         Directory.CreateDirectory(BackupDirectory);
-        var destination = Path.Combine(BackupDirectory, $"catalog-{DateTime.Now:yyyyMMdd-HHmmss}.sqlite3");
+        var destination = Path.Combine(BackupDirectory, $"catalog-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.sqlite3");
         var database = new PsyReaSFXDatabase(Path.GetDirectoryName(databasePath));
-        await database.BackupAsync(destination, token);
-        var integrity = await PsyReaSFXDatabase.CheckIntegrityAsync(destination, token);
-        if (!integrity.Equals("ok", StringComparison.OrdinalIgnoreCase))
+        try
+        {
+            await database.BackupAsync(destination, token);
+            var integrity = await PsyReaSFXDatabase.CheckIntegrityAsync(destination, token);
+            if (!integrity.Equals("ok", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Backup integrity check failed: {integrity}");
+        }
+        catch
         {
             TryDelete(destination);
-            throw new InvalidDataException($"Backup integrity check failed: {integrity}");
+            throw;
         }
         foreach (var stale in Directory.EnumerateFiles(BackupDirectory, "catalog-*.sqlite3")
                      .OrderByDescending(File.GetLastWriteTimeUtc).Skip(Math.Clamp(retention, 2, 50)))
@@ -111,18 +117,74 @@ public sealed class CatalogReliabilityService
         await CopyAtomicAsync(latest, PendingRestorePath, token);
     }
 
-    public static void ApplyPendingRestore(string dataDirectory)
+    public static void ApplyPendingRestore(string dataDirectory) =>
+        ApplyPendingRestoreAsync(dataDirectory).GetAwaiter().GetResult();
+
+    public static async Task ApplyPendingRestoreAsync(string dataDirectory, CancellationToken token = default)
     {
         var reliability = new CatalogReliabilityService(dataDirectory);
         if (!File.Exists(reliability.PendingRestorePath)) return;
         var databasePath = Path.Combine(dataDirectory, "catalog-v1.sqlite3");
         Directory.CreateDirectory(dataDirectory);
         var previous = databasePath + ".before-restore";
-        if (File.Exists(databasePath)) File.Copy(databasePath, previous, true);
-        File.Copy(reliability.PendingRestorePath, databasePath, true);
-        TryDelete(reliability.PendingRestorePath);
-        TryDelete(databasePath + "-wal");
-        TryDelete(databasePath + "-shm");
+        var staged = databasePath + "." + Guid.NewGuid().ToString("N") + ".restore.tmp";
+        try
+        {
+            await CopyAtomicAsync(reliability.PendingRestorePath, staged, token).ConfigureAwait(false);
+            var integrity = await PsyReaSFXDatabase.CheckIntegrityAsync(staged, token).ConfigureAwait(false);
+            if (!integrity.Equals("ok", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Restore integrity check failed: {integrity}");
+
+            await using (var restored = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = staged, Mode = SqliteOpenMode.ReadOnly, Pooling = false
+            }.ToString()))
+            {
+                await restored.OpenAsync(token).ConfigureAwait(false);
+                using var schema = restored.CreateCommand();
+                schema.CommandText = "SELECT MAX(version) FROM schema_info";
+                var version = Convert.ToInt32(await schema.ExecuteScalarAsync(token).ConfigureAwait(false));
+                if (version < 1 || version > PsyReaSFXDatabase.SupportedSchemaVersion)
+                    throw new InvalidDataException($"Restore catalog schema {version} is not supported.");
+            }
+
+            var hadOriginal = File.Exists(databasePath);
+            if (hadOriginal)
+            {
+                var original = new PsyReaSFXDatabase(dataDirectory);
+                if (await original.GetSchemaVersionAsync(token).ConfigureAwait(false) > PsyReaSFXDatabase.SupportedSchemaVersion)
+                    throw new InvalidDataException("A newer catalog cannot be replaced by this application's pending restore.");
+                // Commit the original WAL before retaining it as the rollback
+                // copy. A busy checkpoint or an external file owner aborts.
+                await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath, Mode = SqliteOpenMode.ReadWrite, Pooling = false
+                }.ToString()))
+                {
+                    await connection.OpenAsync(token).ConfigureAwait(false);
+                    using var checkpoint = connection.CreateCommand();
+                    checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";
+                    await using var result = await checkpoint.ExecuteReaderAsync(token).ConfigureAwait(false);
+                    if (await result.ReadAsync(token).ConfigureAwait(false) && result.GetInt32(0) != 0)
+                        throw new IOException("The catalog is busy; close other catalog users before restoring.");
+                }
+            }
+            // Keep readers and writers out until the replacement is complete.
+            // Sharing delete allows File.Replace to retain the open original
+            // as the rollback file without reopening a check-to-use gap.
+            using var originalGuard = hadOriginal
+                ? File.Open(databasePath, FileMode.Open, FileAccess.ReadWrite, FileShare.Delete)
+                : null;
+            token.ThrowIfCancellationRequested();
+            // Do not swallow failed sidecar deletion: replacing a database
+            // while its old WAL remains would mix two generations.
+            File.Delete(databasePath + "-wal");
+            File.Delete(databasePath + "-shm");
+            if (hadOriginal) File.Replace(staged, databasePath, previous, true);
+            else File.Move(staged, databasePath, false);
+            TryDelete(reliability.PendingRestorePath);
+        }
+        finally { TryDelete(staged); }
     }
 
     public async Task<CacheIntegrityReport> CheckWaveCacheAsync(bool removeInvalid, CancellationToken token = default)
@@ -154,18 +216,27 @@ public sealed class CatalogReliabilityService
     private void WriteJsonAtomic<T>(string path, T value)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(value, _json));
-        File.Move(temporary, path, true);
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(value, _json));
+            File.Move(temporary, path, true);
+        }
+        finally { TryDelete(temporary); }
     }
 
     private static async Task CopyAtomicAsync(string source, string destination, CancellationToken token)
     {
-        var temporary = destination + ".tmp";
-        await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true))
-        await using (var output = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-            await input.CopyToAsync(output, token);
-        File.Move(temporary, destination, true);
+        var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, true))
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true))
+                await input.CopyToAsync(output, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            File.Move(temporary, destination, true);
+        }
+        finally { TryDelete(temporary); }
     }
 
     private static void TryDelete(string path)

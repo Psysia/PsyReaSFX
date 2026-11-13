@@ -10,6 +10,7 @@ public partial class TransferWindow : Window
     private readonly DesktopPreferences _preferences;
     private readonly AudioAsset? _current;
     private readonly AudioAsset[] _selected;
+    private readonly IReadOnlyList<string> _sourcePaths;
     private readonly double _selectionStart;
     private readonly double _selectionEnd;
     private readonly double _pitch;
@@ -22,11 +23,13 @@ public partial class TransferWindow : Window
     private TransferRunResult? _lastResult;
 
     public TransferWindow(DesktopPreferences preferences, AudioAsset? current, IReadOnlyList<AudioAsset> selected,
-        double selectionStart, double selectionEnd, double pitch, double rate, double gain, bool reverse, bool preservePitch)
+        double selectionStart, double selectionEnd, double pitch, double rate, double gain, bool reverse, bool preservePitch,
+        IReadOnlyList<string>? sourcePaths = null)
     {
         _preferences = preferences;
         _current = current;
         _selected = selected.DistinctBy(asset => asset.FilePath, StringComparer.OrdinalIgnoreCase).ToArray();
+        _sourcePaths = sourcePaths ?? _selected.Select(asset => asset.FilePath).ToArray();
         _selectionStart = selectionStart; _selectionEnd = selectionEnd;
         _pitch = pitch; _rate = rate; _gain = gain; _reverse = reverse; _preservePitch = preservePitch;
         InitializeComponent();
@@ -90,6 +93,7 @@ public partial class TransferWindow : Window
         return new TransferOptions
         {
             OutputDirectory = _preferences.TransferOutputDirectory, NamingTemplate = _preferences.TransferNamingTemplate,
+            SourcePaths = _sourcePaths,
             Lowercase = _preferences.TransferLowercase, Scope = _preferences.TransferScope, Format = _preferences.TransferFormat,
             SampleRate = _preferences.TransferSampleRate, Channels = _preferences.TransferChannels,
             PreserveMetadata = _preferences.TransferPreserveMetadata, FadeInMs = _preferences.TransferFadeInMs,

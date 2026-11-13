@@ -47,7 +47,8 @@ public sealed class ReaperBridgeService
         try
         {
             if (!File.Exists(HeartbeatPath)) return false;
-            return DateTime.UtcNow - File.GetLastWriteTimeUtc(HeartbeatPath) <= (tolerance ?? TimeSpan.FromSeconds(4));
+            var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(HeartbeatPath);
+            return age >= TimeSpan.Zero && age <= (tolerance ?? TimeSpan.FromSeconds(4));
         }
         catch { return false; }
     }
@@ -57,6 +58,12 @@ public sealed class ReaperBridgeService
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!double.IsFinite(request.SelectionStart) || !double.IsFinite(request.SelectionEnd)
+            || request.SelectionStart < 0 || request.SelectionEnd < request.SelectionStart)
+            throw new ArgumentException("REAPER Bridge selection must be a finite, ordered range.", nameof(request));
+        var duration = timeout ?? TimeSpan.FromSeconds(6);
+        if (duration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout));
         Directory.CreateDirectory(RequestsDirectory);
         Directory.CreateDirectory(ResponsesDirectory);
         var id = Guid.NewGuid().ToString("N");
@@ -74,30 +81,47 @@ public sealed class ReaperBridgeService
             ["selection_end"] = request.SelectionEnd.ToString("R", CultureInfo.InvariantCulture),
             ["created_utc"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
         };
-        await File.WriteAllTextAsync(tempPath, Serialize(values), new UTF8Encoding(false), cancellationToken);
-        File.Move(tempPath, requestPath, true);
-
-        var expires = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(6));
-        while (DateTime.UtcNow < expires)
+        var elapsed = Stopwatch.StartNew();
+        try
         {
+            await File.WriteAllTextAsync(tempPath, Serialize(values), new UTF8Encoding(false), cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            if (File.Exists(responsePath))
-            {
-                string payload;
-                try { payload = await File.ReadAllTextAsync(responsePath, cancellationToken); }
-                catch (IOException) { await Task.Delay(35, cancellationToken); continue; }
-                try { File.Delete(responsePath); } catch { }
-                var response = Parse(payload);
-                return new ReaperBridgeResult(
-                    ParseBool(response, "success"), Get(response, "message"), Get(response, "action"), Get(response, "asset"),
-                    Get(response, "inserted"), Get(response, "project_path"), Get(response, "project_name"), Get(response, "track_name"),
-                    ParseInt(response, "track_index", -1), ParseDouble(response, "position"));
-            }
-            await Task.Delay(50, cancellationToken);
-        }
+            File.Move(tempPath, requestPath);
 
-        try { File.Delete(requestPath); } catch { }
-        return new ReaperBridgeResult(false, "REAPER Bridge timeout", request.Action, request.AssetPath, request.MediaPath, "", "", "", -1, 0);
+            while (elapsed.Elapsed < duration)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(responsePath))
+                {
+                    string payload;
+                    try
+                    {
+                        await using var input = new FileStream(responsePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true);
+                        if (input.Length > 256 * 1024)
+                            throw new InvalidDataException("REAPER Bridge response exceeds the size limit.");
+                        using var reader = new StreamReader(input, Encoding.UTF8);
+                        payload = await reader.ReadToEndAsync(cancellationToken);
+                    }
+                    catch (IOException) { await Task.Delay(35, cancellationToken); continue; }
+                    var response = Parse(payload);
+                    if (Get(response, "id") != id)
+                        throw new InvalidDataException("REAPER Bridge response identity does not match the request.");
+                    return new ReaperBridgeResult(
+                        ParseBool(response, "success"), Get(response, "message"), Get(response, "action"), Get(response, "asset"),
+                        Get(response, "inserted"), Get(response, "project_path"), Get(response, "project_name"), Get(response, "track_name"),
+                        ParseInt(response, "track_index", -1), ParseDouble(response, "position"));
+                }
+                await Task.Delay(50, cancellationToken);
+            }
+            return new ReaperBridgeResult(false, "REAPER Bridge timeout", request.Action, request.AssetPath, request.MediaPath, "", "", "", -1, 0);
+        }
+        finally
+        {
+            // Cancelling before REAPER consumes the file must not leave a
+            // command that could execute on a later reconnect.
+            foreach (var path in new[] { tempPath, requestPath, responsePath })
+                try { File.Delete(path); } catch { }
+        }
     }
 
     public Task<ReaperBridgeResult> PingAsync(CancellationToken cancellationToken = default) =>
@@ -119,6 +143,7 @@ public sealed class ReaperBridgeService
         {
             var split = line.IndexOf('=');
             if (split <= 0) continue;
+            if (values.ContainsKey(line[..split])) throw new InvalidDataException("REAPER Bridge response contains a duplicate field.");
             try { values[line[..split]] = Uri.UnescapeDataString(line[(split + 1)..]); }
             catch { values[line[..split]] = line[(split + 1)..]; }
         }
@@ -130,6 +155,10 @@ public sealed class ReaperBridgeService
         values.TryGetValue(key, out var value) && (value == "1" || bool.TryParse(value, out var parsed) && parsed);
     private static int ParseInt(IReadOnlyDictionary<string, string> values, string key, int fallback) =>
         values.TryGetValue(key, out var value) && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
-    private static double ParseDouble(IReadOnlyDictionary<string, string> values, string key) =>
-        values.TryGetValue(key, out var value) && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
+    private static double ParseDouble(IReadOnlyDictionary<string, string> values, string key)
+    {
+        if (values.TryGetValue(key, out var value) && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            && double.IsFinite(parsed)) return parsed;
+        throw new InvalidDataException("REAPER Bridge response contains an invalid numeric field: " + key);
+    }
 }

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using PsyReaSFX.Data;
 
 namespace PsyReaSFX.Desktop.Services;
 
@@ -20,6 +21,7 @@ public sealed class TransferEngine : ITransferService
 
     public static IReadOnlyList<TransferVariant> BuildVariants(TransferOptions options)
     {
+        ValidateVariant(options.Pitch, options.Rate, options.Gain);
         if (!options.VariantsEnabled)
             return [new TransferVariant(options.Pitch, options.Rate, options.Gain, options.Reverse, 1)];
 
@@ -51,8 +53,26 @@ public sealed class TransferEngine : ITransferService
         IProgress<TransferProgress>? progress,
         CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
+        options = options.Capture();
+        requests = requests.Select(request => request.Capture()).ToArray();
+        foreach (var (value, name) in new[]
+        {
+            (options.FadeInMs, nameof(options.FadeInMs)), (options.FadeOutMs, nameof(options.FadeOutMs)),
+            (options.NormalizeTarget, nameof(options.NormalizeTarget)), (options.TailThresholdDb, nameof(options.TailThresholdDb)),
+            (options.TailMaximumMs, nameof(options.TailMaximumMs)), (options.TailHoldMs, nameof(options.TailHoldMs))
+        })
+            if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(name, "Transfer parameters must be finite.");
         if (requests.Count == 0) throw new InvalidOperationException("No assets were selected.");
         if (requests.Count > MaximumJobs) throw new InvalidOperationException($"A Transfer run is limited to {MaximumJobs:N0} jobs.");
+        foreach (var request in requests)
+        {
+            ValidateVariant(request.Variant.Pitch, request.Variant.Rate, request.Variant.Gain);
+            if (!double.IsFinite(request.SelectionStartRatio) || !double.IsFinite(request.SelectionEndRatio))
+                throw new ArgumentOutOfRangeException(nameof(requests), "Selection positions must be finite.");
+        }
+        var protectedSources = options.SourcePaths.Concat(requests.Select(request => request.Asset.FilePath))
+            .Select(PathIdentity.Normalize).ToHashSet(StringComparer.OrdinalIgnoreCase);
         Directory.CreateDirectory(options.OutputDirectory);
         var result = new TransferRunResult();
         for (var index = 0; index < requests.Count; index++)
@@ -63,7 +83,7 @@ public sealed class TransferEngine : ITransferService
                 $"{index + 1:N0} / {requests.Count:N0}"));
             try
             {
-                result.Items.Add(await RenderAsync(request, options, token));
+                result.Items.Add(await RenderAsync(request, options, protectedSources, token));
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception exception)
@@ -78,7 +98,8 @@ public sealed class TransferEngine : ITransferService
         return result;
     }
 
-    private static async Task<TransferItemResult> RenderAsync(TransferRequest request, TransferOptions options, CancellationToken token)
+    private static async Task<TransferItemResult> RenderAsync(TransferRequest request, TransferOptions options,
+        IReadOnlySet<string> protectedSources, CancellationToken token)
     {
         var asset = request.Asset;
         if (!File.Exists(asset.FilePath)) throw new FileNotFoundException("Source media was not found.", asset.FilePath);
@@ -88,6 +109,8 @@ public sealed class TransferEngine : ITransferService
         if (options.VariantAutoSuffix && request.Variant.Count > 1 && !ContainsVariantToken(options.NamingTemplate))
             baseName += "_" + request.Variant.Token;
         var proposed = Path.Combine(options.OutputDirectory, SanitizeName(baseName) + extension);
+        if (protectedSources.Contains(PathIdentity.Normalize(proposed)))
+            throw new InvalidOperationException("Transfer output must not overwrite source audio; choose another filename or directory.");
         var outputPath = ResolveCollision(proposed, options.CollisionPolicy, out var skipped);
         if (skipped)
             return new TransferItemResult(asset.FilePath, proposed, false, true, "Existing file skipped", request.Variant, 0);
@@ -96,6 +119,7 @@ public sealed class TransferEngine : ITransferService
         Directory.CreateDirectory(scratchDirectory);
         var rawPath = Path.Combine(scratchDirectory, Guid.NewGuid().ToString("N") + ".float.wav");
         var encodedWav = Path.Combine(scratchDirectory, Guid.NewGuid().ToString("N") + ".wav");
+        var encodedFlac = Path.Combine(scratchDirectory, Guid.NewGuid().ToString("N") + ".flac");
         try
         {
             var render = await Task.Run(() => RenderFloatIntermediate(request, options, rawPath, token), token);
@@ -104,26 +128,48 @@ public sealed class TransferEngine : ITransferService
                 ? 0 : Math.Clamp(options.NormalizeTarget - measured, -60, 60);
             var bitDepth = options.Format switch { "wav16" => 16, "wav32" => 32, _ => 24 };
             await Task.Run(() => EncodeWave(rawPath, encodedWav, bitDepth, normalizationDb, options, token), token);
+            var stagedOutput = encodedWav;
             if (options.Format.Equals("flac", StringComparison.OrdinalIgnoreCase))
-                await EncodeFlacAsync(encodedWav, outputPath, token);
-            else
-                File.Move(encodedWav, outputPath, true);
+            {
+                await EncodeFlacAsync(encodedWav, encodedFlac, token);
+                stagedOutput = encodedFlac;
+            }
 
             if (options.PreserveMetadata)
             {
                 if (Path.GetExtension(outputPath).Equals(".wav", StringComparison.OrdinalIgnoreCase))
-                    CopyWaveMetadataChunks(asset.FilePath, outputPath);
+                    CopyWaveMetadataChunks(asset.FilePath, stagedOutput);
                 var sourceInfo = new FileInfo(asset.FilePath);
-                File.SetCreationTimeUtc(outputPath, sourceInfo.CreationTimeUtc);
-                File.SetLastWriteTimeUtc(outputPath, sourceInfo.LastWriteTimeUtc);
-                CopyMetadataSidecars(asset.FilePath, outputPath);
+                File.SetCreationTimeUtc(stagedOutput, sourceInfo.CreationTimeUtc);
+                File.SetLastWriteTimeUtc(stagedOutput, sourceInfo.LastWriteTimeUtc);
             }
+            token.ThrowIfCancellationRequested();
+            // Never let an increment/skip run overwrite a file that appeared
+            // after its initial collision check.
+            while (true)
+            {
+                if (protectedSources.Contains(PathIdentity.Normalize(outputPath)))
+                    throw new InvalidOperationException("Transfer output must not overwrite source audio; choose another filename or directory.");
+                try
+                {
+                    File.Move(stagedOutput, outputPath, options.CollisionPolicy.Equals("overwrite", StringComparison.OrdinalIgnoreCase));
+                    break;
+                }
+                catch (IOException) when (File.Exists(outputPath) && !options.CollisionPolicy.Equals("overwrite", StringComparison.OrdinalIgnoreCase))
+                {
+                    token.ThrowIfCancellationRequested();
+                    outputPath = ResolveCollision(proposed, options.CollisionPolicy, out skipped);
+                    if (skipped) return new TransferItemResult(asset.FilePath, outputPath, false, true, "Existing file skipped", request.Variant, 0);
+                }
+            }
+            if (options.PreserveMetadata) CopyMetadataSidecars(asset.FilePath, outputPath);
             return new TransferItemResult(asset.FilePath, outputPath, true, false, "OK", request.Variant, render.Duration);
         }
         finally
         {
             TryDelete(rawPath);
             TryDelete(encodedWav);
+            TryDelete(encodedFlac);
             try { if (Directory.Exists(scratchDirectory) && !Directory.EnumerateFileSystemEntries(scratchDirectory).Any()) Directory.Delete(scratchDirectory); } catch { }
         }
     }
@@ -256,12 +302,39 @@ public sealed class TransferEngine : ITransferService
     {
         var ffmpeg = FindExecutable("ffmpeg.exe") ?? throw new InvalidOperationException(
             "FLAC export requires ffmpeg.exe in PATH. WAV export remains available without it.");
-        var start = new ProcessStartInfo(ffmpeg,
-            $"-hide_banner -loglevel error -y -i \"{sourceWav}\" -map_metadata 0 -c:a flac \"{outputPath}\"")
+        var start = new ProcessStartInfo(ffmpeg)
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+        foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", sourceWav,
+                     "-map_metadata", "0", "-c:a", "flac", outputPath }) start.ArgumentList.Add(argument);
+        token.ThrowIfCancellationRequested();
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start the FLAC encoder.");
-        await process.WaitForExitAsync(token);
-        if (process.ExitCode != 0) throw new InvalidOperationException((await process.StandardError.ReadToEndAsync(token)).Trim());
+        // Drain while waiting: an unread stderr pipe can block the encoder.
+        var stderr = ReadEncoderErrorAsync(process.StandardError);
+        try
+        {
+            await process.WaitForExitAsync(token);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }
+                await process.WaitForExitAsync();
+            }
+            await stderr;
+        }
+        if (process.ExitCode != 0) throw new InvalidOperationException((await stderr).Trim());
+    }
+
+    private static async Task<string> ReadEncoderErrorAsync(StreamReader reader)
+    {
+        var summary = new StringBuilder();
+        var buffer = new char[4096];
+        int read;
+        while ((read = await reader.ReadAsync(buffer)) > 0)
+            if (summary.Length < 16384) summary.Append(buffer, 0, Math.Min(read, 16384 - summary.Length));
+        return summary.ToString();
     }
 
     public static string ExpandName(string template, TransferRequest request)
@@ -294,7 +367,7 @@ public sealed class TransferEngine : ITransferService
         foreach (var token in tokens)
         {
             if (!double.TryParse(token.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-                || parsed < minimum || parsed > maximum)
+                || !double.IsFinite(parsed) || parsed < minimum || parsed > maximum)
                 throw new InvalidOperationException($"Invalid variant value '{token}'. Allowed range: {minimum:0.###} to {maximum:0.###}.");
             if (!values.Contains(parsed)) values.Add(parsed);
         }
@@ -305,6 +378,13 @@ public sealed class TransferEngine : ITransferService
     private static int ResolveSampleRate(string value, int source) => value.ToLowerInvariant() switch
     { "44100" => 44100, "48000" => 48000, "96000" => 96000, "192000" => 192000, _ => source };
     private static double ToDb(double value) => 20 * Math.Log10(Math.Max(1e-12, value));
+    private static void ValidateVariant(double pitch, double rate, double gain)
+    {
+        if (!double.IsFinite(pitch) || pitch < -48 || pitch > 48
+            || !double.IsFinite(rate) || rate < .1 || rate > 4
+            || !double.IsFinite(gain) || gain < -60 || gain > 24)
+            throw new ArgumentOutOfRangeException(nameof(pitch), "Transfer parameters must be finite and within their supported ranges.");
+    }
     private static bool ContainsVariantToken(string template) => new[] { "{pitch}", "{rate}", "{gain}", "{direction}", "{variant}", "{variant_index}" }.Any(token => template.Contains(token, StringComparison.OrdinalIgnoreCase));
     private static string SanitizeName(string value)
     {
@@ -331,6 +411,7 @@ public sealed class TransferEngine : ITransferService
     {
         var sourceBase = Path.Combine(Path.GetDirectoryName(source)!, Path.GetFileNameWithoutExtension(source));
         var outputBase = Path.Combine(Path.GetDirectoryName(output)!, Path.GetFileNameWithoutExtension(output));
+        if (PathIdentity.Normalize(sourceBase).Equals(PathIdentity.Normalize(outputBase), StringComparison.OrdinalIgnoreCase)) return;
         foreach (var extension in new[] { ".xml", ".ixml", ".json", ".csv" })
         {
             var sidecar = sourceBase + extension;
@@ -403,14 +484,22 @@ public sealed class TransferEngine : ITransferService
     private static string WriteReport(TransferRunResult result, string directory)
     {
         var path = Path.Combine(directory, "transfer_report_latest.tsv");
-        using var writer = new StreamWriter(path, false, new UTF8Encoding(true));
-        writer.WriteLine("status\tsource\toutput\tpitch\trate\tgain\tdirection\tduration\tmessage");
-        foreach (var item in result.Items)
-            writer.WriteLine(string.Join('\t', item.Success ? "ok" : item.Skipped ? "skipped" : "failed",
-                Clean(item.SourcePath), Clean(item.OutputPath), item.Variant.Pitch.ToString(CultureInfo.InvariantCulture),
-                item.Variant.Rate.ToString(CultureInfo.InvariantCulture), item.Variant.Gain.ToString(CultureInfo.InvariantCulture),
-                item.Variant.Direction, item.DurationSeconds.ToString("0.###", CultureInfo.InvariantCulture), Clean(item.Message)));
-        return path;
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var writer = new StreamWriter(temporary, false, new UTF8Encoding(true)))
+            {
+                writer.WriteLine("status\tsource\toutput\tpitch\trate\tgain\tdirection\tduration\tmessage");
+                foreach (var item in result.Items)
+                    writer.WriteLine(string.Join('\t', item.Success ? "ok" : item.Skipped ? "skipped" : "failed",
+                        Clean(item.SourcePath), Clean(item.OutputPath), item.Variant.Pitch.ToString(CultureInfo.InvariantCulture),
+                        item.Variant.Rate.ToString(CultureInfo.InvariantCulture), item.Variant.Gain.ToString(CultureInfo.InvariantCulture),
+                        item.Variant.Direction, item.DurationSeconds.ToString("0.###", CultureInfo.InvariantCulture), Clean(item.Message)));
+            }
+            File.Move(temporary, path, true);
+            return path;
+        }
+        finally { TryDelete(temporary); }
     }
 
     private static string Clean(string value) => (value ?? "").Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');

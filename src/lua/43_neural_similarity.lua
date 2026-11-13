@@ -95,10 +95,13 @@ NEURAL_JSON_UNESCAPE = {
   b = '\b', f = '\f', n = '\n', r = '\r', t = '\t',
 }
 
-function neural_json_decode(text)
+function neural_json_decode(text, preserve_container_kinds)
   text = tostring(text or "")
   local position = 1
   local length = #text
+  if length > 8 * 1024 * 1024 then error("JSON document exceeds the size limit") end
+  local depth = 0
+  local array_meta = preserve_container_kinds and { __json_kind = "array" } or nil
   local unescape = NEURAL_JSON_UNESCAPE
   local function skip_space()
     -- Every JSON whitespace byte is <= 32, so anything above stops here.
@@ -144,14 +147,15 @@ function neural_json_decode(text)
       elseif escape == "u" then
         local hex = text:sub(position + 2, position + 5)
         local code = tonumber(hex, 16)
-        if not code or #hex ~= 4 then error("invalid JSON unicode escape") end
+        if not hex:match("^%x%x%x%x$") then error("invalid JSON unicode escape") end
         position = position + 6
         if code >= 0xd800 and code <= 0xdbff then
           if text:sub(position, position + 1) ~= "\\u" then
             error("incomplete JSON surrogate pair")
           end
-          local low = tonumber(text:sub(position + 2, position + 5), 16)
-          if not low or low < 0xdc00 or low > 0xdfff then
+          local low_hex = text:sub(position + 2, position + 5)
+          local low = tonumber(low_hex, 16)
+          if not low_hex:match("^%x%x%x%x$") or low < 0xdc00 or low > 0xdfff then
             error("invalid JSON surrogate pair")
           end
           code = 0x10000 + (code - 0xd800) * 0x400 + (low - 0xdc00)
@@ -168,7 +172,7 @@ function neural_json_decode(text)
   end
   local function parse_array()
     position = position + 1
-    local output = {}
+    local output = array_meta and setmetatable({}, array_meta) or {}
     local count = 0
     skip_space()
     if text:byte(position) == 93 then position = position + 1 return output end
@@ -189,11 +193,17 @@ function neural_json_decode(text)
   local function parse_object()
     position = position + 1
     local output = {}
+    local seen = {}
+    if preserve_container_kinds then
+      setmetatable(output, { __json_kind = "object", __json_members = seen })
+    end
     skip_space()
     if text:byte(position) == 125 then position = position + 1 return output end
     while true do
       skip_space()
       local key = parse_string()
+      if seen[key] then error("duplicate JSON property") end
+      seen[key] = true
       skip_space()
       if text:byte(position) ~= 58 then error("expected JSON property separator") end
       position = position + 1
@@ -209,8 +219,13 @@ function neural_json_decode(text)
     skip_space()
     local character = text:byte(position)
     if character == 34 then return parse_string() end
-    if character == 91 then return parse_array() end
-    if character == 123 then return parse_object() end
+    if character == 91 or character == 123 then
+      depth = depth + 1
+      if depth > 64 then error("JSON nesting exceeds the depth limit") end
+      local value = character == 91 and parse_array() or parse_object()
+      depth = depth - 1
+      return value
+    end
     if character == 116 and text:sub(position, position + 3) == "true" then
       position = position + 4
       return true
@@ -223,11 +238,36 @@ function neural_json_decode(text)
       position = position + 4
       return nil
     end
-    local first, last = text:find("^-?%d+%.?%d*[eE]?[+-]?%d*", position)
-    if not first then error("invalid JSON value") end
-    local number = tonumber(text:sub(first, last))
-    if not number then error("invalid JSON number") end
-    position = last + 1
+    local first = position
+    if character == 45 then position = position + 1 end
+    local digit = text:byte(position)
+    if digit == 48 then
+      position = position + 1
+      digit = text:byte(position)
+      if digit and digit >= 48 and digit <= 57 then error("leading zero in JSON number") end
+    elseif digit and digit >= 49 and digit <= 57 then
+      local _, last = text:find("^%d+", position)
+      position = last + 1
+    else
+      error("invalid JSON value")
+    end
+    if text:byte(position) == 46 then
+      position = position + 1
+      local _, last = text:find("^%d+", position)
+      if not last then error("invalid JSON fraction") end
+      position = last + 1
+    end
+    local exponent = text:byte(position)
+    if exponent == 69 or exponent == 101 then
+      position = position + 1
+      local sign = text:byte(position)
+      if sign == 43 or sign == 45 then position = position + 1 end
+      local _, last = text:find("^%d+", position)
+      if not last then error("invalid JSON exponent") end
+      position = last + 1
+    end
+    local number = tonumber(text:sub(first, position - 1))
+    if not number or number == math.huge or number == -math.huge then error("invalid JSON number") end
     return number
   end
   local value = parse_value()

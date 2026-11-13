@@ -1,4 +1,11 @@
 // One asynchronous protocol is shared by the ReaWebAPI and WebView2 transports.
+const urgentMethods = new Set([
+  "preview.stop", "preview.toggle", "tasks.cancel", "drag.cancel",
+]);
+const dialogMethods = new Set([
+  "path.choose", "library.add", "library.drop", "management.action",
+  "transfer.directory", "records.action", "asset.action",
+]);
 export class HostConnection extends EventTarget {
   constructor(send) {
     super();
@@ -15,18 +22,21 @@ export class HostConnection extends EventTarget {
   }
 
   receive(raw) {
+    if (this.closed) return;
     let message;
     try {
       message = typeof raw === "string" ? JSON.parse(raw) : raw;
     } catch {
       return;
     }
-    if (!message || message.protocol !== 1) return;
+    if (!message || typeof message !== "object" || Array.isArray(message) || message.protocol !== 1) return;
     if (message.event === "state") {
+      if (!message.data || typeof message.data !== "object" || Array.isArray(message.data)) return;
       this.state = message.data;
       this.dispatchEvent(new CustomEvent("state", { detail: message.data }));
       return;
     }
+    if (typeof message.id !== "string" || typeof message.ok !== "boolean") return;
     const request = this.pending.get(message.id);
     if (!request) return;
     clearTimeout(request.timer);
@@ -37,35 +47,39 @@ export class HostConnection extends EventTarget {
 
   request(method, params = {}) {
     if (this.closed) return Promise.reject(new Error("宿主连接已关闭"));
-    if (this.pending.size >= 32)
+    // Reserve four slots for stopping audio and cancelling work when reads stall.
+    if (this.pending.size >= (urgentMethods.has(method) ? 32 : 28))
       return Promise.reject(new Error("操作正在排队，请稍后重试"));
     const id = `${this.prefix}-${++this.sequence}`;
+    let message;
+    try {
+      if (typeof method !== "string" || !params || typeof params !== "object" || Array.isArray(params))
+        throw new Error("无效宿主请求");
+      // Capture the caller's values now; later input events may mutate its draft.
+      const encoded = JSON.stringify({ protocol: 1, id, method, params });
+      if (new TextEncoder().encode(encoded).length > 900000)
+        throw new Error("请求过大，请缩小操作范围");
+      // Native ReaWebAPI rejects undefined properties, including optional fields.
+      message = JSON.parse(encoded);
+    } catch (error) {
+      return Promise.reject(error);
+    }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => {
           this.pending.delete(id);
           reject(new Error("宿主响应超时，请检查 REAPER 是否正在处理模态窗口"));
         },
-        [
-          "path.choose",
-          "library.add",
-          "library.drop",
-          "management.action",
-          "transfer.directory",
-          "records.action",
-          "asset.action",
-        ].includes(method)
+        dialogMethods.has(method)
           ? 300000
           : 25000,
       );
       this.pending.set(id, { resolve, reject, timer });
       Promise.resolve()
-        .then(() =>
-          // Native ReaWebAPI rejects undefined properties, including optional fields.
-          this.send(
-            JSON.parse(JSON.stringify({ protocol: 1, id, method, params })),
-          ),
-        )
+        .then(() => {
+          if (this.closed || !this.pending.has(id)) return;
+          return this.send(message);
+        })
         .catch((error) => {
           clearTimeout(timer);
           this.pending.delete(id);
@@ -75,6 +89,7 @@ export class HostConnection extends EventTarget {
   }
 
   close() {
+    if (this.closed) return;
     this.closed = true;
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);

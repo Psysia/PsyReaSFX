@@ -249,7 +249,7 @@ internal static partial class NeuralJobs
                             session = Program.CreateSession(model.ModelPath);
                         }
                         WriteStatus(request, "running", "decoding", index, assets.Count, false, null, asset.Path);
-                        var audio = AudioDecoder.DecodeMono32k(asset.Path);
+                        var audio = AudioDecoder.DecodeMono32k(asset.Path, () => IsCancelled(request));
                         Program.Require(audio.Samples.Length >= Program.MinimumSamples,
                             $"Audio is too short; at least {Program.MinimumSamples} samples are required after resampling.");
                         ValidateAssetFile(asset);

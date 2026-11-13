@@ -45,7 +45,7 @@ local play_preview_source = region(
   "function update_preview_parameters()"
 )
 assert(
-  play_preview_source:find("and start_percent > 0", 1, true),
+  play_preview_source:find("start_percent > 0", 1, true),
   "zero-percent full preview must not seek to the end of a reversed source"
 )
 
@@ -149,5 +149,15 @@ do
   assert(preview.started_at == 0, "ordinary selection preview must still begin at its boundary")
   env.play_preview(asset, nil, true, 100)
   assert(preview.started_at < 4, "stale resume times must stay inside the active source")
+  env.state.region_start, env.state.region_end, env.state.reverse = 0, 1, false
+  env.state.by_path = { [path_key and path_key(asset.path) or asset.path] = asset }
+  env.path_key = function(path) return path end
+  env.restart_preview_direction()
+  assert(section[1] == 2 and section[2] == 4,
+    "direction changes must retain the playing range even after the UI range changes")
+  env.state.reverse = true
+  env.play_preview(asset, 0.5, true, nil, { start = 0.25, finish = 0.75 })
+  assert(section[1] == 2 and section[2] == 4 and math.abs(preview.started_at - 2) < 0.000001,
+    "direction changes must seek within the captured SECTION before playback starts")
 end
 print("Lua preview seek self-test passed")

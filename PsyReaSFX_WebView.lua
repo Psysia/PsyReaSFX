@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.3-beta17
+-- @version 0.9.3-beta18
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 17"
+local VERSION = "0.9.3 Beta 18"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta17",
-  source_sha256 = "fa5dae8c3e296a94374160b764526f29c3db6e9f741ca92645058e190b89c49a",
+  release_id = "PsyReaSFX/0.9.3-beta18",
+  source_sha256 = "443865aa8b097924cc3c9126f302544a077140c1a018efe2d766177d70ae32ee",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1389,6 +1389,14 @@ I18N_EN = {
   ["正在导出"] = "Exporting",
   ["Transfer 完成"] = "Transfer complete",
   ["Transfer 已停止"] = "Transfer stopped",
+  ["Transfer 已停止：工程已切换"] = "Transfer stopped: the active project changed",
+  ["请选择绝对路径的输出目录"] = "Choose an absolute output directory",
+  ["输出路径与源素材重合，请更换输出目录或文件名"] = "The output would replace source audio. Choose a different folder or filename",
+  ["交付报告保存失败"] = "Could not save the delivery report",
+  ["无效区域序号"] = "Invalid Region index",
+  ["Region 列表已改变，请重新选择"] = "The Region list changed. Select the Region again",
+  ["无效宿主请求"] = "Invalid host request",
+  ["请求过大，请缩小操作范围"] = "The request is too large. Reduce the operation scope",
   ["完成"] = "Completed",
   ["跳过"] = "Skipped",
   ["失败"] = "Failed",
@@ -14304,10 +14312,13 @@ NEURAL_JSON_UNESCAPE = {
   b = '\b', f = '\f', n = '\n', r = '\r', t = '\t',
 }
 
-function neural_json_decode(text)
+function neural_json_decode(text, preserve_container_kinds)
   text = tostring(text or "")
   local position = 1
   local length = #text
+  if length > 8 * 1024 * 1024 then error("JSON document exceeds the size limit") end
+  local depth = 0
+  local array_meta = preserve_container_kinds and { __json_kind = "array" } or nil
   local unescape = NEURAL_JSON_UNESCAPE
   local function skip_space()
     -- Every JSON whitespace byte is <= 32, so anything above stops here.
@@ -14353,14 +14364,15 @@ function neural_json_decode(text)
       elseif escape == "u" then
         local hex = text:sub(position + 2, position + 5)
         local code = tonumber(hex, 16)
-        if not code or #hex ~= 4 then error("invalid JSON unicode escape") end
+        if not hex:match("^%x%x%x%x$") then error("invalid JSON unicode escape") end
         position = position + 6
         if code >= 0xd800 and code <= 0xdbff then
           if text:sub(position, position + 1) ~= "\\u" then
             error("incomplete JSON surrogate pair")
           end
-          local low = tonumber(text:sub(position + 2, position + 5), 16)
-          if not low or low < 0xdc00 or low > 0xdfff then
+          local low_hex = text:sub(position + 2, position + 5)
+          local low = tonumber(low_hex, 16)
+          if not low_hex:match("^%x%x%x%x$") or low < 0xdc00 or low > 0xdfff then
             error("invalid JSON surrogate pair")
           end
           code = 0x10000 + (code - 0xd800) * 0x400 + (low - 0xdc00)
@@ -14377,7 +14389,7 @@ function neural_json_decode(text)
   end
   local function parse_array()
     position = position + 1
-    local output = {}
+    local output = array_meta and setmetatable({}, array_meta) or {}
     local count = 0
     skip_space()
     if text:byte(position) == 93 then position = position + 1 return output end
@@ -14398,11 +14410,17 @@ function neural_json_decode(text)
   local function parse_object()
     position = position + 1
     local output = {}
+    local seen = {}
+    if preserve_container_kinds then
+      setmetatable(output, { __json_kind = "object", __json_members = seen })
+    end
     skip_space()
     if text:byte(position) == 125 then position = position + 1 return output end
     while true do
       skip_space()
       local key = parse_string()
+      if seen[key] then error("duplicate JSON property") end
+      seen[key] = true
       skip_space()
       if text:byte(position) ~= 58 then error("expected JSON property separator") end
       position = position + 1
@@ -14418,8 +14436,13 @@ function neural_json_decode(text)
     skip_space()
     local character = text:byte(position)
     if character == 34 then return parse_string() end
-    if character == 91 then return parse_array() end
-    if character == 123 then return parse_object() end
+    if character == 91 or character == 123 then
+      depth = depth + 1
+      if depth > 64 then error("JSON nesting exceeds the depth limit") end
+      local value = character == 91 and parse_array() or parse_object()
+      depth = depth - 1
+      return value
+    end
     if character == 116 and text:sub(position, position + 3) == "true" then
       position = position + 4
       return true
@@ -14432,11 +14455,36 @@ function neural_json_decode(text)
       position = position + 4
       return nil
     end
-    local first, last = text:find("^-?%d+%.?%d*[eE]?[+-]?%d*", position)
-    if not first then error("invalid JSON value") end
-    local number = tonumber(text:sub(first, last))
-    if not number then error("invalid JSON number") end
-    position = last + 1
+    local first = position
+    if character == 45 then position = position + 1 end
+    local digit = text:byte(position)
+    if digit == 48 then
+      position = position + 1
+      digit = text:byte(position)
+      if digit and digit >= 48 and digit <= 57 then error("leading zero in JSON number") end
+    elseif digit and digit >= 49 and digit <= 57 then
+      local _, last = text:find("^%d+", position)
+      position = last + 1
+    else
+      error("invalid JSON value")
+    end
+    if text:byte(position) == 46 then
+      position = position + 1
+      local _, last = text:find("^%d+", position)
+      if not last then error("invalid JSON fraction") end
+      position = last + 1
+    end
+    local exponent = text:byte(position)
+    if exponent == 69 or exponent == 101 then
+      position = position + 1
+      local sign = text:byte(position)
+      if sign == 43 or sign == 45 then position = position + 1 end
+      local _, last = text:find("^%d+", position)
+      if not last then error("invalid JSON exponent") end
+      position = last + 1
+    end
+    local number = tonumber(text:sub(first, position - 1))
+    if not number or number == math.huge or number == -math.huge then error("invalid JSON number") end
     return number
   end
   local value = parse_value()
@@ -17303,6 +17351,7 @@ local function asset_data(asset)
     waveError = not not asset.wave_error,
     previewCount = asset.preview_count or 0,
     usedCount = asset.used_count or 0,
+    metadataRevision = asset._metadata_revision or 0,
     workflowLabel = workflow_label(asset.workflow_status or "none"),
   }
   local similarity = "similar" == state.view and similarity_result_for_asset(asset)
@@ -17343,7 +17392,9 @@ local function send(message)
       error = "响应过大，请缩小请求范围",
     })
   end
-  if reaper.ReaWeb_Send(WebUI.window, encoded) then
+  -- Once backpressure starts, append every message until publish drains the
+  -- queue. A recovered native channel must not overtake older snapshots/RPCs.
+  if #WebUI.outbox == 0 and reaper.ReaWeb_Send(WebUI.window, encoded) then
     return true
   end
   if #WebUI.outbox >= 64 then
@@ -17919,7 +17970,9 @@ WebUI.handlers["preview.toggle"] = function(params)
     -- A full-file click preview must resume as a full-file preview even if a
     -- Region is still selected in the UI.
     local selection = not resume or not (bookmark.map_start == 0 and bookmark.map_span == 1)
-    play_preview(asset, nil, selection, resume and bookmark.position or nil)
+    local range = resume and { start = bookmark.map_start or 0,
+      finish = (bookmark.map_start or 0) + (bookmark.map_span or 1) } or nil
+    play_preview(asset, nil, selection, resume and bookmark.position or nil, range)
     if state.preview or not resume then WebUI.paused_preview = nil end
   end
   return true
@@ -17940,7 +17993,7 @@ WebUI.handlers["preview.parameters"] = function(params)
   local reverse_changed = updates.reverse ~= nil and updates.reverse ~= state.reverse
   AppState.apply(updates)
   if reverse_changed and state.preview then
-    play_preview(selected_asset(), state.preview_percent, false)
+    restart_preview_direction()
   else
     update_preview_parameters()
   end
@@ -17961,7 +18014,10 @@ WebUI.handlers["preview.region"] = function(params)
   end
   return true
 end
-WebUI.handlers["preview.clearRegion"] = function()
+WebUI.handlers["preview.clearRegion"] = function(params)
+  if params.path then
+    assert(selected_asset() == asset_for(params.path), "所选素材已改变，请重新设置选区")
+  end
   WebUI.paused_preview = nil
   AppState.apply({ region_start = 0, region_end = 1, active_region_index = 0 })
   return true
@@ -17974,15 +18030,16 @@ end
 local function metadata_selection()
   local assets = selected_assets()
   local values, mixed, truncated = {}, {}, {}
-  local signature = 2166136261
-  for _, asset in ipairs(assets) do
-    signature = fnv1a_feed(signature, asset.path .. "\0")
-    for _, field in ipairs(metadata_edit_fields()) do
+  local fields, columns, paths = metadata_edit_fields(), {}, {}
+  for _, field in ipairs(fields) do columns[field.key] = {} end
+  for index, asset in ipairs(assets) do
+    paths[index] = asset.path
+    for _, field in ipairs(fields) do
       local value = tostring(asset[field.key] or "")
-      signature = fnv1a_feed(signature, field.key .. "\0" .. value .. "\0")
+      columns[field.key][index] = value
       if values[field.key] == nil then
         values[field.key] = value
-      elseif values[field.key] ~= value then
+      elseif not mixed[field.key] and values[field.key] ~= value then
         mixed[field.key] = true
       end
     end
@@ -17996,13 +18053,21 @@ local function metadata_selection()
       truncated[key] = true
     end
   end
+  -- Retain references to the exact values shown by this editor. Comparing
+  -- strings avoids re-hashing every byte and a colliding 32-bit token cannot
+  -- authorize a stale overwrite. Column arrays keep the snapshot compact.
+  WebUI.metadata_token = (WebUI.metadata_token or 0) + 1
+  local token = tostring(WebUI.metadata_token)
+  WebUI.metadata_edit = { token = token, assets = assets, paths = paths,
+    columns = columns, truncated = truncated, revision = SelectionIndex.revision,
+    tab = state.workspace_tab_active }
   return {
     count = #assets,
-    token = tostring(signature),
+    token = token,
     values = values,
     mixed = mixed,
     truncated = truncated,
-    fields = metadata_edit_fields(),
+    fields = fields,
   },
     assets
 end
@@ -18013,11 +18078,21 @@ end
 WebUI.handlers["metadata.batch"] = function(params)
   writable()
   assert(type(params.values) == "table", "缺少元数据字段")
-  local current, assets = metadata_selection()
+  local current, assets = WebUI.metadata_edit, selected_assets()
   assert(
-    current.token == params.token and current.count == params.count,
+    current and current.token == params.token and #current.assets == params.count
+      and #assets == params.count and current.tab == state.workspace_tab_active,
     "选择或元数据已改变，请重新打开编辑器"
   )
+  local fields = metadata_edit_fields()
+  for index, asset in ipairs(assets) do
+    assert(current.assets[index] == asset and current.paths[index] == asset.path,
+      "选择或元数据已改变，请重新打开编辑器")
+    for _, field in ipairs(fields) do
+      assert(current.columns[field.key][index] == tostring(asset[field.key] or ""),
+        "选择或元数据已改变，请重新打开编辑器")
+    end
+  end
   local allowed = {}
   for _, field in ipairs(metadata_edit_fields()) do
     allowed[field.key] = true
@@ -18035,13 +18110,14 @@ WebUI.handlers["metadata.batch"] = function(params)
     end
   end
   apply_metadata_editor(assets)
+  WebUI.metadata_edit = nil
   WebUI.revision = WebUI.revision + 1
   return true
 end
 
 WebUI.handlers["metadata.get"] = function(params)
   local asset = asset_for(params.path)
-  local result = { path = asset.path, truncated = {} }
+  local result = { path = asset.path, metadataRevision = asset._metadata_revision or 0, truncated = {} }
   for _, field in ipairs(metadata_edit_fields()) do
     local value = tostring(asset[field.key] or "")
     result[field.key] = text(value, 65536)
@@ -18080,7 +18156,13 @@ WebUI.handlers["metadata.save"] = function(params)
     state.metadata_editor.values[key] = value
   end
   apply_metadata_editor({ asset })
-  return asset_data(asset)
+  -- Acknowledgements need the full committed field, including long text that
+  -- the browsing snapshot deliberately abbreviates.
+  local result = asset_data(asset)
+  for key, value in pairs(WebUI.handlers["metadata.get"]({ path = asset.path })) do
+    result[key] = value
+  end
+  return result
 end
 WebUI.handlers["library.drop"] = function(params)
   writable()
@@ -18290,8 +18372,14 @@ WebUI.handlers["region.action"] = function(params)
   writable()
   local asset = selected_asset()
   assert(asset, "请先选择素材")
+  if params.path then
+    assert(asset == asset_for(params.path), "选择已改变，请重新建立选区")
+  end
   if params.action == "save" then
-    assert(not params.path or params.path == asset.path, "选择已改变，请重新建立选区")
+    if params.expected then
+      assert(type(params.expected) == "table" and params.expected.start == state.region_start
+        and params.expected.finish == state.region_end, "选择已改变，请重新建立选区")
+    end
     if params.name ~= nil then
       assert(has_selection(), "请先在大波形中建立有效选区")
       assert(add_saved_region(asset, state.region_start, state.region_end, text(params.name, 128)), "该 Region 已存在或选区无效")
@@ -18299,10 +18387,16 @@ WebUI.handlers["region.action"] = function(params)
     else
       save_current_selection_as_region(asset)
     end
-  elseif params.action == "activate" then
-    activate_saved_region(asset, params.index, params.play == true)
-  elseif params.action == "delete" then
-    delete_saved_region(asset, params.index)
+  elseif params.action == "activate" or params.action == "delete" then
+    local regions = asset_regions(asset)
+    local index = number(params.index, 1, #regions)
+    assert(index % 1 == 0, "无效区域序号")
+    local region, expected = regions[index], params.expected
+    assert(params.path and type(expected) == "table" and expected.start == region.start
+      and expected.finish == region.finish and expected.name == (region.name or ""),
+      "Region 列表已改变，请重新选择")
+    if params.action == "activate" then activate_saved_region(asset, index, params.play == true)
+    else delete_saved_region(asset, index) end
   else
     error("未知区域操作")
   end
@@ -19345,6 +19439,18 @@ WebUI.handlers["settings.ai"] = function(params)
   return failure == "pending" and state.ai_key_save_session or true
 end
 
+local function rpc_params_valid(params, request)
+  if params == nil then
+    local meta = getmetatable(request)
+    return not (meta and meta.__json_members and meta.__json_members.params)
+  end
+  if type(params) ~= "table" then return false end
+  local meta = getmetatable(params)
+  if meta and meta.__json_kind == "array" then return false end
+  for key in pairs(params) do if type(key) ~= "string" then return false end end
+  return true
+end
+
 function webview_receive()
   local deadline = reaper.time_precise() + 0.004
   for _ = 1, 4 do
@@ -19352,17 +19458,25 @@ function webview_receive()
     if raw == "" then
       break
     end
-    local parsed, request = pcall(neural_json_decode, raw)
+    local parsed, request
+    if type(raw) == "string" and #raw <= 900000 then
+      parsed, request = pcall(neural_json_decode, raw, true)
+    end
     if
       parsed
       and type(request) == "table"
       and type(request.id) == "string"
+      and #request.id > 0
       and #request.id <= 80
       and request.protocol == WebUI.protocol
     then
-      local handler = WebUI.handlers[request.method]
+      local valid = type(request.method) == "string" and #request.method > 0
+        and #request.method <= 128 and rpc_params_valid(request.params, request)
+      local handler = valid and WebUI.handlers[request.method]
       local ok, result
-      if state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get" then
+      if not valid then
+        ok, result = false, "无效宿主请求"
+      elseif state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get" then
         ok, result = false, "素材库正在加载，请稍后重试"
       elseif handler then
         ok, result = pcall(handler, request.params or {})
@@ -19404,6 +19518,8 @@ function WebUI.playback_timing()
 end
 
 function webview_publish()
+  if WebUI.metadata_edit and (WebUI.metadata_edit.revision ~= SelectionIndex.revision
+    or WebUI.metadata_edit.tab ~= state.workspace_tab_active) then WebUI.metadata_edit = nil end
   local pending = WebUI.pending_key_response
   if pending and pending.job.complete then
     local job = pending.job
@@ -19806,6 +19922,7 @@ function mark_asset_database_change(asset, result_change)
   if not asset or not asset.path or asset.path == "" then
     return false
   end
+  asset._metadata_revision = (asset._metadata_revision or 0) + 1
   if workspace_tabs_invalidate then workspace_tabs_invalidate(result_change or "background", asset) end
   if SelectionIndex then SelectionIndex.meta_epoch = SelectionIndex.meta_epoch + 1 end
   if state.root_removal_session then
@@ -26892,7 +27009,8 @@ function play_preview(
   asset,
   start_percent,
   use_selection,
-  resume_position
+  resume_position,
+  captured_range
 )
   if state.root_removal_session then
     set_status("请等待来源移除完成后再试听", true)
@@ -26946,8 +27064,10 @@ function play_preview(
   duration =
     is_qn and 0 or (duration or asset.duration or 0)
 
-  local selection =
-    use_selection and has_selection()
+  local range_start = captured_range and captured_range.start or state.region_start
+  local range_finish = captured_range and captured_range.finish or state.region_end
+  local range_span = range_finish - range_start
+  local selection = use_selection and range_span > 0.002 and range_span < 0.998
 
   -- Always wrap audio previews in a SECTION source when SWS supports it.
   -- The section's source-boundary fade protects files whose first sample is
@@ -26962,13 +27082,13 @@ function play_preview(
     if section then
       local offset =
         selection
-          and duration * state.region_start
+          and duration * range_start
           or 0
 
       local length =
         selection
           and duration
-            * (state.region_end - state.region_start)
+            * range_span
           or duration
 
       local call_ok, section_ok =
@@ -27046,9 +27166,9 @@ function play_preview(
     configure_preview_instance(companion, 1)
   end
 
-  local map_start = selection and state.region_start or 0
+  local map_start = selection and range_start or 0
   local map_span = selection
-      and (state.region_end - state.region_start)
+      and range_span
     or 1
   local map_reverse = state.reverse
   local preview_length = selection
@@ -27059,9 +27179,7 @@ function play_preview(
   if resume_position ~= nil then
     -- Resume in source/SECTION time, independent of audition rate and direction.
     seek_position = clamp(resume_position, 0, math.max(0, preview_length - 0.001))
-  elseif not selection
-    and start_percent
-    and start_percent > 0 then
+  elseif start_percent and (captured_range or (not selection and start_percent > 0)) then
     seek_position = preview_position_from_percent(
       clamp(start_percent, 0, 1),
       preview_length,
@@ -27173,6 +27291,16 @@ function play_preview(
       )
       or "试听：" .. asset.name
   )
+end
+
+function restart_preview_direction()
+  if not state.preview then return end
+  local asset = state.preview_path and state.by_path[path_key(state.preview_path)]
+  if not asset then request_preview_stop(); return end
+  local start = state.preview_map_start or 0
+  local span = state.preview_map_span or 1
+  play_preview(asset, state.preview_percent or start, span < 0.998, nil,
+    { start = start, finish = start + span })
 end
 
 function update_preview_parameters()
@@ -27724,7 +27852,7 @@ function parse_transfer_variant_values(
     had_token = true
     local value = tonumber(token)
 
-    if not value then
+    if not value or value ~= value or value == math.huge or value == -math.huge then
       return nil,
         string.format(
           "%s: %s",
@@ -27975,9 +28103,42 @@ function transfer_normalize_flags()
   return flags
 end
 
-function resolve_transfer_output(asset, index, variant)
+function transfer_path_key(path)
+  path = normalize_slashes(trim(path or ""))
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
+  end
+  local root, remaining
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+  end
+  if not root then return nil end
+  remaining = path:sub(#root + 1)
+  local segments = {}
+  for segment in remaining:gmatch("[^\\/]+") do
+    if segment == ".." then
+      segments[#segments] = nil
+    elseif segment ~= "." and segment ~= "" then
+      segments[#segments + 1] = SEP == "\\" and segment:gsub("[ .]+$", "") or segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return path_key(root .. table.concat(segments, SEP))
+end
+
+function transfer_output_is_source(path, asset)
+  local key = transfer_path_key(path)
+  if not key then return true end -- Ambiguous relative/device paths cannot be proven safe.
+  return (asset and transfer_path_key(asset.path) == key)
+    or (state.by_path and state.by_path[key] ~= nil) or false
+end
+
+function resolve_transfer_output(asset, index, variant, captured_name)
   local extension_name = transfer_format_info()
-  local base = expand_transfer_template(asset, index, variant)
+  local base = captured_name or expand_transfer_template(asset, index, variant)
   local directory = normalize_slashes(trim(state.transfer_dir or ""))
 
   if directory == "" then
@@ -27988,6 +28149,10 @@ function resolve_transfer_output(asset, index, variant)
     directory,
     base .. "." .. extension_name
   )
+
+  if transfer_output_is_source(candidate, asset) then
+    return nil, "source", candidate
+  end
 
   if not reaper.file_exists(candidate) then
     return candidate, "new"
@@ -28012,7 +28177,7 @@ function resolve_transfer_output(asset, index, variant)
       )
     )
 
-    if not reaper.file_exists(next_path) then
+    if not transfer_output_is_source(next_path, asset) and not reaper.file_exists(next_path) then
       return next_path, "increment"
     end
 
@@ -28567,6 +28732,9 @@ function commit_transfer_output(
   replace_existing,
   task_index
 )
+  if transfer_output_is_source(output_path) then
+    return false, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名")
+  end
   if not temporary_path
     or not reaper.file_exists(temporary_path) then
     return false, translate_ui_text("未找到临时渲染文件")
@@ -28627,7 +28795,8 @@ function render_transfer_asset(task)
     resolve_transfer_output(
       asset,
       task.asset_index,
-      task.variant
+      task.variant,
+      task.output_name
     )
 
   if collision == "skip" then
@@ -28635,6 +28804,8 @@ function render_transfer_asset(task)
       nil,
       translate_ui_text("已跳过已有文件：") .. existing,
       true
+  elseif collision == "source" then
+    return false, nil, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名"), false
   elseif not output_path then
     return false,
       nil,
@@ -28749,10 +28920,10 @@ function render_transfer_asset(task)
 end
 
 function write_transfer_report(job, canceled)
-  local handle = io.open(TRANSFER_REPORT_FILE, "wb")
+  local handle, failure = atomic_file_writer(TRANSFER_REPORT_FILE)
 
   if not handle then
-    return false
+    return false, failure
   end
 
   handle:write(
@@ -28789,8 +28960,7 @@ function write_transfer_report(job, canceled)
     )
   end
 
-  handle:close()
-  return true
+  return handle:close()
 end
 
 function finish_transfer_job(job, canceled)
@@ -28798,7 +28968,7 @@ function finish_transfer_job(job, canceled)
     return
   end
 
-  write_transfer_report(job, canceled)
+  local report_ok, report_error = write_transfer_report(job, canceled)
 
   if canceled then
     Jobs.cancel(job.job_token)
@@ -28839,6 +29009,14 @@ function finish_transfer_job(job, canceled)
     set_status(summary)
   end
 
+  if not report_ok then
+    summary = summary .. " · " .. translate_ui_text("交付报告保存失败")
+    AppState.set("transfer_last_error", (state.transfer_last_error or "")
+      .. "\n" .. tostring(report_error or ""))
+    AppState.set("transfer_last_summary", summary)
+    set_status(summary, true)
+  end
+
   if not canceled
     and (job.success_count or 0) > 0
     and state.transfer_open_dir_after then
@@ -28851,10 +29029,32 @@ function finish_transfer_job(job, canceled)
   end
 end
 
+local TRANSFER_CAPTURED_KEYS = {
+  "transfer_dir", "transfer_template", "transfer_lowercase", "transfer_collision",
+  "transfer_format", "transfer_sample_rate", "transfer_channels", "transfer_scope",
+  "transfer_preserve_metadata", "transfer_normalize", "transfer_normalize_target",
+  "transfer_fade_in_ms", "transfer_fade_out_ms", "transfer_dither", "transfer_noise_shaping",
+  "transfer_smart_tail", "transfer_tail_threshold_db", "transfer_tail_max_ms", "transfer_tail_hold_ms",
+  "transfer_variants_enabled", "transfer_variant_auto_suffix", "transfer_insert_after",
+  "pitch", "rate", "gain_db", "reverse", "preserve_pitch", "region_start", "region_end", "active_region_index",
+}
+
+function capture_transfer_settings()
+  local values = {}
+  for _, key in ipairs(TRANSFER_CAPTURED_KEYS) do values[key] = state[key] end
+  return values
+end
+
 function process_transfer_job()
   local job = state.transfer_job
 
   if not job then
+    return
+  end
+
+  if job.project and job.project ~= reaper.EnumProjects(-1, "") then
+    finish_transfer_job(job, true)
+    set_status("Transfer 已停止：工程已切换", true)
     return
   end
 
@@ -28883,8 +29083,11 @@ function process_transfer_job()
   end
 
   local started_at = reaper.time_precise()
-  local ok, output, message, skipped =
-    render_transfer_asset(task)
+  local live_settings = capture_transfer_settings()
+  if job.settings then AppState.apply(job.settings) end
+  local call_ok, ok, output, message, skipped = pcall(render_transfer_asset, task)
+  AppState.apply(live_settings)
+  if not call_ok then ok, output, message, skipped = false, nil, tostring(ok), false end
   local elapsed =
     math.max(0, reaper.time_precise() - started_at)
 
@@ -28949,6 +29152,10 @@ function run_transfer(assets, batch_mode)
 
   if directory == "" then
     set_status("请选择有效的输出目录", true)
+    return
+  end
+  if not transfer_path_key(directory) then
+    set_status("请选择绝对路径的输出目录", true)
     return
   end
 
@@ -29061,6 +29268,7 @@ function run_transfer(assets, batch_mode)
         use_selection = use_selection,
         variant = variant,
         task_index = task_index,
+        output_name = expand_transfer_template(asset, asset_index, variant),
       }
     end
   end
@@ -29095,6 +29303,8 @@ function run_transfer(assets, batch_mode)
     records = {},
     started_at = reaper.time_precise(),
     output_directory = state.transfer_dir,
+    settings = capture_transfer_settings(),
+    project = reaper.EnumProjects(-1, ""),
     job_token = job_token,
   }
   set_status(
@@ -39052,7 +39262,7 @@ function draw_more_actions_popup(asset)
     state.reverse = not state.reverse
 
     if state.preview then
-      play_preview(asset, nil, has_selection())
+      restart_preview_direction()
     end
   end
 
@@ -39336,7 +39546,7 @@ function draw_preview_toggle_icons(asset, button_size)
     state.reverse = not state.reverse
 
     if state.preview then
-      play_preview(asset, nil, has_selection())
+      restart_preview_direction()
     end
   end
 

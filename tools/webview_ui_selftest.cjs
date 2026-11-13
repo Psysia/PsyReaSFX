@@ -80,8 +80,16 @@ async function main() {
       let language = "zh";
       let aiPreset = "fixture-ai-one";
       const calls = [];
+      const metadata = new Map();
+      let metadataSelectionToken = 0;
+      window.testHeldResponses = [];
+      window.testReleaseResponses = () => {
+        const responses = window.testHeldResponses.splice(0);
+        for (const deliver of responses) deliver();
+      };
       let stateOverrides = {};
       window.testSetState = (patch) => {
+        if (Number.isInteger(patch.revision)) revision = patch.revision;
         stateOverrides = { ...stateOverrides, ...patch };
         for (const key of Object.keys(patch)) {
           if (patch[key] === undefined) delete stateOverrides[key];
@@ -151,6 +159,7 @@ async function main() {
                 Math.abs(Math.cos(position * (0.015 + (index % 5) * 0.017))),
             ),
           },
+          ...metadata.get(`D:\\Mechanical Motion\\${index}.wav`),
         };
       }
       function state() {
@@ -329,7 +338,7 @@ async function main() {
                 total: count,
                 pending: false,
                 items: Array.from(
-                  { length: Math.min(request.params.limit, count - offset) },
+                  { length: Math.min(request.params.limit, window.testPageLimit || 100, count - offset) },
                   (_, i) => asset(offset + i + 1),
                 ),
               };
@@ -398,6 +407,27 @@ async function main() {
             }
             if (request.method === "preview.parameters")
               fx = { ...fx, ...request.params };
+            if (request.method === "metadata.save") {
+              const path = request.params.path;
+              metadata.set(path, { ...metadata.get(path), ...request.params.values });
+              result = { path, ...metadata.get(path) };
+              if (selected?.path === path) selected = { ...selected, ...result };
+            }
+            if (request.method === "metadata.selection") {
+              result = {
+                token: String(++metadataSelectionToken), count: state().selectedCount,
+                values: { description: selected?.description || "", keywords: "" },
+                mixed: {}, truncated: {},
+                fields: [{ key: "description", label: "描述" }, { key: "keywords", label: "关键词" }],
+              };
+            }
+            if (request.method === "metadata.batch") {
+              if (request.params.token !== String(metadataSelectionToken))
+                throw new Error("The batch editor sent a stale snapshot token");
+              window.testBulkSavedValues = { ...request.params.values };
+              selected = { ...selected, ...request.params.values };
+              revision++;
+            }
             if (
               request.method === "settings.ai" &&
               request.params.action === "select"
@@ -502,7 +532,9 @@ async function main() {
                   data: { protocol: 1, event: "state", data: state() },
                 });
             };
-            if (request.method === "selection.set" && window.testSelectionDelay)
+            if (request.method === window.testHoldMethod)
+              window.testHeldResponses.push(deliver);
+            else if (request.method === "selection.set" && window.testSelectionDelay)
               setTimeout(deliver, window.testSelectionDelay);
             else queueMicrotask(deliver);
           },
@@ -549,6 +581,17 @@ async function main() {
       (await page.locator(".result-row").count()) < 100,
       "500k catalog must render a bounded viewport",
     );
+    const pageBeforeSplit = await page.evaluate(() => {
+      window.testPageLimit = 3;
+      const before = window.testCalls.length;
+      window.testSetState({ revision: 2 });
+      return before;
+    });
+    await page.waitForFunction((before) => window.testCalls.slice(before).filter(
+      (call) => call.method === "catalog.page",
+    ).length >= 2, pageBeforeSplit);
+    await page.waitForFunction(() => document.querySelectorAll(".result-row").length > 15);
+    await page.evaluate(() => { window.testPageLimit = undefined; });
     await page.locator(".result-cell.name").first().click();
     await page.locator("#play").click();
     await page.waitForSelector(".result-row.played");
@@ -996,6 +1039,84 @@ async function main() {
       "Transfer draft must survive inspector tabs",
     );
     await page.locator('[data-inspector="metadata"]').click();
+    // Editing again while a save is awaiting its response must preserve the
+    // newer draft and advance its original value to the committed first edit.
+    const descriptionInput = page.locator('[data-field="description"]');
+    await page.evaluate(() => { window.testHoldMethod = "metadata.save"; });
+    await descriptionInput.fill("first committed edit");
+    await page.getByRole("button", { name: "保存元数据", exact: true }).click();
+    await page.waitForFunction(() => window.testHeldResponses.length === 1);
+    await descriptionInput.fill("newer unsaved edit");
+    await page.evaluate(() => {
+      window.testHoldMethod = null;
+      window.testReleaseResponses();
+    });
+    await page.waitForFunction(() => !document.querySelector('#inspector-body button')?.disabled);
+    assert.equal(await descriptionInput.inputValue(), "newer unsaved edit",
+      "save completion must not erase text typed while awaiting the host");
+    await page.getByRole("button", { name: "保存元数据", exact: true }).click();
+    await page.waitForFunction(() => window.testCalls.some((call) =>
+      call.method === "metadata.save" && call.params.values.description === "newer unsaved edit"));
+    const latestSave = await page.evaluate(() => window.testCalls.filter((call) => call.method === "metadata.save").at(-1));
+    assert.equal(latestSave.params.original.description, "first committed edit",
+      "the next save must compare against the previous committed value");
+    // A save of A may finish while B is being edited. B's draft belongs to B.
+    await page.locator(".result-cell.name").first().click();
+    await page.evaluate(() => { window.testHoldMethod = "metadata.save"; });
+    await descriptionInput.fill("asset A saved in background");
+    await page.evaluate(() => {
+      window.testDetachedMetadataInput = document.querySelector('[data-field="description"]');
+    });
+    await page.getByRole("button", { name: "保存元数据", exact: true }).click();
+    await page.waitForFunction(() => window.testHeldResponses.length === 1);
+    await page.locator(".result-cell.name").nth(1).click();
+    await descriptionInput.fill("asset B draft");
+    assert.equal(await page.evaluate(() => window.testDetachedMetadataInput.isConnected), false,
+      "the stale-input fixture must refer to a different, detached asset editor");
+    await page.evaluate(() => {
+      window.testDetachedMetadataInput.value = "late value from old editor";
+      window.testDetachedMetadataInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.evaluate(() => {
+      window.testHoldMethod = null;
+      window.testReleaseResponses();
+    });
+    await page.waitForTimeout(30);
+    assert.equal(await descriptionInput.inputValue(), "asset B draft",
+      "another asset's save must not clear the current draft");
+    await page.locator(".result-cell.name").nth(2).click();
+    await page.locator(".result-cell.name").nth(1).click();
+    assert.equal(await descriptionInput.inputValue(), "asset B draft");
+    await page.getByRole("button", { name: "保存元数据", exact: true }).click();
+    // Switching the asset and batch identity together must create one editor,
+    // so only its live snapshot can authorize the subsequent batch write.
+    const batchSnapshots = await page.evaluate(() =>
+      window.testCalls.filter((call) => call.method === "metadata.selection").length);
+    await page.evaluate(() => window.testSetState({ selectedCount: 2, selectionRevision: 1 }));
+    await page.getByRole("button", { name: "应用到所选素材", exact: true }).waitFor();
+    await descriptionInput.fill("batch draft retained");
+    await page.evaluate(() => window.testSetState({ selectionRevision: 2, selected: {
+      path: "D:\\Sound Effects\\batch-fixture.wav", name: "batch-fixture.wav",
+      channels: 2, sampleRate: 48000, bitDepth: 24, duration: 8.24,
+    } }));
+    await page.getByRole("button", { name: "应用到所选素材", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() =>
+      window.testCalls.filter((call) => call.method === "metadata.selection").length), batchSnapshots + 2,
+      "each selection identity must create only one batch snapshot");
+    await descriptionInput.fill("new batch draft");
+    await page.evaluate(() => window.testEmitState());
+    assert.equal(await descriptionInput.inputValue(), "new batch draft");
+    assert.equal(await page.locator('#inspector-body [data-field="description"]').evaluate((input) =>
+      input.parentElement.querySelector('input[type="checkbox"]').checked), true);
+    await page.getByRole("button", { name: "应用到所选素材", exact: true }).click();
+    await page.waitForFunction(() => window.testBulkSavedValues?.description === "new batch draft");
+    await page.waitForFunction(() => ![...document.querySelectorAll('#inspector-body button')]
+      .find((button) => button.textContent === "应用到所选素材")?.disabled);
+    assert.equal(await page.evaluate(() =>
+      window.testCalls.filter((call) => call.method === "metadata.selection").length), batchSnapshots + 3,
+      "save completion must refresh the batch snapshot once");
+    await page.evaluate(() => window.testSetState({ selectedCount: undefined,
+      selectionRevision: undefined, selected: undefined }));
     await page.evaluate(() =>
       window.testSetState({ tasks: { transfer: true, scan: true } }),
     );
@@ -2200,6 +2321,46 @@ async function main() {
         (c) => c.method === "preview.parameters" && c.params.gain_db === 0,
       ),
     );
+    const resetCalls = await page.evaluate(() => {
+      const before = window.testCalls.length;
+      const pitch = document.querySelector("#fx-pitch");
+      pitch.value = 12;
+      pitch.dispatchEvent(new Event("input", { bubbles: true }));
+      document.querySelector("#fx-reset").click();
+      return before;
+    });
+    await page.waitForTimeout(150);
+    const resetResult = await page.evaluate((before) => ({
+      calls: window.testCalls.slice(before).filter((call) => call.method === "preview.parameters"),
+      pitch: Number(document.querySelector("#fx-pitch").value),
+      rate: Number(document.querySelector("#fx-rate").value),
+    }), resetCalls);
+    assert.equal(resetResult.calls.at(-1).params.pitch, 0,
+      "a delayed slider write must not override FX reset");
+    assert.equal(resetResult.pitch, 0);
+    assert.equal(resetResult.rate, 1);
+    await page.evaluate(() => {
+      window.testHoldMethod = "preview.parameters";
+      const pitch = document.querySelector("#fx-pitch");
+      pitch.value = 7;
+      pitch.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.testHeldResponses.length === 1);
+    const fxBeforeReset = await page.evaluate(() => {
+      window.testEmitState();
+      document.querySelector("#fx-reset").click();
+      return window.testCalls.length;
+    });
+    assert.equal(await page.locator("#fx-pitch").inputValue(), "0",
+      "reset must show immediately while a previous FX response is in flight");
+    await page.evaluate(() => {
+      window.testHoldMethod = undefined;
+      window.testReleaseResponses();
+    });
+    await page.waitForFunction((before) => window.testCalls.slice(before).some(
+      (call) => call.method === "preview.parameters" && call.params.pitch === 0,
+    ), fxBeforeReset);
+    await page.waitForFunction(() => document.querySelector("#fx-pitch").value === "0");
     await page.evaluate(() =>
       window.testSetState({ regionStart: 0.1, regionEnd: 0.8 }),
     );

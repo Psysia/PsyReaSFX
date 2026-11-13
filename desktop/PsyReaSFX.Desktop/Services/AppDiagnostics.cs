@@ -5,9 +5,11 @@ namespace PsyReaSFX.Desktop.Services;
 internal static class AppDiagnostics
 {
     private static readonly object Sync = new();
-    public static string LogDirectory { get; } = Path.Combine(
+    public static string LogDirectory { get; private set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PsyReaSFX", "logs");
-    public static string CurrentLogPath { get; } = Path.Combine(LogDirectory, $"desktop-{DateTime.Now:yyyyMMdd}.log");
+    public static string CurrentLogPath => Path.Combine(LogDirectory, $"desktop-{DateTime.Now:yyyyMMdd}.log");
+
+    internal static void ConfigureDirectory(string directory) => LogDirectory = Path.GetFullPath(directory);
 
     public static void Write(string message, Exception? exception = null)
     {

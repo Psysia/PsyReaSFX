@@ -127,6 +127,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Runtime compatibility notice regression failed.' }
           node tools/playback_clock_selftest.mjs
           if ($LASTEXITCODE -ne 0) { throw 'Playback clock regression failed.' }
+          node tools/host_connection_selftest.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Host connection lifecycle regression failed.' }
+          lua tools/lua_webview_transport_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'WebView transport regression failed.' }
+          lua tools/lua_metadata_snapshot_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Metadata snapshot regression failed.' }
+          lua tools/lua_transfer_safety_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Transfer safety regression failed.' }
           lua tools/lua_background_budget_selftest.lua
           if ($LASTEXITCODE -ne 0) { throw 'Background scheduling regression failed.' }
           lua tools/lua_watch_discovery_selftest.lua
@@ -350,16 +358,8 @@ jobs:
       - name: Audit NuGet dependencies
         shell: pwsh
         run: |
-          foreach ($project in @(
-            'desktop/PsyReaSFX.Desktop/PsyReaSFX.Desktop.csproj',
-            'neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj'
-          )) {
-            $output = dotnet list $project package --vulnerable --include-transitive
-            $output
-            if ($output -match 'has the following vulnerable packages') {
-              throw "NuGet vulnerability audit found a vulnerable dependency in $project."
-            }
-          }
+          ./tools/Test-NuGetAudit.ps1 -SelfTest
+          ./tools/Test-NuGetAudit.ps1
 
       - name: Build neural similarity sidecar
         run: dotnet build neural/PsyReaSFX.NeuralSidecar/PsyReaSFX.NeuralSidecar.csproj -c Release
@@ -398,6 +398,16 @@ jobs:
             -IndexPath 'index.xml' `
             -Version '0.9.0' `
             -SidecarPath (Join-Path $output 'PsyReaSFX.NeuralSidecar_v0_9_2_beta4_win_x64.exe')
+          $current = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-current'
+          ./tools/Build-NeuralPackage.ps1 -OutputDirectory $current
+          $neural = Get-Content 'neural/package/package.json' -Raw | ConvertFrom-Json
+          $neuralFileVersion = $neural.version.Replace('.', '_').Replace('-', '_')
+          ./tools/Test-NeuralPackage.ps1 `
+            -ArchivePath (Join-Path $current "PsyReaSFX_Neural_Similarity_v${neuralFileVersion}_win_x64.zip") `
+            -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-neural-current-install')
+          ./tools/Test-ReaPackNeuralPackage.ps1 `
+            -Version $neural.version `
+            -SidecarPath (Join-Path $current "PsyReaSFX.NeuralSidecar_v${neuralFileVersion}_win_x64.exe")
 
       - name: Run Desktop self-test
         shell: pwsh
@@ -410,6 +420,12 @@ jobs:
             throw "Desktop self-test failed with exit code $($process.ExitCode)."
           }
           Get-Content -LiteralPath $report
+
+      - name: Verify isolated core services and decoder cancellation
+        shell: pwsh
+        run: |
+          dotnet run --project desktop/PsyReaSFX.CoreSelfTest/PsyReaSFX.CoreSelfTest.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Core service regressions failed.' }
 
       - name: Run disposable catalog benchmark
         shell: pwsh

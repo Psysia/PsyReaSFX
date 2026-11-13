@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const toolsDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -209,12 +210,29 @@ for (const relative of [
 }
 
 const reapackIndex = fs.readFileSync(path.join(repositoryRoot, "index.xml"), "utf8");
+const currentReleaseTag = `v${JSON.parse(fs.readFileSync(path.join(repositoryRoot, "src/web/app.json"), "utf8")).version}`;
 for (const match of reapackIndex.matchAll(/<source[^>]*file="PsyReaSFX\/neural_similarity\/(README(?:_zh-CN)?\.md)"[^>]*hash="1220([a-f0-9]{64})"[^>]*>([^<]+)<\/source>/g)) {
-  const digest = crypto.createHash("sha256")
-    .update(fs.readFileSync(path.join(repositoryRoot, "neural/package", match[1]))).digest("hex");
-  if (digest !== match[2]) fail(`ReaPack documentation hash mismatch: ${match[1]}`);
-  if (!/^https:\/\/raw\.githubusercontent\.com\/Psysia\/PsyReaSFX\/[a-f0-9]{40}\/neural\/package\//.test(match[3])) {
-    fail(`Neural installer documentation must use an immutable commit URL: ${match[1]}`);
+  const pinned = match[3].match(/^https:\/\/raw\.githubusercontent\.com\/Psysia\/PsyReaSFX\/([a-f0-9]{40}|v\d+\.\d+\.\d+(?:-beta\d+(?:\.\d+)?)?)\/neural\/package\//);
+  if (!pinned) {
+    fail(`Neural installer documentation must use an immutable release tag or commit URL: ${match[1]}`);
+    continue;
+  }
+  try {
+    let bytes = fs.readFileSync(path.join(repositoryRoot, "neural/package", match[1]));
+    const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
+    if (pinned[1] !== currentReleaseTag && hash(bytes) !== match[2]) {
+      const historical = spawnSync("git", ["show", `${pinned[1]}:neural/package/${match[1]}`],
+        { cwd: repositoryRoot, windowsHide: true, maxBuffer: 1024 * 1024 });
+      if (historical.status === 0) bytes = historical.stdout;
+      else {
+        const response = await fetch(match[3], { signal: AbortSignal.timeout(30000) });
+        if (!response.ok) throw new Error(`Pinned documentation returned HTTP ${response.status}`);
+        bytes = Buffer.from(await response.arrayBuffer());
+      }
+    }
+    if (hash(bytes) !== match[2]) fail(`ReaPack documentation hash mismatch: ${match[1]} at ${pinned[1]}`);
+  } catch (error) {
+    fail(`ReaPack pinned documentation could not be verified: ${error.message}`);
   }
 }
 for (const name of ["PsyReaSFX.lua", "PsyReaSFX Neural Similarity"]) {

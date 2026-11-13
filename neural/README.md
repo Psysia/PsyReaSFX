@@ -17,8 +17,10 @@ Alternatively, download the complete ZIP above, extract everything, and run
 `Install-NeuralSimilarity.cmd`; see the [installer guide](package/README.md).
 No separate Python or .NET runtime is required.
 
+The decoder revision ships as the independent **0.9.1-beta1** data package, with sidecar **0.5.2**. Enable pre-releases in ReaPack or [download the complete updated ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta18/PsyReaSFX_Neural_Similarity_v0_9_1_beta1_win_x64.zip). Stable 0.9.0 remains available. Decoding checks cancellation per block and uses a 512 MiB result budget and 10-minute deadline; FFmpeg pipes and child processes are cleaned up on failure. Model and cache formats remain compatible.
+
 Package and layout smoke tests are implemented by
-`tools/Build-Release.ps1`, `tools/Test-NeuralPackage.ps1`, and
+`tools/Build-NeuralPackage.ps1`, `tools/Test-NeuralPackage.ps1`, and
 `tools/Test-ReaPackNeuralPackage.ps1`.
 
 The first frozen profile is `mn04_as_scene_320_v1`:
@@ -40,7 +42,7 @@ PsyReaSFX.NeuralSidecar embed <model-directory> <input-audio> [output.json]
 PsyReaSFX.NeuralSidecar run-job <model-directory> <request.json>
 ```
 
-Sidecar `0.5.1` decodes common WAV sample rates and PCM16/PCM24/PCM32/float
+Sidecar `0.5.2` decodes common WAV sample rates and PCM16/PCM24/PCM32/float
 depths, AIFF, FLAC, MP3, and M4A through NAudio and Windows Media Foundation.
 When FFmpeg is found through `PSYREASFX_FFMPEG`, beside the executable, or on
 `PATH`, it also enables OGG, Opus, WavPack, and CAF. Decoded audio is downmixed

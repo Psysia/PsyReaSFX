@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "da3a05eaa2318320f9e28834c1c2f9380d5cc78745ce1143aacde62d6a796264",
+  source_sha256 = "31429a80c6e1057bdf738e1fc3ab11ff5aca88c68d7e3dfa7140612cb9ce8899",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1389,6 +1389,14 @@ I18N_EN = {
   ["正在导出"] = "Exporting",
   ["Transfer 完成"] = "Transfer complete",
   ["Transfer 已停止"] = "Transfer stopped",
+  ["Transfer 已停止：工程已切换"] = "Transfer stopped: the active project changed",
+  ["请选择绝对路径的输出目录"] = "Choose an absolute output directory",
+  ["输出路径与源素材重合，请更换输出目录或文件名"] = "The output would replace source audio. Choose a different folder or filename",
+  ["交付报告保存失败"] = "Could not save the delivery report",
+  ["无效区域序号"] = "Invalid Region index",
+  ["Region 列表已改变，请重新选择"] = "The Region list changed. Select the Region again",
+  ["无效宿主请求"] = "Invalid host request",
+  ["请求过大，请缩小操作范围"] = "The request is too large. Reduce the operation scope",
   ["完成"] = "Completed",
   ["跳过"] = "Skipped",
   ["失败"] = "Failed",
@@ -14304,10 +14312,13 @@ NEURAL_JSON_UNESCAPE = {
   b = '\b', f = '\f', n = '\n', r = '\r', t = '\t',
 }
 
-function neural_json_decode(text)
+function neural_json_decode(text, preserve_container_kinds)
   text = tostring(text or "")
   local position = 1
   local length = #text
+  if length > 8 * 1024 * 1024 then error("JSON document exceeds the size limit") end
+  local depth = 0
+  local array_meta = preserve_container_kinds and { __json_kind = "array" } or nil
   local unescape = NEURAL_JSON_UNESCAPE
   local function skip_space()
     -- Every JSON whitespace byte is <= 32, so anything above stops here.
@@ -14353,14 +14364,15 @@ function neural_json_decode(text)
       elseif escape == "u" then
         local hex = text:sub(position + 2, position + 5)
         local code = tonumber(hex, 16)
-        if not code or #hex ~= 4 then error("invalid JSON unicode escape") end
+        if not hex:match("^%x%x%x%x$") then error("invalid JSON unicode escape") end
         position = position + 6
         if code >= 0xd800 and code <= 0xdbff then
           if text:sub(position, position + 1) ~= "\\u" then
             error("incomplete JSON surrogate pair")
           end
-          local low = tonumber(text:sub(position + 2, position + 5), 16)
-          if not low or low < 0xdc00 or low > 0xdfff then
+          local low_hex = text:sub(position + 2, position + 5)
+          local low = tonumber(low_hex, 16)
+          if not low_hex:match("^%x%x%x%x$") or low < 0xdc00 or low > 0xdfff then
             error("invalid JSON surrogate pair")
           end
           code = 0x10000 + (code - 0xd800) * 0x400 + (low - 0xdc00)
@@ -14377,7 +14389,7 @@ function neural_json_decode(text)
   end
   local function parse_array()
     position = position + 1
-    local output = {}
+    local output = array_meta and setmetatable({}, array_meta) or {}
     local count = 0
     skip_space()
     if text:byte(position) == 93 then position = position + 1 return output end
@@ -14398,11 +14410,17 @@ function neural_json_decode(text)
   local function parse_object()
     position = position + 1
     local output = {}
+    local seen = {}
+    if preserve_container_kinds then
+      setmetatable(output, { __json_kind = "object", __json_members = seen })
+    end
     skip_space()
     if text:byte(position) == 125 then position = position + 1 return output end
     while true do
       skip_space()
       local key = parse_string()
+      if seen[key] then error("duplicate JSON property") end
+      seen[key] = true
       skip_space()
       if text:byte(position) ~= 58 then error("expected JSON property separator") end
       position = position + 1
@@ -14418,8 +14436,13 @@ function neural_json_decode(text)
     skip_space()
     local character = text:byte(position)
     if character == 34 then return parse_string() end
-    if character == 91 then return parse_array() end
-    if character == 123 then return parse_object() end
+    if character == 91 or character == 123 then
+      depth = depth + 1
+      if depth > 64 then error("JSON nesting exceeds the depth limit") end
+      local value = character == 91 and parse_array() or parse_object()
+      depth = depth - 1
+      return value
+    end
     if character == 116 and text:sub(position, position + 3) == "true" then
       position = position + 4
       return true
@@ -14432,11 +14455,36 @@ function neural_json_decode(text)
       position = position + 4
       return nil
     end
-    local first, last = text:find("^-?%d+%.?%d*[eE]?[+-]?%d*", position)
-    if not first then error("invalid JSON value") end
-    local number = tonumber(text:sub(first, last))
-    if not number then error("invalid JSON number") end
-    position = last + 1
+    local first = position
+    if character == 45 then position = position + 1 end
+    local digit = text:byte(position)
+    if digit == 48 then
+      position = position + 1
+      digit = text:byte(position)
+      if digit and digit >= 48 and digit <= 57 then error("leading zero in JSON number") end
+    elseif digit and digit >= 49 and digit <= 57 then
+      local _, last = text:find("^%d+", position)
+      position = last + 1
+    else
+      error("invalid JSON value")
+    end
+    if text:byte(position) == 46 then
+      position = position + 1
+      local _, last = text:find("^%d+", position)
+      if not last then error("invalid JSON fraction") end
+      position = last + 1
+    end
+    local exponent = text:byte(position)
+    if exponent == 69 or exponent == 101 then
+      position = position + 1
+      local sign = text:byte(position)
+      if sign == 43 or sign == 45 then position = position + 1 end
+      local _, last = text:find("^%d+", position)
+      if not last then error("invalid JSON exponent") end
+      position = last + 1
+    end
+    local number = tonumber(text:sub(first, position - 1))
+    if not number or number == math.huge or number == -math.huge then error("invalid JSON number") end
     return number
   end
   local value = parse_value()
@@ -17435,6 +17483,7 @@ function mark_asset_database_change(asset, result_change)
   if not asset or not asset.path or asset.path == "" then
     return false
   end
+  asset._metadata_revision = (asset._metadata_revision or 0) + 1
   if workspace_tabs_invalidate then workspace_tabs_invalidate(result_change or "background", asset) end
   if SelectionIndex then SelectionIndex.meta_epoch = SelectionIndex.meta_epoch + 1 end
   if state.root_removal_session then
@@ -24521,7 +24570,8 @@ function play_preview(
   asset,
   start_percent,
   use_selection,
-  resume_position
+  resume_position,
+  captured_range
 )
   if state.root_removal_session then
     set_status("请等待来源移除完成后再试听", true)
@@ -24575,8 +24625,10 @@ function play_preview(
   duration =
     is_qn and 0 or (duration or asset.duration or 0)
 
-  local selection =
-    use_selection and has_selection()
+  local range_start = captured_range and captured_range.start or state.region_start
+  local range_finish = captured_range and captured_range.finish or state.region_end
+  local range_span = range_finish - range_start
+  local selection = use_selection and range_span > 0.002 and range_span < 0.998
 
   -- Always wrap audio previews in a SECTION source when SWS supports it.
   -- The section's source-boundary fade protects files whose first sample is
@@ -24591,13 +24643,13 @@ function play_preview(
     if section then
       local offset =
         selection
-          and duration * state.region_start
+          and duration * range_start
           or 0
 
       local length =
         selection
           and duration
-            * (state.region_end - state.region_start)
+            * range_span
           or duration
 
       local call_ok, section_ok =
@@ -24675,9 +24727,9 @@ function play_preview(
     configure_preview_instance(companion, 1)
   end
 
-  local map_start = selection and state.region_start or 0
+  local map_start = selection and range_start or 0
   local map_span = selection
-      and (state.region_end - state.region_start)
+      and range_span
     or 1
   local map_reverse = state.reverse
   local preview_length = selection
@@ -24688,9 +24740,7 @@ function play_preview(
   if resume_position ~= nil then
     -- Resume in source/SECTION time, independent of audition rate and direction.
     seek_position = clamp(resume_position, 0, math.max(0, preview_length - 0.001))
-  elseif not selection
-    and start_percent
-    and start_percent > 0 then
+  elseif start_percent and (captured_range or (not selection and start_percent > 0)) then
     seek_position = preview_position_from_percent(
       clamp(start_percent, 0, 1),
       preview_length,
@@ -24802,6 +24852,16 @@ function play_preview(
       )
       or "试听：" .. asset.name
   )
+end
+
+function restart_preview_direction()
+  if not state.preview then return end
+  local asset = state.preview_path and state.by_path[path_key(state.preview_path)]
+  if not asset then request_preview_stop(); return end
+  local start = state.preview_map_start or 0
+  local span = state.preview_map_span or 1
+  play_preview(asset, state.preview_percent or start, span < 0.998, nil,
+    { start = start, finish = start + span })
 end
 
 function update_preview_parameters()
@@ -25353,7 +25413,7 @@ function parse_transfer_variant_values(
     had_token = true
     local value = tonumber(token)
 
-    if not value then
+    if not value or value ~= value or value == math.huge or value == -math.huge then
       return nil,
         string.format(
           "%s: %s",
@@ -25604,9 +25664,42 @@ function transfer_normalize_flags()
   return flags
 end
 
-function resolve_transfer_output(asset, index, variant)
+function transfer_path_key(path)
+  path = normalize_slashes(trim(path or ""))
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
+  end
+  local root, remaining
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+  end
+  if not root then return nil end
+  remaining = path:sub(#root + 1)
+  local segments = {}
+  for segment in remaining:gmatch("[^\\/]+") do
+    if segment == ".." then
+      segments[#segments] = nil
+    elseif segment ~= "." and segment ~= "" then
+      segments[#segments + 1] = SEP == "\\" and segment:gsub("[ .]+$", "") or segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return path_key(root .. table.concat(segments, SEP))
+end
+
+function transfer_output_is_source(path, asset)
+  local key = transfer_path_key(path)
+  if not key then return true end -- Ambiguous relative/device paths cannot be proven safe.
+  return (asset and transfer_path_key(asset.path) == key)
+    or (state.by_path and state.by_path[key] ~= nil) or false
+end
+
+function resolve_transfer_output(asset, index, variant, captured_name)
   local extension_name = transfer_format_info()
-  local base = expand_transfer_template(asset, index, variant)
+  local base = captured_name or expand_transfer_template(asset, index, variant)
   local directory = normalize_slashes(trim(state.transfer_dir or ""))
 
   if directory == "" then
@@ -25617,6 +25710,10 @@ function resolve_transfer_output(asset, index, variant)
     directory,
     base .. "." .. extension_name
   )
+
+  if transfer_output_is_source(candidate, asset) then
+    return nil, "source", candidate
+  end
 
   if not reaper.file_exists(candidate) then
     return candidate, "new"
@@ -25641,7 +25738,7 @@ function resolve_transfer_output(asset, index, variant)
       )
     )
 
-    if not reaper.file_exists(next_path) then
+    if not transfer_output_is_source(next_path, asset) and not reaper.file_exists(next_path) then
       return next_path, "increment"
     end
 
@@ -26196,6 +26293,9 @@ function commit_transfer_output(
   replace_existing,
   task_index
 )
+  if transfer_output_is_source(output_path) then
+    return false, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名")
+  end
   if not temporary_path
     or not reaper.file_exists(temporary_path) then
     return false, translate_ui_text("未找到临时渲染文件")
@@ -26256,7 +26356,8 @@ function render_transfer_asset(task)
     resolve_transfer_output(
       asset,
       task.asset_index,
-      task.variant
+      task.variant,
+      task.output_name
     )
 
   if collision == "skip" then
@@ -26264,6 +26365,8 @@ function render_transfer_asset(task)
       nil,
       translate_ui_text("已跳过已有文件：") .. existing,
       true
+  elseif collision == "source" then
+    return false, nil, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名"), false
   elseif not output_path then
     return false,
       nil,
@@ -26378,10 +26481,10 @@ function render_transfer_asset(task)
 end
 
 function write_transfer_report(job, canceled)
-  local handle = io.open(TRANSFER_REPORT_FILE, "wb")
+  local handle, failure = atomic_file_writer(TRANSFER_REPORT_FILE)
 
   if not handle then
-    return false
+    return false, failure
   end
 
   handle:write(
@@ -26418,8 +26521,7 @@ function write_transfer_report(job, canceled)
     )
   end
 
-  handle:close()
-  return true
+  return handle:close()
 end
 
 function finish_transfer_job(job, canceled)
@@ -26427,7 +26529,7 @@ function finish_transfer_job(job, canceled)
     return
   end
 
-  write_transfer_report(job, canceled)
+  local report_ok, report_error = write_transfer_report(job, canceled)
 
   if canceled then
     Jobs.cancel(job.job_token)
@@ -26468,6 +26570,14 @@ function finish_transfer_job(job, canceled)
     set_status(summary)
   end
 
+  if not report_ok then
+    summary = summary .. " · " .. translate_ui_text("交付报告保存失败")
+    AppState.set("transfer_last_error", (state.transfer_last_error or "")
+      .. "\n" .. tostring(report_error or ""))
+    AppState.set("transfer_last_summary", summary)
+    set_status(summary, true)
+  end
+
   if not canceled
     and (job.success_count or 0) > 0
     and state.transfer_open_dir_after then
@@ -26480,10 +26590,32 @@ function finish_transfer_job(job, canceled)
   end
 end
 
+local TRANSFER_CAPTURED_KEYS = {
+  "transfer_dir", "transfer_template", "transfer_lowercase", "transfer_collision",
+  "transfer_format", "transfer_sample_rate", "transfer_channels", "transfer_scope",
+  "transfer_preserve_metadata", "transfer_normalize", "transfer_normalize_target",
+  "transfer_fade_in_ms", "transfer_fade_out_ms", "transfer_dither", "transfer_noise_shaping",
+  "transfer_smart_tail", "transfer_tail_threshold_db", "transfer_tail_max_ms", "transfer_tail_hold_ms",
+  "transfer_variants_enabled", "transfer_variant_auto_suffix", "transfer_insert_after",
+  "pitch", "rate", "gain_db", "reverse", "preserve_pitch", "region_start", "region_end", "active_region_index",
+}
+
+function capture_transfer_settings()
+  local values = {}
+  for _, key in ipairs(TRANSFER_CAPTURED_KEYS) do values[key] = state[key] end
+  return values
+end
+
 function process_transfer_job()
   local job = state.transfer_job
 
   if not job then
+    return
+  end
+
+  if job.project and job.project ~= reaper.EnumProjects(-1, "") then
+    finish_transfer_job(job, true)
+    set_status("Transfer 已停止：工程已切换", true)
     return
   end
 
@@ -26512,8 +26644,11 @@ function process_transfer_job()
   end
 
   local started_at = reaper.time_precise()
-  local ok, output, message, skipped =
-    render_transfer_asset(task)
+  local live_settings = capture_transfer_settings()
+  if job.settings then AppState.apply(job.settings) end
+  local call_ok, ok, output, message, skipped = pcall(render_transfer_asset, task)
+  AppState.apply(live_settings)
+  if not call_ok then ok, output, message, skipped = false, nil, tostring(ok), false end
   local elapsed =
     math.max(0, reaper.time_precise() - started_at)
 
@@ -26578,6 +26713,10 @@ function run_transfer(assets, batch_mode)
 
   if directory == "" then
     set_status("请选择有效的输出目录", true)
+    return
+  end
+  if not transfer_path_key(directory) then
+    set_status("请选择绝对路径的输出目录", true)
     return
   end
 
@@ -26690,6 +26829,7 @@ function run_transfer(assets, batch_mode)
         use_selection = use_selection,
         variant = variant,
         task_index = task_index,
+        output_name = expand_transfer_template(asset, asset_index, variant),
       }
     end
   end
@@ -26724,6 +26864,8 @@ function run_transfer(assets, batch_mode)
     records = {},
     started_at = reaper.time_precise(),
     output_directory = state.transfer_dir,
+    settings = capture_transfer_settings(),
+    project = reaper.EnumProjects(-1, ""),
     job_token = job_token,
   }
   set_status(
@@ -36681,7 +36823,7 @@ function draw_more_actions_popup(asset)
     state.reverse = not state.reverse
 
     if state.preview then
-      play_preview(asset, nil, has_selection())
+      restart_preview_direction()
     end
   end
 
@@ -36965,7 +37107,7 @@ function draw_preview_toggle_icons(asset, button_size)
     state.reverse = not state.reverse
 
     if state.preview then
-      play_preview(asset, nil, has_selection())
+      restart_preview_direction()
     end
   end
 

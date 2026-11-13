@@ -96,6 +96,16 @@ assert(decoded.path == [[C:\Sound Library\tab\"quote".wav]])
 assert(decoded.values[1] == true and decoded.values[2] == false)
 assert(math.abs(decoded.values[3] - 1.25) < 0.000001)
 assert(neural_json_decode([["\ud83c\udfa7"]]) == "🎧")
+for _, invalid in ipairs({
+  "01", "-01", "1.", "1e", "1e+", "1e999", "-1e999", "+1",
+  [[{"x":1,"x":2}]], [[{"x":null,"x":2}]], [["\u+123"]],
+  string.rep("[", 65) .. "0" .. string.rep("]", 65),
+}) do
+  assert(not pcall(neural_json_decode, invalid), "invalid/unbounded JSON was accepted: " .. invalid:sub(1, 80))
+end
+for _, valid in ipairs({ "0", "-0", "1.0", "-0.5e-2", "1E+3", "2e20" }) do
+  assert(neural_json_decode(valid) == tonumber(valid), "valid JSON number was rejected")
+end
 
 assert(neural_windows_quote_argument("plain") == "plain")
 assert(neural_windows_quote_argument([[C:\Program Files\PsyReaSFX\]])
@@ -478,21 +488,17 @@ do
     end
     return true
   end
-  local function strip_position(message)
-    return (tostring(message):gsub("^.-:%d+: ", ""))
-  end
   local function compare(text)
     local old_ok, old_value = pcall(reference_decode, text)
     local new_ok, new_value = pcall(neural_json_decode, text)
-    assert(old_ok == new_ok, "decoder success must match for: " .. string.format("%q", text))
-    if old_ok then
+    -- The previous parser accepted malformed numbers and duplicate properties.
+    -- Valid encoder output still has to match; corruptions may be rejected
+    -- earlier, but must never become newly accepted.
+    assert(old_ok or not new_ok, "decoder newly accepted corrupt JSON: " .. string.format("%q", text))
+    if old_ok and new_ok then
       assert(same_value(old_value, new_value), "decoded value differs: " .. string.format("%q", text))
-    else
-      assert(strip_position(old_value) == strip_position(new_value),
-        "decoder error differs: " .. strip_position(old_value) .. " vs "
-          .. strip_position(new_value) .. " for " .. string.format("%q", text))
     end
-    return old_ok
+    return new_ok
   end
 
   local seed = 20260611
