@@ -18,7 +18,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  readiness:
+    name: Scheduled mirror readiness (not acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'schedule'
+      - name: Inspect scheduled mirror readiness
+        id: mirror
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/reawebapi_schedule_gate.py --state "$RUNNER_TEMP/mirror-state.json"
+      # Same built-in cache mechanism already used by validation below. Access
+      # on every schedule keeps it warm, but eviction can permit another alert.
+      - name: Check per-version alert marker
+        id: alerted
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/mirror-alert
+          key: mirror-wait-alert-v1-${{ steps.mirror.outputs.tag }}
+          lookup-only: true
+      - name: Decide readiness, deferral or first overdue alert
+        id: gate
+        if: github.event_name == 'schedule'
+        run: >-
+          python tools/reawebapi_schedule_gate.py --decide
+          --state "$RUNNER_TEMP/mirror-state.json"
+          --alerted "${{ steps.alerted.outputs.cache-hit == 'true' && 'true' || 'false' }}"
+          --marker "$RUNNER_TEMP/mirror-alert"
+      - name: Save per-version alert marker before reporting failure
+        if: steps.gate.outputs.alert == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/mirror-alert
+          key: ${{ steps.alerted.outputs.cache-primary-key }}
+      - name: Report first persistent mirror delay
+        if: steps.gate.outputs.alert == 'true'
+        run: |
+          echo "::error::Mirror for ${{ steps.mirror.outputs.tag }} is still unavailable after the 2-hour grace period. Validation was NOT run. Inspect the ReaWebAPI sync workflow. Further waiting alerts for this version are suppressed while the cache marker exists."
+          exit 1
   verify:
+    needs: readiness
+    # A deferred schedule skips the verification job, never records acceptance.
+    # Push/manual runs retain all strict sync, integrity and regression failures.
+    if: github.event_name != 'schedule' || needs.readiness.outputs.ready == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     env:
