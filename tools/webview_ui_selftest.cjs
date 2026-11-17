@@ -88,6 +88,9 @@ async function main() {
         for (const deliver of responses) deliver();
       };
       let stateOverrides = {};
+      const catalogScope = new URL(location.href).searchParams.has("catalogFixture")
+        ? { id: "sm_0123456789abcdef", kind: "soundminer", name: "Fixture" }
+        : { id: "prs", kind: "prs", name: "PRS" };
       window.testSetState = (patch) => {
         if (Number.isInteger(patch.revision)) revision = patch.revision;
         stateOverrides = { ...stateOverrides, ...patch };
@@ -164,6 +167,7 @@ async function main() {
       }
       function state() {
         return {
+          catalogScope,
           revision,
           language,
           count,
@@ -248,6 +252,13 @@ async function main() {
               samples: ["/Volumes/SFX/中文/impact.wav"],
             };
             if (request.method === "soundminer.choose") result = false;
+            if (request.method === "soundminer.catalog.list") result = {
+              current: stateOverrides.catalogScope?.id || catalogScope.id,
+              catalogs: [
+                { id: "prs", name: "PRS", kind: "prs" },
+                { id: "sm_0123456789abcdef", name: "Fixture", kind: "soundminer", path: "C:/Soundminer/Databases/fixture.sqlite" },
+              ],
+            };
             if (request.method === "artwork.url")
               result =
                 "data:image/svg+xml," +
@@ -325,6 +336,7 @@ async function main() {
               ];
             if (request.method === "session.ready")
               result = {
+                catalogScope,
                 protocol: 1,
                 version: displayVersion,
                 host: window.reaper ? "reaper" : "desktop",
@@ -596,6 +608,24 @@ async function main() {
       path: "C:/Soundminer/Databases/fixture.sqlite", cachePath: "C:/Soundminer/Caches/waveforms.sqlite",
       oldPrefix: "/Volumes/SFX", newPrefix: "D:/SFX", waveforms: true,
     });
+    assert.equal(await page.locator("#catalog-switch").textContent(), "PRS 原有库");
+    await page.locator("#catalog-switch").click();
+    await page.locator(".soundminer-catalog").nth(1).getByRole("button", { name: "打开", exact: true }).click();
+    await page.locator(".soundminer-dialog").waitFor({ state: "detached" });
+    const catalogCalls = await page.evaluate(() => window.testCalls.filter((call) => call.method === "soundminer.catalog.activate"));
+    assert.deepEqual(catalogCalls.map((call) => call.params), [{ id: "sm_0123456789abcdef" }]);
+    await page.evaluate(() => window.testSetState({ catalogScope: { id: "sm_0123456789abcdef", kind: "soundminer", name: "Fixture" } }));
+    await page.waitForFunction(() => document.querySelector("#catalog-switch").textContent === "Soundminer · Fixture");
+    await page.locator("#catalog-switch").click();
+    await page.locator(".soundminer-catalog").nth(1).getByRole("button", { name: "继续导入", exact: true }).click();
+    await page.locator(".soundminer-dialog").waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(() => window.testCalls.filter((call) => call.method === "soundminer.catalog.resume").length), 1);
+    await page.evaluate(() => window.testSetState({ catalogScope: undefined }));
+    await page.locator("#catalog-switch").click();
+    await page.getByRole("button", { name: "导入 Soundminer 音效库", exact: true }).click();
+    await page.getByRole("heading", { name: "导入 Soundminer 音效库", exact: true }).waitFor();
+    await page.locator(".soundminer-dialog").getByRole("button", { name: "关闭", exact: true }).click();
+    await page.locator(".soundminer-dialog").waitFor({ state: "detached" });
     assert.equal(
       await page.locator('.column-title[data-column="index"]').count(),
       0,
@@ -2658,6 +2688,23 @@ async function main() {
     }
     const url = new URL(page.url());
     url.searchParams.delete("themeFixture");
+    url.searchParams.set("catalogFixture", "1");
+    await page.goto(url.toString());
+    await page.waitForSelector(".result-row");
+    assert.equal(await page.title(), `PsyReaSFX ${displayVersion} · Fixture`);
+    await page.locator("#settings-open").click();
+    await page.locator('[data-section="general"]').click();
+    assert.match(await page.locator("#settings-body").textContent(), /不自动扫描来源目录/);
+    assert.equal(await page.getByRole("checkbox", { name: /监视已导入来源文件夹|空闲时检查来源文件夹/ }).count(), 0);
+    await page.locator("#settings-close").click();
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--sidebar-left")), "206px");
+    const originalPrefs = await page.evaluate(() => localStorage.getItem("psyreasfx.workspace.v1"));
+    await page.locator("#left-toggle").click();
+    assert.equal(await page.evaluate(() => localStorage.getItem("psyreasfx.workspace.v1")), originalPrefs,
+      "an independent catalog must not change the original PRS workspace preferences");
+    assert.ok(await page.evaluate(() => localStorage.getItem("psyreasfx.workspace.v1.sm_0123456789abcdef")),
+      "independent catalog workspace preferences use a separate storage key");
+    url.searchParams.delete("catalogFixture");
     url.searchParams.set("runtimeVersion", "0.4.0");
     await page.goto(url.toString());
     await page.waitForSelector(".result-row");

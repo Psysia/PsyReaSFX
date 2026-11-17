@@ -159,6 +159,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.3 WebView** | Default Windows x64 release, including the Beta 18 reliability fixes; requires ReaWebAPI. |
+| WebView beta | **0.9.4-beta1** | Independent Soundminer catalogs and waveform import; enable pre-releases. |
 | Previous WebView beta | **0.9.3-beta18 (0.9.a)** | Retained for rollback through pre-releases. |
 | Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.1 / 0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
@@ -166,7 +167,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 
 PsyReaSFX keeps normal acoustic search available without the [optional neural component][neural-download]. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
 
-**Soundminer import:** open **Import Soundminer Library** from the library menu or Settings, choose a database and click the import action. Metadata and compatible V6/V7 overview waveforms are read locally; optional path mapping supports relocated media, offline entries are retained, and repeats preserve existing PRS data. Close Soundminer before importing. [Observed format and compatibility limits (Chinese)](docs/SOUNDMINER_FORMAT_zh-CN.md).
+**Soundminer import (0.9.4 Beta 1, prerelease):** open **Import Soundminer Library** from the library menu or Settings, choose a database and click the import action. Metadata and compatible V6/V7 overview waveforms are read locally; optional path mapping supports relocated media, offline entries are retained. The imported Soundminer library and the existing PRS library are saved and loaded independently. Selecting a library reads that library; the two are not merged and do not overwrite each other. Close Soundminer before importing. [Observed format and compatibility limits (Chinese)](docs/SOUNDMINER_FORMAT_zh-CN.md).
 
 See the [Beta 18 acceptance checklist: 117 workflows and 73 settings (Chinese)](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md) for source mappings, entry points and native acceptance steps.
 

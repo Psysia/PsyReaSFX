@@ -2238,4 +2238,8 @@ dialog::backdrop {
 .soundminer-checkbox { display: flex; align-items: center; gap: 8px; margin: 14px 0; }
 .soundminer-dialog .path-label { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow: auto; }
 .soundminer-status { overflow-wrap: anywhere; }
+.soundminer-catalogs { display: grid; gap: 8px; }
+.soundminer-catalog { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.soundminer-catalog .path-label { margin: 4px 0 0; max-height: 50px; }
+#main-menu #catalog-switch { max-width: min(40vw, 300px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); }
 @media (max-width: 600px) { .soundminer-field { grid-template-columns: 1fr; gap: 5px; } }

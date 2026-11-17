@@ -77,7 +77,7 @@ def main():
         (target / folder).mkdir(parents=True, exist_ok=True)
     old = "/Volumes/SM-Audio"
     names = ["FX/impact.wav", "FX/offline.wav", "Music/tone.wav", "FX/fallback.wav", "FX/no-frames.wav", "FX/local.wav"]
-    for name in names:
+    for name in names + ["FX/not-in-soundminer.wav"]:
         if "offline" in name:
             continue
         with wave.open(str(target / "audio" / name), "wb") as output:
@@ -102,6 +102,7 @@ def main():
     cache.close()
     database(target / "cancel.sqlite", [{"FilePath": f"/Volumes/Cancel/item-{index:03}.wav"} for index in range(80)])
     database(target / "owned.sqlite", [{"FilePath": (target / "owned" / "new.wav").as_posix()}])
+    database(target / "Second.sqlite", [{"FilePath": old + "/FX/impact.wav", "Description": "Second isolated library"}])
     shutil.copyfile(main_db, target / "changing.sqlite")
     shutil.copyfile(main_db, target / "wal.sqlite")
     (target / "wal.sqlite-wal").write_bytes(b"active write-ahead log")

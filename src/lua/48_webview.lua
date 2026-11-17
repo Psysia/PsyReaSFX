@@ -239,6 +239,7 @@ function webview_open()
   end
   WebUI.key = SCRIPT_FILE:gsub("\\", "/")
   if reaper.GetOS():match("^Win") then WebUI.key = WebUI.key:lower() end
+  if PsyReaSFXScope.kind == "soundminer" then WebUI.key = WebUI.key .. "|catalog:" .. PsyReaSFXScope.id end
   local id = reaper.ReaWeb_Open(SCRIPT_DIR .. "web/index.html", WebUI.key)
   if not id or id == 0 then
     local failure = reaper.ReaWeb_GetLastError and reaper.ReaWeb_GetLastError()
@@ -278,7 +279,9 @@ function WebUI.update_taskbar(now)
     "JS_Window_GetLong", "JS_Window_SetLong", "JS_Window_Show", "JS_Window_IsVisible" }) do
     if type(reaper[name]) ~= "function" then WebUI.taskbar_status = "js_api_unavailable"; return end
   end
-  local hwnd = reaper.JS_Window_Find("PsyReaSFX " .. VERSION, true)
+  local title = "PsyReaSFX " .. VERSION
+  if PsyReaSFXScope.kind == "soundminer" then title = title .. " · " .. PsyReaSFXScope.name end
+  local hwnd = reaper.JS_Window_Find(title, true)
   if not hwnd then WebUI.taskbar_status = "window_pending"; return end
   if reaper.JS_Window_GetClassName(hwnd) ~= "ReaWebAPI.Window" then WebUI.taskbar_status = "class_mismatch"; return end
   local style = math.floor(reaper.JS_Window_GetLong(hwnd, "STYLE"))
@@ -364,6 +367,7 @@ WebUI.handlers["session.ready"] = function()
     author = AUTHOR_NAME,
     copyright = COPYRIGHT_TEXT,
     runtimePolicy = WebUI.runtime_policy,
+    catalogScope = SoundminerCatalog.current(),
     capabilities = {
       catalog = true,
       preview = true,
@@ -903,8 +907,16 @@ WebUI.handlers["soundminer.inspect"] = function(params)
   return SoundminerImport.inspect(text(params.path, 32768))
 end
 WebUI.handlers["soundminer.import"] = function(params)
-  writable()
-  return SoundminerImport.start(params)
+  return SoundminerCatalog.open(params)
+end
+WebUI.handlers["soundminer.catalog.list"] = function()
+  return SoundminerCatalog.list()
+end
+WebUI.handlers["soundminer.catalog.activate"] = function(params)
+  return SoundminerCatalog.activate(text(params.id, 64))
+end
+WebUI.handlers["soundminer.catalog.resume"] = function()
+  return SoundminerCatalog.resume()
 end
 WebUI.handlers["soundminer.report"] = function()
   return state.soundminer_report or false
@@ -1672,6 +1684,8 @@ end
 
 WebUI.handlers["settings.update"] = function(params)
   writable()
+  assert(PsyReaSFXScope.kind ~= "soundminer" or (params.values or {}).watch_enabled ~= true,
+    "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。")
   local updates = {}
   for key, value in pairs(params.values or {}) do
     local definition
@@ -2098,6 +2112,8 @@ WebUI.handlers["records.action"] = function(params)
 end
 
 WebUI.handlers["settings.watch"] = function(params)
+  assert(PsyReaSFXScope.kind ~= "soundminer" or params.enabled ~= true,
+    "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。")
   assert(type(params.enabled) == "boolean", "无效监视设置")
   writable()
   set_watch_folder_enabled(params.enabled)
@@ -2320,6 +2336,7 @@ function webview_publish()
     statuses[#statuses + 1] = { id = id, label = WORKFLOW_STATUS[id].label }
   end
   local snapshot = {
+    catalogScope = SoundminerCatalog.current(),
     similarityProgress = state.similarity_session and {
       phase = state.similarity_session.neural_progress and state.similarity_session.neural_progress.phase or state.similarity_session.phase,
       completed = state.similarity_session.neural_progress and state.similarity_session.neural_progress.completed

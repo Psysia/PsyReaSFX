@@ -34,6 +34,7 @@ $modules = @(
     "45_duplicate_confirmation.lua",
     "46_product_navigation.lua",
     "47_soundminer_import.lua",
+    "47_soundminer_catalogs.lua",
     "50_runtime_ui.lua"
 )
 if ($Ui -eq 'webview') {

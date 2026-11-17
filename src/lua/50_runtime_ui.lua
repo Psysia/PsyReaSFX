@@ -4010,7 +4010,7 @@ end
 ----------------------------------------------------------------
 
 function start_import_recovery_audit()
-  if state.persistence_read_only or not state.resume_scan_on_start or #state.roots == 0
+  if PsyReaSFXScope.kind == "soundminer" or state.persistence_read_only or not state.resume_scan_on_start or #state.roots == 0
     or #state.assets == 0 then
     state.import_recovery_audit = nil
     return
@@ -11756,10 +11756,10 @@ function reset_interface_settings()
   state.sort_mode = "name"
   state.sort_desc = false
   state.auto_preview = true
-  state.watch_enabled = true
+  state.watch_enabled = PsyReaSFXScope.kind ~= "soundminer"
   state.watch_interval = WATCH_INTERVAL
   state.watch_silent = true
-  state.resume_scan_on_start = true
+  state.resume_scan_on_start = PsyReaSFXScope.kind ~= "soundminer"
   state.auto_backup = true
   state.backup_keep_count = 7
   state.pitch = 0
@@ -26114,6 +26114,7 @@ function watch_step_ready(session)
 end
 
 function set_watch_folder_enabled(enabled)
+  if PsyReaSFXScope.kind == "soundminer" then enabled = false end
   AppState.set("watch_enabled", enabled == true)
   reset_watch_schedule(true)
   if not enabled and state.scan and state.scan.watch then Jobs.cancel(state.scan.job_token) end
@@ -26123,7 +26124,7 @@ function set_watch_folder_enabled(enabled)
 end
 
 function watch_folders()
-  if state.persistence_read_only
+  if PsyReaSFXScope.kind == "soundminer" or state.persistence_read_only
     or #(state.roots or {}) == 0
     or not state.watch_enabled
     or state.scan
@@ -26161,6 +26162,7 @@ end
 -- resumes where the previous frame yielded, so no queue starves.
 BackgroundPump = { index = 1 }
 function process_background_slice()
+  if SoundminerCatalog then SoundminerCatalog.process_pending() end
   local pump = BackgroundPump
   pump.workers = pump.workers or {
     { "scan", process_scan }, { "import", process_import_session },
@@ -26393,6 +26395,9 @@ if not state.persistence_read_only then
 end
 load_or_migrate_project_url()
 load_config()
+if PsyReaSFXScope.kind == "soundminer" then
+  state.watch_enabled, state.resume_scan_on_start = false, false
+end
 startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
 ai_semantic_initialize_presets()
@@ -26458,7 +26463,7 @@ if not state.persistence_read_only
   create_data_backup("auto", true)
 end
 
-local interrupted_scan = state.resume_scan_on_start
+local interrupted_scan = PsyReaSFXScope.kind ~= "soundminer" and state.resume_scan_on_start
   and load_scan_checkpoint()
   or nil
 
@@ -26467,6 +26472,9 @@ if state.persistence_read_only then
     "数据格式只读保护已启用；浏览可用，扫描与保存已暂停",
     true
   )
+elseif PsyReaSFXScope.kind == "soundminer" then
+  -- The Soundminer database is this catalog's source of membership. Automatic
+  -- folder scans would silently include neighboring files absent from it.
 elseif interrupted_scan and interrupted_scan.reason ~= "恢复未完成导入" then
   start_scan(
     "恢复中断扫描",

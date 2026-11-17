@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.3
+-- @version 0.9.4-beta1
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Stable"
+local VERSION = "0.9.4 Beta 1"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3",
-  source_sha256 = "ec2f6245d2c10cbf30702fc70a5992ffab755d2a6eb778fd1ddf9b2df74771fa",
+  release_id = "PsyReaSFX/0.9.4-beta1",
+  source_sha256 = "9034a1dabc5fd460820ed116774a9d4627914434de901499ea82ef8d6bf56cac",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -350,6 +350,44 @@ local DATA_DIR =
   .. "Scripts"
   .. SEP
   .. "PsyReaSFX"
+
+-- A small registered wrapper may select an isolated Soundminer catalog. The
+-- shared runtime/assets still resolve from SCRIPT_DIR; every mutable data path
+-- below derives from this scope before any persistence service is initialized.
+local BASE_DATA_DIR = DATA_DIR
+PsyReaSFXScope = { id = "prs", kind = "prs", name = "PRS", identity = "",
+  sourcePath = "", baseDirectory = BASE_DATA_DIR, rootDirectory = BASE_DATA_DIR,
+  dataDirectory = DATA_DIR }
+if PRS_SOUNDMINER_CONTEXT ~= nil then
+  local context = PRS_SOUNDMINER_CONTEXT
+  local function context_text(value, limit, empty)
+    return type(value) == "string" and #value <= limit and (empty or value ~= "")
+      and not value:find("[%z\1-\31]")
+  end
+  local function context_path(value, empty)
+    if not context_text(value, 32768, empty) then return false end
+    if value == "" then return empty end
+    local normalized = value:gsub("\\", "/")
+    if not normalized:match("^%a:/") and normalized:sub(1, 1) ~= "/" then return false end
+    for part in normalized:gmatch("[^/]+") do if part == "." or part == ".." then return false end end
+    return true
+  end
+  local valid = type(context) == "table" and context_text(context.id, 19, false)
+    and context.id:match("^sm_%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")
+    and context_text(context.name, 256, false) and context_text(context.identity, 131072, false)
+    and type(context.params) == "table" and context_path(context.params.path, false)
+    and context_path(context.params.oldPrefix, true) and context_path(context.params.newPrefix, true)
+    and context_path(context.params.cachePath, true) and type(context.params.waveforms) == "boolean"
+    and ((context.params.oldPrefix == "") == (context.params.newPrefix == ""))
+  if not valid then error("Invalid isolated Soundminer catalog context", 0) end
+  local root = BASE_DATA_DIR .. SEP .. "isolated_soundminer" .. SEP .. context.id
+  DATA_DIR = root .. SEP .. "data"
+  -- A new isolated catalog must never inherit legacy PRS roots or preferences.
+  LEGACY_DATA_DIR = root .. SEP .. "legacy"
+  PsyReaSFXScope = { id = context.id, kind = "soundminer", name = context.name,
+    identity = context.identity, sourcePath = context.params.path, params = context.params,
+    baseDirectory = BASE_DATA_DIR, rootDirectory = root, dataDirectory = DATA_DIR }
+end
 
 local CONFIG_FILE =
   DATA_DIR .. SEP .. "config.tsv"
@@ -18468,6 +18506,8 @@ local function sm_work(session)
 end
 
 function SoundminerImport.start(params)
+  assert(PsyReaSFXScope.kind == "soundminer" and SoundminerCatalog.matches(params),
+    "请在对应的独立 Soundminer 库中导入")
   assert(not state.persistence_read_only, "素材库处于只读保护")
   assert(not state.startup_session and not state.scan and not state.import_session, "请等待当前扫描或导入完成")
   local path = sm_path(params.path)
@@ -18515,6 +18555,243 @@ function SoundminerImport.process(session)
     if coroutine.status(session.worker) == "dead" then SoundminerImport.finish(session); return end
     steps = steps + 1
   until steps >= 32 or HostApi.time_precise() >= deadline
+end
+
+end
+do
+-- Isolated catalog launchers share program files, never mutable catalog data.
+SoundminerCatalog = {}
+
+local function smc_path(value, optional)
+  if value == nil and optional then value = "" end
+  assert(type(value) == "string" and #value <= 32768 and not value:find("[%z\1-\31]"), "Soundminer 路径无效")
+  value = value:gsub("\\", "/")
+  if value == "" then assert(optional, "请选择 Soundminer 数据库"); return value end
+  assert(value:match("^%a:/") or value:sub(1, 1) == "/", "路径必须是绝对路径")
+  for part in value:gmatch("[^/]+") do assert(part ~= "." and part ~= "..", "路径不能包含 . 或 .. 路径段") end
+  if value ~= "/" and not value:match("^%a:/+$") then value = value:gsub("/+$", "") end
+  if value:match("^%a:/+$") then value = value:sub(1, 3) end
+  return value
+end
+
+local function smc_parameters(params)
+  assert(type(params) == "table", "Soundminer 导入参数无效")
+  local normalized = { path = smc_path(params.path), oldPrefix = smc_path(params.oldPrefix, true),
+    newPrefix = smc_path(params.newPrefix, true), cachePath = smc_path(params.cachePath, true),
+    waveforms = params.waveforms ~= false }
+  assert((normalized.oldPrefix == "") == (normalized.newPrefix == ""), "路径映射需要同时填写原路径和新路径")
+  return normalized
+end
+
+local function smc_identity(params)
+  local parts = {}
+  for _, name in ipairs({ "path", "oldPrefix", "newPrefix" }) do
+    local value = params[name]
+    if value:match("^%a:/") or value:sub(1, 2) == "//" then value = value:lower() end
+    parts[#parts + 1] = tostring(#value) .. ":" .. value
+  end
+  return table.concat(parts, "|")
+end
+
+local function smc_id(identity)
+  return "sm_" .. fnv1a("catalog|" .. identity) .. fnv1a("identity|" .. identity)
+end
+
+local function smc_valid_id(id)
+  return type(id) == "string" and id:match("^sm_%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil
+end
+
+local function smc_name(value)
+  -- The byte cap also applies to wrapper/bootstrap context; stop before a
+  -- complete codepoint that would cross it instead of splitting UTF-8 text.
+  local finish = 0
+  for position in utf8.codes(value) do
+    local next_position = utf8.offset(value, 2, position) or (#value + 1)
+    if next_position - 1 > 256 then break end
+    finish = next_position - 1
+  end
+  return value:sub(1, finish)
+end
+
+local function smc_root(id)
+  assert(smc_valid_id(id), "无效的独立素材库标识")
+  return join_path(join_path(PsyReaSFXScope.baseDirectory, "isolated_soundminer"), id)
+end
+
+local function smc_manifest_path(id) return join_path(smc_root(id), "catalog.json") end
+
+local function smc_read_manifest(id)
+  local file, open_error, open_code = io.open(smc_manifest_path(id), "rb")
+  if not file then assert(open_code == 2, open_error); return nil end
+  local bytes = file:read(262145) or ""; file:close()
+  assert(#bytes <= 262144, "独立素材库清单过大")
+  local decoded = neural_json_decode(bytes)
+  assert(type(decoded) == "table" and decoded.schema == "PsyReaSFX-Soundminer-Catalog-v1"
+    and decoded.id == id and type(decoded.name) == "string" and #decoded.name > 0 and #decoded.name <= 256
+    and not decoded.name:find("[%z\1-\31]"), "独立素材库清单无效")
+  decoded.params = smc_parameters(decoded.params)
+  local identity = smc_identity(decoded.params)
+  assert(decoded.identity == identity and id == smc_id(identity), "独立素材库身份不匹配")
+  assert(type(decoded.consumed) == "boolean", "独立素材库导入标记无效")
+  return decoded
+end
+
+local function smc_write(path, bytes)
+  local writer, reason = atomic_file_writer(path)
+  assert(writer, reason)
+  local ok, err = writer:write(bytes)
+  if not ok then writer:close(); error(err or "无法写入独立素材库", 0) end
+  local closed, close_error = writer:close()
+  assert(closed, close_error)
+end
+
+local function smc_save_manifest(manifest)
+  smc_write(smc_manifest_path(manifest.id), neural_json_encode(manifest))
+end
+
+local function smc_window_key(id)
+  local key = SCRIPT_FILE:gsub("\\", "/")
+  if HostApi.GetOS():match("^Win") then key = key:lower() end
+  return id == "prs" and key or key .. "|catalog:" .. id
+end
+
+local function smc_focus(id)
+  local window = tonumber(HostApi.GetExtState("PsyReaSFX.Web", smc_window_key(id)))
+  if window and type(HostApi.ReaWeb_IsOpen) == "function" and HostApi.ReaWeb_IsOpen(window) then
+    if type(HostApi.ReaWeb_Show) == "function" then HostApi.ReaWeb_Show(window) end
+    if type(HostApi.ReaWeb_Focus) == "function" then HostApi.ReaWeb_Focus(window) end
+    return true
+  end
+  return false
+end
+
+local function smc_wrapper(manifest)
+  local params = manifest.params
+  local script = table.concat({
+    "-- @description PsyReaSFX Soundminer catalog (background runtime)\n",
+    "-- Generated descriptor only; the installed shared runtime stays authoritative.\n",
+    "PRS_SOUNDMINER_CONTEXT = { id = ", string.format("%q", manifest.id),
+    ", name = ", string.format("%q", manifest.name), ", identity = ", string.format("%q", manifest.identity),
+    ", params = { path = ", string.format("%q", params.path), ", oldPrefix = ", string.format("%q", params.oldPrefix),
+    ", newPrefix = ", string.format("%q", params.newPrefix), ", cachePath = ", string.format("%q", params.cachePath),
+    ", waveforms = ", tostring(params.waveforms), " } }\n",
+    "assert(loadfile(", string.format("%q", SCRIPT_FILE), "))()\n",
+  })
+  local path = join_path(smc_root(manifest.id), "Open-Catalog.lua")
+  smc_write(path, script)
+  return path
+end
+
+local function smc_launch(path)
+  assert(type(HostApi.AddRemoveReaScript) == "function" and type(HostApi.Main_OnCommand) == "function",
+    "当前宿主无法打开独立素材库")
+  local action = HostApi.AddRemoveReaScript(true, 0, path, true)
+  assert(action and action ~= 0, "无法注册独立素材库入口")
+  HostApi.Main_OnCommand(action, 0)
+end
+
+function SoundminerCatalog.current()
+  return { id = PsyReaSFXScope.id, kind = PsyReaSFXScope.kind, name = PsyReaSFXScope.name,
+    sourcePath = PsyReaSFXScope.sourcePath, dataDirectory = PsyReaSFXScope.dataDirectory }
+end
+
+function SoundminerCatalog.matches(params)
+  if PsyReaSFXScope.kind ~= "soundminer" then return false end
+  local ok, normalized = pcall(smc_parameters, params)
+  return ok and smc_identity(normalized) == PsyReaSFXScope.identity
+end
+
+function SoundminerCatalog.list()
+  local items = { { id = "prs", kind = "prs", name = "PRS", sourcePath = "",
+    dataDirectory = PsyReaSFXScope.baseDirectory, active = PsyReaSFXScope.id == "prs" } }
+  local parent = join_path(PsyReaSFXScope.baseDirectory, "isolated_soundminer")
+  for index = 0, 4095 do
+    local id = HostApi.EnumerateSubdirectories(parent, index)
+    if not id then break end
+    if smc_valid_id(id) then
+      local ok, manifest = pcall(smc_read_manifest, id)
+      if ok and manifest then
+        items[#items + 1] = { id = id, kind = "soundminer", name = manifest.name,
+          sourcePath = manifest.params.path, path = manifest.params.path, dataDirectory = join_path(smc_root(id), "data"),
+          active = PsyReaSFXScope.id == id }
+      end
+    end
+  end
+  table.sort(items, function(a, b)
+    if a.id == "prs" then return b.id ~= "prs" end
+    if b.id == "prs" then return false end
+    if a.name == b.name then return a.id < b.id end
+    return a.name < b.name
+  end)
+  return { current = PsyReaSFXScope.id, catalogs = items }
+end
+
+function SoundminerCatalog.activate(id)
+  assert(id == "prs" or smc_valid_id(id), "无效的独立素材库标识")
+  if smc_focus(id) then return { opened = true, reused = true, id = id } end
+  if id == "prs" then smc_launch(SCRIPT_FILE)
+  else
+    local manifest = assert(smc_read_manifest(id), "独立素材库不存在")
+    smc_launch(smc_wrapper(manifest))
+  end
+  return { opened = true, reused = false, id = id }
+end
+
+function SoundminerCatalog.open(params)
+  local normalized = smc_parameters(params)
+  local identity = smc_identity(normalized)
+  local id = smc_id(identity)
+  local manifest = smc_read_manifest(id)
+  if manifest then
+    -- Never replace a colliding namespace, even if its existing index is empty.
+    assert(manifest.identity == identity, "独立素材库标识冲突；未修改已有素材库")
+    if manifest.params.cachePath ~= normalized.cachePath or manifest.params.waveforms ~= normalized.waveforms then
+      manifest.params.cachePath, manifest.params.waveforms = normalized.cachePath, normalized.waveforms
+      smc_save_manifest(manifest)
+    end
+  else
+    local inspected = SoundminerImport.inspect(normalized.path)
+    manifest = { schema = "PsyReaSFX-Soundminer-Catalog-v1", id = id, identity = identity,
+      name = smc_name(inspected.name), params = normalized, consumed = false }
+    assert(manifest.name ~= "" and not manifest.name:find("[%z\1-\31]"), "Soundminer 数据库名称无效")
+    HostApi.RecursiveCreateDirectory(smc_root(id), 0)
+    smc_wrapper(manifest)
+    smc_save_manifest(manifest)
+  end
+  local opened = SoundminerCatalog.activate(id)
+  opened.started, opened.isolated, opened.name = true, true, manifest.name
+  return opened
+end
+
+function SoundminerCatalog.resume()
+  assert(PsyReaSFXScope.kind == "soundminer", "请选择独立 Soundminer 素材库")
+  local manifest = assert(smc_read_manifest(PsyReaSFXScope.id), "独立素材库清单缺失")
+  assert(manifest.identity == PsyReaSFXScope.identity, "独立素材库来源已改变")
+  local started = SoundminerImport.start(manifest.params)
+  assert(started and started.started, "无法开始独立素材库导入")
+  manifest.consumed = true
+  local saved, save_error = pcall(smc_save_manifest, manifest)
+  if not saved then SoundminerImport.cancel(); error(save_error, 0) end
+  AppState.set("soundminer_catalog_checked", true)
+  return started
+end
+
+function SoundminerCatalog.process_pending()
+  if PsyReaSFXScope.kind ~= "soundminer" or state.soundminer_catalog_checked or state.startup_session then return end
+  if state.persistence_read_only or state.import_session or state.scan then return end
+  for _, job in pairs(Jobs.active) do
+    if job.resource == "catalog_exclusive" then return end
+  end
+  local ok, reason = pcall(function()
+    local manifest = assert(smc_read_manifest(PsyReaSFXScope.id), "独立素材库清单缺失")
+    assert(manifest.identity == PsyReaSFXScope.identity, "独立素材库来源已改变")
+    if manifest.consumed then AppState.set("soundminer_catalog_checked", true); return end
+    SoundminerCatalog.resume()
+  end)
+  if not ok then
+    AppState.set("soundminer_catalog_checked", true)
+    set_status("独立 Soundminer 素材库：" .. tostring(reason), true)
+  end
 end
 
 end
@@ -18760,6 +19037,7 @@ function webview_open()
   end
   WebUI.key = SCRIPT_FILE:gsub("\\", "/")
   if reaper.GetOS():match("^Win") then WebUI.key = WebUI.key:lower() end
+  if PsyReaSFXScope.kind == "soundminer" then WebUI.key = WebUI.key .. "|catalog:" .. PsyReaSFXScope.id end
   local id = reaper.ReaWeb_Open(SCRIPT_DIR .. "web/index.html", WebUI.key)
   if not id or id == 0 then
     local failure = reaper.ReaWeb_GetLastError and reaper.ReaWeb_GetLastError()
@@ -18799,7 +19077,9 @@ function WebUI.update_taskbar(now)
     "JS_Window_GetLong", "JS_Window_SetLong", "JS_Window_Show", "JS_Window_IsVisible" }) do
     if type(reaper[name]) ~= "function" then WebUI.taskbar_status = "js_api_unavailable"; return end
   end
-  local hwnd = reaper.JS_Window_Find("PsyReaSFX " .. VERSION, true)
+  local title = "PsyReaSFX " .. VERSION
+  if PsyReaSFXScope.kind == "soundminer" then title = title .. " · " .. PsyReaSFXScope.name end
+  local hwnd = reaper.JS_Window_Find(title, true)
   if not hwnd then WebUI.taskbar_status = "window_pending"; return end
   if reaper.JS_Window_GetClassName(hwnd) ~= "ReaWebAPI.Window" then WebUI.taskbar_status = "class_mismatch"; return end
   local style = math.floor(reaper.JS_Window_GetLong(hwnd, "STYLE"))
@@ -18885,6 +19165,7 @@ WebUI.handlers["session.ready"] = function()
     author = AUTHOR_NAME,
     copyright = COPYRIGHT_TEXT,
     runtimePolicy = WebUI.runtime_policy,
+    catalogScope = SoundminerCatalog.current(),
     capabilities = {
       catalog = true,
       preview = true,
@@ -19424,8 +19705,16 @@ WebUI.handlers["soundminer.inspect"] = function(params)
   return SoundminerImport.inspect(text(params.path, 32768))
 end
 WebUI.handlers["soundminer.import"] = function(params)
-  writable()
-  return SoundminerImport.start(params)
+  return SoundminerCatalog.open(params)
+end
+WebUI.handlers["soundminer.catalog.list"] = function()
+  return SoundminerCatalog.list()
+end
+WebUI.handlers["soundminer.catalog.activate"] = function(params)
+  return SoundminerCatalog.activate(text(params.id, 64))
+end
+WebUI.handlers["soundminer.catalog.resume"] = function()
+  return SoundminerCatalog.resume()
 end
 WebUI.handlers["soundminer.report"] = function()
   return state.soundminer_report or false
@@ -20193,6 +20482,8 @@ end
 
 WebUI.handlers["settings.update"] = function(params)
   writable()
+  assert(PsyReaSFXScope.kind ~= "soundminer" or (params.values or {}).watch_enabled ~= true,
+    "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。")
   local updates = {}
   for key, value in pairs(params.values or {}) do
     local definition
@@ -20619,6 +20910,8 @@ WebUI.handlers["records.action"] = function(params)
 end
 
 WebUI.handlers["settings.watch"] = function(params)
+  assert(PsyReaSFXScope.kind ~= "soundminer" or params.enabled ~= true,
+    "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。")
   assert(type(params.enabled) == "boolean", "无效监视设置")
   writable()
   set_watch_folder_enabled(params.enabled)
@@ -20841,6 +21134,7 @@ function webview_publish()
     statuses[#statuses + 1] = { id = id, label = WORKFLOW_STATUS[id].label }
   end
   local snapshot = {
+    catalogScope = SoundminerCatalog.current(),
     similarityProgress = state.similarity_session and {
       phase = state.similarity_session.neural_progress and state.similarity_session.neural_progress.phase or state.similarity_session.phase,
       completed = state.similarity_session.neural_progress and state.similarity_session.neural_progress.completed
@@ -24987,7 +25281,7 @@ end
 ----------------------------------------------------------------
 
 function start_import_recovery_audit()
-  if state.persistence_read_only or not state.resume_scan_on_start or #state.roots == 0
+  if PsyReaSFXScope.kind == "soundminer" or state.persistence_read_only or not state.resume_scan_on_start or #state.roots == 0
     or #state.assets == 0 then
     state.import_recovery_audit = nil
     return
@@ -32733,10 +33027,10 @@ function reset_interface_settings()
   state.sort_mode = "name"
   state.sort_desc = false
   state.auto_preview = true
-  state.watch_enabled = true
+  state.watch_enabled = PsyReaSFXScope.kind ~= "soundminer"
   state.watch_interval = WATCH_INTERVAL
   state.watch_silent = true
-  state.resume_scan_on_start = true
+  state.resume_scan_on_start = PsyReaSFXScope.kind ~= "soundminer"
   state.auto_backup = true
   state.backup_keep_count = 7
   state.pitch = 0
@@ -47091,6 +47385,7 @@ function watch_step_ready(session)
 end
 
 function set_watch_folder_enabled(enabled)
+  if PsyReaSFXScope.kind == "soundminer" then enabled = false end
   AppState.set("watch_enabled", enabled == true)
   reset_watch_schedule(true)
   if not enabled and state.scan and state.scan.watch then Jobs.cancel(state.scan.job_token) end
@@ -47100,7 +47395,7 @@ function set_watch_folder_enabled(enabled)
 end
 
 function watch_folders()
-  if state.persistence_read_only
+  if PsyReaSFXScope.kind == "soundminer" or state.persistence_read_only
     or #(state.roots or {}) == 0
     or not state.watch_enabled
     or state.scan
@@ -47138,6 +47433,7 @@ end
 -- resumes where the previous frame yielded, so no queue starves.
 BackgroundPump = { index = 1 }
 function process_background_slice()
+  if SoundminerCatalog then SoundminerCatalog.process_pending() end
   local pump = BackgroundPump
   pump.workers = pump.workers or {
     { "scan", process_scan }, { "import", process_import_session },
@@ -47370,6 +47666,9 @@ if not state.persistence_read_only then
 end
 load_or_migrate_project_url()
 load_config()
+if PsyReaSFXScope.kind == "soundminer" then
+  state.watch_enabled, state.resume_scan_on_start = false, false
+end
 startup_checkpoint("读取设置")
 ai_semantic_migrate_legacy_settings()
 ai_semantic_initialize_presets()
@@ -47435,7 +47734,7 @@ if not state.persistence_read_only
   create_data_backup("auto", true)
 end
 
-local interrupted_scan = state.resume_scan_on_start
+local interrupted_scan = PsyReaSFXScope.kind ~= "soundminer" and state.resume_scan_on_start
   and load_scan_checkpoint()
   or nil
 
@@ -47444,6 +47743,9 @@ if state.persistence_read_only then
     "数据格式只读保护已启用；浏览可用，扫描与保存已暂停",
     true
   )
+elseif PsyReaSFXScope.kind == "soundminer" then
+  -- The Soundminer database is this catalog's source of membership. Automatic
+  -- folder scans would silently include neighboring files absent from it.
 elseif interrupted_scan and interrupted_scan.reason ~= "恢复未完成导入" then
   start_scan(
     "恢复中断扫描",

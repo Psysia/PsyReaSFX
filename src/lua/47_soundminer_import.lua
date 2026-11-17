@@ -356,6 +356,8 @@ local function sm_work(session)
 end
 
 function SoundminerImport.start(params)
+  assert(PsyReaSFXScope.kind == "soundminer" and SoundminerCatalog.matches(params),
+    "请在对应的独立 Soundminer 库中导入")
   assert(not state.persistence_read_only, "素材库处于只读保护")
   assert(not state.startup_session and not state.scan and not state.import_session, "请等待当前扫描或导入完成")
   local path = sm_path(params.path)

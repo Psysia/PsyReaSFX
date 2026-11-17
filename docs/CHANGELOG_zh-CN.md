@@ -1,6 +1,10 @@
+## 0.9.4 Beta 1（Soundminer 独立库）— 2026-11-17
+
+- 新增 Soundminer 一键导入：读取已观察的 V6/V7 SQLite 元数据及兼容 overview 波形缓存，支持路径映射、离线条目和取消；原文件只读。Soundminer 导入库与原有 PRS 库独立保存和加载；选择哪个库就读取哪个库，二者不合并、不互相覆盖。[兼容记录](SOUNDMINER_FORMAT_zh-CN.md)。
+- 本版为预发布；0.9.3 稳定版沿用 Beta 18 功能。支持独立窗口选择、取消后继续导入，独立库不自动扩充来源目录。[测试版说明](releases/release-notes-webview-0.9.4-beta1.md)。
+
 ## 0.9.3 WebView 正式版 — 2026-11-17
 
-- 新增 Soundminer 一键导入：读取已观察的 V6/V7 SQLite 元数据及兼容 overview 波形缓存，支持路径映射、重复跳过、离线条目和取消；原文件只读。[兼容记录](SOUNDMINER_FORMAT_zh-CN.md)。
 - 将 Beta 18 WebView 分支晋升稳定通道，保留编辑、试听、交付和后台任务加固。
 - 主程序 0.9.3 与运行库 ReaPack 包 0.3.9.30 无需启用预发布；运行库二进制仍是 0.3.9.30-prs.2，验收状态如实保留。
 - Beta 18 和历史经典版本继续供回退，现有库和缓存兼容。

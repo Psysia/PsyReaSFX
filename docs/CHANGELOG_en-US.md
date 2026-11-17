@@ -1,6 +1,10 @@
+## 0.9.4 Beta 1 (independent Soundminer catalogs) — 2026-11-17
+
+- Add Soundminer import for observed V6/V7 SQLite metadata and compatible overview caches, with path mapping, offline entries and cancellation; sources remain read-only. The imported Soundminer library and the existing PRS library are saved and loaded independently. Selecting a library reads that library without merging or overwriting the other. [Compatibility record (Chinese)](SOUNDMINER_FORMAT_zh-CN.md).
+- This is a prerelease; 0.9.3 Stable retains the Beta 18 feature set. Choose independent catalog windows, resume canceled imports and keep automatic folder discovery disabled in Soundminer catalogs. [Beta release notes](releases/release-notes-webview-0.9.4-beta1.md).
+
 ## 0.9.3 WebView Stable — 2026-11-17
 
-- Add Soundminer import for observed V6/V7 SQLite metadata and compatible overview caches, with path mapping, duplicate preservation, offline entries and cancellation; sources remain read-only. [Compatibility record (Chinese)](SOUNDMINER_FORMAT_zh-CN.md).
 - Promote the Beta 18 WebView line to stable, retaining editing, preview, Transfer and background-service hardening.
 - Main version 0.9.3 and ReaPack runtime package 0.3.9.30 are available without pre-release opt-in. The DLL remains 0.3.9.30-prs.2 and its acceptance status is unchanged.
 - Keep Beta 18 and classic releases for rollback, with compatible catalogs and caches.

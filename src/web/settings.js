@@ -893,6 +893,7 @@ export function createSettings({
   }
   function render() {
     body.replaceChildren();
+    const soundminerCatalog = getSnapshot()?.catalogScope?.kind === "soundminer";
     for (const item of nav.children) {
       item.classList.toggle(
         "active",
@@ -910,6 +911,7 @@ export function createSettings({
     );
     const groups = new Map();
     for (const definition of settings.schema || []) {
+      if (soundminerCatalog && definition.key.startsWith("watch_")) continue;
       // One control owns this color, shared with the legacy backend palette.
       if (definition.key === "selection_hex" && !filter) continue;
       if (
@@ -944,6 +946,7 @@ export function createSettings({
     if (
       section === "general" &&
       !filter &&
+      !soundminerCatalog &&
       !settings.schema?.some((item) => item.key === "watch_enabled")
     ) {
       card("后台监视").append(
@@ -958,6 +961,11 @@ export function createSettings({
         ),
       );
     }
+    if (section === "general" && !filter && soundminerCatalog)
+      card("Soundminer 音效库").append(
+        el("p", "muted", "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。"),
+        button("继续导入", () => command("soundminer.catalog.resume")),
+      );
   }
   async function reload() {
     const current = ++generation;
