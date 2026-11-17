@@ -868,7 +868,7 @@ do
   assert(choose_folder("选择文件夹", "D:/") == selected)
   local result = WebUI.handlers["path.choose"]({kind="folder", initial="D:/draft"})
   assert(not result.cancelled and result.path == selected)
-  switch_wave_cache_directory = function(path, move) assert(path == selected and move == false); changes = changes + 1 end
+  switch_wave_cache_directory = function(path, move) assert(path == normalized_cache_directory(selected) and move == false); changes = changes + 1 end
   reaper.MB = function() return 7 end
   prompt_wave_cache_directory()
   assert(changes == 1, "cache selection must preserve the existing move-or-switch confirmation")

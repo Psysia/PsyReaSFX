@@ -27,6 +27,13 @@ end
 
 LARGE_WAVE_MAX_POINTS = 4096
 WAVE_CACHE_DIR = os.getenv("TEMP") or os.getenv("TMP") or "."
+-- This fixture isolates encoding. Directory/file ownership is covered by the
+-- separate virtual-filesystem wave-cache safety test.
+function prs_wave_cache_directory_is_managed(path) return path == WAVE_CACHE_DIR end
+function prs_wave_cache_file_owned(path) return path:find("spectral_cache_selftest_", 1, true) ~= nil end
+reaper = {file_exists = function(path)
+  local file = io.open(path, "rb") if file then file:close() return true end return false
+end}
 
 assert(load(cache_source, "spectral-cache-runtime", "t", _ENV))()
 assert(load(verify_source, "spectral-cache-verifier", "t", _ENV))()
