@@ -403,7 +403,13 @@ async function main() {
               }
             }
             if (request.method === "waveform.get") {
-              if (request.params.retry) window.testWaveFailure = false;
+              if (request.params.retry) {
+                window.testWaveFailure = false;
+                if (window.testWaveReadyOnRetry) {
+                  window.testWaveMisses = 0;
+                  window.testWaveReadyOnRetry = false;
+                }
+              }
               result = {
                 path: request.params.path,
                 duration: selected?.duration || 8.24,
@@ -2136,7 +2142,7 @@ async function main() {
         return !status.hidden && status.textContent === expected;
       }, expected);
       assert(await page.locator("#wave-retry").isVisible(), "pending wave must remain retryable");
-      await page.evaluate(() => { window.testWaveMisses = 0; });
+      await page.evaluate(() => { window.testWaveReadyOnRetry = true; });
       await page.locator("#wave-retry").click();
       await page.waitForFunction(() => document.getElementById("wave-status").hidden);
     }
