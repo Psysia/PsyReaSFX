@@ -603,7 +603,9 @@ do
   for index = 1, 32 do
     runtime.results[index] = { path = fixture .. "\\cached-" .. index .. ".wav", name = "cached", ready = true, channels = 2 }
   end
-  WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
+  runtime.results[1].wave_error = "old decoder error"
+  local waiting_page = WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
+  assert(not waiting_page.items[1].waveError, "page must keep polling until a stale-error cache probe finishes")
   assert(reads == 0 and #runtime.wave_queue == 32, "all visible waves must enqueue without blocking RPC on disk reads")
   runtime.import_session = { phase = "index" }
   process_wave_queue()
@@ -615,6 +617,13 @@ do
   local cached_page = WebUI.handlers["catalog.page"]({ offset = 0, limit = 32 })
   assert(reads == 32 and #runtime.wave_queue == 0)
   for _, row in ipairs(cached_page.items) do assert(row.waveform and row.waveform.peaks[2] == 0.8, "later rows must not starve") end
+  asset.wave_error = "old decoder error"
+  local waiting_detail = WebUI.handlers["waveform.get"]({ path = asset.path, points = 512 })
+  assert(not waiting_detail.error and waiting_detail.status.phase == "cache",
+    "detail must keep polling until a stale-error cache probe finishes")
+  process_wave_queue()
+  local recovered_detail = WebUI.handlers["waveform.get"]({ path = asset.path, points = 512 })
+  assert(recovered_detail.waveform and not recovered_detail.error and not asset.wave_error)
   local channels, multichannel = asset.channels, runtime.multichannel_waveform
   asset.channels = 128
   runtime.multichannel_waveform = true

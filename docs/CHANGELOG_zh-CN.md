@@ -1,3 +1,11 @@
+## 0.9.4 Beta 4（搜索结果波形加载修复）— 2026-11-17
+
+- 已有波形缓存独立读取，避免被耗时素材阻塞；导入和预缓存不再暂停交互波形生成，选中素材优先。
+- 共享只读 WAV 按时间预算分批处理；显示中英文排队、私有副本准备、生成进度和暂停原因，支持处理中重试。
+- 单个解码异常释放任务，原生峰值构建增加超时退出；保留所有源文件保护与独立库隔离。
+- Beta 4 fixes waveform queue blocking, adds localized progress/retry, and retains shared read-only source protection. This remains a prerelease; 0.9.3 stays stable.
+- [版本说明 / Release notes](releases/release-notes-webview-0.9.4-beta4.md)。
+
 ## 0.9.4 Beta 3（随包组件中英文提示）— 2026-11-17
 
 - 修复随包组件提示写死中文：根据 Windows 显示语言选择中文或英文，其他系统语言及检测失败时使用英文；不按地区和数字格式判断。

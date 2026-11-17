@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "b8f463533cb69245fbdb83173f3a4a744453aad8c7ce9f6e32dafdc74bb5c012",
+  source_sha256 = "00d116effb214100527f2369f46b84d63919c2bd4cbb162ed31ff2300aae640d",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1301,6 +1301,13 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["波形读取失败："] = "Unable to read waveform: ",
+  ["波形生成超时，请重试或检查音频文件"] = "Waveform generation timed out; retry or check the audio file",
+  ["波形任务异常，请重试"] = "Waveform task failed; please retry",
+  ["正在等待波形处理…"] = "Waiting for waveform processing…",
+  ["正在准备波形分析副本…"] = "Preparing a private copy for waveform analysis…",
+  ["正在生成高精度波形…"] = "Generating detailed waveform…",
+  ["当前任务结束后继续生成波形…"] = "Waveform generation will resume after the current task…",
   ["Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"] = "Soundminer: added %d, duplicates %d, offline %d, skipped %d, waveforms %d, waveforms to rebuild %d",
   ["正在读取 Soundminer 音效库…"] = "Reading Soundminer library…",
   ["导入 Soundminer 音效库"] = "Import Soundminer library",
@@ -24805,7 +24812,7 @@ function start_direct_wave_job(job)
   return true
 end
 
-function step_direct_wave_job(job, maximum_points)
+function step_direct_wave_job(job, maximum_points, budget_seconds)
   local file = job.direct_file
   local format_info = job.direct_format
   local waveform = job.direct_waveform
@@ -24816,6 +24823,7 @@ function step_direct_wave_job(job, maximum_points)
     waveform.count,
     job.direct_point + (maximum_points or DIRECT_WAVE_POINTS_PER_STEP) - 1
   )
+  local deadline = budget_seconds and (reaper.time_precise() + budget_seconds)
   for point = job.direct_point, last do
     local bucket_start = math.floor((point - 1) * format_info.total_frames / waveform.count)
     local bucket_end = math.max(
@@ -24862,6 +24870,10 @@ function step_direct_wave_job(job, maximum_points)
       end
     end
     waveform.peaks[point] = aggregate
+    if deadline and reaper.time_precise() >= deadline then
+      last = point
+      break
+    end
   end
   job.direct_point = last + 1
   job.progress = clamp((job.direct_point - 1) / waveform.count, 0, 1)
@@ -25083,6 +25095,7 @@ function start_wave_job(job)
       8
     )
   job.phase = "build"
+  job.build_started = reaper.time_precise and reaper.time_precise() or 0
   job.progress = 0
 
   -- GetPeaks 在峰值尚未建立时会返回 0。
@@ -25115,7 +25128,7 @@ function step_wave_job(job)
 
   if SoundminerMedia and SoundminerMedia.requires(job.asset) and not job.source then
     if job.phase == "direct_read" then
-      local status, waveform, reason = step_direct_wave_job(job, 4)
+      local status, waveform, reason = step_direct_wave_job(job, 64, 0.003)
       if status ~= "failed" then return status, waveform, reason end
       destroy_wave_job(job) job.direct_wave_error = reason job.phase = nil
     end
@@ -25123,7 +25136,7 @@ function step_wave_job(job)
     if not native_path and not job.direct_wave_attempted then
       job.direct_wave_attempted = true
       local started, reason = start_direct_wave_job(job)
-      if started then return step_direct_wave_job(job, 4) end
+      if started then return step_direct_wave_job(job, 64, 0.003) end
       job.direct_wave_error = reason
     end
     if not native_path then
@@ -25163,6 +25176,9 @@ function step_wave_job(job)
   end
 
   if job.phase == "build" then
+    if reaper.time_precise and reaper.time_precise() - (job.build_started or 0) > 600 then
+      return "failed", nil, "波形生成超时，请重试或检查音频文件"
+    end
     local build_ok, remaining =
       pcall(
         reaper.PCM_Source_BuildPeaks,
@@ -25306,7 +25322,9 @@ function queue_wave(asset, points, priority, preserve_channels, spectral, defer_
     return cached.waveform
   end
 
-  if asset.wave_error then return nil end
+  -- A previous decode failure must not hide an existing cache. Deferred web
+  -- requests get one safe cache probe before the error suppresses decoding.
+  if asset.wave_error and state.wave_checked[key] then return nil end
 
   if not defer_disk and not state.wave_checked[key] then
     state.wave_checked[key] = true
@@ -25315,15 +25333,18 @@ function queue_wave(asset, points, priority, preserve_channels, spectral, defer_
       load_wave_from_disk(asset, points, preserve_channels, spectral)
 
     if disk_wave then
+      asset.wave_error = nil
       store_wave_memory(key, disk_wave)
       return disk_wave
     end
   end
+  if asset.wave_error and not defer_disk then return nil end
 
   if state.wave_queued[key] and priority then
-    for index = 2, #state.wave_queue do
+    for index = 1, #state.wave_queue do
       if state.wave_queue[index].key == key then
         local queued = table.remove(state.wave_queue, index)
+        queued.priority = true
         table.insert(state.wave_queue, 1, queued)
         break
       end
@@ -25343,6 +25364,7 @@ function queue_wave(asset, points, priority, preserve_channels, spectral, defer_
       preserve_channels = preserve_channels,
       spectral = spectral,
       probe_disk = defer_disk == true,
+      priority = priority == true,
     }
 
     if priority then
@@ -25355,25 +25377,64 @@ function queue_wave(asset, points, priority, preserve_channels, spectral, defer_
   return nil
 end
 
-function process_wave_queue()
-  if state.import_session
-    or state.precache_session then
-    -- Cache reads do not open audio sources. Keep existing waves visible while
-    -- exclusive import/precache work owns decoding; inspect only one per tick.
-    for index, job in ipairs(state.wave_queue) do
-      if job.probe_disk and not state.wave_checked[job.key] then
-        state.wave_checked[job.key] = true
-        local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
-        if cached then
-          store_wave_memory(job.key, cached)
-          table.remove(state.wave_queue, index)
-          state.wave_queued[job.key] = nil
-        end
-        break
+function process_wave_cache_queue()
+  -- Probe independently of the active decoder and interaction/bulk pauses.
+  -- One cold or damaged source must never hold the other cached rows hostage.
+  for index, job in ipairs(state.wave_queue) do
+    local cached = state.wave_cache[job.key]
+    if cached or (job.probe_disk and not state.wave_checked[job.key]) then
+      state.wave_checked[job.key] = true
+      local wave = cached and cached.waveform
+        or load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+      if wave then
+        job.asset.wave_error = nil
+        store_wave_memory(job.key, wave)
       end
+      if wave or job.asset.wave_error then
+        table.remove(state.wave_queue, index)
+        state.wave_queued[job.key] = nil
+      end
+      return true
     end
-    return
   end
+end
+
+function retry_wave_request(asset, points, preserve_channels, spectral)
+  local key = memory_wave_key(asset, points, preserve_channels, spectral)
+  local active = state.wave_active
+  if active and active.key == key then
+    destroy_wave_job(active)
+    Jobs.cancel(active.job_token)
+    Jobs.finish(active.job_token, true, "waveform retry")
+    AppState.set("wave_active", nil)
+  end
+  for index = #state.wave_queue, 1, -1 do
+    if state.wave_queue[index].key == key then table.remove(state.wave_queue, index) end
+  end
+  state.wave_queued[key], state.wave_checked[key] = nil, nil
+  asset.wave_error = nil
+  clear_failed_task(asset)
+end
+
+function wave_request_status(asset, points, preserve_channels, spectral)
+  local key = memory_wave_key(asset, points, preserve_channels, spectral)
+  if state.wave_cache[key] then return { phase = "ready" } end
+  if asset.wave_error and not state.wave_queued[key] then return { phase = "failed" } end
+  local job = state.wave_active
+  if state.transfer_running or state.relink_plan_session or state.root_removal_session
+    or state.artwork_reset_session or state.ucs_reclassification_session or state.database_snapshot_session then
+    return { phase = "paused" }
+  end
+  if job and job.key == key then
+    if job.media_session and not job.media_finished then return { phase = "copy" } end
+    return { phase = "decode", progress = job.phase == "direct_read" and job.progress or nil }
+  end
+  return { phase = state.wave_checked[key] and "queued" or "cache" }
+end
+
+function process_wave_queue()
+  local probed = process_wave_cache_queue()
+  if probed and not state.wave_active then return end
 
   if not can_run_heavy_job() then
     return
@@ -25385,6 +25446,22 @@ function process_wave_queue()
     return
   end
 
+  local active, first = state.wave_active, state.wave_queue[1]
+  if active and first and first.priority and first.asset.path == state.selected_path
+    and active.key ~= first.key then
+    -- Release native/copy ownership before prioritising the selected asset.
+    -- Requeue only the request, never a live native source or canceled owner.
+    destroy_wave_job(active)
+    Jobs.cancel(active.job_token)
+    Jobs.finish(active.job_token, true, "selected waveform priority")
+    state.wave_queue[#state.wave_queue + 1] = {
+      key = active.key, asset = active.asset, points = active.points,
+      preserve_channels = active.preserve_channels, spectral = active.spectral,
+      probe_disk = true,
+    }
+    AppState.set("wave_active", nil)
+  end
+
   if not state.wave_active then
     local job = table.remove(state.wave_queue, 1)
 
@@ -25394,14 +25471,20 @@ function process_wave_queue()
 
     -- WebView queues every visible row without doing disk I/O in the RPC.
     -- Probe one queued cache per background tick, so later rows cannot starve.
-    if job.probe_disk and not state.wave_checked[job.key] then
+    if job.probe_disk then
+      -- Recheck a prior miss: import/precache may have written it since then.
       state.wave_checked[job.key] = true
       local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
       if cached then
+        job.asset.wave_error = nil
         store_wave_memory(job.key, cached)
         state.wave_queued[job.key] = nil
         return
       end
+    end
+    if job.asset.wave_error then
+      state.wave_queued[job.key] = nil
+      return
     end
     state.wave_active = job
     job.job_token =
@@ -25413,8 +25496,11 @@ function process_wave_queue()
   end
 
   local job = state.wave_active
-  local result, waveform, err =
-    step_wave_job(job)
+  local ok, result, waveform, err = pcall(step_wave_job, job)
+  if not ok then
+    err = translate_ui_text("波形任务异常，请重试") .. ": " .. tostring(result)
+    result, waveform = "failed", nil
+  end
 
   if result == "done" then
     job.asset.wave_error = nil
@@ -25667,7 +25753,7 @@ function process_wave_precache()
     return
   end
 
-  if now < state.next_wave_job then
+  if now < (session.next_wave_job or 0) then
     return
   end
 
@@ -25752,7 +25838,7 @@ function process_wave_precache()
     session.current = nil
   end
 
-  state.next_wave_job =
+  session.next_wave_job =
     now + WAVE_INTERVAL
 end
 
@@ -45990,6 +46076,14 @@ function loop()
   bg_mark("recovery-audit")
   process_import_recovery_audit()
   bg_mark("exclusive-job")
+
+  -- These jobs reserve decoding, but safe PRS cache reads can still populate
+  -- search results. The normal scheduler handles its own cache probes.
+  if not moving and (state.transfer_running or state.relink_plan_session
+    or state.root_removal_session or state.artwork_reset_session
+    or state.ucs_reclassification_session or state.database_snapshot_session) then
+    process_wave_cache_queue()
+  end
 
   if state.transfer_running then
     -- Transfer receives the background-work budget while active. Library

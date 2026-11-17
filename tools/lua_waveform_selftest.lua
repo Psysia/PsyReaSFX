@@ -194,5 +194,16 @@ assert(
 )
 assert(spectral_wave.peaks[1] == 0.5, "spectral read must retain amplitude peaks")
 
+local native_clock = 1
+reaper.time_precise = function() return native_clock end
+reaper.PCM_Source_BuildPeaks = function() return 1 end
+local stuck = { asset = { path = "stuck.wav" }, points = 256 }
+assert(step_wave_job(stuck) == "working")
+native_clock = 602
+local timed_out, _, timeout_error = step_wave_job(stuck)
+assert(timed_out == "failed" and timeout_error:find("超时", 1, true), "native build must have a finite deadline")
+destroy_wave_job(stuck)
+assert(not stuck.source, "timed-out native sources must be releasable")
+
 print("Lua waveform self-test passed")
 os.remove(direct_fixture_path)

@@ -120,6 +120,8 @@ let waveRetry;
 let transferDraft = {};
 let reportTimer;
 let waveFailure = "";
+let wavePending = false;
+let waveStatus = null;
 let pageTask;
 let lastPageKey;
 let lastPageContent;
@@ -898,6 +900,13 @@ function requestPage(force = true) {
         if (snapshot?.startup) break;
         lastPageKey = key;
         page = result;
+        if (!detailWave && snapshot?.selected) {
+          const overview = result.items.find((item) => item.path === snapshot.selected.path)?.waveform;
+          if (overview) {
+            detailWave = { ...overview, overview: true, channels: undefined };
+            drawDetail();
+          }
+        }
         scroll.setAttribute("aria-rowcount", result.total);
         $("result-space").style.height = `${result.total * prefs.rowHeight}px`;
         const content = JSON.stringify(result);
@@ -1561,6 +1570,7 @@ function applySnapshot(next) {
         detailWave = { ...overview, overview: true, channels: undefined };
     }
     waveFailure = "";
+    waveStatus = null;
     zoomStart = 0;
     zoomEnd = 1;
     refreshInspector = true;
@@ -1645,6 +1655,7 @@ async function requestDetailWave(retry = false, attempt = 0) {
   const selected = snapshot?.selected;
   const sequence = ++waveSequence;
   clearTimeout(waveRetry);
+  wavePending = Boolean(selected);
   if (!selected) {
     drawDetail();
     return;
@@ -1666,6 +1677,8 @@ async function requestDetailWave(retry = false, attempt = 0) {
         detailWaveCache.delete(detailWaveCache.keys().next().value);
     }
     waveFailure = result.error || "";
+    wavePending = !result.waveform && !waveFailure;
+    waveStatus = result.status || null;
     drawDetail();
     if (!result.waveform && !waveFailure)
       waveRetry = setTimeout(
@@ -1675,6 +1688,7 @@ async function requestDetailWave(retry = false, attempt = 0) {
   } catch (error) {
     if (sequence !== waveSequence) return;
     waveFailure = error.message || String(error);
+    wavePending = false;
     drawDetail();
     report(error);
   }
@@ -1827,6 +1841,9 @@ function drawDetail() {
     regionDrag?.start,
     regionDrag?.current,
     waveFailure,
+    wavePending,
+    waveStatus,
+    prefs.language,
     prefs.theme,
     prefs.accentColor,
     prefs.waveformColorMode,
@@ -1852,10 +1869,20 @@ function drawDetail() {
       ? prefs.waveformSelectionColor || defaults.waveformSelectionColor
       : palette.getPropertyValue("--accent").trim();
   const duration = snapshot?.selected?.duration || 0;
-  $("wave-status").hidden = Boolean(detailWave) && !waveFailure;
-  $("wave-retry").hidden = !waveFailure || !snapshot?.selected;
+  const waveLabels = {
+    cache: "正在读取波形缓存…",
+    queued: "正在等待波形处理…",
+    copy: "正在准备波形分析副本…",
+    decode: "正在生成高精度波形…",
+    paused: "当前任务结束后继续生成波形…",
+  };
+  let pendingText = localizer.text(waveLabels[waveStatus?.phase] || waveLabels.cache);
+  if (waveStatus?.phase === "decode" && Number.isFinite(waveStatus.progress))
+    pendingText += ` ${Math.round(Math.max(0, Math.min(1, waveStatus.progress)) * 100)}%`;
+  $("wave-status").hidden = Boolean(detailWave) && !waveFailure && !wavePending;
+  $("wave-retry").hidden = (!waveFailure && !wavePending) || !snapshot?.selected;
   $("wave-status").textContent = snapshot?.selected
-    ? waveFailure || "正在读取波形缓存…"
+    ? waveFailure || pendingText
     : "等待选择素材";
   if (!duration) return;
   const top = 26;
