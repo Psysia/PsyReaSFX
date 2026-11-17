@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$PackagePath, [Parameter(Mandatory=$true)][string]$FixtureDirectory)
 $ErrorActionPreference = 'Stop'
 $PackagePath = [IO.Path]::GetFullPath($PackagePath)
@@ -14,7 +14,9 @@ $policyPath = Join-Path $package 'bundled-runtime.json'
 $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
 $runtime = Get-Content -LiteralPath (Join-Path $package 'runtime-lock.json') -Raw | ConvertFrom-Json
 if (-not (Read-BundledRuntimePolicy $package $runtime)) { throw 'Test the approved release bundle.' }
-$global:BundledRuntimeFixture = @{ Running=$false; Sleeps=0; WaitingPath=''; ExternalChange='' }
+$global:BundledRuntimeFixture = @{ Running=$false; Sleeps=0; WaitingPath=''; ExternalChange=''; WaitingText='' }
+$originalUICulture = [Threading.Thread]::CurrentThread.CurrentUICulture
+$originalCulture = [Threading.Thread]::CurrentThread.CurrentCulture
 function Get-Process([string]$Name, $ErrorAction) {
     if ($Name -cne 'reaper') { throw 'Installer queried an unrelated process.' }
     if ($global:BundledRuntimeFixture.Running) { [pscustomobject]@{ProcessName='reaper'} }
@@ -24,6 +26,7 @@ function Start-Sleep {
     $state = $global:BundledRuntimeFixture
     $state.Sleeps++
     if ((Get-Content -LiteralPath $state.WaitingPath -Raw) -notmatch '^waiting') { throw 'Missing close-REAPER instruction before wait.' }
+    if ($state.WaitingText -and -not [IO.File]::ReadAllText($state.WaitingPath).Contains($state.WaitingText)) { throw 'Waiting instruction used the wrong language.' }
     if ($state.ExternalChange) { [IO.File]::WriteAllText($state.ExternalChange, 'external update during wait') }
     $state.Running=$false
 }
@@ -53,6 +56,17 @@ try {
     $receipt.status='installing'; Write-Receipt $receiptFile.FullName $receipt
     & $helper -ReaperResourcePath $fresh
     Assert-True ((Get-Content -LiteralPath $receiptFile.FullName -Raw | ConvertFrom-Json).status -ceq 'installed') 'Interrupted committed install was not finalized'
+    $request='1234567890abcdef1234567890abcdef'
+    foreach ($cultureCase in @(@('en-US','zh-CN','ready'), @('zh-CN','en-US','zh'), @('zh-TW','en-US','zh'), @('fr-FR','zh-CN','ready'))) {
+        [Threading.Thread]::CurrentThread.CurrentUICulture=[Globalization.CultureInfo]::GetCultureInfo($cultureCase[0])
+        [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo($cultureCase[1])
+        & $helper -ReaperResourcePath $fresh -RequestId $request
+        $status=[IO.File]::ReadAllText((Join-Path $fresh "Data/PsyReaSFX-WebView/runtime-setup-$request.txt"))
+        $expected=if($cultureCase[2] -eq 'zh'){'组件'}else{'The bundled component is ready'}
+        Assert-True $status.Contains($expected) 'UI language must be independent of region/number formatting'
+    }
+    [Threading.Thread]::CurrentThread.CurrentUICulture=$originalUICulture
+    [Threading.Thread]::CurrentThread.CurrentCulture=$originalCulture
     & $restore -ReaperResourcePath $fresh
     Assert-True (-not (Test-Path -LiteralPath (Plugin $fresh))) 'Fresh runtime rollback failed'
 
@@ -63,13 +77,18 @@ try {
     $global:BundledRuntimeFixture.Running=$true
     Reject { & $helper -ReaperResourcePath $known }
     Assert-True ((Get-SHA256 (Plugin $known)) -ceq $oldHash) 'Loaded runtime was modified'
-    $request='1234567890abcdef1234567890abcdef'
     $global:BundledRuntimeFixture.WaitingPath=Join-Path $known "Data/PsyReaSFX-WebView/runtime-setup-$request.txt"
-    & $helper -ReaperResourcePath $known -RequestId $request -WaitForReaperExit
+    $global:BundledRuntimeFixture.WaitingText='Close all REAPER windows'
+    & $helper -ReaperResourcePath $known -RequestId $request -WaitForReaperExit -Language en
     Assert-True ($global:BundledRuntimeFixture.Sleeps -eq 1) 'Expected one simulated REAPER exit wait'
     Assert-True ((Get-SHA256 (Plugin $known)) -ceq $policy.binary_sha256) 'Known PRS runtime not upgraded'
     & $restore -ReaperResourcePath $known
     Assert-True ((Get-SHA256 (Plugin $known)) -ceq $oldHash) 'Previous runtime backup was not restored'
+    $global:BundledRuntimeFixture.Running=$true
+    $global:BundledRuntimeFixture.WaitingText='关闭'
+    & $helper -ReaperResourcePath $known -RequestId $request -WaitForReaperExit -Language zh
+    & $restore -ReaperResourcePath $known
+    $global:BundledRuntimeFixture.WaitingText=''
 
     $locked=[IO.File]::Open((Plugin $known),'Open','Read','Read')
     try { Reject { & $helper -ReaperResourcePath $known } } finally { $locked.Dispose() }
@@ -79,7 +98,12 @@ try {
 
     $foreign=Resource 'foreign'
     $foreignHash=Put-Old $foreign 'unrecognized external component'
-    Reject { & $helper -ReaperResourcePath $foreign }
+    foreach ($language in @('en','zh')) {
+        Reject { & $helper -ReaperResourcePath $foreign -RequestId $request -Language $language }
+        $errorText=[IO.File]::ReadAllText((Join-Path $foreign "Data/PsyReaSFX-WebView/runtime-setup-$request.txt"))
+        $expected=if($language -eq 'zh'){'保留'}else{'It was preserved'}
+        Assert-True ($errorText.StartsWith("error`n") -and $errorText.Contains($expected) -and $errorText.Contains('-UseBundledRuntime')) 'Localized errors must retain preservation and recovery guidance'
+    }
     Assert-True ((Get-SHA256 (Plugin $foreign)) -ceq $foreignHash) 'Unknown shared component was overwritten'
     $global:BundledRuntimeFixture.Running=$true
     $global:BundledRuntimeFixture.ExternalChange=Plugin $known
@@ -91,5 +115,9 @@ try {
     [IO.File]::AppendAllText((Join-Path $package 'runtime/reawebapi/reaper_reawebapi-x64.dll'),'changed')
     Reject { & $helper -ReaperResourcePath $bad }
     Assert-True (-not (Test-Path -LiteralPath (Plugin $bad))) 'Tampered native payload was installed'
-    Write-Host 'Bundled runtime verified: fresh/reuse, exact approval, deferred known upgrade, unknown preservation, shared lock, rollback, interrupted receipt, external race and tamper rejection.'
-} finally { Remove-Variable -Name BundledRuntimeFixture -Scope Global }
+    Write-Host 'Bundled runtime verified: UI-language selection independent of region, localized ready/wait/error, fresh/reuse, deferred upgrade, preservation, locking, rollback, interrupted receipt, external race and tamper rejection.'
+} finally {
+    [Threading.Thread]::CurrentThread.CurrentUICulture=$originalUICulture
+    [Threading.Thread]::CurrentThread.CurrentCulture=$originalCulture
+    Remove-Variable -Name BundledRuntimeFixture -Scope Global
+}

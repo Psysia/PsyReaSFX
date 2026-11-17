@@ -1,6 +1,9 @@
-PsyReaSFX 0.9.4 Beta 2 WebView - Windows x64 prerelease
+PsyReaSFX 0.9.4 Beta 3 WebView - Windows x64 prerelease
 
 The default stable release remains 0.9.3. This beta retains the Beta18 fixes.
+Setup prompts follow the Windows display language: Chinese for Chinese UI,
+English for other languages or when detection is unavailable. This includes
+first-launch errors, waiting/restart instructions and completion messages.
 See docs/WEBVIEW_HARDENING_BETA18_zh-CN.md for evidence and verification limits.
 Ordinary browsing and audition read cached loudness; use the refresh control
 for explicit native measurement.
@@ -49,7 +52,7 @@ ReaWebAPI is LGPL-3.0-or-later. Its license texts and third-party notices are in
 licenses/reawebapi. The complete corresponding source archive is in sources/.
 The 0.3.9.30-prs.3 compatibility build is modified; see licenses/reawebapi/PRS_PATCH.md.
 It retains dock/float fixes and adds bounded shared read-only source access.
-ReaPack users enable pre-releases and update only PsyReaSFX.lua to 0.9.4-beta2.
+ReaPack users enable pre-releases and update only PsyReaSFX.lua to 0.9.4-beta3.
 First launch prepares the included component. A known old component is upgraded
 after all REAPER windows close, with a completion message before reopening.
 No process is terminated. Initial native setup requires one REAPER restart;
