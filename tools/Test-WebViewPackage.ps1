@@ -65,7 +65,8 @@ $fresh = New-Resource 'r-fresh'
 $stableBaseline = $runtimeLock.runtime_policy.distribution_channel -ceq 'stable' -and
     $runtimeLock.runtime_policy.distribution_binary_sha256 -ceq $runtimeLock.binary.sha256
 $installOptions = @{}
-if ($runtimeLock.runtime_policy.validation_status -cne 'native_accepted' -and -not $stableBaseline) {
+$bundledPolicy = Read-BundledRuntimePolicy $PackagePath $runtimeLock
+if ($runtimeLock.runtime_policy.validation_status -cne 'native_accepted' -and -not $stableBaseline -and -not $bundledPolicy) {
     $installOptions.AllowUnverifiedRuntime = $true
     Expect-Failure { & $install -ReaperResourcePath $fresh } 'Unverified native runtime must be blocked by default'
     Assert-Equal (Test-Path -LiteralPath (Join-Path $fresh 'Data')) $false 'Runtime acceptance gate must run before install state is written'
@@ -143,11 +144,36 @@ $candidateLock = Get-Content -LiteralPath $candidateLockPath -Raw -Encoding UTF8
 $candidateLock.runtime_policy.validation_status = 'native_acceptance_pending'
 $candidateLock.runtime_policy | Add-Member -NotePropertyName distribution_channel -NotePropertyValue 'candidate' -Force
 $candidateLock.runtime_policy.PSObject.Properties.Remove('distribution_binary_sha256')
+$candidateApproval = Join-Path $candidatePackage 'bundled-runtime.json'
+if (Test-Path -LiteralPath $candidateApproval) {
+    $candidateApprovalValue = Get-Content -LiteralPath $candidateApproval -Raw | ConvertFrom-Json
+    if ($bundledPolicy) {
+        # Exercise the full offline installer's automatic predecessor upgrade,
+        # using only a synthetic runtime and an approval in this fixture copy.
+        $known = New-Resource 'r-known'
+        $knownHash = Set-ExternalRuntime $known 'fixture previous PRS component'
+        $candidateApprovalValue.replace_hashes = @($knownHash)
+        [IO.File]::WriteAllText($candidateApproval, ($candidateApprovalValue | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+        $knownManifestPath = Join-Path $candidatePackage 'package-manifest.json'
+        $knownManifest = Get-Content -LiteralPath $knownManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        ($knownManifest.files | Where-Object path -CEQ 'bundled-runtime.json').sha256 = Get-SHA256 $candidateApproval
+        [IO.File]::WriteAllText($knownManifestPath, ($knownManifest | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+        & (Join-Path $candidatePackage 'Install-PsyReaSFX.ps1') -ReaperResourcePath $known
+        Assert-Equal (Get-SHA256 (Plugin-Path $known)) $runtimeLock.binary.sha256 'Known PRS runtime upgraded without extra flags'
+        & (Join-Path $candidatePackage 'Restore-PsyReaSFX.ps1') -ReaperResourcePath $known
+        Assert-Equal (Get-SHA256 (Plugin-Path $known)) $knownHash 'Automatic predecessor upgrade preserves a usable backup'
+    }
+    $candidateApprovalValue.app_version = 'unapproved-candidate'
+    [IO.File]::WriteAllText($candidateApproval, ($candidateApprovalValue | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+}
 function Write-CandidateFixture {
     [IO.File]::WriteAllText($candidateLockPath, ($candidateLock | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
     $candidateManifestPath = Join-Path $candidatePackage 'package-manifest.json'
     $candidateManifest = Get-Content -LiteralPath $candidateManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     ($candidateManifest.files | Where-Object path -CEQ 'runtime-lock.json').sha256 = Get-SHA256 $candidateLockPath
+    if (Test-Path -LiteralPath $candidateApproval) {
+        ($candidateManifest.files | Where-Object path -CEQ 'bundled-runtime.json').sha256 = Get-SHA256 $candidateApproval
+    }
     [IO.File]::WriteAllText($candidateManifestPath, ($candidateManifest | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
 }
 Write-CandidateFixture

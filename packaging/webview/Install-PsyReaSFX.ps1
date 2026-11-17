@@ -13,7 +13,10 @@ $app = Get-ChildPath $resource 'Scripts/PsyReaSFX-WebView'
 $plugin = Get-ChildPath $resource 'UserPlugins/reaper_reawebapi-x64.dll'
 $bundled = Join-Path $PSScriptRoot 'runtime/reawebapi/reaper_reawebapi-x64.dll'
 $bundledHash = Get-SHA256 $bundled
-$runtimePolicy = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runtime-lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json).runtime_policy
+$runtimeLock = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'runtime-lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$runtimePolicy = $runtimeLock.runtime_policy
+$bundledPolicy = Read-BundledRuntimePolicy $PSScriptRoot $runtimeLock
+$allowPackaged = $AllowUnverifiedRuntime -or $null -ne $bundledPolicy
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -and $env:PROCESSOR_ARCHITEW6432 -ne 'AMD64') { throw 'This package requires Windows x64.' }
 if ([IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\') -ieq $app) { throw 'Extract the release package outside the installed app before reinstalling.' }
 $id = [guid]::NewGuid().ToString('N')
@@ -27,11 +30,11 @@ foreach ($file in $manifest.files) {
     }
 }
 $installedHash = if (Test-Path -LiteralPath $plugin) { Get-SHA256 $plugin } else { '' }
-$action = if (-not $installedHash) { 'install' } elseif ($installedHash -eq $bundledHash) { 'reuse' } elseif ($UseBundledRuntime) { 'replace' } else { 'preserve-external' }
+$action = Get-RuntimeAction $installedHash $bundledHash $bundledPolicy -Replace:$UseBundledRuntime
 if ($PlanOnly) {
     return [pscustomobject]@{ Resource = $resource; Application = $app; Runtime = $action; Version = $manifest.version; RuntimeValidation = $runtimePolicy.validation_status; RuntimeDistribution = $runtimePolicy.distribution_channel }
 }
-Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$AllowUnverifiedRuntime
+Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$allowPackaged
 Assert-ReaperClosed
 $guard = Open-InstallerLock $resource
 try {
@@ -42,8 +45,8 @@ try {
         if ($pending.status -eq 'installing') { Restore-Transaction $resource $pending.id }
     }
     $installedHash = if (Test-Path -LiteralPath $plugin) { Get-SHA256 $plugin } else { '' }
-    $action = if (-not $installedHash) { 'install' } elseif ($installedHash -eq $bundledHash) { 'reuse' } elseif ($UseBundledRuntime) { 'replace' } else { 'preserve-external' }
-    Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$AllowUnverifiedRuntime
+    $action = Get-RuntimeAction $installedHash $bundledHash $bundledPolicy -Replace:$UseBundledRuntime
+    Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$allowPackaged
     [IO.Directory]::CreateDirectory($transaction) | Out-Null
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     foreach ($file in $manifest.files) {

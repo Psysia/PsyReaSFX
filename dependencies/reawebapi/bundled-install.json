@@ -1,0 +1,10 @@
+{
+  "schema": "PsyReaSFX-Bundled-Runtime-v1",
+  "app_version": "0.9.4-beta2",
+  "binary_sha256": "ed692c39da0b016e07426f0dd04547698ce0d9881792b02613b9afa907eb7299",
+  "source_sha256": "5d84acb77bb5f4578563adb9795b8482aa8e7352e8be7955735d8d89fd452993",
+  "replace_hashes": [
+    "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30",
+    "c3a98f56dcd13788b40b8755eac6b2acc82d66aa2e22d37c6c0818b9aa21f04d"
+  ]
+}

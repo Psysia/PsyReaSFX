@@ -119,7 +119,7 @@ reaper.ReaPack_BrowsePackages = function(filter)
 end
 reaper.ReaWeb_Open = nil
 assert(webview_open() == false)
-assert(#questions == 1 and searches[1] == "PsyReaSFX WebView Runtime" and #links == 0)
+assert(#questions == 1 and searches[1] == "PsyReaSFX.lua" and #links == 0)
 assert(questions[1]:find("重启 REAPER", 1, true), "dependency prompt must explain restart")
 choice = 7
 assert(webview_open() == false)

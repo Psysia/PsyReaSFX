@@ -4,11 +4,13 @@
 
 验证历史 ReaPack 在线载荷时，`Test-ReaPackWebView.ps1 -Online` 从对应发行 tag 读取原始锁定清单；浅克隆需先获取这些 tag，避免将主分支新的镜像地址误认为历史载荷被修改。
 
-0.9.4 Beta 1 锁定候选 `0.3.9.30-prs.3`（ReaPack `0.3.9.30.3-beta1`），增加 `ReaWeb_ReadSharedRange` 有界共享只读接口。原素材和目录以共享读／写／删除模式打开，PRS 原生媒体消费者只接收私有副本。接口缺失时不回退普通文件读取。状态为 `native_acceptance_pending`，Windows 原生并发及 ABI 测试不等于 REAPER 实机验收。
+0.9.4 Beta 1 起锁定候选 `0.3.9.30-prs.3`（原独立 ReaPack 包 `0.3.9.30.3-beta1`），增加 `ReaWeb_ReadSharedRange` 有界共享只读接口。原素材和目录以共享读／写／删除模式打开，PRS 原生媒体消费者只接收私有副本。接口缺失时不回退普通文件读取。状态为 `native_acceptance_pending`，Windows 原生并发及 ABI 测试不等于 REAPER 实机验收。
+
+0.9.4 Beta 2 将该 DLL、对应源码和许可证纳入 ReaPack 主包。公共启动动作检测必需接口，缺失时调用随包助手；不需要下载或选择独立运行库。`bundled-install.json` 将默认安装绑定主程序版本与 DLL、源码的精确 SHA-256，未改变原生验收状态。已知 PRS 补丁 1／2 按已发布哈希识别、备份并升级；运行中的 REAPER 关闭后才替换已安装组件。未知共享组件保留，助手不结束进程、不操作 Soundminer 文件。
 
 0.9.3 稳定版仍固定 `0.3.9.30-prs.2`（ReaPack `0.3.9.30`），已发布 tag 和对应二进制不变。发行通道与实机验收分开记录：稳定 tag 的 `distribution_channel = stable` 与 `distribution_binary_sha256` 允许默认安装该固定哈希版本，但不会把 `validation_status` 显示成已验收。本 Beta 活动清单保持 `candidate`，不继承稳定哈希授权。
 
-自定义／上游候选使用 `distribution_channel = candidate`，不会继承稳定哈希授权；未达到 `native_accepted` 时仍默认拒绝新增或替换，测试须显式传入 `-AllowUnverifiedRuntime`。现有外部 DLL 默认保留，只有 `-UseBundledRuntime` 才替换。
+自定义／上游候选使用 `distribution_channel = candidate`，不会继承稳定哈希授权或本版随包哈希授权；未达到 `native_accepted` 时仍默认拒绝新增或替换，测试须显式传入 `-AllowUnverifiedRuntime`。未知外部 DLL 默认保留，只有 `-UseBundledRuntime` 才替换。
 
 ReaPack 新候选包使用 `0.3.9.30.3-beta1`：最后的数字 `3` 对应 PRS 补丁版本，DLL 仍为 `0.3.9.30-prs.3`。按 [ReaPack 版本比较](https://github.com/cfillion/reapack/blob/master/src/version.cpp)，`0.3.9.30-beta4` 会排在已发布的 `0.3.9.30` 之前，不能成为自动更新；增加数字段可让启用预发布的用户收到新版，同时保持稳定用户的版本不变。
 
@@ -50,7 +52,7 @@ CI 使用只读仓库令牌，等待 Fork 自己的定时同步，最多 10 分�
 
 ## 用户机器上的版本
 
-DLL 没有可读取的 PE 产品版本字段，因此安装器按 SHA-256 识别随包版本。遇到其他 DLL 时保留原文件。应用启动后通过 `lifecycle.ready` 读取真实版本，并检查 protocol、runtime contract、web contract 和消息容量。兼容的外部版本会显示待验证提示，契约冲突会停止连接并提供恢复指引。
+DLL 没有可读取的 PE 产品版本字段，因此安装器按 SHA-256 识别随包版本和可自动升级的已知 PRS 版本。遇到未知 DLL 时保留原文件。应用启动后通过 `lifecycle.ready` 读取真实版本，并检查 protocol、runtime contract、web contract 和消息容量。兼容的外部版本会显示待验证提示，契约冲突会停止连接并提供恢复指引。
 
 关闭 REAPER 后可用安装器的 `-UseBundledRuntime` 显式切回随包固定版本。安装事务会保存应用与被替换 DLL，回滚时保护后续被外部修改的共享扩展。安装过程使用独占锁、临时目录、原子 DLL 替换及持久化事务记录。中断事务会在下一次安装时恢复。
 

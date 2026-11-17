@@ -1,4 +1,4 @@
-PsyReaSFX 0.9.4 Beta 1 WebView - Windows x64 prerelease
+PsyReaSFX 0.9.4 Beta 2 WebView - Windows x64 prerelease
 
 The default stable release remains 0.9.3. This beta retains the Beta18 fixes.
 See docs/WEBVIEW_HARDENING_BETA18_zh-CN.md for evidence and verification limits.
@@ -15,23 +15,22 @@ copies. These require extra disk space and first-use preparation. Copies remain
 available to REAPER projects and may be created again in a new PRS session.
 Transfer uses the PRS export directory and does not overwrite existing files.
 
-This beta requires the bundled 0.3.9.30-prs.3 shared-read runtime. Native REAPER
-acceptance remains pending. Install-PsyReaSFX-Beta.cmd supplies the explicit
--AllowUnverifiedRuntime candidate opt-in. The normal installer refuses a new
-candidate runtime without this option.
+The main package includes the 0.3.9.30-prs.3 shared-read component. No separate
+runtime download or version selection is needed. Native REAPER acceptance
+remains pending. Automatic installation is limited to the exact DLL and source
+hashes approved for this release; custom candidates still require opt-in.
 
 1. In REAPER, use Options > Show REAPER resource path. Note this folder.
 2. Close REAPER. Extract this entire ZIP outside that resource folder.
-3. Double-click Install-PsyReaSFX-Beta.cmd and select the resource folder.
+3. Double-click Install-PsyReaSFX.cmd and select the resource folder.
 4. Restart REAPER. Actions > Show action list > New action > Load ReaScript.
    Select Scripts/PsyReaSFX-WebView/PsyReaSFX.lua inside the resource folder.
 
-The package includes a SHA-256-pinned ReaWebAPI extension. An existing different
-extension is preserved by default. Startup checks contracts and shows its actual
-version. An older runtime can browse existing indexes but cannot read originals.
-To explicitly switch to the bundled candidate runtime after closing REAPER:
+Known previous PRS components are backed up and upgraded automatically. Unknown
+shared extensions are preserved. Startup checks contracts and shows the actual
+version. To explicitly replace an unknown shared runtime after closing REAPER:
 
-powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-PsyReaSFX.ps1 -ReaperResourcePath "YOUR RESOURCE FOLDER" -AllowUnverifiedRuntime -UseBundledRuntime
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-PsyReaSFX.ps1 -ReaperResourcePath "YOUR RESOURCE FOLDER" -UseBundledRuntime
 
 Restore-PsyReaSFX.cmd restores the latest installation transaction. Backups are
 retained under Data/PsyReaSFX-WebView/transactions. A subsequently changed shared
@@ -50,8 +49,10 @@ ReaWebAPI is LGPL-3.0-or-later. Its license texts and third-party notices are in
 licenses/reawebapi. The complete corresponding source archive is in sources/.
 The 0.3.9.30-prs.3 compatibility build is modified; see licenses/reawebapi/PRS_PATCH.md.
 It retains dock/float fixes and adds bounded shared read-only source access.
-Updating only the PRS Lua/frontend does not update an externally managed DLL.
-ReaPack users must enable pre-releases and update both the script to 0.9.4-beta1
-and PsyReaSFX WebView Runtime to 0.3.9.30.3-beta1, then restart REAPER.
+ReaPack users enable pre-releases and update only PsyReaSFX.lua to 0.9.4-beta2.
+First launch prepares the included component. A known old component is upgraded
+after all REAPER windows close, with a completion message before reopening.
+No process is terminated. Initial native setup requires one REAPER restart;
+later launches start normally. The helper does not access Soundminer files.
 PsyReaSFX licensing does not replace these component licenses. The native DLL
 is installed as a separate, replaceable shared REAPER extension.

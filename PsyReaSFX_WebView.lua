@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.4-beta1
+-- @version 0.9.4-beta2
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.4 Beta 1"
+local VERSION = "0.9.4 Beta 2"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.4-beta1",
-  source_sha256 = "0b3d4ec679094781bec75fdad3148059375a84b9607e2e52f353ba1d3bcda62d",
+  release_id = "PsyReaSFX/0.9.4-beta2",
+  source_sha256 = "a50f3cb9ae90eb0c97366778bd5add59285f9f17a3a54a53293ba58687b36538",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -19408,16 +19408,16 @@ local function prompt_runtime_install(missing_api)
   local owner = runtime_owner(path)
   local installed = owner ~= nil or reaper.file_exists(path)
   local filter = owner and owner.filter
-    or (installed and "ReaWebAPI" or "PsyReaSFX WebView Runtime")
+    or (installed and "ReaWebAPI" or "PsyReaSFX.lua")
   local instructions = installed
       and "已发现 ReaWebAPI 的安装记录或 DLL。请先重启 REAPER，使已安装的组件生效。\n" .. "版本缺少接口时，请在原组件中检查更新。\n"
-    or "首次安装请同步 Psysia 软件源并启用预发布，安装 PsyReaSFX WebView Runtime 0.3.9.30.3-beta1。\n"
+    or "首次安装请同步 Psysia 软件源并启用预发布，更新 PRS 主程序，再运行公共动作 PsyReaSFX.lua 自动准备随包组件。\n"
   if owner then
     instructions = instructions .. "当前归属 " .. owner.label .. "\n"
   end
   local title = SCRIPT_NAME .. " · WebView 运行时未就绪"
   local destination = has_reapack
-      and (installed and "是否打开现有组件的 ReaPack 页面，检查安装与更新？" or "是否现在打开 ReaPack，并定位到首次安装的运行时组件？")
+      and (installed and "是否打开现有组件的 ReaPack 页面，检查安装与更新？" or "是否现在打开 ReaPack，重新安装含有随包组件的 PRS 主程序？")
     or "当前未检测到 ReaPack。是否打开发布页，下载完整安装包？"
   local choice = reaper.MB(
     "未检测到可用的 ReaWebAPI，或当前版本缺少所需接口。\n\n"
