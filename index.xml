@@ -55,6 +55,7 @@ PsyReaSFX Neural Similarity. Built-in acoustic search and AI query search do not
       <version name="0.9.3" author="Psysia" time="2026-11-17T00:00:00Z">
         <changelog><![CDATA[
 - Promote the Beta 18 WebView line to 0.9.3 Stable for Windows x64.
+- Restrict cache maintenance to PRS-owned waveforms in dedicated directories and preserve unrelated files.
 - Retain metadata editing, preview, Transfer and background-service hardening; existing catalogs and caches remain compatible.
 - Install PsyReaSFX WebView Runtime 0.3.9.30 separately for a first installation, then restart REAPER. The DLL remains 0.3.9.30-prs.2.
 - Keep Beta 18 and legacy stable releases available for rollback.
