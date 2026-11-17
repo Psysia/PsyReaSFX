@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.3-beta18
+-- @version 0.9.3
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.3 Beta 18"
+local VERSION = "0.9.3 Stable"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.3-beta18",
-  source_sha256 = "443865aa8b097924cc3c9126f302544a077140c1a018efe2d766177d70ae32ee",
+  release_id = "PsyReaSFX/0.9.3",
+  source_sha256 = "bafc75a221b5e5d5969b108f40dd0115f324a1b92e2518cc3a2657ac542b4611",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -17451,14 +17451,14 @@ local function prompt_runtime_install(missing_api)
     or (installed and "ReaWebAPI" or "PsyReaSFX WebView Runtime")
   local instructions = installed
       and "已发现 ReaWebAPI 的安装记录或 DLL。请先重启 REAPER，使已安装的组件生效。\n" .. "版本缺少接口时，请在原组件中检查更新。\n"
-    or "首次安装可选择 PsyReaSFX WebView Runtime，并在 Psysia 软件源启用预发布和同步。\n"
+    or "首次安装请同步 Psysia 软件源，安装 PsyReaSFX WebView Runtime 0.3.9.30。\n"
   if owner then
     instructions = instructions .. "当前归属 " .. owner.label .. "\n"
   end
   local title = SCRIPT_NAME .. " · WebView 运行时未就绪"
   local destination = has_reapack
       and (installed and "是否打开现有组件的 ReaPack 页面，检查安装与更新？" or "是否现在打开 ReaPack，并定位到首次安装的运行时组件？")
-    or "当前未检测到 ReaPack。是否打开发布页，下载完整测试版安装包？"
+    or "当前未检测到 ReaPack。是否打开发布页，下载完整安装包？"
   local choice = reaper.MB(
     "未检测到可用的 ReaWebAPI，或当前版本缺少所需接口。\n\n"
       .. instructions

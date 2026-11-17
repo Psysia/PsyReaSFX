@@ -43,6 +43,12 @@ function Read-Package([string]$Root) {
     if ($runtime.binary.sha256 -cne (Get-SHA256 (Join-Path $Root 'runtime/reawebapi/reaper_reawebapi-x64.dll'))) {
         throw 'Runtime lock differs from packaged binary.'
     }
+    if ($runtime.source.file -cne 'ReaWebAPI-source.zip' -or
+        $runtime.source.sha256 -notmatch '^[a-f0-9]{64}$' -or
+        -not $seen.ContainsKey((Get-ChildPath $Root ('sources/' + $runtime.source.file))) -or
+        $runtime.source.sha256 -cne (Get-SHA256 (Join-Path $Root ('sources/' + $runtime.source.file)))) {
+        throw 'Runtime lock differs from packaged matching source.'
+    }
     return $manifest
 }
 
@@ -67,8 +73,14 @@ function Assert-ReaperClosed {
     if (Get-Process -Name reaper -ErrorAction SilentlyContinue) { throw 'Close REAPER before installing or restoring the native extension.' }
 }
 
-function Assert-RuntimePolicy([string]$Action, $Policy, [switch]$AllowUnverified) {
-    if ($Action -in @('install', 'replace') -and $Policy.validation_status -cne 'native_accepted' -and -not $AllowUnverified) {
+function Assert-RuntimePolicy([string]$Action, $Policy, [string]$BinarySha256 = '', [switch]$AllowUnverified) {
+    # Distribution approval is tied to the exact packaged binary, independently
+    # of native-acceptance evidence. Read-Package verifies its lock and payload.
+    $stableBaseline = $Policy.distribution_channel -ceq 'stable' -and
+        $Policy.distribution_binary_sha256 -cmatch '^[a-f0-9]{64}$' -and
+        $Policy.distribution_binary_sha256 -ceq $BinarySha256
+    if ($Action -in @('install', 'replace') -and $Policy.validation_status -cne 'native_accepted' -and
+        -not $stableBaseline -and -not $AllowUnverified) {
         throw 'The bundled runtime has not passed native REAPER acceptance. Candidate testing requires an isolated REAPER profile and the explicit -AllowUnverifiedRuntime option.'
     }
 }

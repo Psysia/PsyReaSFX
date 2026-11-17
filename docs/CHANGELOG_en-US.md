@@ -1,3 +1,10 @@
+## 0.9.3 WebView Stable — 2026-11-17
+
+- Promote the Beta 18 WebView line to stable, retaining editing, preview, Transfer and background-service hardening.
+- Main version 0.9.3 and ReaPack runtime package 0.3.9.30 are available without pre-release opt-in. The DLL remains 0.3.9.30-prs.2 and its acceptance status is unchanged.
+- Keep Beta 18 and classic releases for rollback, with compatible catalogs and caches.
+- [Stable release notes](releases/release-notes-webview-0.9.3.md).
+
 ## 0.9.3 Beta 17 (0.9.a WebView) — 2026-11-12
 
 ## 0.9.3 Beta 18 (0.9.a WebView) — 2026-11-13

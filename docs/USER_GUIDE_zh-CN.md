@@ -1,5 +1,7 @@
 # PsyReaSFX 用户使用说明书
 
+**WebView 0.9.3 正式版：** 本页保留经典 0.9.0 界面的工作流说明。Windows x64 新安装请按 [0.9.3 正式版说明](releases/release-notes-webview-0.9.3.md)安装主程序和独立 WebView Runtime 0.3.9.30；界面入口参考 [WebView 验收清单](WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md)。
+
 **适用版本：** PsyReaSFX 0.9.0 Stable
 **作者：** Psysia  
 **宿主：** REAPER 7.x

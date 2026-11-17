@@ -1,5 +1,7 @@
 # PsyReaSFX User Guide
 
+**WebView 0.9.3 Stable:** this page retains the classic 0.9.0 workflow guide. For a new Windows x64 installation, follow the [0.9.3 release notes](releases/release-notes-webview-0.9.3.md) to install the main script and the separate WebView Runtime 0.3.9.30 package. Current interface entry points are in the [WebView checklist (Chinese)](WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md).
+
 **Applies to:** PsyReaSFX 0.9.0 Stable
 **Author:** Psysia  
 **Host:** REAPER 7.x

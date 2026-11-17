@@ -62,24 +62,30 @@ function Set-ExternalRuntime([string]$Resource, [string]$Text = 'external-runtim
 }
 
 $fresh = New-Resource 'r-fresh'
-if ($runtimeLock.runtime_policy.validation_status -cne 'native_accepted') {
+$stableBaseline = $runtimeLock.runtime_policy.distribution_channel -ceq 'stable' -and
+    $runtimeLock.runtime_policy.distribution_binary_sha256 -ceq $runtimeLock.binary.sha256
+$installOptions = @{}
+if ($runtimeLock.runtime_policy.validation_status -cne 'native_accepted' -and -not $stableBaseline) {
+    $installOptions.AllowUnverifiedRuntime = $true
     Expect-Failure { & $install -ReaperResourcePath $fresh } 'Unverified native runtime must be blocked by default'
     Assert-Equal (Test-Path -LiteralPath (Join-Path $fresh 'Data')) $false 'Runtime acceptance gate must run before install state is written'
 }
-$plan = & $install -AllowUnverifiedRuntime -ReaperResourcePath $fresh -PlanOnly
+$plan = & $install @installOptions -ReaperResourcePath $fresh -PlanOnly
 Assert-Equal $plan.Runtime 'install' 'Fresh runtime plan'
+Assert-Equal $plan.RuntimeValidation $runtimeLock.runtime_policy.validation_status 'Distribution must preserve native-acceptance diagnostics'
+Assert-Equal $plan.RuntimeDistribution $runtimeLock.runtime_policy.distribution_channel 'Distribution channel is shown in the install plan'
 Assert-Equal (Test-Path -LiteralPath (Join-Path $fresh 'Data')) $false 'PlanOnly must be read-only'
 $global:PsyReaSFXTestReaperRunning = $true
-Expect-Failure { & $install -AllowUnverifiedRuntime -ReaperResourcePath $fresh } 'Running REAPER must block installation'
+Expect-Failure { & $install @installOptions -ReaperResourcePath $fresh } 'Running REAPER must block installation'
 $global:PsyReaSFXTestReaperRunning = $false
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $fresh
+& $install @installOptions -ReaperResourcePath $fresh
 Assert-Equal (Get-SHA256 (Plugin-Path $fresh)) $runtimeLock.binary.sha256 'Fresh runtime installed'
 Read-Package (Join-Path $fresh 'Scripts/PsyReaSFX-WebView') | Out-Null
 foreach ($asset in @('brand/psyreasfx-icon.png', 'ucs/ucs-8.2.1.tsv', 'neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx')) {
     if (-not (Test-Path -LiteralPath (Join-Path $fresh "Scripts/PsyReaSFX-WebView/assets/$asset"))) { throw "Installed asset missing: $asset" }
 }
 $firstTransaction = Get-Content -LiteralPath (Join-Path $fresh 'Scripts/PsyReaSFX-WebView/.install-transaction') -Raw
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $fresh
+& $install @installOptions -ReaperResourcePath $fresh
 Expect-Failure { & $restore -ReaperResourcePath $fresh -TransactionId $firstTransaction } 'Older transaction must not replace a more recent install of the same package'
 & $restore -ReaperResourcePath $fresh
 Assert-Equal (Get-SHA256 (Plugin-Path $fresh)) $runtimeLock.binary.sha256 'Reused runtime survives app rollback'
@@ -89,9 +95,9 @@ Assert-Equal (Test-Path -LiteralPath (Join-Path $fresh 'Scripts/PsyReaSFX-WebVie
 
 $external = New-Resource 'r-shared'
 $externalHash = Set-ExternalRuntime $external
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $external
+& $install @installOptions -ReaperResourcePath $external
 Assert-Equal (Get-SHA256 (Plugin-Path $external)) $externalHash 'External runtime preserved by default'
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $external -UseBundledRuntime
+& $install @installOptions -ReaperResourcePath $external -UseBundledRuntime
 Assert-Equal (Get-SHA256 (Plugin-Path $external)) $runtimeLock.binary.sha256 'Explicit runtime replacement'
 & $restore -ReaperResourcePath $external
 Assert-Equal (Get-SHA256 (Plugin-Path $external)) $externalHash 'Previous shared runtime restored'
@@ -99,33 +105,71 @@ Assert-Equal (Get-SHA256 (Plugin-Path $external)) $externalHash 'Previous shared
 $locked = New-Resource 'r-locked'
 $lockedHash = Set-ExternalRuntime $locked
 $handle = [IO.File]::Open((Plugin-Path $locked), 'Open', 'Read', 'Read')
-try { Expect-Failure { & $install -AllowUnverifiedRuntime -ReaperResourcePath $locked -UseBundledRuntime } 'Locked DLL replacement must fail' }
+try { Expect-Failure { & $install @installOptions -ReaperResourcePath $locked -UseBundledRuntime } 'Locked DLL replacement must fail' }
 finally { $handle.Dispose() }
 Assert-Equal (Get-SHA256 (Plugin-Path $locked)) $lockedHash 'Failed install preserved runtime'
 Assert-Equal (Test-Path -LiteralPath (Join-Path $locked 'Scripts/PsyReaSFX-WebView')) $false 'Failed install rolled back application'
 
 $concurrent = New-Resource 'r-concurrent'
 $guard = Open-InstallerLock $concurrent
-try { Expect-Failure { & $install -AllowUnverifiedRuntime -ReaperResourcePath $concurrent } 'Exclusive installer lock must reject concurrent install' }
+try { Expect-Failure { & $install @installOptions -ReaperResourcePath $concurrent } 'Exclusive installer lock must reject concurrent install' }
 finally { $guard.Dispose() }
 Assert-Equal (Test-Path -LiteralPath (Join-Path $concurrent 'Scripts')) $false 'Concurrent install must not write app'
 
 $recovery = New-Resource 'r-recovery'
 $recoveryHash = Set-ExternalRuntime $recovery
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $recovery -UseBundledRuntime
+& $install @installOptions -ReaperResourcePath $recovery -UseBundledRuntime
 $receiptFile = Get-ChildItem -LiteralPath (Join-Path $recovery 'Data/PsyReaSFX-WebView/transactions') -Filter receipt.json -Recurse | Select-Object -First 1
 $receipt = Get-Content -LiteralPath $receiptFile.FullName -Raw | ConvertFrom-Json
 $receipt.status = 'installing'
 Write-Receipt $receiptFile.FullName $receipt
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $recovery
+& $install @installOptions -ReaperResourcePath $recovery
 Assert-Equal (Get-SHA256 (Plugin-Path $recovery)) $recoveryHash 'Interrupted installation recovered before next install'
 
 $changed = New-Resource 'r-updated'
 Set-ExternalRuntime $changed | Out-Null
-& $install -AllowUnverifiedRuntime -ReaperResourcePath $changed -UseBundledRuntime
+& $install @installOptions -ReaperResourcePath $changed -UseBundledRuntime
 $changedHash = Set-ExternalRuntime $changed 'externally-updated-runtime'
 Expect-Failure { & $restore -ReaperResourcePath $changed } 'Rollback must protect subsequent external updates'
 Assert-Equal (Get-SHA256 (Plugin-Path $changed)) $changedHash 'Subsequent runtime update preserved'
+
+# Exercise the production installer with a repackaged candidate of the same
+# binary. Its default rejection must precede creation of any transaction state.
+$candidatePackage = Join-Path $FixtureDirectory 'candidate-package'
+[IO.Directory]::CreateDirectory($candidatePackage) | Out-Null
+Copy-Item -Path (Join-Path $PackagePath '*') -Destination $candidatePackage -Recurse
+$candidateLockPath = Join-Path $candidatePackage 'runtime-lock.json'
+$candidateLock = Get-Content -LiteralPath $candidateLockPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$candidateLock.runtime_policy.validation_status = 'native_acceptance_pending'
+$candidateLock.runtime_policy | Add-Member -NotePropertyName distribution_channel -NotePropertyValue 'candidate' -Force
+$candidateLock.runtime_policy.PSObject.Properties.Remove('distribution_binary_sha256')
+function Write-CandidateFixture {
+    [IO.File]::WriteAllText($candidateLockPath, ($candidateLock | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+    $candidateManifestPath = Join-Path $candidatePackage 'package-manifest.json'
+    $candidateManifest = Get-Content -LiteralPath $candidateManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    ($candidateManifest.files | Where-Object path -CEQ 'runtime-lock.json').sha256 = Get-SHA256 $candidateLockPath
+    [IO.File]::WriteAllText($candidateManifestPath, ($candidateManifest | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+}
+Write-CandidateFixture
+$candidateInstall = Join-Path $candidatePackage 'Install-PsyReaSFX.ps1'
+$candidateResource = New-Resource 'r-candidate'
+Expect-Failure { & $candidateInstall -ReaperResourcePath $candidateResource } 'Candidate must require explicit opt-in even when binary equals the stable baseline'
+Assert-Equal (Test-Path -LiteralPath (Join-Path $candidateResource 'Data')) $false 'Candidate rejection must not write transaction state'
+& $candidateInstall -ReaperResourcePath $candidateResource -AllowUnverifiedRuntime
+Assert-Equal (Get-SHA256 (Plugin-Path $candidateResource)) $runtimeLock.binary.sha256 'Explicit candidate testing remains available'
+& (Join-Path $candidatePackage 'Restore-PsyReaSFX.ps1') -ReaperResourcePath $candidateResource
+$candidateExternal = New-Resource 'r-candidate-shared'
+$candidateExternalHash = Set-ExternalRuntime $candidateExternal
+Expect-Failure { & $candidateInstall -ReaperResourcePath $candidateExternal -UseBundledRuntime } 'Candidate replacement must require explicit opt-in'
+Assert-Equal (Get-SHA256 (Plugin-Path $candidateExternal)) $candidateExternalHash 'Rejected candidate replacement preserves external runtime'
+Assert-Equal (Test-Path -LiteralPath (Join-Path $candidateExternal 'Data')) $false 'Rejected candidate replacement must not create install state'
+
+$candidateLock.runtime_policy.distribution_channel = 'stable'
+$candidateLock.runtime_policy | Add-Member -NotePropertyName distribution_binary_sha256 -NotePropertyValue ('0' * 64) -Force
+Write-CandidateFixture
+$unpinnedResource = New-Resource 'r-unpinned-stable'
+Expect-Failure { & $candidateInstall -ReaperResourcePath $unpinnedResource } 'Stable label must not allow a different binary hash'
+Assert-Equal (Test-Path -LiteralPath (Join-Path $unpinnedResource 'Data')) $false 'Unpinned stable rejection must not write transaction state'
 
 # Mutate only the disposable extracted/copied payload.
 $tampered = Join-Path $FixtureDirectory 'tampered-package'
@@ -138,7 +182,7 @@ Assert-Equal (Test-Path -LiteralPath (Join-Path $tamperResource 'Data')) $false 
 Expect-Failure { Get-ChildPath $FixtureDirectory '../outside' } 'Path traversal must fail'
 Expect-Failure { Get-ChildPath $FixtureDirectory 'C:\outside' } 'Absolute package paths must fail'
 $deep = New-Resource ('long-resource-path-' + ('x' * 80))
-Expect-Failure { & $install -AllowUnverifiedRuntime -ReaperResourcePath $deep } 'Unsupported deep resource paths must fail preflight'
+Expect-Failure { & $install @installOptions -ReaperResourcePath $deep } 'Unsupported deep resource paths must fail preflight'
 Assert-Equal (Test-Path -LiteralPath (Join-Path $deep 'Data')) $false 'Deep path preflight must not write transaction state'
 Remove-Variable -Name PsyReaSFXTestReaperRunning -Scope Global
-Write-Host 'WebView package verified: archive, hashes, licenses/source, fresh/repeat install, external preservation, replacement/rollback, locked DLL failure, concurrency, interrupted recovery, external-update protection, tamper/path rejection.'
+Write-Host 'WebView package verified: archive, hashes, licenses/source, default stable install, candidate opt-in, exact stable pin, fresh/repeat install, external preservation, replacement/rollback, locked DLL failure, concurrency, interrupted recovery, external-update protection, tamper/path rejection.'
