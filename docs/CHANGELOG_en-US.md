@@ -1,5 +1,6 @@
 ## 0.9.3 WebView Stable — 2026-11-17
 
+- Limit cache maintenance to PRS-owned waveform files in dedicated directories; preserve unrelated files, colliding sources and failed copies.
 - Promote the Beta 18 WebView line to stable, retaining editing, preview, Transfer and background-service hardening.
 - Main version 0.9.3 and ReaPack runtime package 0.3.9.30 are available without pre-release opt-in. The DLL remains 0.3.9.30-prs.2 and its acceptance status is unchanged.
 - Keep Beta 18 and classic releases for rollback, with compatible catalogs and caches.

@@ -5230,10 +5230,15 @@ function save_wave_to_disk(
   preserve_channels,
   spectral
 )
+  if not prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR) then return nil, "unmanaged cache directory" end
   ensure_dirs()
 
   local cache_key =
     wave_cache_key(asset, points, preserve_channels, spectral)
+  local cache_path = join_path(WAVE_CACHE_DIR, cache_key .. ".rwf")
+  if reaper.file_exists(cache_path) and not prs_wave_cache_file_owned(cache_path) then
+    return nil, "refusing to overwrite a foreign cache file"
+  end
   -- A new disk file makes any earlier "not on disk" probe stale.
   if state and state.wave_checked then
     state.wave_checked[cache_key] = nil
@@ -6424,22 +6429,23 @@ end
 
 function clear_wave_cache()
   reset_wave_cache_runtime()
-
-  while true do
-    local file =
-      reaper.EnumerateFiles(
-        WAVE_CACHE_DIR,
-        0
-      )
-
-    if not file then
-      break
-    end
-
-    os.remove(join_path(WAVE_CACHE_DIR, file))
+  if not prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR) then
+    set_status("未清理：目录不是 PRS 专属波形缓存目录", true)
+    return
   end
-
-  set_status("已清空波形缓存")
+  local files, index = {}, 0
+  while true do
+    local file = reaper.EnumerateFiles(WAVE_CACHE_DIR, index)
+    if not file then break end
+    local path = join_path(WAVE_CACHE_DIR, file)
+    if prs_wave_cache_file_owned(path) then files[#files + 1] = path end
+    index = index + 1
+  end
+  local removed = 0
+  for _, path in ipairs(files) do
+    if prs_wave_cache_file_owned(path) and os.remove(path) then removed = removed + 1 end
+  end
+  set_status(string.format("已清理 %d 个 PRS 波形缓存", removed))
 end
 
 function validate_wave_cache_file(path)
@@ -6530,7 +6536,8 @@ function start_wave_cache_verification()
       break
     end
 
-    if safe_lower(extension(filename)) == "rwf" then
+    if prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR)
+      and prs_wave_cache_file_owned(join_path(WAVE_CACHE_DIR, filename)) then
       files[#files + 1] = filename
     end
 
@@ -6586,9 +6593,13 @@ function process_wave_cache_verification()
     end
 
     local path = join_path(WAVE_CACHE_DIR, filename)
-    local valid = validate_wave_cache_file(path)
+    local owned = prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR)
+      and prs_wave_cache_file_owned(path)
+    local valid = owned and validate_wave_cache_file(path)
 
-    if valid then
+    if not owned then
+      -- A file changed ownership after enumeration; never move/delete it.
+    elseif valid then
       session.valid = session.valid + 1
     else
       local quarantine = join_path(
@@ -6596,7 +6607,8 @@ function process_wave_cache_verification()
         os.date("%Y%m%d_%H%M%S_") .. filename
       )
 
-      if copy_file_streaming(path, quarantine) then
+      if not reaper.file_exists(quarantine) and copy_file_streaming(path, quarantine)
+        and prs_wave_cache_file_owned(path) then
         os.remove(path)
       end
 

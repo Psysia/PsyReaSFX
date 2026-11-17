@@ -221,7 +221,7 @@ local VERSION = "0.9.3 Stable"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.3",
-  source_sha256 = "bafc75a221b5e5d5969b108f40dd0115f324a1b92e2518cc3a2657ac542b4611",
+  source_sha256 = "0c4dd23b45fb7792fd64c67e5c2d9b73c22503546a1b2547686193a189b1c444",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -4804,25 +4804,106 @@ function can_run_heavy_job()
     ))
 end
 
-function normalized_cache_directory(path)
-  local normalized =
-    normalize_slashes(
-      trim(path or "")
-    )
-
-  if normalized == "" then
-    normalized = DEFAULT_WAVE_CACHE_DIR
+-- Cache paths must be absolute and unambiguous before any write or cleanup.
+-- This resolves lexical aliases, not filesystem links: Lua has no portable
+-- realpath/reparse-point API. File ownership checks are still required even
+-- inside a managed directory, including one reached through a junction.
+function prs_wave_cache_directory_path(path)
+  path = normalize_slashes(trim(path or ""))
+  if path == "" or path:find("[%z\1-\31]") then return nil end
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
   end
+  local root
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+    if not root or root:find('[<>"|?*]') or root:match("^\\\\%.\\") then return nil end
+    if root:sub(1, 2) == "\\\\" then
+      for part in root:gmatch("[^\\]+") do
+        if part:find(":") or part:find("[ .]$") then return nil end
+      end
+    end
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+    if not root then return nil end
+  end
+  local segments = {}
+  for segment in path:sub(#root + 1):gmatch("[^\\/]+") do
+    if segment == ".." then
+      if #segments == 0 then return nil end
+      segments[#segments] = nil
+    elseif segment ~= "." then
+      -- Windows strips trailing spaces/dots and interprets colons as streams.
+      -- Refuse those spellings instead of letting checks and I/O disagree.
+      if SEP == "\\" and (segment:find('[<>:"|?*]') or segment:find("[ .]$")) then
+        return nil
+      end
+      if SEP == "\\" then
+        local device = (segment:match("^([^.]+)") or ""):upper()
+        if device == "CON" or device == "PRN" or device == "AUX" or device == "NUL"
+          or device:match("^COM[1-9]$") or device:match("^LPT[1-9]$") then return nil end
+      end
+      segments[#segments + 1] = segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return root .. table.concat(segments, SEP)
+end
 
+function prs_wave_cache_directory_is_managed(path)
+  local normalized = prs_wave_cache_directory_path(path)
+  local default = prs_wave_cache_directory_path(DEFAULT_WAVE_CACHE_DIR)
+  return normalized ~= nil and (
+    (default and path_key(normalized) == path_key(default))
+      or path_key(basename(normalized)) == path_key("PsyReaSFX-wave-cache")
+  ) or false
+end
+
+-- An extension alone never proves ownership. Preserve files without a PRS
+-- signature, including old numeric-header caches; they can be regenerated.
+-- A recognized header is sufficient for ownership so a truncated PRS payload
+-- can still be diagnosed/quarantined by validate_wave_cache_file().
+function prs_wave_cache_file_owned(path)
+  local name = basename(path or "")
+  if #name ~= 12 or not name:match("^%x%x%x%x%x%x%x%x%.rwf$") then return false end
+  local file = io.open(path, "rb")
+  if not file then return false end
+  local prefix = file:read(80) or ""
+  file:close()
+  local header = prefix:match("^([^\r\n]*)\r?\n")
+  if not header then return false end
+  local version, count, channels = header:match("^(RWF[34]) (%d+) (%d+)$")
+  if not version then
+    version, count = header:match("^(RWF2) (%d+)$")
+    channels = "1"
+  end
+  count, channels = tonumber(count), tonumber(channels)
+  return version ~= nil and count ~= nil and count >= 1
+    and count <= (LARGE_WAVE_MAX_POINTS or 4096)
+    and channels ~= nil and channels >= 1 and channels <= 8
+end
+
+function normalized_cache_directory(path)
+  path = trim(path or "")
+  if path == "" then path = DEFAULT_WAVE_CACHE_DIR end
+  local normalized = prs_wave_cache_directory_path(path)
+  if not normalized then
+    return DEFAULT_WAVE_CACHE_DIR, "波形缓存目录必须是有效的绝对路径"
+  end
+  if not prs_wave_cache_directory_is_managed(normalized) then
+    normalized = join_path(normalized, "PsyReaSFX-wave-cache")
+  end
   return normalized
 end
 
 function apply_wave_cache_directory(path)
-  local normalized =
+  local normalized, warning =
     normalized_cache_directory(path)
 
   WAVE_CACHE_DIR = normalized
   state.wave_cache_dir = normalized
+  AppState.set("wave_cache_directory_warning", warning)
 
   reaper.RecursiveCreateDirectory(
     WAVE_CACHE_DIR,
@@ -7589,15 +7670,17 @@ function move_wave_cache_files(
   old_directory,
   new_directory
 )
-  old_directory =
-    normalized_cache_directory(
-      old_directory
-    )
-
-  new_directory =
-    normalized_cache_directory(
-      new_directory
-    )
+  -- Never reinterpret an old external folder as a cache to be emptied. Old
+  -- custom settings are redirected to a PRS subdirectory when loaded; their
+  -- original contents stay untouched, even when the user later requests a
+  -- migration back to the default directory.
+  old_directory = prs_wave_cache_directory_path(old_directory)
+  if not old_directory or not prs_wave_cache_directory_is_managed(old_directory) then
+    return 0, 1
+  end
+  local warning
+  new_directory, warning = normalized_cache_directory(new_directory)
+  if warning then return 0, 1 end
 
   if path_key(old_directory)
       == path_key(new_directory) then
@@ -7645,17 +7728,42 @@ function move_wave_cache_files(
         filename
       )
 
-    if HostApi.file_exists(target_path) then
-      os.remove(source_path)
-      moved = moved + 1
-    elseif copy_file_streaming(
-      source_path,
-      target_path
-    ) then
-      os.remove(source_path)
-      moved = moved + 1
-    else
-      failed = failed + 1
+    if prs_wave_cache_file_owned(source_path) then
+      -- Keep both copies on a name collision. A matching cache key neither
+      -- proves identical bytes nor grants permission to replace a file.
+      if HostApi.file_exists(target_path) then
+        failed = failed + 1
+      else
+        -- A waveform is small; capture it before creating the destination.
+        -- Do not use the generic atomic copier here: it removes an existing
+        -- temporary/backup filename which need not belong to PRS.
+        local input = io.open(source_path, "rb")
+        local bytes = input and input:read(128 * 1024 + 1)
+        if input then input:close() end
+        local output
+        if bytes and #bytes <= 128 * 1024
+          and prs_wave_cache_file_owned(source_path)
+          and not HostApi.file_exists(target_path) then
+          output = io.open(target_path, "wb")
+        end
+        local written = output and output:write(bytes)
+        local closed = output and output:close()
+        local copied = false
+        if written and closed and prs_wave_cache_file_owned(target_path) then
+          local target = io.open(target_path, "rb")
+          local target_bytes = target and target:read(128 * 1024 + 1)
+          if target then target:close() end
+          local source = io.open(source_path, "rb")
+          local source_bytes = source and source:read(128 * 1024 + 1)
+          if source then source:close() end
+          -- A concurrently regenerated source must not be removed after an
+          -- older snapshot was copied. A failed copy always leaves it intact.
+          copied = target_bytes == bytes and source_bytes == bytes
+            and prs_wave_cache_file_owned(source_path)
+            and os.remove(source_path) and true or false
+        end
+        if copied then moved = moved + 1 else failed = failed + 1 end
+      end
     end
   end
 
@@ -7672,10 +7780,15 @@ function switch_wave_cache_directory(
         or WAVE_CACHE_DIR
     )
 
-  new_directory =
+  local warning
+  new_directory, warning =
     normalized_cache_directory(
       new_directory
     )
+  if warning then
+    set_status(warning, true)
+    return false
+  end
 
   if path_key(old_directory)
       == path_key(new_directory) then
@@ -7746,12 +7859,17 @@ function prompt_wave_cache_directory()
     return
   end
 
-  local new_directory =
+  local new_directory, warning =
     normalized_cache_directory(input)
+  if warning then
+    set_status(warning, true)
+    return
+  end
 
   local answer =
     HostApi.MB(
       "是否将现有波形缓存移动到新目录？\n\n"
+        .. new_directory .. "\n\n"
         .. "是：移动已有缓存并切换。\n"
         .. "否：直接切换，旧目录保持不变。\n"
         .. "取消：不修改。",
@@ -24964,10 +25082,15 @@ function save_wave_to_disk(
   preserve_channels,
   spectral
 )
+  if not prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR) then return nil, "unmanaged cache directory" end
   ensure_dirs()
 
   local cache_key =
     wave_cache_key(asset, points, preserve_channels, spectral)
+  local cache_path = join_path(WAVE_CACHE_DIR, cache_key .. ".rwf")
+  if reaper.file_exists(cache_path) and not prs_wave_cache_file_owned(cache_path) then
+    return nil, "refusing to overwrite a foreign cache file"
+  end
   -- A new disk file makes any earlier "not on disk" probe stale.
   if state and state.wave_checked then
     state.wave_checked[cache_key] = nil
@@ -26158,22 +26281,23 @@ end
 
 function clear_wave_cache()
   reset_wave_cache_runtime()
-
-  while true do
-    local file =
-      reaper.EnumerateFiles(
-        WAVE_CACHE_DIR,
-        0
-      )
-
-    if not file then
-      break
-    end
-
-    os.remove(join_path(WAVE_CACHE_DIR, file))
+  if not prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR) then
+    set_status("未清理：目录不是 PRS 专属波形缓存目录", true)
+    return
   end
-
-  set_status("已清空波形缓存")
+  local files, index = {}, 0
+  while true do
+    local file = reaper.EnumerateFiles(WAVE_CACHE_DIR, index)
+    if not file then break end
+    local path = join_path(WAVE_CACHE_DIR, file)
+    if prs_wave_cache_file_owned(path) then files[#files + 1] = path end
+    index = index + 1
+  end
+  local removed = 0
+  for _, path in ipairs(files) do
+    if prs_wave_cache_file_owned(path) and os.remove(path) then removed = removed + 1 end
+  end
+  set_status(string.format("已清理 %d 个 PRS 波形缓存", removed))
 end
 
 function validate_wave_cache_file(path)
@@ -26264,7 +26388,8 @@ function start_wave_cache_verification()
       break
     end
 
-    if safe_lower(extension(filename)) == "rwf" then
+    if prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR)
+      and prs_wave_cache_file_owned(join_path(WAVE_CACHE_DIR, filename)) then
       files[#files + 1] = filename
     end
 
@@ -26320,9 +26445,13 @@ function process_wave_cache_verification()
     end
 
     local path = join_path(WAVE_CACHE_DIR, filename)
-    local valid = validate_wave_cache_file(path)
+    local owned = prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR)
+      and prs_wave_cache_file_owned(path)
+    local valid = owned and validate_wave_cache_file(path)
 
-    if valid then
+    if not owned then
+      -- A file changed ownership after enumeration; never move/delete it.
+    elseif valid then
       session.valid = session.valid + 1
     else
       local quarantine = join_path(
@@ -26330,7 +26459,8 @@ function process_wave_cache_verification()
         os.date("%Y%m%d_%H%M%S_") .. filename
       )
 
-      if copy_file_streaming(path, quarantine) then
+      if not reaper.file_exists(quarantine) and copy_file_streaming(path, quarantine)
+        and prs_wave_cache_file_owned(path) then
         os.remove(path)
       end
 
