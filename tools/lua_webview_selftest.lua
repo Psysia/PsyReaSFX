@@ -1,7 +1,9 @@
 local entry = assert(arg[1], "generated WebView Lua entry is required")
 local fixture = assert(arg[2], "isolated fixture directory is required")
+local shared_read_fixture = assert(loadfile("tools/lua_shared_readonly_fixture.lua"))()
 local messages, deferred, exits, extstate = {}, nil, {}, {}
 reaper = {
+  ReaWeb_ReadSharedRange = shared_read_fixture,
   GetResourcePath = function()
     return fixture
   end,
@@ -283,6 +285,16 @@ local asset = {
   description = "original",
   keywords = "metal",
 }
+-- These scenarios exercise UI gestures using fictitious audio. Model a copy
+-- already prepared by the source-protection service; actual copying and its
+-- failure/cancellation paths run in lua_soundminer_media_selftest.lua.
+local protected_media_path = SoundminerMedia.path
+SoundminerMedia.path = function(candidate)
+  if candidate and candidate.path == asset.path then
+    return fixture .. "\\prepared-private-audio.wav"
+  end
+  return protected_media_path(candidate)
+end
 runtime.assets, runtime.results = { asset }, { asset }
 runtime.by_path[path_key(asset.path)] = asset
 local cached_key = asset_path_sort_key(asset)

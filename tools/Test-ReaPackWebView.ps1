@@ -119,7 +119,7 @@ if ($text -notmatch 'PsyReaSFX_Runtime.lua' -or $text -notmatch ('(?m)^-- @versi
 $runtimeScript = Join-Path $FixtureDirectory 'Scripts/Psysia/PsyReaSFX_Runtime.lua'
 if ((Payload-Hash $runtimeScript) -cne (Payload-Hash (Join-Path $PackagePath 'PsyReaSFX_Runtime.lua'))) { throw 'ReaPack backend differs from the assembled runtime.' }
 if ([IO.File]::ReadAllText($runtimeScript) -notmatch 'local WEBVIEW_MODE = true') { throw 'Missing WebView runtime mode.' }
-foreach ($required in @('docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md','web/index.html','web/app.json','web/host.js','web/app.js','web/settings.js','web/icons.js','web/styles.css','runtime-lock.json','assets/brand/psyreasfx-icon.png','assets/ucs/ucs-8.2.1.tsv')) {
+foreach ($required in @('docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md','docs/SOUNDMINER_FORMAT_zh-CN.md','web/index.html','web/app.json','web/host.js','web/app.js','web/soundminer.js','web/settings.js','web/icons.js','web/styles.css','runtime-lock.json','assets/brand/psyreasfx-icon.png','assets/ucs/ucs-8.2.1.tsv')) {
     if (-not (Test-Path -LiteralPath (Join-Path $FixtureDirectory "Scripts/Psysia/$required"))) { throw "Missing script asset: $required" }
 }
 if ((Get-FileHash -LiteralPath (Join-Path $FixtureDirectory 'UserPlugins/reaper_reawebapi-x64.dll')).Hash.ToLowerInvariant() -cne $lock.binary.sha256) { throw 'Native extension checksum mismatch.' }

@@ -1051,15 +1051,17 @@ function windows_extended_path(path)
 end
 
 function open_source_binary_file(path)
-  local file, reason = io.open(path, "rb")
-  if file then return file end
-  local extended = windows_extended_path(path)
-  if extended ~= path then
-    local extended_file, extended_reason = io.open(extended, "rb")
-    if extended_file then return extended_file end
-    reason = extended_reason or reason
+  if SoundminerReadOnly and type(SoundminerReadOnly.open) == "function" then
+    return SoundminerReadOnly.open(path)
   end
-  return nil, reason
+  return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
+end
+
+function source_file_exists(path)
+  local file = open_source_binary_file(path)
+  if not file then return false end
+  file:close()
+  return true
 end
 
 function file_size(path)
@@ -1123,46 +1125,11 @@ end
 
 function directory_exists(path)
   path = normalize_external_path(path)
-
-  if path == "" then
-    return false
-  end
-
-  -- A trailing separator makes the no-op rename a directory probe instead of
-  -- the ambiguous `rename(path, path)`, which also succeeds for regular files
-  -- on Windows. Do not reject a path only because `reaper.file_exists()` says
-  -- true: some host/filesystem combinations report readable directories too.
-  local probe = path
-  if probe:sub(-1) ~= SEP then
-    probe = probe .. SEP
-  end
-
-  local ok, _, code = os.rename(probe, probe)
-  if ok or code == 13 then
-    return true
-  end
-
-  -- REAPER's enumerators use its native path layer and can still recognize a
-  -- populated directory when the Lua C runtime cannot probe a long/UNC path.
-  if type(reaper.EnumerateFiles) == "function" then
-    local listed, entry = pcall(reaper.EnumerateFiles, path, 0)
-    if listed and entry ~= nil then
-      return true
-    end
-  end
-
-  if type(reaper.EnumerateSubdirectories) == "function" then
-    local listed, entry = pcall(
-      reaper.EnumerateSubdirectories,
-      path,
-      0
-    )
-    if listed and entry ~= nil then
-      return true
-    end
-  end
-
-  return false
+  if path == "" or not SoundminerReadOnly then return false end
+  -- Even a no-op rename requests mutation rights. Probe directories through
+  -- the same shared read-only native handle used for source files.
+  local info = SoundminerReadOnly.stat(path)
+  return info ~= nil and info.directory == true
 end
 
 function path_is_inside(path, root)

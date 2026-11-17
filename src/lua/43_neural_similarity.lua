@@ -720,8 +720,13 @@ function neural_similarity_try_start(session)
 end
 
 function neural_similarity_cancel(session)
+  local media = session and session.neural_media_pending
+  if media and SoundminerMedia then
+    session.neural_media_pending = nil
+    SoundminerMedia.cancel(media)
+  end
   local job = session and session.neural_job
-  if not job then return false end
+  if not job then return media ~= nil end
   local file = io.open(job.paths.cancel, "wb")
   if not file then return false end
   file:write("cancel\n")
@@ -730,6 +735,10 @@ function neural_similarity_cancel(session)
 end
 
 function neural_similarity_cleanup_session(session, keep_cancel)
+  if session and session.neural_media_pending and SoundminerMedia then
+    SoundminerMedia.cancel(session.neural_media_pending)
+    session.neural_media_pending = nil
+  end
   neural_abort_manifest(session)
   neural_cleanup_job(session and session.neural_job, true, keep_cancel)
 end
@@ -1002,6 +1011,7 @@ end
 
 local function neural_process_manifest(session)
   if not can_run_heavy_job() then return end
+  if session.neural_media_pending then return end
   local manifest = session.neural_manifest
   if not manifest or not manifest.file then
     neural_fallback(session, "missing_manifest")
@@ -1014,13 +1024,29 @@ local function neural_process_manifest(session)
     and processed < Similarity.frame_records
     and (processed == 0 or host.time_precise() < deadline) do
     local asset = session.neural_assets[manifest.index]
+    local audio_path = asset.path
+    if SoundminerMedia and SoundminerMedia.requires(asset) then
+      audio_path = SoundminerMedia.path(asset)
+      if not audio_path then
+        local pending
+        local reason
+        pending, reason = SoundminerMedia.prepare({ asset }, function(ok, failure)
+          if session.neural_media_pending ~= pending then return end
+          session.neural_media_pending = nil
+          if not ok then neural_fallback(session, failure or "media_copy_failed") end
+        end, "准备神经检索音频副本")
+        if not pending then neural_fallback(session, reason or "media_copy_failed"); return end
+        session.neural_media_pending = pending
+        return
+      end
+    end
     local size = tonumber(asset.size) or 0
     if size <= 0 then size = file_size(asset.path) asset.size = size end
     if size <= 0 then neural_fallback(session, "asset_size") return end
     local written, write_error = manifest.file:write(table.concat({
       similarity_asset_signature(asset),
       "\t", tostring(math.floor(size)),
-      "\t-1\t", neural_json_encode(asset.path), "\n",
+      "\t-1\t", neural_json_encode(audio_path), "\n",
     }))
     if not written then neural_fallback(session, write_error) return end
     manifest.index = manifest.index + 1

@@ -351,6 +351,44 @@ local DATA_DIR =
   .. SEP
   .. "PsyReaSFX"
 
+-- A small registered wrapper may select an isolated Soundminer catalog. The
+-- shared runtime/assets still resolve from SCRIPT_DIR; every mutable data path
+-- below derives from this scope before any persistence service is initialized.
+local BASE_DATA_DIR = DATA_DIR
+PsyReaSFXScope = { id = "prs", kind = "prs", name = "PRS", identity = "",
+  sourcePath = "", baseDirectory = BASE_DATA_DIR, rootDirectory = BASE_DATA_DIR,
+  dataDirectory = DATA_DIR }
+if PRS_SOUNDMINER_CONTEXT ~= nil then
+  local context = PRS_SOUNDMINER_CONTEXT
+  local function context_text(value, limit, empty)
+    return type(value) == "string" and #value <= limit and (empty or value ~= "")
+      and not value:find("[%z\1-\31]")
+  end
+  local function context_path(value, empty)
+    if not context_text(value, 32768, empty) then return false end
+    if value == "" then return empty end
+    local normalized = value:gsub("\\", "/")
+    if not normalized:match("^%a:/") and normalized:sub(1, 1) ~= "/" then return false end
+    for part in normalized:gmatch("[^/]+") do if part == "." or part == ".." then return false end end
+    return true
+  end
+  local valid = type(context) == "table" and context_text(context.id, 19, false)
+    and context.id:match("^sm_%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")
+    and context_text(context.name, 256, false) and context_text(context.identity, 131072, false)
+    and type(context.params) == "table" and context_path(context.params.path, false)
+    and context_path(context.params.oldPrefix, true) and context_path(context.params.newPrefix, true)
+    and context_path(context.params.cachePath, true) and type(context.params.waveforms) == "boolean"
+    and ((context.params.oldPrefix == "") == (context.params.newPrefix == ""))
+  if not valid then error("Invalid isolated Soundminer catalog context", 0) end
+  local root = BASE_DATA_DIR .. SEP .. "isolated_soundminer" .. SEP .. context.id
+  DATA_DIR = root .. SEP .. "data"
+  -- A new isolated catalog must never inherit legacy PRS roots or preferences.
+  LEGACY_DATA_DIR = root .. SEP .. "legacy"
+  PsyReaSFXScope = { id = context.id, kind = "soundminer", name = context.name,
+    identity = context.identity, sourcePath = context.params.path, params = context.params,
+    baseDirectory = BASE_DATA_DIR, rootDirectory = root, dataDirectory = DATA_DIR }
+end
+
 local CONFIG_FILE =
   DATA_DIR .. SEP .. "config.tsv"
 
@@ -1263,6 +1301,10 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"] = "Soundminer: added %d, duplicates %d, offline %d, skipped %d, waveforms %d, waveforms to rebuild %d",
+  ["正在读取 Soundminer 音效库…"] = "Reading Soundminer library…",
+  ["导入 Soundminer 音效库"] = "Import Soundminer library",
+  ["选择 Soundminer 数据库"] = "Choose Soundminer database",
   ["拖动时预览，松开后应用；字体、行高、列宽和试听控件联动。"] = "Preview while dragging, apply on release. Font, rows, columns and audition controls scale together.",
   ["拖动时仅预览字号，松开后统一应用布局；支持 ±1 精调，Ctrl+单击滑块可输入整数。"] = "Dragging previews the font only; release to apply the layout. Use ±1 to fine-tune or Ctrl-click the slider to type an integer.",
   ["字体与导航"] = "Font & navigation",

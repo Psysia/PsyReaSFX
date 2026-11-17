@@ -73,9 +73,19 @@ export interface HostResponse {
   error?: string;
 }
 
+export interface CatalogScope {
+  id: string;
+  kind: "prs" | "soundminer";
+  name: string;
+  sourcePath?: string;
+  dataDirectory?: string;
+}
+
 export interface Session {
   protocol: 1;
   version?: string;
+  catalogScope?: CatalogScope;
+  sourceProtection?: boolean;
   author?: string;
   copyright?: string;
   host: "reaper" | "desktop";

@@ -74,6 +74,7 @@ local item=asset(urban.."/WAV") item.library="Aki" item.library_id="a"
 assert(product_navigation_source_names(item)[1]=="Urban Streets" and destroyed==1)
 assert(product_navigation_source_names(item)[1]=="Urban Streets" and opened==1)
 local a,b=os.tmpname(),os.tmpname()
+function open_source_binary_file(path) return io.open(path, "rb") end
 local function write(path,data) local handle=assert(io.open(path,"wb")) handle:write(data) handle:close() end
 write(a,"same cover bytes") write(b,"same cover bytes")
 assert(product_navigation_same_artwork(a,b))

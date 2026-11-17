@@ -1,3 +1,4 @@
+PsyReaSFXScope = { kind = "prs" }
 local path = assert(arg[1], "runtime source required")
 local file = assert(io.open(path, "rb"))
 local source = file:read("*a")

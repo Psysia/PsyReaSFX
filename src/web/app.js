@@ -3,6 +3,7 @@ import { createLocalizer } from "./locale.js";
 import { createSettings, transferPresets } from "./settings.js";
 import { icon } from "./icons.js";
 import { PlaybackClock } from "./playback.js";
+import { openSoundminerImport, openSoundminerCatalogs } from "./soundminer.js";
 import {
   resolveTheme,
   themeColors,
@@ -60,12 +61,12 @@ const defaults = {
     catid: 90,
   },
 };
-let prefs;
-try {
-  const saved = JSON.parse(
-    localStorage.getItem("psyreasfx.workspace.v1") || "null",
-  );
-  prefs =
+let preferenceKey = "psyreasfx.workspace.v1";
+let preferencesReady = false;
+function readPreferences(key) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "null");
+    return (
     saved?.version === 1
       ? {
           ...defaults,
@@ -74,10 +75,13 @@ try {
           columns: { ...defaults.columns, ...saved.columns },
           widths: { ...defaults.widths, ...saved.widths },
         }
-      : structuredClone(defaults);
-} catch {
-  prefs = structuredClone(defaults);
+      : structuredClone(defaults)
+    );
+  } catch {
+    return structuredClone(defaults);
+  }
 }
+let prefs = readPreferences(preferenceKey);
 migrateTheme(prefs);
 const systemTheme = matchMedia("(prefers-color-scheme: dark)");
 systemTheme.addEventListener("change", () => {
@@ -243,8 +247,9 @@ function clamp(value, minimum, maximum) {
 }
 
 function persist() {
+  if (!preferencesReady) return;
   try {
-    localStorage.setItem("psyreasfx.workspace.v1", JSON.stringify(prefs));
+    localStorage.setItem(preferenceKey, JSON.stringify(prefs));
   } catch {
     /* Full browser storage must not interrupt audition. */
   }
@@ -1502,6 +1507,12 @@ function applySnapshot(next) {
   if (next.autoPreview !== undefined)
     $("auto-preview").checked = next.autoPreview;
   $("scope-label").textContent = next.readOnly ? "只读保护" : "";
+  $("catalog-switch").textContent = next.catalogScope?.kind === "soundminer"
+    ? `Soundminer · ${next.catalogScope.name}`
+    : localizer.text("PRS 原有库");
+  if (host.session?.version)
+    document.title = `PsyReaSFX ${host.session.version}` +
+      (next.catalogScope?.kind === "soundminer" ? ` · ${next.catalogScope.name}` : "");
   if (
     previous &&
     (previous.loaded !== next.loaded ||
@@ -2840,6 +2851,7 @@ function renderFilterBar() {
   $("filter-bar").replaceChildren(...chips);
 }
 const taskLabels = {
+  media: "准备音频副本",
   scan: "扫描",
   import: "导入",
   transfer: "交付",
@@ -3003,6 +3015,7 @@ new ResizeObserver(() => {
   if (taskPanel.matches(":popover-open")) positionTasks();
 }).observe(taskPanel);
 window.addEventListener("resize", positionTasks);
+$("catalog-switch").onclick = () => openSoundminerCatalogs(command);
 $("clear-query").onclick = action(() => {
   $("search").value = "";
   return query({ search: "" });
@@ -3025,7 +3038,9 @@ for (const button of document.querySelectorAll("[data-menu]"))
       command("asset.action", { action: actionName });
     const menus = {
       file: [
+        ["选择独立库", () => openSoundminerCatalogs(command)],
         ["添加音效库", () => command("library.add")],
+        ["导入 Soundminer 音效库", () => openSoundminerImport(command)],
         ["保存当前搜索", saveSearch],
         null,
         [
@@ -3035,7 +3050,9 @@ for (const button of document.querySelectorAll("[data-menu]"))
         ["设置与维护", () => settingsDialog()],
       ],
       library: [
+        ["选择独立库", () => openSoundminerCatalogs(command)],
         ["音效库与来源", () => settingsDialog("libraries")],
+        ["导入 Soundminer 音效库", () => openSoundminerImport(command)],
         [
           "扫描来源",
           () => command("maintenance", { action: "scan" }),
@@ -3472,6 +3489,7 @@ const settings = createSettings({
   renderReview: renderClassificationReview,
   manage: manageItem,
   createCollection,
+  importSoundminer: () => openSoundminerImport(command),
 });
 function settingsDialog(section) {
   return settings.open(section);
@@ -4573,11 +4591,20 @@ for (const button of document.querySelectorAll("[data-rail]"))
 applyPreferences();
 try {
   host = await connectHost();
-  if (host.runtime?.status === "dock_patch_required")
+  if (host.session.catalogScope?.kind === "soundminer" &&
+      /^sm_[0-9a-f]{16}$/i.test(host.session.catalogScope.id)) {
+    preferenceKey += `.${host.session.catalogScope.id}`;
+    prefs = readPreferences(preferenceKey);
+    migrateTheme(prefs);
+  }
+  preferencesReady = true;
+  applyPreferences();
+  if (["dock_patch_required", "shared_read_required"].includes(host.runtime?.status))
     report(host.runtime.notice);
   if (host.session.version) {
     $("app-version").textContent = host.session.version;
-    document.title = `PsyReaSFX ${host.session.version}`;
+    document.title = `PsyReaSFX ${host.session.version}` +
+      (host.session.catalogScope?.kind === "soundminer" ? ` · ${host.session.catalogScope.name}` : "");
   }
   if (host.subscribeDrops)
     host

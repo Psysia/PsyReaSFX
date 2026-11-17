@@ -1,3 +1,4 @@
+PsyReaSFXScope = { kind = "prs" }
 local function read(path)
   local f=assert(io.open(path,"rb")); local s=f:read("*a"); f:close(); return s:gsub("\r\n","\n")
 end

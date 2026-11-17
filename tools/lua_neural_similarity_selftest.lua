@@ -585,4 +585,41 @@ do
   end)() }))
 end
 
+-- Native/external decoders receive only a private audio copy. Preparation is
+-- asynchronous and a late callback must not revive a canceled operation.
+do
+  local captured, waiting, ready = {}, nil, false
+  local original_frames = Similarity.frame_records
+  Similarity.frame_records = 1
+  SoundminerMedia = {
+    requires = function() return true end,
+    path = function(asset) if ready and asset.path == "shared.wav" then return "PRS/native_media/copy.wav" end end,
+    prepare = function(assets, callback)
+      waiting = { assets = assets, callback = callback }
+      return waiting
+    end,
+    cancel = function(pending) pending.canceled = true end,
+  }
+  local protected = { path = "shared.wav", size = 123, signature = "0000000000000001" }
+  local manifest = { index = 1, file = { write = function(_, bytes) captured[#captured + 1] = bytes; return true end } }
+  local isolated = { phase = "neural_manifest", neural_manifest = manifest,
+    neural_assets = { protected, { path = "second.wav", size = 123 } }, neural_asset_count = 2 }
+  process_neural_similarity_search(isolated)
+  assert(#captured == 0 and isolated.neural_media_pending == waiting)
+  process_neural_similarity_search(isolated)
+  assert(#captured == 0, "wait without writing the original media path")
+  ready = true
+  waiting.callback(true)
+  process_neural_similarity_search(isolated)
+  assert(#captured == 1 and captured[1]:find("PRS/native_media/copy.wav", 1, true))
+  assert(not captured[1]:find("shared.wav", 1, true))
+  process_neural_similarity_search(isolated)
+  local canceled = waiting
+  assert(neural_similarity_cancel(isolated) and canceled.canceled)
+  canceled.callback(false, "canceled")
+  assert(isolated.phase == "neural_manifest" and not isolated.neural_media_pending,
+    "late cancellation callback cannot restart or replace the search")
+  SoundminerMedia = nil
+  Similarity.frame_records = original_frames
+end
 print("lua neural similarity self-test passed")

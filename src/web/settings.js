@@ -90,6 +90,7 @@ export function createSettings({
   renderReview,
   manage,
   createCollection,
+  importSoundminer,
 }) {
   let generation = 0;
   let settings,
@@ -214,7 +215,9 @@ export function createSettings({
                 ? { zh: "简体中文", en: "English" }[option]
                 : option,
             ];
-        input.append(new Option(label, key));
+        const choice = new Option(label, key);
+        if (settings.sourceProtection && definition.key === "transfer_collision" && key === "overwrite") choice.disabled = true;
+        input.append(choice);
       }
     } else
       input.type =
@@ -244,6 +247,17 @@ export function createSettings({
     };
     if (definition.key === "transfer_dir") {
       const entry = el("span", "path-control");
+      if (settings.sourceProtection) {
+        input.readOnly = true;
+        const useProtected = button("使用 PRS 导出目录", () => {
+          input.value = settings.protectedTransferDir;
+          onChange(settings.protectedTransferDir);
+        });
+        entry.append(input, useProtected);
+        caption.append(el("small", null, "为保护源库，本版导出到 PRS 专属目录，已有文件不会被覆盖。"));
+        row.append(entry);
+        return row;
+      }
       const browse = button("浏览…", async () => {
         const result = await command("path.choose", {
           kind: "folder",
@@ -526,6 +540,10 @@ export function createSettings({
           target.remove();
           await management();
         }),
+          button("导入 Soundminer 音效库", async () => {
+            dialog.close();
+            await importSoundminer();
+          }),
       );
     else {
       for (const [label, kind] of [
@@ -707,6 +725,9 @@ export function createSettings({
   }
   function extra() {
     if (section === "general") {
+      if (settings.sourceProtection)
+        card("原音频保护").append(el("p", "muted",
+          "所有素材保持只读；首次播放、分析或插入会在后台准备音频副本，占用额外磁盘，可在任务中取消。"));
       const target = card(
         "试听控制",
         "停止按钮始终结束试听；暂停会保留位置，再次播放从该位置继续。",
@@ -888,6 +909,7 @@ export function createSettings({
   }
   function render() {
     body.replaceChildren();
+    const soundminerCatalog = getSnapshot()?.catalogScope?.kind === "soundminer";
     for (const item of nav.children) {
       item.classList.toggle(
         "active",
@@ -905,6 +927,7 @@ export function createSettings({
     );
     const groups = new Map();
     for (const definition of settings.schema || []) {
+      if (soundminerCatalog && definition.key.startsWith("watch_")) continue;
       // One control owns this color, shared with the legacy backend palette.
       if (definition.key === "selection_hex" && !filter) continue;
       if (
@@ -939,6 +962,7 @@ export function createSettings({
     if (
       section === "general" &&
       !filter &&
+      !soundminerCatalog &&
       !settings.schema?.some((item) => item.key === "watch_enabled")
     ) {
       card("后台监视").append(
@@ -953,6 +977,11 @@ export function createSettings({
         ),
       );
     }
+    if (section === "general" && !filter && soundminerCatalog)
+      card("Soundminer 音效库").append(
+        el("p", "muted", "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。"),
+        button("继续导入", () => command("soundminer.catalog.resume")),
+      );
   }
   async function reload() {
     const current = ++generation;

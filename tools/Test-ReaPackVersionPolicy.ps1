@@ -34,7 +34,9 @@ if ($neuralProject.Project.PropertyGroup.Version -cne $neuralMetadata.sidecarVer
 $webVersion = (Get-Content -LiteralPath (Join-Path $repoRoot 'src/web/app.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 if ($webVersion -notmatch '^0\.9\.\d+(?:-beta\d+(?:\.\d+)?)?$') { throw "Unexpected WebView version: $webVersion" }
 # The legacy renderer remains available while the independently versioned WebView line becomes stable.
-$mainVersions = @($webVersion, '0.9.3-beta18', '0.9.3-beta6', $currentVersion)
+$mainVersions = @($webVersion)
+if ($webVersion -ne '0.9.3') { $mainVersions += '0.9.3' }
+$mainVersions += @('0.9.3-beta18', '0.9.3-beta6', $currentVersion)
 $runtimeLock = Get-Content -LiteralPath (Join-Path $repoRoot 'dependencies/reawebapi/windows-x64.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $runtimeVersion = if ($runtimeLock.reapack_version) { $runtimeLock.reapack_version } else { $runtimeLock.version + '-beta1' }
 if ($webVersion -notmatch '-beta' -and ($runtimeVersion -match '-beta' -or
@@ -47,10 +49,13 @@ foreach ($archived in @("0.9.1", "0.9.0", "0.8.5", "0.7.23")) {
 }
 
 $packages = @($document.index.category.reapack)
+$runtimeVersions = @($runtimeVersion)
+if ($runtimeVersion -ne '0.3.9.30') { $runtimeVersions += '0.3.9.30' }
+$runtimeVersions += '0.3.9.30-beta3'
 foreach ($policy in @(
     @{ Name = "PsyReaSFX.lua"; Versions = $mainVersions },
     @{ Name = "PsyReaSFX Neural Similarity"; Versions = @($neuralVersion, '0.9.0') }
-    @{ Name = "PsyReaSFX WebView Runtime.ext"; Versions = @($runtimeVersion, '0.3.9.30-beta3') }
+    @{ Name = "PsyReaSFX WebView Runtime.ext"; Versions = $runtimeVersions }
 )) {
     $package = @($packages | Where-Object { $_.name -eq $policy.Name })
     if ($package.Count -ne 1) { throw "Expected one package: $($policy.Name)" }

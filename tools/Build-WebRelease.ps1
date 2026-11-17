@@ -3,6 +3,7 @@ param(
     [string]$OutputPath = '',
     [string]$Version = '',
     [string]$DependencyLockPath = (Join-Path $PSScriptRoot '../dependencies/reawebapi/windows-x64.lock.json'),
+    [string]$DependencyCachePath = '',
     [string]$ArchivePath = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -29,7 +30,14 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $
 if ($Target -eq 'reaper') {
     & (Join-Path $PSScriptRoot 'Build-LuaRelease.ps1') -Ui webview -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX_Runtime.lua')
     & (Join-Path $PSScriptRoot 'Build-WebLauncher.ps1') -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX.lua')
-    & (Join-Path $PSScriptRoot 'Get-ReaWebAPIRuntime.ps1') -LockPath $DependencyLockPath -Destination $OutputPath
+    & (Join-Path $PSScriptRoot 'Get-ReaWebAPIRuntime.ps1') -LockPath $DependencyLockPath -CachePath $DependencyCachePath -Destination $OutputPath
+    $dependency = Get-Content -LiteralPath $DependencyLockPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $noticePath = Join-Path $repoRoot 'dependencies/reawebapi/licenses/PRS_PATCH.md'
+    # Keep the exact corresponding source archive. Ship the current supplement
+    # when it names this compatibility binary; upstream candidates retain theirs.
+    if ($dependency.modified -and [IO.File]::ReadAllText($noticePath).Contains(([char]96 + $dependency.version + [char]96))) {
+        Copy-Item -LiteralPath $noticePath -Destination (Join-Path $OutputPath 'licenses/reawebapi/PRS_PATCH.md') -Force
+    }
     Copy-Item -Path (Join-Path $repoRoot 'packaging/webview/*') -Destination $OutputPath -Force
 }
 $assetDirectories = if ($Target -eq 'reaper') { @('ucs', 'brand', 'neural') } else { @('brand') }
@@ -46,6 +54,7 @@ if ($Target -eq 'reaper') {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md') -Destination $documentation
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md') -Destination $documentation
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_HARDENING_BETA18_zh-CN.md') -Destination $documentation
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/SOUNDMINER_FORMAT_zh-CN.md') -Destination $documentation
     $releaseNotes = Join-Path $repoRoot "docs/releases/release-notes-webview-$Version.md"
     if (Test-Path -LiteralPath $releaseNotes -PathType Leaf) {
         $releaseDocumentation = Join-Path $documentation 'releases'

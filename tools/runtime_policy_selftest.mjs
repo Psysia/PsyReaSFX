@@ -13,17 +13,31 @@ const policy = {
   distribution_channel: "stable",
   distribution_binary_sha256: "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30",
 };
-for (const [version, status] of [
+for (const [version, status, protection = false, shared = false] of [
   ["0.3.9.29", "dock_patch_required"],
   ["0.3.9.30-prs.1", "dock_patch_required"],
   ["0.3.9.32", "dock_patch_required"],
   ["0.3.9.30-prs.2", "native_acceptance_pending"],
   ["0.3.9.99", "external_unverified"],
+  ["0.3.9.30-prs.2", "shared_read_required", true, false],
+  ["0.3.9.30-prs.3", "external_unverified", true, true],
 ]) {
   let receive;
   let disposed = false;
+  let artworkPolls = 0;
+  const artworkReads = [];
   globalThis.window = {
     reaper: {
+      fs: {
+        async stat(path) {
+          artworkReads.push(path);
+          return { exists: true, size: 4 };
+        },
+        async readFile(path) {
+          artworkReads.push(path);
+          return new Uint8Array([1, 2, 3, 4]);
+        },
+      },
       lifecycle: {
         ready: Promise.resolve({
           version,
@@ -55,12 +69,23 @@ for (const [version, status] of [
       },
       host: {
         send(message) {
-          assert.equal(message.method, "session.ready");
+          let result;
+          if (message.method === "artwork.prepare") {
+            assert.equal(message.params.path, "D:/Soundminer/cover.png");
+            if (!shared) {
+              receive({protocol: 1, id: message.id, ok: false, error: "shared reader required"});
+              return;
+            }
+            result = artworkPolls++ === 0 ? { pending: true } : { path: "C:/PRS/native_media/cover.png" };
+          } else {
+            assert.equal(message.method, "session.ready");
+            result = { protocol: 1, runtimePolicy: policy, sourceProtection: protection, capabilities: { sharedSourceReads: shared } };
+          }
           receive({
             protocol: 1,
             id: message.id,
             ok: true,
-            result: { protocol: 1, runtimePolicy: policy },
+            result,
           });
         },
       },
@@ -72,6 +97,18 @@ for (const [version, status] of [
     assert.match(connection.runtime.notice, /稳定发行基线.*实机验收/);
   if (status === "dock_patch_required")
     assert.match(connection.runtime.notice, /0\.3\.9\.30/);
+  if (status === "shared_read_required") {
+    assert.match(connection.runtime.notice, /共享只读/);
+    assert.equal(connection.closed, false, "missing source API still permits browsing");
+    await assert.rejects(connection.artworkUrl("D:/Soundminer/cover.png"), /shared reader required/);
+    assert.deepEqual(artworkReads, [], "failed preparation cannot read the original");
+  }
+  if (protection && shared) {
+    const url = await connection.artworkUrl("D:/Soundminer/cover.png");
+    assert.match(url, /^blob:/);
+    URL.revokeObjectURL(url);
+    assert.deepEqual(artworkReads, ["C:/PRS/native_media/cover.png", "C:/PRS/native_media/cover.png"]);
+  }
   connection.close();
   assert.equal(disposed, true);
 }

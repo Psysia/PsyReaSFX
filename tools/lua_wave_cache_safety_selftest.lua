@@ -18,6 +18,7 @@ reaper = {}
 assert(loadfile(root .. "/src/lua/10_ui_core.lua"))()
 load_region("src/lua/20_jobs_storage.lua", "function move_wave_cache_files(", "function migrate_legacy_data()")
 load_region("src/lua/50_runtime_ui.lua", "function clear_wave_cache()", "function validate_wave_cache_file(path)")
+load_region("src/lua/50_runtime_ui.lua", "function save_wave_to_disk(", "local DIRECT_WAVE_MAX_FRAMES_PER_POINT")
 function reset_wave_cache_runtime() end
 local real_open, real_remove = io.open, os.remove
 local files, created, writes, removed = {}, {}, {}, {}
@@ -195,5 +196,14 @@ put(parent .. "\\00000001.rwf", waveform)
 put(parent .. "\\waveforms.sqlite", sqlite)
 clear_wave_cache()
 assert(#removed == 0, "unmanaged directories cannot be cleaned")
+function ensure_dirs() end
+function wave_cache_key() return "12345678" end
+reset()
+put(source, sqlite)
+assert(not save_wave_to_disk({}, 1, {count=1,peaks={0.5}}))
+assert(get(source) == sqlite and #writes == 0, "wave generation must not overwrite foreign content")
+WAVE_CACHE_DIR = parent
+assert(not save_wave_to_disk({}, 1, {count=1,peaks={0.5}}))
+assert(#writes == 0, "wave generation must not write into an unmanaged directory")
 io.open, os.remove = real_open, real_remove
 print("Wave cache safety passed: managed directories, format ownership, collisions, failed/concurrent copies and foreign-data preservation")

@@ -2231,3 +2231,15 @@ dialog::backdrop {
     bottom: 85px;
   }
 }
+/* Soundminer import uses the same modal controls as settings. */
+.soundminer-dialog { width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; }
+.soundminer-field { display: grid; grid-template-columns: 155px minmax(0, 1fr); gap: 12px; align-items: center; margin: 12px 0; }
+.soundminer-field input, .soundminer-field select { width: 100%; min-width: 0; }
+.soundminer-checkbox { display: flex; align-items: center; gap: 8px; margin: 14px 0; }
+.soundminer-dialog .path-label { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow: auto; }
+.soundminer-status { overflow-wrap: anywhere; }
+.soundminer-catalogs { display: grid; gap: 8px; }
+.soundminer-catalog { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.soundminer-catalog .path-label { margin: 4px 0 0; max-height: 50px; }
+#main-menu #catalog-switch { max-width: min(40vw, 300px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); }
+@media (max-width: 600px) { .soundminer-field { grid-template-columns: 1fr; gap: 5px; } }

@@ -85,11 +85,11 @@ function close_duplicate_comparison(comparison)
 end
 
 function begin_duplicate_comparison(left_path, right_path)
-  local left = io.open(left_path, "rb")
+  local left = open_source_binary_file(left_path)
   if not left then
     return nil, "left_open"
   end
-  local right = io.open(right_path, "rb")
+  local right = open_source_binary_file(right_path)
   if not right then
     left:close()
     return nil, "right_open"
@@ -146,11 +146,11 @@ function step_duplicate_comparison(comparison, chunk_size)
   elseif left_chunk ~= right_chunk then
     comparison.result = "different"
   elseif not left_chunk then
-    local left_changed = duplicate_file_changed_since(
+    local left_changed = (type(comparison.left.unchanged) == "function" and not comparison.left:unchanged()) or duplicate_file_changed_since(
       comparison.left_stat,
       duplicate_file_stat(comparison.left_path, comparison.bytes_compared)
     )
-    local right_changed = duplicate_file_changed_since(
+    local right_changed = (type(comparison.right.unchanged) == "function" and not comparison.right:unchanged()) or duplicate_file_changed_since(
       comparison.right_stat,
       duplicate_file_stat(comparison.right_path, comparison.bytes_compared)
     )

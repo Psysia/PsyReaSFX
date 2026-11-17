@@ -31,20 +31,24 @@ reaper = {
 
 assert(loadfile(module_path))()
 
+local canonical = canonical_source_path(directory_path)
+SoundminerReadOnly = { stat = function(path)
+  path = canonical_source_path(path)
+  if path == canonical then return {directory = true} end
+  if path == canonical_source_path(file_path) then return {directory = false} end
+end }
+local real_rename = os.rename
+os.rename = function() error("directory probes must never request rename rights") end
+
 assert(directory_exists(directory_path))
 assert(directory_exists(directory_path .. SEP))
 assert(not directory_exists(file_path))
 assert(not directory_exists(missing_path))
 
-local canonical = canonical_source_path(directory_path)
 assert(normalize_external_path('  "' .. directory_path .. '"  ') == canonical)
 assert(normalize_external_path(directory_path .. "\0\0") == canonical)
 assert(normalize_external_path("C:\\声音库") == "C:\\声音库")
 
-local real_rename = os.rename
-os.rename = function()
-  return nil, "fixture probe failure", 2
-end
 reaper.EnumerateFiles = function(path, index)
   if canonical_source_path(path) == canonical and index == 0 then
     return "fixture.wav"
@@ -60,6 +64,8 @@ reaper.EnumerateSubdirectories = function()
   error("fixture enumeration failure")
 end
 assert(not directory_exists(missing_path))
+SoundminerReadOnly = nil
+assert(not directory_exists(directory_path), "missing shared-read API must fail closed")
 os.rename = real_rename
 
 print("Lua directory self-test OK")

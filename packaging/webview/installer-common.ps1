@@ -31,7 +31,7 @@ function Read-Package([string]$Root) {
         }
     }
     foreach ($required in @(
-        'PsyReaSFX.lua', 'web/index.html', 'runtime-lock.json',
+        'PsyReaSFX.lua', 'web/index.html', 'web/soundminer.js', 'runtime-lock.json',
         'runtime/reawebapi/reaper_reawebapi-x64.dll',
         'Install-PsyReaSFX.ps1', 'Restore-PsyReaSFX.ps1', 'installer-common.ps1',
         'assets/brand/psyreasfx-icon.png', 'assets/ucs/ucs-8.2.1.tsv',

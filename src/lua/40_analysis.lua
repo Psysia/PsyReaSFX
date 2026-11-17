@@ -542,8 +542,13 @@ function request_loudness_analysis(asset, force)
 
   if not state.show_loudness_metrics
     or not asset
-    or not HostApi.file_exists(asset.path)
+    or not source_file_exists(asset.path)
     or type(HostApi.CalculateNormalization) ~= "function" then
+    return
+  end
+  if SoundminerMedia and SoundminerMedia.requires(asset)
+    and SoundminerMedia.defer({asset}, function() request_loudness_analysis(asset, force) end,
+      "正在准备响度分析副本") then
     return
   end
 
@@ -624,10 +629,10 @@ function process_loudness_queue()
 
     state.loudness_queued[queued.key] = nil
 
-    local source =
-      HostApi.PCM_Source_CreateFromFile(
-        queued.asset.path
-      )
+    local native_path = queued.asset.path
+    if SoundminerMedia then native_path = SoundminerMedia.path(queued.asset) end
+    if not native_path then return end
+    local source = HostApi.PCM_Source_CreateFromFile(native_path)
 
     if not source then
       return

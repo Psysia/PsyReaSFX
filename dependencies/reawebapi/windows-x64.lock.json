@@ -2,25 +2,25 @@
   "schema": "PsyReaSFX-Dependency-Lock-v1",
   "name": "ReaWebAPI",
   "platform": "windows-x64",
-  "version": "0.3.9.30-prs.2",
+  "version": "0.3.9.30-prs.3",
   "repository": "https://github.com/Psysia/ReaWebAPI",
   "upstream": "https://github.com/zaibuyidao/ReaWebAPI",
-  "commit": "0269fb82493ce7a9666146675054ba342db86fc4",
+  "commit": "bab1f3038813294beb12b7e4ecd9f09554d0ac0b",
   "license": "LGPL-3.0-or-later",
   "archive": {
-    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.2/ReaWebAPI-windows-x64-v0.3.9.30-prs.2.zip",
-    "file": "ReaWebAPI-windows-x64-v0.3.9.30-prs.2.zip",
-    "sha256": "205c13f63d2ec01b252ed2191ad5406a0163a9b2e4b08919a12f7737df3b0c00"
+    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.3/ReaWebAPI-windows-x64-v0.3.9.30-prs.3.zip",
+    "file": "ReaWebAPI-windows-x64-v0.3.9.30-prs.3.zip",
+    "sha256": "4fccdb838a6ff630df8f204170246a784c43eb0686fe412562fc74d755f10932"
   },
   "binary": {
     "entry": "UserPlugins/reaper_reawebapi-x64.dll",
     "file": "reaper_reawebapi-x64.dll",
-    "sha256": "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30"
+    "sha256": "ed692c39da0b016e07426f0dd04547698ce0d9881792b02613b9afa907eb7299"
   },
   "source": {
-    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.2/ReaWebAPI-source.zip",
+    "url": "https://github.com/Psysia/ReaWebAPI/releases/download/v0.3.9.30-prs.3/ReaWebAPI-source.zip",
     "file": "ReaWebAPI-source.zip",
-    "sha256": "9399466e4f10e9427881bd2ca0a5cdb0359231950e1ddddcd75181e2a9fc8dd2"
+    "sha256": "5d84acb77bb5f4578563adb9795b8482aa8e7352e8be7955735d8d89fd452993"
   },
   "runtime_policy": {
     "protocol": 1,
@@ -32,19 +32,19 @@
     ],
     "minimum_message_bytes": 900000,
     "baseline_versions": [
-      "0.3.9.30-prs.2"
+      "0.3.9.30-prs.3"
     ],
     "validation_status": "native_acceptance_pending",
-    "distribution_channel": "stable",
-    "distribution_binary_sha256": "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30",
-    "external_versions": "capability_check_with_notice"
+    "external_versions": "capability_check_with_notice",
+    "distribution_channel": "candidate"
   },
   "upgrade_policy": "Build from this lock. Prepare candidate locks separately. Stable distribution approval pins exact bytes; native REAPER acceptance remains a separate evidence status.",
   "modified": true,
   "upstream_commit": "f3d83ee333a5df0f1242b20efc706ce5a893dabf",
   "patches": [
     "windows-dock-top-level-redraw",
-    "windows-dock-transition-lifetime"
+    "windows-dock-transition-lifetime",
+    "shared-readonly-source-ranges"
   ],
-  "reapack_version": "0.3.9.30"
+  "reapack_version": "0.3.9.30.3-beta1"
 }

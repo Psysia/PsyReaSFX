@@ -122,6 +122,28 @@ jobs:
           lua tools/lua_webview_selftest.lua (Join-Path $webBuild 'PsyReaSFX_Runtime.lua') $webFixture
           if ($LASTEXITCODE -ne 0) { throw 'WebView backend regression failed.' }
 
+      - name: Verify Soundminer database and waveform import
+        shell: pwsh
+        run: |
+          $sqliteFixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Soundminer-SQLite'
+          python tools/generate_soundminer_sqlite_fixtures.py $sqliteFixture
+          if ($LASTEXITCODE -ne 0) { throw 'Soundminer SQLite fixtures failed.' }
+          lua tools/lua_soundminer_sqlite_selftest.lua src/lua/27_sqlite_reader.lua $sqliteFixture
+          if ($LASTEXITCODE -ne 0) { throw 'Soundminer SQLite regression failed.' }
+          lua tools/lua_soundminer_waveform_selftest.lua src/lua/28_soundminer_waveform.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Soundminer waveform regression failed.' }
+          $importFixture = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-Soundminer-import'
+          python tools/generate_soundminer_import_fixtures.py $importFixture
+          if ($LASTEXITCODE -ne 0) { throw 'Soundminer import fixtures failed.' }
+          lua tools/lua_soundminer_import_selftest.lua PsyReaSFX_WebView.lua $importFixture
+          if ($LASTEXITCODE -ne 0) { throw 'Soundminer import regression failed.' }
+          lua tools/lua_shared_readonly_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Shared source-read regression failed.' }
+          lua tools/lua_soundminer_media_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Private media isolation regression failed.' }
+          python tools/test_soundminer_source_concurrency.py --lua (Get-Command lua).Source --runtime (Resolve-Path PsyReaSFX_WebView.lua) --output (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-source-concurrency')
+          if ($LASTEXITCODE -ne 0) { throw 'Concurrent source writer regression failed.' }
+
       - name: Verify WebView layout and interactions
         shell: pwsh
         run: |
