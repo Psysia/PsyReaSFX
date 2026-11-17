@@ -31,7 +31,8 @@ function Read-Package([string]$Root) {
         }
     }
     foreach ($required in @(
-        'PsyReaSFX.lua', 'web/index.html', 'web/soundminer.js', 'runtime-lock.json',
+        'PsyReaSFX.lua', 'web/index.html', 'web/app.json', 'web/soundminer.js', 'runtime-lock.json',
+        'Install-BundledRuntime.ps1', 'runtime-setup.lua', 'bundled-runtime.json',
         'runtime/reawebapi/reaper_reawebapi-x64.dll',
         'Install-PsyReaSFX.ps1', 'Restore-PsyReaSFX.ps1', 'installer-common.ps1',
         'assets/brand/psyreasfx-icon.png', 'assets/ucs/ucs-8.2.1.tsv',
@@ -83,6 +84,27 @@ function Assert-RuntimePolicy([string]$Action, $Policy, [string]$BinarySha256 = 
         -not $stableBaseline -and -not $AllowUnverified) {
         throw 'The bundled runtime has not passed native REAPER acceptance. Candidate testing requires an isolated REAPER profile and the explicit -AllowUnverifiedRuntime option.'
     }
+}
+
+function Read-BundledRuntimePolicy([string]$Root, $Runtime) {
+    $path = Join-Path $Root 'bundled-runtime.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $policy = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    $app = Get-Content -LiteralPath (Join-Path $Root 'web/app.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($policy.schema -cne 'PsyReaSFX-Bundled-Runtime-v1' -or $policy.app_version -cne $app.version -or
+        $policy.binary_sha256 -cne $Runtime.binary.sha256 -or $policy.source_sha256 -cne $Runtime.source.sha256 -or
+        $policy.binary_sha256 -cnotmatch '^[a-f0-9]{64}$' -or $policy.source_sha256 -cnotmatch '^[a-f0-9]{64}$') { return $null }
+    foreach ($hash in $policy.replace_hashes) {
+        if ($hash -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid bundled runtime predecessor hash.' }
+    }
+    return $policy
+}
+
+function Get-RuntimeAction([string]$InstalledHash, [string]$BundledHash, $BundledPolicy, [switch]$Replace) {
+    if (-not $InstalledHash) { return 'install' }
+    if ($InstalledHash -ceq $BundledHash) { return 'reuse' }
+    if ($Replace -or ($BundledPolicy -and $InstalledHash -cin $BundledPolicy.replace_hashes)) { return 'replace' }
+    return 'preserve-external'
 }
 
 function Write-Receipt([string]$Path, $Receipt) {

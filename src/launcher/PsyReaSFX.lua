@@ -18,6 +18,11 @@ if not reaper.file_exists(runtime) then
   reaper.MB("PsyReaSFX 运行文件缺失，请重新安装完整版本。", "PsyReaSFX", 0)
   return
 end
+if type(reaper.ReaWeb_Open) ~= "function" or type(reaper.ReaWeb_ReadSharedRange) ~= "function" then
+  local setup, reason = loadfile(directory .. "runtime-setup.lua")
+  if not setup then reaper.MB("随包组件引导缺失，请重新安装 PRS 主程序。\n" .. tostring(reason), "PsyReaSFX", 0); return end
+  if not setup()(directory) then return end
+end
 local action = reaper.AddRemoveReaScript(true, 0, runtime, true)
 if not action or action == 0 then
   reaper.MB("无法注册 PsyReaSFX 后台运行入口，请检查脚本安装目录。", "PsyReaSFX", 0)

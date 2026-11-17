@@ -1,6 +1,7 @@
 {
   "id": "psyreasfx",
   "name": "PsyReaSFX",
-  "version": "0.9.4-beta1",
-  "dawKeyboard": false
+  "version": "0.9.4-beta2",
+  "dawKeyboard": false,
+  "bundledRuntime": true
 }

@@ -76,11 +76,14 @@ function Resolve-Payload([string]$Url) {
     }
     if ($Url -ceq ($assetPrefix + 'reaper_reawebapi-x64.dll')) { return Join-Path $PackagePath 'runtime/reawebapi/reaper_reawebapi-x64.dll' }
     if ($Url -ceq ($assetPrefix + 'ReaWebAPI-source.zip')) { return Join-Path $PackagePath 'sources/ReaWebAPI-source.zip' }
+    $bundledPrefix = "https://github.com/Psysia/PsyReaSFX/releases/download/v$($app.version)/"
+    if ($Url -ceq ($bundledPrefix + 'reaper_reawebapi-x64.dll')) { return Join-Path $PackagePath 'runtime/reawebapi/reaper_reawebapi-x64.dll' }
+    if ($Url -ceq ($bundledPrefix + 'ReaWebAPI-source.zip')) { return Join-Path $PackagePath 'sources/ReaWebAPI-source.zip' }
     throw "Unpinned ReaPack URL: $Url"
 }
 
 function Payload-Hash([string]$Path) {
-    if ([IO.Path]::GetExtension($Path) -in @('.lua','.js','.ts','.css','.html','.json','.md','.txt','.tsv','.h','.hpp') -or [IO.Path]::GetExtension($Path) -eq '') {
+    if ([IO.Path]::GetExtension($Path) -in @('.lua','.js','.ts','.css','.html','.json','.md','.txt','.tsv','.h','.hpp','.ps1','.cmd') -or [IO.Path]::GetExtension($Path) -eq '') {
         $text = [IO.File]::ReadAllText($Path).Replace("`r`n", "`n").Replace("`r", "`n")
         $hash = [Security.Cryptography.SHA256]::Create()
         try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($text))) }
@@ -90,10 +93,9 @@ function Payload-Hash([string]$Path) {
 }
 
 $installed = @{}
-foreach ($item in @(
-    @{ Package = $script; Version = $webVersion[0] },
-    @{ Package = $runtime; Version = $runtimeVersion[0] }
-)) {
+$installPackages = @(@{ Package = $script; Version = $webVersion[0] })
+if (-not $app.bundledRuntime) { $installPackages += @{ Package = $runtime; Version = $runtimeVersion[0] } }
+foreach ($item in $installPackages) {
     foreach ($source in $item.Version.source) {
         if ($source.platform -cne 'win64') { throw 'Every WebView payload must declare its Windows x64 platform.' }
         $type = if ($source.type) { [string]$source.type } else { [string]$item.Package.type }
@@ -122,6 +124,17 @@ if ([IO.File]::ReadAllText($runtimeScript) -notmatch 'local WEBVIEW_MODE = true'
 foreach ($required in @('docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md','docs/SOUNDMINER_FORMAT_zh-CN.md','web/index.html','web/app.json','web/host.js','web/app.js','web/soundminer.js','web/settings.js','web/icons.js','web/styles.css','runtime-lock.json','assets/brand/psyreasfx-icon.png','assets/ucs/ucs-8.2.1.tsv')) {
     if (-not (Test-Path -LiteralPath (Join-Path $FixtureDirectory "Scripts/Psysia/$required"))) { throw "Missing script asset: $required" }
 }
-if ((Get-FileHash -LiteralPath (Join-Path $FixtureDirectory 'UserPlugins/reaper_reawebapi-x64.dll')).Hash.ToLowerInvariant() -cne $lock.binary.sha256) { throw 'Native extension checksum mismatch.' }
-if ((Get-FileHash -LiteralPath (Join-Path $FixtureDirectory 'Data/PsyReaSFX-WebView/ReaWebAPI/sources/ReaWebAPI-source.zip')).Hash.ToLowerInvariant() -cne $lock.source.sha256) { throw 'Matching source archive checksum mismatch.' }
+if ($app.bundledRuntime) {
+    $binaryPath = Join-Path $FixtureDirectory 'Scripts/Psysia/runtime/reawebapi/reaper_reawebapi-x64.dll'
+    $sourcePath = Join-Path $FixtureDirectory 'Scripts/Psysia/sources/ReaWebAPI-source.zip'
+    foreach ($required in @('runtime-setup.lua','Install-BundledRuntime.ps1','installer-common.ps1','bundled-runtime.json','licenses/reawebapi/PRS_PATCH.md')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $FixtureDirectory "Scripts/Psysia/$required"))) { throw "Missing bundled component: $required" }
+    }
+    if (Test-Path -LiteralPath (Join-Path $FixtureDirectory 'UserPlugins')) { throw 'Main package must not claim the shared extension owned by other ReaPack packages.' }
+} else {
+    $binaryPath = Join-Path $FixtureDirectory 'UserPlugins/reaper_reawebapi-x64.dll'
+    $sourcePath = Join-Path $FixtureDirectory 'Data/PsyReaSFX-WebView/ReaWebAPI/sources/ReaWebAPI-source.zip'
+}
+if ((Get-FileHash -LiteralPath $binaryPath).Hash.ToLowerInvariant() -cne $lock.binary.sha256) { throw 'Native extension checksum mismatch.' }
+if ((Get-FileHash -LiteralPath $sourcePath).Hash.ToLowerInvariant() -cne $lock.source.sha256) { throw 'Matching source archive checksum mismatch.' }
 Write-Host "ReaPack WebView verified: $($app.version), $($installed.Count) pinned payloads, native extension and source/license materials, rollback entries retained. Online=$Online"

@@ -39,6 +39,7 @@ if ($Target -eq 'reaper') {
         Copy-Item -LiteralPath $noticePath -Destination (Join-Path $OutputPath 'licenses/reawebapi/PRS_PATCH.md') -Force
     }
     Copy-Item -Path (Join-Path $repoRoot 'packaging/webview/*') -Destination $OutputPath -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'dependencies/reawebapi/bundled-install.json') -Destination (Join-Path $OutputPath 'bundled-runtime.json')
 }
 $assetDirectories = if ($Target -eq 'reaper') { @('ucs', 'brand', 'neural') } else { @('brand') }
 foreach ($directory in $assetDirectories) {

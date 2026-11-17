@@ -102,7 +102,8 @@ jobs:
           node --check src/web/host.js
           $webBuild = Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView'
           ./tools/Build-WebRelease.ps1 -OutputPath $webBuild
-          ./tools/Test-ReaPackWebView.ps1 -PackagePath $webBuild
+          $reapackFixture = Join-Path $env:RUNNER_TEMP 'psfx-reapack'
+          ./tools/Test-ReaPackWebView.ps1 -PackagePath $webBuild -FixtureDirectory $reapackFixture
           $webTracked = [IO.File]::ReadAllText('PsyReaSFX_WebView.lua').Replace("`r`n", "`n")
           $webGenerated = [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX_Runtime.lua')).Replace("`r`n", "`n")
           if ($webTracked -cne $webGenerated) { throw 'Tracked WebView beta entry is stale.' }
@@ -110,8 +111,12 @@ jobs:
           if ($launcher -cne [IO.File]::ReadAllText((Join-Path $webBuild 'PsyReaSFX.lua')).Replace("`r`n", "`n")) { throw 'Tracked launcher is stale.' }
           lua tools/lua_webview_launcher_selftest.lua
           if ($LASTEXITCODE -ne 0) { throw 'WebView launcher regression failed.' }
+          lua tools/lua_runtime_setup_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled component launcher regression failed.' }
           $webVersion = (Get-Content 'src/web/app.json' -Raw | ConvertFrom-Json).version
           ./tools/Test-WebViewPackage.ps1 -PackagePath $webBuild -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-WebView-package-test') -ArchivePath (Join-Path $env:RUNNER_TEMP "PsyReaSFX_WebView_${webVersion}_win_x64.zip")
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/Test-BundledRuntime.ps1 -PackagePath (Join-Path $reapackFixture 'Scripts/Psysia') -FixtureDirectory (Join-Path $env:RUNNER_TEMP 'psfx-runtime-test')
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 bundled component regression failed.' }
           ./tools/Test-ReaWebAPICandidate.ps1
           luac -p (Join-Path $webBuild 'PsyReaSFX_Runtime.lua')
           if ($LASTEXITCODE -ne 0) { throw 'WebView entry does not compile.' }

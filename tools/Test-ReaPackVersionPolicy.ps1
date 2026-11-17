@@ -35,6 +35,7 @@ $webVersion = (Get-Content -LiteralPath (Join-Path $repoRoot 'src/web/app.json')
 if ($webVersion -notmatch '^0\.9\.\d+(?:-beta\d+(?:\.\d+)?)?$') { throw "Unexpected WebView version: $webVersion" }
 # The legacy renderer remains available while the independently versioned WebView line becomes stable.
 $mainVersions = @($webVersion)
+if ($webVersion -ne '0.9.4-beta1') { $mainVersions += '0.9.4-beta1' }
 if ($webVersion -ne '0.9.3') { $mainVersions += '0.9.3' }
 $mainVersions += @('0.9.3-beta18', '0.9.3-beta6', $currentVersion)
 $runtimeLock = Get-Content -LiteralPath (Join-Path $repoRoot 'dependencies/reawebapi/windows-x64.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
