@@ -96,6 +96,10 @@ $reapackVersion = if ($patched) {
 $lock | Add-Member -NotePropertyName reapack_version -NotePropertyValue $reapackVersion -Force
 $lock.runtime_policy.baseline_versions = @($version)
 $lock.runtime_policy.validation_status = 'native_acceptance_pending'
+# A candidate is never a stable distribution merely because it was derived
+# from the active release lock, including candidates with identical bytes.
+$lock.runtime_policy | Add-Member -NotePropertyName distribution_channel -NotePropertyValue 'candidate' -Force
+$lock.runtime_policy.PSObject.Properties.Remove('distribution_binary_sha256')
 $candidate = Join-Path $work 'candidate.lock.json'
 [IO.File]::WriteAllText($candidate, ($lock | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
 & (Join-Path $PSScriptRoot 'Get-ReaWebAPIRuntime.ps1') -LockPath $candidate -CachePath $CachePath -Destination (Join-Path $work 'verified')

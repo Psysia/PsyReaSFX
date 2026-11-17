@@ -22,19 +22,24 @@ $runtime = $packages | Where-Object { $_.name -eq 'PsyReaSFX WebView Runtime.ext
 $webVersion = @($script.version | Where-Object { $_.name -ceq $app.version })
 $runtimeName = if ($lock.reapack_version) { $lock.reapack_version } else { $lock.version + '-beta1' }
 $runtimeVersion = @($runtime.version | Where-Object { $_.name -ceq $runtimeName })
-if ($webVersion.Count -ne 1 -or $runtimeVersion.Count -ne 1 -or $runtime.type -cne 'extension') { throw 'Missing WebView beta or runtime extension package.' }
+if ($webVersion.Count -ne 1 -or $runtimeVersion.Count -ne 1 -or $runtime.type -cne 'extension') { throw 'Missing WebView or runtime extension package.' }
 $binarySource = @($runtimeVersion[0].source | Where-Object { $_.type -ceq 'extension' -and $_.file -ceq 'reaper_reawebapi-x64.dll' })
-if ($binarySource.Count -ne 1 -or $binarySource[0].InnerText -cnotmatch '^https://github\.com/Psysia/PsyReaSFX/releases/download/(v\d+\.\d+\.\d+-beta\d+(?:\.\d+)?)/reaper_reawebapi-x64\.dll$') {
-    throw 'Runtime binary must use a pinned project beta release.'
+if ($binarySource.Count -ne 1 -or $binarySource[0].InnerText -cnotmatch '^https://github\.com/Psysia/PsyReaSFX/releases/download/(v\d+\.\d+\.\d+(?:-beta\d+(?:\.\d+)?)?)/reaper_reawebapi-x64\.dll$') {
+    throw 'Runtime binary must use a pinned project release.'
 }
 $runtimeTag = $Matches[1]
 $assetPrefix = "https://github.com/Psysia/PsyReaSFX/releases/download/$runtimeTag/"
 $runtimeRawPrefix = "https://raw.githubusercontent.com/Psysia/PsyReaSFX/$runtimeTag/"
-if ($app.version -notmatch '-beta' -or $runtimeVersion[0].name -notmatch '-beta') { throw 'Experimental WebView packages must be pre-releases.' }
+$policySource = @($runtimeVersion[0].source | Where-Object { $_.file -ceq 'PsyReaSFX-WebView/ReaWebAPI/runtime-lock.json' })
+if ($policySource.Count -ne 1 -or $policySource[0].InnerText -cnotmatch '^https://raw\.githubusercontent\.com/Psysia/PsyReaSFX/(v\d+\.\d+\.\d+(?:-beta\d+(?:\.\d+)?)?)/dependencies/reawebapi/windows-x64\.lock\.json$') {
+    throw 'Runtime policy must use a pinned project release.'
+}
+$policyRawPrefix = "https://raw.githubusercontent.com/Psysia/PsyReaSFX/$($Matches[1])/"
+if ($app.version -notmatch '-beta' -and $runtimeVersion[0].name -match '-beta') { throw 'Stable WebView requires a stable-channel runtime package.' }
 if (-not ($script.version | Where-Object { $_.name -ceq '0.9.2-beta4' }) -or -not ($script.version | Where-Object { $_.name -ceq '0.9.1' })) { throw 'Legacy rollback versions are missing.' }
 
 function Resolve-Payload([string]$Url) {
-    foreach ($prefix in @($rawPrefix, $runtimeRawPrefix)) {
+    foreach ($prefix in @($rawPrefix, $runtimeRawPrefix, $policyRawPrefix)) {
         if ($Url.StartsWith($prefix, [StringComparison]::Ordinal)) {
             $relative = $Url.Substring($prefix.Length)
             if ($relative -match '(^|/)\.\.(/|$)' -or $relative.Contains(':')) { throw 'Unsafe repository source path.' }
@@ -90,7 +95,7 @@ foreach ($item in @(
     @{ Package = $runtime; Version = $runtimeVersion[0] }
 )) {
     foreach ($source in $item.Version.source) {
-        if ($source.platform -cne 'win64') { throw 'Every WebView beta payload must declare its Windows x64 platform.' }
+        if ($source.platform -cne 'win64') { throw 'Every WebView payload must declare its Windows x64 platform.' }
         $type = if ($source.type) { [string]$source.type } else { [string]$item.Package.type }
         $folder = switch ($type) { 'script' { 'Scripts/Psysia' } 'extension' { 'UserPlugins' } 'data' { 'Data' } default { throw "Unexpected source type: $type" } }
         $relative = [string]$source.file

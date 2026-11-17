@@ -56,15 +56,20 @@ fs.mkdirSync(output, { recursive: true });
       route.fulfill({
         json: [
           {
-            tag_name: "v0.9.3-beta14",
-            prerelease: true,
+            tag_name: "v0.9.4-beta1", prerelease: true, assets: [
+              { name: "PsyReaSFX_WebView_0.9.4-beta1_win_x64.zip", browser_download_url: "https://example.com/next-beta.zip" },
+            ],
+          },
+          {
+            tag_name: "v0.9.3",
+            prerelease: false,
             html_url:
-              "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta14",
+              "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3",
             assets: [
               {
-                name: "PsyReaSFX_WebView_0.9.3-beta14_win_x64.zip",
+                name: "PsyReaSFX_WebView_0.9.3_win_x64.zip",
                 browser_download_url:
-                  "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta14/PsyReaSFX_WebView_0.9.3-beta14_win_x64.zip",
+                  "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3/PsyReaSFX_WebView_0.9.3_win_x64.zip",
               },
             ],
           },
@@ -96,8 +101,8 @@ fs.mkdirSync(output, { recursive: true });
           .locator("[data-stable-version]")
           .allTextContents();
         assert(
-          labels.every((label) => label === "0.9.1"),
-          "WebView must never replace the stable version",
+          labels.every((label) => label === "0.9.3"),
+          "A newer beta must never replace the stable WebView version",
         );
         assert(
           (
@@ -105,7 +110,7 @@ fs.mkdirSync(output, { recursive: true });
               .locator("[data-webview-download]")
               .first()
               .getAttribute("href")
-          ).endsWith("0.9.3-beta14_win_x64.zip"),
+          ).endsWith("0.9.3_win_x64.zip"),
         );
         const shot = await page.locator(".hero-visual img").boundingBox();
         assert(

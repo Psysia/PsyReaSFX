@@ -58,7 +58,9 @@ try {
     & $tool -Tag latest -OutputPath $output -CachePath $candidateCache
     $candidate = Get-Content -LiteralPath $output -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($candidate.commit -cne $lock.commit -or $candidate.repository -cne 'https://github.com/Psysia/ReaWebAPI' -or
-        $candidate.runtime_policy.validation_status -cne 'native_acceptance_pending') { throw 'Candidate metadata or acceptance state is incorrect.' }
+        $candidate.runtime_policy.validation_status -cne 'native_acceptance_pending' -or
+        $candidate.runtime_policy.distribution_channel -cne 'candidate' -or
+        $candidate.runtime_policy.PSObject.Properties.Name -contains 'distribution_binary_sha256') { throw 'Candidate metadata, acceptance or distribution state is incorrect.' }
     & $tool -Tag "v$($lock.version)" -OutputPath (Join-Path $FixtureDirectory 'repeat.lock.json') -CachePath $candidateCache
     if ($global:PsyReaSFXCandidateTest.BundleDownloads -ne 1) { throw 'Repeated evaluation should reuse the verified archive.' }
     Assert-Rejected 'active' 'separate from the active' $activePath

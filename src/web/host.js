@@ -124,10 +124,12 @@ function inspectRuntime(native, policy) {
         ? policy.validation_status
         : "external_unverified",
     notice: dockWarning
-      ? "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30-beta3，并完全重启 REAPER。"
+      ? "此运行时缺少停靠／浮动切换修复。请在 ReaPack 更新 PsyReaSFX WebView Runtime 至 0.3.9.30，并完全重启 REAPER。"
       : baseline
         ? policy.validation_status === "native_acceptance_pending"
-          ? "随包候选版本 · 待 REAPER 实机验收"
+          ? policy.distribution_channel === "stable"
+            ? "稳定发行基线 · 实机验收记录待补充"
+            : "随包候选版本 · 待 REAPER 实机验收"
           : "随包基线版本"
         : "外部版本 · 接口检查通过，尚未完成本应用回归验证",
   };

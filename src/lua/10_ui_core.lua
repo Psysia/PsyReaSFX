@@ -1968,25 +1968,106 @@ function can_run_heavy_job()
     ))
 end
 
-function normalized_cache_directory(path)
-  local normalized =
-    normalize_slashes(
-      trim(path or "")
-    )
-
-  if normalized == "" then
-    normalized = DEFAULT_WAVE_CACHE_DIR
+-- Cache paths must be absolute and unambiguous before any write or cleanup.
+-- This resolves lexical aliases, not filesystem links: Lua has no portable
+-- realpath/reparse-point API. File ownership checks are still required even
+-- inside a managed directory, including one reached through a junction.
+function prs_wave_cache_directory_path(path)
+  path = normalize_slashes(trim(path or ""))
+  if path == "" or path:find("[%z\1-\31]") then return nil end
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
   end
+  local root
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+    if not root or root:find('[<>"|?*]') or root:match("^\\\\%.\\") then return nil end
+    if root:sub(1, 2) == "\\\\" then
+      for part in root:gmatch("[^\\]+") do
+        if part:find(":") or part:find("[ .]$") then return nil end
+      end
+    end
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+    if not root then return nil end
+  end
+  local segments = {}
+  for segment in path:sub(#root + 1):gmatch("[^\\/]+") do
+    if segment == ".." then
+      if #segments == 0 then return nil end
+      segments[#segments] = nil
+    elseif segment ~= "." then
+      -- Windows strips trailing spaces/dots and interprets colons as streams.
+      -- Refuse those spellings instead of letting checks and I/O disagree.
+      if SEP == "\\" and (segment:find('[<>:"|?*]') or segment:find("[ .]$")) then
+        return nil
+      end
+      if SEP == "\\" then
+        local device = (segment:match("^([^.]+)") or ""):upper()
+        if device == "CON" or device == "PRN" or device == "AUX" or device == "NUL"
+          or device:match("^COM[1-9]$") or device:match("^LPT[1-9]$") then return nil end
+      end
+      segments[#segments + 1] = segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return root .. table.concat(segments, SEP)
+end
 
+function prs_wave_cache_directory_is_managed(path)
+  local normalized = prs_wave_cache_directory_path(path)
+  local default = prs_wave_cache_directory_path(DEFAULT_WAVE_CACHE_DIR)
+  return normalized ~= nil and (
+    (default and path_key(normalized) == path_key(default))
+      or path_key(basename(normalized)) == path_key("PsyReaSFX-wave-cache")
+  ) or false
+end
+
+-- An extension alone never proves ownership. Preserve files without a PRS
+-- signature, including old numeric-header caches; they can be regenerated.
+-- A recognized header is sufficient for ownership so a truncated PRS payload
+-- can still be diagnosed/quarantined by validate_wave_cache_file().
+function prs_wave_cache_file_owned(path)
+  local name = basename(path or "")
+  if #name ~= 12 or not name:match("^%x%x%x%x%x%x%x%x%.rwf$") then return false end
+  local file = io.open(path, "rb")
+  if not file then return false end
+  local prefix = file:read(80) or ""
+  file:close()
+  local header = prefix:match("^([^\r\n]*)\r?\n")
+  if not header then return false end
+  local version, count, channels = header:match("^(RWF[34]) (%d+) (%d+)$")
+  if not version then
+    version, count = header:match("^(RWF2) (%d+)$")
+    channels = "1"
+  end
+  count, channels = tonumber(count), tonumber(channels)
+  return version ~= nil and count ~= nil and count >= 1
+    and count <= (LARGE_WAVE_MAX_POINTS or 4096)
+    and channels ~= nil and channels >= 1 and channels <= 8
+end
+
+function normalized_cache_directory(path)
+  path = trim(path or "")
+  if path == "" then path = DEFAULT_WAVE_CACHE_DIR end
+  local normalized = prs_wave_cache_directory_path(path)
+  if not normalized then
+    return DEFAULT_WAVE_CACHE_DIR, "波形缓存目录必须是有效的绝对路径"
+  end
+  if not prs_wave_cache_directory_is_managed(normalized) then
+    normalized = join_path(normalized, "PsyReaSFX-wave-cache")
+  end
   return normalized
 end
 
 function apply_wave_cache_directory(path)
-  local normalized =
+  local normalized, warning =
     normalized_cache_directory(path)
 
   WAVE_CACHE_DIR = normalized
   state.wave_cache_dir = normalized
+  AppState.set("wave_cache_directory_warning", warning)
 
   reaper.RecursiveCreateDirectory(
     WAVE_CACHE_DIR,

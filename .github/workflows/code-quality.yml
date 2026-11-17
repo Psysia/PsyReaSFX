@@ -153,6 +153,12 @@ jobs:
           node tools/website_ui_selftest.cjs (Join-Path $webTestTools 'node_modules/playwright')
           if ($LASTEXITCODE -ne 0) { throw 'Website browser regression failed.' }
 
+      - name: Verify wave cache ownership safety
+        shell: pwsh
+        run: |
+          lua tools/lua_wave_cache_safety_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Wave cache ownership regression failed.' }
+
       - name: Run Lua persistence fault injection
         shell: pwsh
         run: |

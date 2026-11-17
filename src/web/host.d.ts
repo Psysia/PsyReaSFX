@@ -87,6 +87,8 @@ export interface Session {
     minimum_message_bytes: number;
     baseline_versions: string[];
     validation_status: string;
+    distribution_channel?: "stable" | "candidate";
+    distribution_binary_sha256?: string;
   };
 }
 
