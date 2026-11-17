@@ -91,7 +91,14 @@ $lock | Add-Member -NotePropertyName modified -NotePropertyValue $patched -Force
 $lock | Add-Member -NotePropertyName upstream_commit -NotePropertyValue $(if ($patched) { $mirror.upstream_commit } else { $commit }) -Force
 $lock | Add-Member -NotePropertyName patches -NotePropertyValue $(if ($patched) { @($mirror.patches) } else { @() }) -Force
 $reapackVersion = if ($patched) {
-    [regex]::Replace($version, '-prs\.(\d+)$', { param($match) '-beta' + (1 + [int]$match.Groups[1].Value) })
+    [regex]::Replace($version, '-prs\.(\d+)$', {
+        param($match)
+        $patchNumber = [int]$match.Groups[1].Value
+        # Since 0.3.9.30 is stable, another 0.3.9.30-betaN sorts below it in
+        # ReaPack. A numeric patch segment lets opted-in users receive updates.
+        if ($patchNumber -ge 3) { ".$patchNumber-beta1" }
+        else { '-beta' + (1 + $patchNumber) }
+    })
 } else { $version + '-beta1' }
 $lock | Add-Member -NotePropertyName reapack_version -NotePropertyValue $reapackVersion -Force
 $lock.runtime_policy.baseline_versions = @($version)

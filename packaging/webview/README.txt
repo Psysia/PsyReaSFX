@@ -52,6 +52,6 @@ The 0.3.9.30-prs.3 compatibility build is modified; see licenses/reawebapi/PRS_P
 It retains dock/float fixes and adds bounded shared read-only source access.
 Updating only the PRS Lua/frontend does not update an externally managed DLL.
 ReaPack users must enable pre-releases and update both the script to 0.9.4-beta1
-and PsyReaSFX WebView Runtime to 0.3.9.30-beta4, then restart REAPER.
+and PsyReaSFX WebView Runtime to 0.3.9.30.3-beta1, then restart REAPER.
 PsyReaSFX licensing does not replace these component licenses. The native DLL
 is installed as a separate, replaceable shared REAPER extension.

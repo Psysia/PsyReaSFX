@@ -4,11 +4,13 @@
 
 验证历史 ReaPack 在线载荷时，`Test-ReaPackWebView.ps1 -Online` 从对应发行 tag 读取原始锁定清单；浅克隆需先获取这些 tag，避免将主分支新的镜像地址误认为历史载荷被修改。
 
-当前锁定 0.3.9.30-prs.2（ReaPack 稳定包版本 0.3.9.30，保留 0.3.9.30-beta3 回退；二进制相同），状态为 `native_acceptance_pending`，需要完成 REAPER 实机验收。
+0.9.4 Beta 1 锁定候选 `0.3.9.30-prs.3`（ReaPack `0.3.9.30.3-beta1`），增加 `ReaWeb_ReadSharedRange` 有界共享只读接口。原素材和目录以共享读／写／删除模式打开，PRS 原生媒体消费者只接收私有副本。接口缺失时不回退普通文件读取。状态为 `native_acceptance_pending`，Windows 原生并发及 ABI 测试不等于 REAPER 实机验收。
 
-发行通道与实机验收分开记录。活动清单的 `runtime_policy.distribution_channel = stable` 与 `distribution_binary_sha256` 明确指定本次发行基线，安装器在验证包清单、DLL 和匹配源码后允许默认安装该固定哈希版本；`validation_status` 仍为 `native_acceptance_pending`，诊断不会显示成已验收。稳定发行决定不代表实机测试通过。
+0.9.3 稳定版仍固定 `0.3.9.30-prs.2`（ReaPack `0.3.9.30`），已发布 tag 和对应二进制不变。发行通道与实机验收分开记录：稳定 tag 的 `distribution_channel = stable` 与 `distribution_binary_sha256` 允许默认安装该固定哈希版本，但不会把 `validation_status` 显示成已验收。本 Beta 活动清单保持 `candidate`，不继承稳定哈希授权。
 
 自定义／上游候选使用 `distribution_channel = candidate`，不会继承稳定哈希授权；未达到 `native_accepted` 时仍默认拒绝新增或替换，测试须显式传入 `-AllowUnverifiedRuntime`。现有外部 DLL 默认保留，只有 `-UseBundledRuntime` 才替换。
+
+ReaPack 新候选包使用 `0.3.9.30.3-beta1`：最后的数字 `3` 对应 PRS 补丁版本，DLL 仍为 `0.3.9.30-prs.3`。按 [ReaPack 版本比较](https://github.com/cfillion/reapack/blob/master/src/version.cpp)，`0.3.9.30-beta4` 会排在已发布的 `0.3.9.30` 之前，不能成为自动更新；增加数字段可让启用预发布的用户收到新版，同时保持稳定用户的版本不变。
 
 ## 开发时自动使用最新版
 

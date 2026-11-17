@@ -3,6 +3,7 @@
 -- compared across runs, so a different digest would silently orphan them.
 local core_path = assert(arg[1], "UI core module is required")
 local runtime_path = assert(arg[2], "runtime UI module is required")
+function open_source_binary_file(path) return io.open(path, "rb") end
 
 local function read(path)
   local handle = assert(io.open(path, "rb"))

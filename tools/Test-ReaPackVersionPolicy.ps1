@@ -49,10 +49,13 @@ foreach ($archived in @("0.9.1", "0.9.0", "0.8.5", "0.7.23")) {
 }
 
 $packages = @($document.index.category.reapack)
+$runtimeVersions = @($runtimeVersion)
+if ($runtimeVersion -ne '0.3.9.30') { $runtimeVersions += '0.3.9.30' }
+$runtimeVersions += '0.3.9.30-beta3'
 foreach ($policy in @(
     @{ Name = "PsyReaSFX.lua"; Versions = $mainVersions },
     @{ Name = "PsyReaSFX Neural Similarity"; Versions = @($neuralVersion, '0.9.0') }
-    @{ Name = "PsyReaSFX WebView Runtime.ext"; Versions = @($runtimeVersion, '0.3.9.30-beta3') }
+    @{ Name = "PsyReaSFX WebView Runtime.ext"; Versions = $runtimeVersions }
 )) {
     $package = @($packages | Where-Object { $_.name -eq $policy.Name })
     if ($package.Count -ne 1) { throw "Expected one package: $($policy.Name)" }

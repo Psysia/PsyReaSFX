@@ -156,7 +156,7 @@ local function prompt_runtime_install(missing_api)
     or (installed and "ReaWebAPI" or "PsyReaSFX WebView Runtime")
   local instructions = installed
       and "已发现 ReaWebAPI 的安装记录或 DLL。请先重启 REAPER，使已安装的组件生效。\n" .. "版本缺少接口时，请在原组件中检查更新。\n"
-    or "首次安装请同步 Psysia 软件源，安装 PsyReaSFX WebView Runtime 0.3.9.30。\n"
+    or "首次安装请同步 Psysia 软件源并启用预发布，安装 PsyReaSFX WebView Runtime 0.3.9.30.3-beta1。\n"
   if owner then
     instructions = instructions .. "当前归属 " .. owner.label .. "\n"
   end
