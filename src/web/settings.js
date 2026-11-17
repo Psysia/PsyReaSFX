@@ -90,6 +90,7 @@ export function createSettings({
   renderReview,
   manage,
   createCollection,
+  importSoundminer,
 }) {
   let generation = 0;
   let settings,
@@ -526,6 +527,10 @@ export function createSettings({
           target.remove();
           await management();
         }),
+          button("导入 Soundminer 音效库", async () => {
+            dialog.close();
+            await importSoundminer();
+          }),
       );
     else {
       for (const [label, kind] of [

@@ -2231,3 +2231,11 @@ dialog::backdrop {
     bottom: 85px;
   }
 }
+/* Soundminer import uses the same modal controls as settings. */
+.soundminer-dialog { width: min(680px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; }
+.soundminer-field { display: grid; grid-template-columns: 155px minmax(0, 1fr); gap: 12px; align-items: center; margin: 12px 0; }
+.soundminer-field input, .soundminer-field select { width: 100%; min-width: 0; }
+.soundminer-checkbox { display: flex; align-items: center; gap: 8px; margin: 14px 0; }
+.soundminer-dialog .path-label { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 100px; overflow: auto; }
+.soundminer-status { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .soundminer-field { grid-template-columns: 1fr; gap: 5px; } }

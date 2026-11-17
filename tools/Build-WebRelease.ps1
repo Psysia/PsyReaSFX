@@ -46,6 +46,13 @@ if ($Target -eq 'reaper') {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_PERFORMANCE_BETA14_zh-CN.md') -Destination $documentation
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_UNDOCK_BETA15_zh-CN.md') -Destination $documentation
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/WEBVIEW_HARDENING_BETA18_zh-CN.md') -Destination $documentation
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/SOUNDMINER_FORMAT_zh-CN.md') -Destination $documentation
+    $releaseNotes = Join-Path $repoRoot "docs/releases/release-notes-webview-$Version.md"
+    if (Test-Path -LiteralPath $releaseNotes -PathType Leaf) {
+        $releaseDocumentation = Join-Path $documentation 'releases'
+        [IO.Directory]::CreateDirectory($releaseDocumentation) | Out-Null
+        Copy-Item -LiteralPath $releaseNotes -Destination $releaseDocumentation
+    }
     $prefix = $OutputPath.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
     $files = @(Get-ChildItem -LiteralPath $OutputPath -File -Recurse | Sort-Object FullName | ForEach-Object {
         [ordered]@{

@@ -1263,6 +1263,10 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"] = "Soundminer: added %d, duplicates %d, offline %d, skipped %d, waveforms %d, waveforms to rebuild %d",
+  ["正在读取 Soundminer 音效库…"] = "Reading Soundminer library…",
+  ["导入 Soundminer 音效库"] = "Import Soundminer library",
+  ["选择 Soundminer 数据库"] = "Choose Soundminer database",
   ["拖动时预览，松开后应用；字体、行高、列宽和试听控件联动。"] = "Preview while dragging, apply on release. Font, rows, columns and audition controls scale together.",
   ["拖动时仅预览字号，松开后统一应用布局；支持 ±1 精调，Ctrl+单击滑块可输入整数。"] = "Dragging previews the font only; release to apply the layout. Use ±1 to fine-tune or Ctrl-click the slider to type an integer.",
   ["字体与导航"] = "Font & navigation",

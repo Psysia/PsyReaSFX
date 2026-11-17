@@ -10,6 +10,8 @@ const policy = {
   minimum_message_bytes: 900000,
   baseline_versions: ["0.3.9.30-prs.2"],
   validation_status: "native_acceptance_pending",
+  distribution_channel: "stable",
+  distribution_binary_sha256: "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30",
 };
 for (const [version, status] of [
   ["0.3.9.29", "dock_patch_required"],
@@ -66,8 +68,10 @@ for (const [version, status] of [
   };
   const connection = await connectHost();
   assert.equal(connection.runtime.status, status, version);
+  if (status === "native_acceptance_pending")
+    assert.match(connection.runtime.notice, /稳定发行基线.*实机验收/);
   if (status === "dock_patch_required")
-    assert.match(connection.runtime.notice, /0\.3\.9\.30-beta3/);
+    assert.match(connection.runtime.notice, /0\.3\.9\.30/);
   connection.close();
   assert.equal(disposed, true);
 }

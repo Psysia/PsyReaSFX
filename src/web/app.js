@@ -3,6 +3,7 @@ import { createLocalizer } from "./locale.js";
 import { createSettings, transferPresets } from "./settings.js";
 import { icon } from "./icons.js";
 import { PlaybackClock } from "./playback.js";
+import { openSoundminerImport } from "./soundminer.js";
 import {
   resolveTheme,
   themeColors,
@@ -3026,6 +3027,7 @@ for (const button of document.querySelectorAll("[data-menu]"))
     const menus = {
       file: [
         ["添加音效库", () => command("library.add")],
+        ["导入 Soundminer 音效库", () => openSoundminerImport(command)],
         ["保存当前搜索", saveSearch],
         null,
         [
@@ -3036,6 +3038,7 @@ for (const button of document.querySelectorAll("[data-menu]"))
       ],
       library: [
         ["音效库与来源", () => settingsDialog("libraries")],
+        ["导入 Soundminer 音效库", () => openSoundminerImport(command)],
         [
           "扫描来源",
           () => command("maintenance", { action: "scan" }),
@@ -3472,6 +3475,7 @@ const settings = createSettings({
   renderReview: renderClassificationReview,
   manage: manageItem,
   createCollection,
+  importSoundminer: () => openSoundminerImport(command),
 });
 function settingsDialog(section) {
   return settings.open(section);

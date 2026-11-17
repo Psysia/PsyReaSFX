@@ -893,6 +893,22 @@ WebUI.handlers["library.drop"] = function(params)
   return true
 end
 
+WebUI.handlers["soundminer.discover"] = function()
+  return SoundminerImport.discover()
+end
+WebUI.handlers["soundminer.choose"] = function()
+  return SoundminerImport.choose()
+end
+WebUI.handlers["soundminer.inspect"] = function(params)
+  return SoundminerImport.inspect(text(params.path, 32768))
+end
+WebUI.handlers["soundminer.import"] = function(params)
+  writable()
+  return SoundminerImport.start(params)
+end
+WebUI.handlers["soundminer.report"] = function()
+  return state.soundminer_report or false
+end
 WebUI.handlers["library.add"] = function(params)
   writable()
   local library = params.libraryId and state.library_by_id[params.libraryId]
@@ -2408,6 +2424,7 @@ function webview_publish()
       reverse = state.reverse,
     },
     taskDetails = WebUI.task_details(),
+    soundminerReport = state.soundminer_report,
     tasks = {
       scan = state.scan ~= nil,
       import = state.import_session ~= nil,

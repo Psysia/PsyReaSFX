@@ -240,6 +240,14 @@ async function main() {
               return;
             }
             let result = true;
+            if (request.method === "soundminer.discover") result = [
+              { name: "Soundminer Fixture", version: "SoundminerV7", path: "C:/Soundminer/Databases/fixture.sqlite" },
+            ];
+            if (request.method === "soundminer.inspect") result = {
+              path: request.params.path, cachePath: "C:/Soundminer/Caches/waveforms.sqlite",
+              samples: ["/Volumes/SFX/中文/impact.wav"],
+            };
+            if (request.method === "soundminer.choose") result = false;
             if (request.method === "artwork.url")
               result =
                 "data:image/svg+xml," +
@@ -567,6 +575,27 @@ async function main() {
       displayVersion,
     );
     assert.equal(await page.title(), `PsyReaSFX ${displayVersion}`);
+    await page.locator('[data-menu="file"]').click();
+    await page.getByRole("button", { name: "导入 Soundminer 音效库", exact: true }).click();
+    const soundminer = page.locator(".soundminer-dialog");
+    await soundminer.getByRole("button", { name: "一键导入", exact: true }).waitFor();
+    await page.waitForFunction(() => !document.querySelector(".soundminer-dialog .primary").disabled);
+    assert.match(await soundminer.locator(".path-label").textContent(), /中文\/impact.wav/);
+    await soundminer.locator("summary").click();
+    await soundminer.getByRole("textbox", { name: "Soundminer 原音频路径", exact: true }).fill("/Volumes/SFX");
+    await soundminer.getByRole("button", { name: "一键导入", exact: true }).click();
+    assert.match(await soundminer.locator(".soundminer-status").textContent(), /同时填写/);
+    await soundminer.getByRole("textbox", { name: "本机音频路径", exact: true }).fill("D:/SFX");
+    fs.mkdirSync(output, { recursive: true });
+    await page.screenshot({ path: path.join(output, "soundminer-import.png") });
+    await soundminer.getByRole("button", { name: "一键导入", exact: true }).click();
+    await soundminer.waitFor({ state: "detached" });
+    const soundminerCalls = await page.evaluate(() => window.testCalls.filter((call) => call.method === "soundminer.import"));
+    assert.equal(soundminerCalls.length, 1, "invalid mapping must not start an import");
+    assert.deepEqual(soundminerCalls[0].params, {
+      path: "C:/Soundminer/Databases/fixture.sqlite", cachePath: "C:/Soundminer/Caches/waveforms.sqlite",
+      oldPrefix: "/Volumes/SFX", newPrefix: "D:/SFX", waveforms: true,
+    });
     assert.equal(
       await page.locator('.column-title[data-column="index"]').count(),
       0,

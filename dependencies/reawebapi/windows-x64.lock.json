@@ -35,14 +35,16 @@
       "0.3.9.30-prs.2"
     ],
     "validation_status": "native_acceptance_pending",
+    "distribution_channel": "stable",
+    "distribution_binary_sha256": "b29f5f794fbde6e1abedacb06a7538ef1c62837b639b678f56266de140224c30",
     "external_versions": "capability_check_with_notice"
   },
-  "upgrade_policy": "Build from this lock. Prepare candidate locks separately. Promote after regression and native REAPER acceptance.",
+  "upgrade_policy": "Build from this lock. Prepare candidate locks separately. Stable distribution approval pins exact bytes; native REAPER acceptance remains a separate evidence status.",
   "modified": true,
   "upstream_commit": "f3d83ee333a5df0f1242b20efc706ce5a893dabf",
   "patches": [
     "windows-dock-top-level-redraw",
     "windows-dock-transition-lifetime"
   ],
-  "reapack_version": "0.3.9.30-beta3"
+  "reapack_version": "0.3.9.30"
 }

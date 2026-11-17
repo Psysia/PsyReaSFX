@@ -190,6 +190,44 @@ try {
   fail(`Stable channel runtime regression failed: ${error.message}`);
 }
 
+try {
+  const nodes = new Map([
+    "data-stable-version", "data-stable-download", "data-webview-version",
+    "data-webview-download", "data-webview-release", "data-neural-download",
+  ].map((name) => [`[${name}]`, [{ href: "", textContent: "" }]]));
+  sandbox.document.querySelectorAll = (selector) => nodes.get(selector) || [];
+  const stableArchive = "https://example.com/PsyReaSFX_WebView_0.9.3_win_x64.zip";
+  sandbox.fetch = async () => ({
+    ok: true,
+    json: async () => [
+      { tag_name: "v0.9.4-beta1", prerelease: true, assets: [
+        { name: "PsyReaSFX_WebView_0.9.4-beta1_win_x64.zip", browser_download_url: "https://example.com/new-beta.zip" },
+      ] },
+      { tag_name: "v0.9.3", prerelease: false, html_url: "https://example.com/v0.9.3", assets: [
+        { name: "PsyReaSFX_WebView_0.9.3_win_x64.zip", browser_download_url: stableArchive },
+      ] },
+      { tag_name: "v0.9.3-beta18", prerelease: true, assets: [
+        { name: "PsyReaSFX_WebView_0.9.3-beta18_win_x64.zip", browser_download_url: "https://example.com/old-beta.zip" },
+      ] },
+    ],
+  });
+  await vm.runInNewContext("updateReleaseChannels()", sandbox);
+  for (const selector of ["[data-stable-version]", "[data-webview-version]"]) {
+    if (nodes.get(selector)[0].textContent !== "0.9.3") throw new Error(`Wrong stable version: ${selector}`);
+  }
+  for (const selector of ["[data-stable-download]", "[data-webview-download]"]) {
+    if (nodes.get(selector)[0].href !== stableArchive) throw new Error(`Wrong stable WebView ZIP: ${selector}`);
+  }
+  if (nodes.get("[data-webview-release]")[0].href !== "https://example.com/v0.9.3") {
+    throw new Error("Stable WebView release notes were replaced by a Beta");
+  }
+  if (nodes.get("[data-neural-download]")[0].href !== fallbackNeuralUrl) {
+    throw new Error("WebView-only stable release must retain the complete neural package");
+  }
+} catch (error) {
+  fail(`Stable WebView release regression failed: ${error.message}`);
+}
+
 for (const relative of [
   "README.md", "README_zh-CN.md", "docs/USER_GUIDE_en-US.md", "docs/USER_GUIDE_zh-CN.md",
   "neural/README.md", "neural/package/README.md", "neural/package/README_zh-CN.md",

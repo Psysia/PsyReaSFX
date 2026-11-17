@@ -1,12 +1,12 @@
 const REPOSITORY = "Psysia/PsyReaSFX";
 const REAPACK_URL = "https://github.com/Psysia/PsyReaSFX/raw/main/index.xml";
 const STABLE_FALLBACK = {
-  version: "0.9.1",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.1",
+  version: "0.9.3",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3",
 };
 const WEBVIEW_FALLBACK = {
-  version: "0.9.3 Beta 18",
-  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3-beta18",
+  version: "0.9.3",
+  url: "https://github.com/Psysia/PsyReaSFX/releases/tag/v0.9.3",
 };
 const NEURAL_FALLBACK_URL =
   "https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip";
@@ -64,15 +64,15 @@ const messages = {
     releaseHeading: "A new interface.<br>A familiar workflow.",
     stableChannel: "Stable channel",
     stableSummary:
-      "The classic ReaImGui interface. The default ReaPack channel for established production workflows.",
+      "WebView is now the Windows x64 stable edition, retaining the Beta 18 reliability fixes. Classic 0.9.1 remains available for rollback and other platforms.",
     getStable: "Get Stable ↗",
-    previewChannel: "WebView Beta",
+    previewChannel: "WebView Stable",
     previewSummary:
       "The new Windows interface: full-width waveforms, precise click-to-audition, resumable playback, compact FX, searchable UCS and 29 Codex themes.",
     getPreview: "WebView release notes ↗",
     neuralAddon: "Download complete neural ZIP · Windows x64 ↗",
     neuralInstallNote:
-      'Normal ReaPack synchronization now updates PsyReaSFX.lua to 0.9.1 Stable. Neural retrieval requires the separate <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">PsyReaSFX Neural Similarity package</a>; neither package requires pre-release opt-in. Versions retains 0.9.0, 0.8.5 and 0.7.23 Stable.',
+      'Normal ReaPack synchronization now updates PsyReaSFX.lua to 0.9.3 WebView Stable. Neural retrieval requires the separate <a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">PsyReaSFX Neural Similarity package</a>; neither package requires pre-release opt-in. Install WebView Runtime 0.3.9.30 separately and restart REAPER. Versions retains classic 0.9.1 and earlier releases.',
     downloadDesktop: "Download Desktop Alpha 8",
     desktopGuide: "Desktop guide ↗",
     completeLoop: "THE COMPLETE SOUND-LIBRARY LOOP",
@@ -151,19 +151,19 @@ const messages = {
       "On small screens, swipe the table horizontally to compare all versions.",
     comparisonCaption: "REAPER editions · classic / native preview / WebView",
     comparisonFeature: "Feature",
-    comparisonLatest: "WebView Beta",
+    comparisonLatest: "WebView Stable",
     comparisonDetails: "Detailed version history ↗",
     betaGuideLink: "Install WebView: illustrated guide ↓",
     betaGuideKicker: "WEBVIEW QUICK START",
     betaGuideHeading: "Install the new workspace.",
     betaGuideLead:
-      "WebView is a Windows x64 pre-release. Enable pre-releases for the script and install its ReaWebAPI runtime dependency. Your existing catalog and source files stay in place.",
+      "Install the Windows x64 stable edition and its separate ReaWebAPI runtime package. Your existing catalog and source files stay in place.",
     betaStepOne:
       "Import the repository above, synchronize, then open <strong>ReaPack → Browse packages</strong> and search for PsyReaSFX.",
     betaStepTwo:
-      "For <strong>PsyReaSFX.lua</strong>, enable <strong>Enable pre-releases</strong>; unpin an older version if necessary.",
+      "Select <strong>PsyReaSFX.lua</strong> and unpin an older version if necessary. Pre-release opt-in is not required.",
     betaStepThree:
-      "Choose <strong>Versions → 0.9.3-beta18</strong>. Update <strong>PsyReaSFX WebView Runtime to 0.3.9.30-beta3</strong> in the same repository. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.",
+      "Choose <strong>Versions → 0.9.3</strong>. Install/update <strong>PsyReaSFX WebView Runtime 0.3.9.30</strong> in the same repository. js_ReaScriptAPI enables native folder pickers and the Windows taskbar entry.",
     betaStepFour:
       "After installing or updating the runtime, fully quit and restart REAPER, then run <strong>PsyReaSFX.lua</strong>. Restarting the script alone keeps the old DLL loaded. Running the same action again brings the existing window back.",
     betaNeuralNote:
@@ -175,7 +175,7 @@ const messages = {
     betaScreenshotLabel:
       "View the historical ReaPack menu example at full resolution",
     betaScreenshotCaption:
-      "Earlier ReaPack screenshot showing the menu locations. After synchronization, enable pre-releases and select 0.9.3-beta18 for WebView. Stable remains 0.9.1.",
+      "Earlier ReaPack screenshot showing the menu locations. Synchronize and select 0.9.3 Stable and runtime 0.3.9.30; pre-release opt-in is not required.",
     compareIncluded: "Included",
     compareRetained: "Retained",
     compareNone: "—",
@@ -245,11 +245,11 @@ const messages = {
     quickStart: "QUICK START",
     installOnce: "Install once.<br>Update inside REAPER.",
     installLead:
-      "Import and synchronize the repository, then install PsyReaSFX 0.9.1 Stable, which includes every 0.9.0 feature plus reliability fixes.",
+      "Import and synchronize the repository, then install PsyReaSFX 0.9.3 WebView Stable and its separate runtime package on Windows x64.",
     stepOne: "Open Extensions → ReaPack → Import repositories…",
     stepTwo: "Paste the repository URL below.",
     stepThree:
-      "Synchronize packages, search for PsyReaSFX and install 0.9.1 Stable.",
+      "Synchronize packages, install PsyReaSFX 0.9.3 Stable and WebView Runtime 0.3.9.30, then restart REAPER.",
     copy: "Copy",
     copied: "Copied",
     host: "Host",
@@ -271,7 +271,7 @@ const messages = {
     stayInFlow: "Stay in the sound. Stay in the flow.",
     getPsy: "Get PsyReaSFX",
     releases: "Releases",
-    webviewDownload: "Get WebView Beta ↗",
+    webviewDownload: "Get WebView Stable ↗",
     webviewChannel: "WebView · Windows x64",
     webviewScreenshot: "Actual workspace · captured in Beta 11",
     previewOne: "01 / Listen where you point",
@@ -335,15 +335,15 @@ const messages = {
     releaseHeading: "新的界面。<br>熟悉的工作流。",
     stableChannel: "稳定通道",
     stableSummary:
-      "经典 ReaImGui 界面。ReaPack 默认稳定通道，适合沿用既有制作工作流。",
+      "WebView 已成为 Windows x64 稳定版本，保留 Beta 18 的可靠性修复。经典 0.9.1 继续供回退和其他平台使用。",
     getStable: "获取稳定版 ↗",
-    previewChannel: "WebView 测试版",
+    previewChannel: "WebView 稳定版",
     previewSummary:
       "新的 Windows 界面：全宽波形、点击定位试听、暂停续播、紧凑 FX、UCS 搜索与 29 个 Codex 对应主题。",
     getPreview: "WebView 更新说明 ↗",
     neuralAddon: "直接下载完整神经包 ZIP · Windows x64 ↗",
     neuralInstallNote:
-      '普通 ReaPack 同步即可更新 PsyReaSFX.lua 至 0.9.1 正式版。神经检索需另装<a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">PsyReaSFX Neural Similarity 附加包</a>；两者均无需启用预发布。Versions 保留 0.9.0、0.8.5 和 0.7.23 正式版。',
+      '普通 ReaPack 同步即可更新 PsyReaSFX.lua 至 0.9.3 WebView 正式版。神经检索需另装<a data-neural-download href="https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.0/PsyReaSFX_Neural_Similarity_v0_9_0_win_x64.zip">PsyReaSFX Neural Similarity 附加包</a>；两者均无需启用预发布。另装 WebView Runtime 0.3.9.30 后重启 REAPER。Versions 保留经典 0.9.1 及更早版本。',
     downloadDesktop: "下载桌面 Alpha 8",
     desktopGuide: "桌面版说明 ↗",
     completeLoop: "完整的音效素材库工作闭环",
@@ -414,19 +414,19 @@ const messages = {
     comparisonScroll: "小屏幕可左右滑动表格，查看所有版本。",
     comparisonCaption: "REAPER 版本 · 经典版 / 原生测试版 / WebView",
     comparisonFeature: "功能",
-    comparisonLatest: "WebView 测试版",
+    comparisonLatest: "WebView 稳定版",
     comparisonDetails: "查看完整更新日志 ↗",
     betaGuideLink: "安装 WebView：图解步骤 ↓",
     betaGuideKicker: "开始使用 WEBVIEW",
     betaGuideHeading: "安装新版工作区。",
     betaGuideLead:
-      "WebView 当前是 Windows x64 预发布。为主脚本启用预发布，并安装 ReaWebAPI 运行时依赖；沿用已有素材目录与索引。",
+      "安装 Windows x64 稳定版，并另装 ReaWebAPI 运行库包。继续使用已有音效库和源文件。",
     betaStepOne:
       "导入上方仓库并同步，打开 <strong>ReaPack → Browse packages</strong>，搜索 PsyReaSFX。",
     betaStepTwo:
-      "在 <strong>PsyReaSFX.lua</strong> 右键菜单中启用 <strong>Enable pre-releases</strong>；如固定了旧版，先取消固定。",
+      "选择 <strong>PsyReaSFX.lua</strong>；如固定了旧版，先取消固定。无需启用预发布。",
     betaStepThree:
-      "选择 <strong>Versions → 0.9.3-beta18</strong>，同时将同一仓库的 <strong>PsyReaSFX WebView Runtime 更新到 0.3.9.30-beta3</strong>。js_ReaScriptAPI 用于系统目录选择与 Windows 任务栏入口。",
+      "选择 <strong>Versions → 0.9.3</strong>，并另装同仓库的 <strong>PsyReaSFX WebView Runtime 0.3.9.30</strong>。js_ReaScriptAPI 用于系统目录选择与 Windows 任务栏入口。",
     betaStepFour:
       "安装或更新运行库后，必须完全退出并重启 REAPER，再运行 <strong>PsyReaSFX.lua</strong>。仅重跑脚本仍会使用旧 DLL。之后重复运行同一动作即可唤回窗口。",
     betaNeuralNote:
@@ -437,7 +437,7 @@ const messages = {
       "WebView 沿用已有目录索引、波形与本地神经缓存；这次界面更新无需全库重扫。",
     betaScreenshotLabel: "查看历史 ReaPack 菜单示例原图",
     betaScreenshotCaption:
-      "早期 ReaPack 截图，仅用于说明菜单位置。同步后启用预发布，选择 0.9.3-beta18 安装 WebView；稳定通道仍是 0.9.1。",
+      "早期 ReaPack 截图，仅用于说明菜单位置。同步后选择 0.9.3 稳定版和运行库 0.3.9.30，无需启用预发布。",
     compareIncluded: "有",
     compareRetained: "保留",
     compareNone: "—",
@@ -503,10 +503,10 @@ const messages = {
     quickStart: "快速开始",
     installOnce: "安装一次，<br>以后在 REAPER 内更新。",
     installLead:
-      "在 ReaPack 中导入并同步仓库，再安装 PsyReaSFX 0.9.1 正式版，包含 0.9.0 全部功能及可靠性修复。",
+      "在 ReaPack 中导入并同步仓库，再安装 Windows x64 的 PsyReaSFX 0.9.3 WebView 正式版及独立运行库包。",
     stepOne: "打开 Extensions → ReaPack → Import repositories…",
     stepTwo: "粘贴下方仓库地址。",
-    stepThree: "同步软件包，搜索 PsyReaSFX，安装 0.9.1 正式版。",
+    stepThree: "同步软件包，安装 PsyReaSFX 0.9.3 正式版和 WebView Runtime 0.3.9.30，然后重启 REAPER。",
     copy: "复制",
     copied: "已复制",
     host: "宿主",
@@ -527,7 +527,7 @@ const messages = {
     stayInFlow: "专注声音，保持工作流。",
     getPsy: "获取 PsyReaSFX",
     releases: "版本发布",
-    webviewDownload: "下载 WebView 测试版 ↗",
+    webviewDownload: "下载 WebView 稳定版 ↗",
     webviewChannel: "WebView · Windows x64",
     webviewScreenshot: "实机工作区 · 截图来自 Beta 11",
     previewOne: "01 / 点到哪里，听到哪里",
@@ -597,8 +597,14 @@ function formatReleaseVersion(tagName) {
     .replace(/-beta/i, " Beta ");
 }
 
-function findLuaArchive(release) {
+function findWebViewArchive(release) {
   return (release?.assets || []).find((item) =>
+    /^PsyReaSFX_WebView_[\d.]+(?:-beta[\d.]+)?_win_x64\.zip$/i.test(item.name),
+  );
+}
+
+function findLuaArchive(release) {
+  return findWebViewArchive(release) || (release?.assets || []).find((item) =>
     /^PsyReaSFX_v(?!.*Desktop).*\.zip$/i.test(item.name),
   );
 }
@@ -652,18 +658,13 @@ async function updateReleaseChannels() {
     const webview = releases.find(
       (release) =>
         !release.draft &&
-        release.prerelease &&
-        (release.assets || []).some((asset) =>
-          /^PsyReaSFX_WebView_[\d.]+-beta\d+_win_x64\.zip$/i.test(asset.name),
-        ),
+        !release.prerelease && findWebViewArchive(release),
     );
     document.querySelectorAll("[data-webview-version]").forEach((el) => {
       el.textContent =
         formatReleaseVersion(webview?.tag_name) || WEBVIEW_FALLBACK.version;
     });
-    const webviewArchive = webview?.assets?.find((asset) =>
-      /^PsyReaSFX_WebView_[\d.]+-beta\d+_win_x64\.zip$/i.test(asset.name),
-    );
+    const webviewArchive = findWebViewArchive(webview);
     document.querySelectorAll("[data-webview-download]").forEach((el) => {
       el.href = webviewArchive?.browser_download_url || WEBVIEW_FALLBACK.url;
     });

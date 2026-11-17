@@ -380,6 +380,8 @@ DB_FIELDS = {
   "fingerprint_modified",
   "fingerprint_stat_source",
   "last_seen",
+  "notes",
+  "soundminer_metadata",
 }
 
 function save_libraries()

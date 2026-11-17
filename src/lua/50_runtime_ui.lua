@@ -4286,7 +4286,10 @@ function process_scan_finalize(scan)
       function(key, asset)
         local belongs =
           scan.root_keys[path_key(asset.root or "")] == true
-        return belongs and not scan.seen[key]
+        -- An imported offline reference has never been observed locally. Keep
+        -- it available for relinking until the user explicitly removes it.
+        local imported_offline = (asset.soundminer_metadata or "") ~= "" and (asset.last_seen or 0) == 0
+        return belongs and not scan.seen[key] and not imported_offline
       end,
       function(key, asset)
         state.favorites[key] = nil
@@ -6664,6 +6667,7 @@ function cancel_import_session()
   if not session then
     return
   end
+  if session.soundminer then return SoundminerImport.cancel(session) end
 
   if session.phase ~= "cancel_cleanup"
     and session.phase ~= "cancel_rebuild" then
@@ -6748,6 +6752,7 @@ function process_import_session()
   if not session then
     return
   end
+  if session.soundminer then return SoundminerImport.process(session) end
 
   if session.job_token
     and session.job_token.cancel_requested then
@@ -26179,6 +26184,9 @@ end
 
 function cleanup()
   if WEBVIEW_MODE then webview_close() end
+  if state.import_session and state.import_session.soundminer then
+    SoundminerImport.cancel(state.import_session)
+  end
   if state.startup_session then
     if state.startup_session.reader then
       pcall(function() state.startup_session.reader:close() end)

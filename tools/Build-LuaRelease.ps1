@@ -20,6 +20,8 @@ $modules = @(
     "15_host_adapter.lua",
     "20_jobs_storage.lua",
     "25_ucs_catalog.lua",
+    "27_sqlite_reader.lua",
+    "28_soundminer_waveform.lua",
     "30_catalog.lua",
     "35_incremental_results.lua",
     "36_asset_journal.lua",
@@ -31,6 +33,7 @@ $modules = @(
     "44_ai_semantic_search.lua",
     "45_duplicate_confirmation.lua",
     "46_product_navigation.lua",
+    "47_soundminer_import.lua",
     "50_runtime_ui.lua"
 )
 if ($Ui -eq 'webview') {

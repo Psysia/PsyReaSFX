@@ -29,9 +29,9 @@ foreach ($file in $manifest.files) {
 $installedHash = if (Test-Path -LiteralPath $plugin) { Get-SHA256 $plugin } else { '' }
 $action = if (-not $installedHash) { 'install' } elseif ($installedHash -eq $bundledHash) { 'reuse' } elseif ($UseBundledRuntime) { 'replace' } else { 'preserve-external' }
 if ($PlanOnly) {
-    return [pscustomobject]@{ Resource = $resource; Application = $app; Runtime = $action; Version = $manifest.version; RuntimeValidation = $runtimePolicy.validation_status }
+    return [pscustomobject]@{ Resource = $resource; Application = $app; Runtime = $action; Version = $manifest.version; RuntimeValidation = $runtimePolicy.validation_status; RuntimeDistribution = $runtimePolicy.distribution_channel }
 }
-Assert-RuntimePolicy $action $runtimePolicy -AllowUnverified:$AllowUnverifiedRuntime
+Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$AllowUnverifiedRuntime
 Assert-ReaperClosed
 $guard = Open-InstallerLock $resource
 try {
@@ -43,7 +43,7 @@ try {
     }
     $installedHash = if (Test-Path -LiteralPath $plugin) { Get-SHA256 $plugin } else { '' }
     $action = if (-not $installedHash) { 'install' } elseif ($installedHash -eq $bundledHash) { 'reuse' } elseif ($UseBundledRuntime) { 'replace' } else { 'preserve-external' }
-    Assert-RuntimePolicy $action $runtimePolicy -AllowUnverified:$AllowUnverifiedRuntime
+    Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$AllowUnverifiedRuntime
     [IO.Directory]::CreateDirectory($transaction) | Out-Null
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     foreach ($file in $manifest.files) {
