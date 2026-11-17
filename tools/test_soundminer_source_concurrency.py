@@ -52,8 +52,12 @@ local iterator = db:rows("justinmetadata")
 assert(iterator())
 io.stdout:write("READY\\n"); io.stdout:flush()
 assert(io.stdin:read("*l") == "check")
-io.stdout:write(db:unchanged() and "UNCHANGED\\n" or "CHANGED\\n"); io.stdout:flush()
+local unchanged = db:unchanged()
 assert(not pcall(iterator), "cached row iterator must stop after external commit")
+-- Signal only after the iterator has finished probing synthetic files. The
+-- Python rename must run while this fixture is blocked, not during its CRT
+-- ABI stub's transient open (real shared handles are covered by native CTest).
+io.stdout:write(unchanged and "UNCHANGED\\n" or "CHANGED\\n"); io.stdout:flush()
 assert(io.stdin:read("*l") == "close")
 db:close()
 db = assert(SoundminerSQLite.open(arg[2]))
