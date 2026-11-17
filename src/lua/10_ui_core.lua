@@ -1051,15 +1051,17 @@ function windows_extended_path(path)
 end
 
 function open_source_binary_file(path)
-  local file, reason = io.open(path, "rb")
-  if file then return file end
-  local extended = windows_extended_path(path)
-  if extended ~= path then
-    local extended_file, extended_reason = io.open(extended, "rb")
-    if extended_file then return extended_file end
-    reason = extended_reason or reason
+  if SoundminerReadOnly and type(SoundminerReadOnly.open) == "function" then
+    return SoundminerReadOnly.open(path)
   end
-  return nil, reason
+  return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
+end
+
+function source_file_exists(path)
+  local file = open_source_binary_file(path)
+  if not file then return false end
+  file:close()
+  return true
 end
 
 function file_size(path)
@@ -1123,46 +1125,11 @@ end
 
 function directory_exists(path)
   path = normalize_external_path(path)
-
-  if path == "" then
-    return false
-  end
-
-  -- A trailing separator makes the no-op rename a directory probe instead of
-  -- the ambiguous `rename(path, path)`, which also succeeds for regular files
-  -- on Windows. Do not reject a path only because `reaper.file_exists()` says
-  -- true: some host/filesystem combinations report readable directories too.
-  local probe = path
-  if probe:sub(-1) ~= SEP then
-    probe = probe .. SEP
-  end
-
-  local ok, _, code = os.rename(probe, probe)
-  if ok or code == 13 then
-    return true
-  end
-
-  -- REAPER's enumerators use its native path layer and can still recognize a
-  -- populated directory when the Lua C runtime cannot probe a long/UNC path.
-  if type(reaper.EnumerateFiles) == "function" then
-    local listed, entry = pcall(reaper.EnumerateFiles, path, 0)
-    if listed and entry ~= nil then
-      return true
-    end
-  end
-
-  if type(reaper.EnumerateSubdirectories) == "function" then
-    local listed, entry = pcall(
-      reaper.EnumerateSubdirectories,
-      path,
-      0
-    )
-    if listed and entry ~= nil then
-      return true
-    end
-  end
-
-  return false
+  if path == "" or not SoundminerReadOnly then return false end
+  -- Even a no-op rename requests mutation rights. Probe directories through
+  -- the same shared read-only native handle used for source files.
+  local info = SoundminerReadOnly.stat(path)
+  return info ~= nil and info.directory == true
 end
 
 function path_is_inside(path, root)
@@ -1968,25 +1935,106 @@ function can_run_heavy_job()
     ))
 end
 
-function normalized_cache_directory(path)
-  local normalized =
-    normalize_slashes(
-      trim(path or "")
-    )
-
-  if normalized == "" then
-    normalized = DEFAULT_WAVE_CACHE_DIR
+-- Cache paths must be absolute and unambiguous before any write or cleanup.
+-- This resolves lexical aliases, not filesystem links: Lua has no portable
+-- realpath/reparse-point API. File ownership checks are still required even
+-- inside a managed directory, including one reached through a junction.
+function prs_wave_cache_directory_path(path)
+  path = normalize_slashes(trim(path or ""))
+  if path == "" or path:find("[%z\1-\31]") then return nil end
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
   end
+  local root
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+    if not root or root:find('[<>"|?*]') or root:match("^\\\\%.\\") then return nil end
+    if root:sub(1, 2) == "\\\\" then
+      for part in root:gmatch("[^\\]+") do
+        if part:find(":") or part:find("[ .]$") then return nil end
+      end
+    end
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+    if not root then return nil end
+  end
+  local segments = {}
+  for segment in path:sub(#root + 1):gmatch("[^\\/]+") do
+    if segment == ".." then
+      if #segments == 0 then return nil end
+      segments[#segments] = nil
+    elseif segment ~= "." then
+      -- Windows strips trailing spaces/dots and interprets colons as streams.
+      -- Refuse those spellings instead of letting checks and I/O disagree.
+      if SEP == "\\" and (segment:find('[<>:"|?*]') or segment:find("[ .]$")) then
+        return nil
+      end
+      if SEP == "\\" then
+        local device = (segment:match("^([^.]+)") or ""):upper()
+        if device == "CON" or device == "PRN" or device == "AUX" or device == "NUL"
+          or device:match("^COM[1-9]$") or device:match("^LPT[1-9]$") then return nil end
+      end
+      segments[#segments + 1] = segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return root .. table.concat(segments, SEP)
+end
 
+function prs_wave_cache_directory_is_managed(path)
+  local normalized = prs_wave_cache_directory_path(path)
+  local default = prs_wave_cache_directory_path(DEFAULT_WAVE_CACHE_DIR)
+  return normalized ~= nil and (
+    (default and path_key(normalized) == path_key(default))
+      or path_key(basename(normalized)) == path_key("PsyReaSFX-wave-cache")
+  ) or false
+end
+
+-- An extension alone never proves ownership. Preserve files without a PRS
+-- signature, including old numeric-header caches; they can be regenerated.
+-- A recognized header is sufficient for ownership so a truncated PRS payload
+-- can still be diagnosed/quarantined by validate_wave_cache_file().
+function prs_wave_cache_file_owned(path)
+  local name = basename(path or "")
+  if #name ~= 12 or not name:match("^%x%x%x%x%x%x%x%x%.rwf$") then return false end
+  local file = io.open(path, "rb")
+  if not file then return false end
+  local prefix = file:read(80) or ""
+  file:close()
+  local header = prefix:match("^([^\r\n]*)\r?\n")
+  if not header then return false end
+  local version, count, channels = header:match("^(RWF[34]) (%d+) (%d+)$")
+  if not version then
+    version, count = header:match("^(RWF2) (%d+)$")
+    channels = "1"
+  end
+  count, channels = tonumber(count), tonumber(channels)
+  return version ~= nil and count ~= nil and count >= 1
+    and count <= (LARGE_WAVE_MAX_POINTS or 4096)
+    and channels ~= nil and channels >= 1 and channels <= 8
+end
+
+function normalized_cache_directory(path)
+  path = trim(path or "")
+  if path == "" then path = DEFAULT_WAVE_CACHE_DIR end
+  local normalized = prs_wave_cache_directory_path(path)
+  if not normalized then
+    return DEFAULT_WAVE_CACHE_DIR, "波形缓存目录必须是有效的绝对路径"
+  end
+  if not prs_wave_cache_directory_is_managed(normalized) then
+    normalized = join_path(normalized, "PsyReaSFX-wave-cache")
+  end
   return normalized
 end
 
 function apply_wave_cache_directory(path)
-  local normalized =
+  local normalized, warning =
     normalized_cache_directory(path)
 
   WAVE_CACHE_DIR = normalized
   state.wave_cache_dir = normalized
+  AppState.set("wave_cache_directory_warning", warning)
 
   reaper.RecursiveCreateDirectory(
     WAVE_CACHE_DIR,

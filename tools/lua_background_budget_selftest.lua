@@ -1,3 +1,4 @@
+PsyReaSFXScope = { kind = "prs" }
 local function read(path) local f=assert(io.open(path,"rb")); local s=f:read("*a"); f:close(); return s end
 local source=read("src/lua/50_runtime_ui.lua"):gsub("\r\n","\n")
 local function region(first,last)

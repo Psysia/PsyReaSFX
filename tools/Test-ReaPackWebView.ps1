@@ -30,11 +30,16 @@ if ($binarySource.Count -ne 1 -or $binarySource[0].InnerText -cnotmatch '^https:
 $runtimeTag = $Matches[1]
 $assetPrefix = "https://github.com/Psysia/PsyReaSFX/releases/download/$runtimeTag/"
 $runtimeRawPrefix = "https://raw.githubusercontent.com/Psysia/PsyReaSFX/$runtimeTag/"
+$policySource = @($runtimeVersion[0].source | Where-Object { $_.file -ceq 'PsyReaSFX-WebView/ReaWebAPI/runtime-lock.json' })
+if ($policySource.Count -ne 1 -or $policySource[0].InnerText -cnotmatch '^https://raw\.githubusercontent\.com/Psysia/PsyReaSFX/(v\d+\.\d+\.\d+(?:-beta\d+(?:\.\d+)?)?)/dependencies/reawebapi/windows-x64\.lock\.json$') {
+    throw 'Runtime policy must use a pinned project release.'
+}
+$policyRawPrefix = "https://raw.githubusercontent.com/Psysia/PsyReaSFX/$($Matches[1])/"
 if ($app.version -notmatch '-beta' -and $runtimeVersion[0].name -match '-beta') { throw 'Stable WebView requires a stable-channel runtime package.' }
 if (-not ($script.version | Where-Object { $_.name -ceq '0.9.2-beta4' }) -or -not ($script.version | Where-Object { $_.name -ceq '0.9.1' })) { throw 'Legacy rollback versions are missing.' }
 
 function Resolve-Payload([string]$Url) {
-    foreach ($prefix in @($rawPrefix, $runtimeRawPrefix)) {
+    foreach ($prefix in @($rawPrefix, $runtimeRawPrefix, $policyRawPrefix)) {
         if ($Url.StartsWith($prefix, [StringComparison]::Ordinal)) {
             $relative = $Url.Substring($prefix.Length)
             if ($relative -match '(^|/)\.\.(/|$)' -or $relative.Contains(':')) { throw 'Unsafe repository source path.' }

@@ -22,6 +22,7 @@ function path_key(path)
   return normalize_slashes(path):lower()
 end
 function asset_path_sort_key(asset) return path_key(asset.path) end
+function source_file_exists(path) return reaper.file_exists(path) end
 function basename(path) return tostring(path):match("([^/]+)$") or "" end
 function dirname(path) return tostring(path):match("^(.*)/[^/]*$") or "" end
 function asset_relative_path(path, root)

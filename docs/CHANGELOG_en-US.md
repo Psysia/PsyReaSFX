@@ -1,5 +1,7 @@
 ## 0.9.4 Beta 1 (independent Soundminer catalogs) — 2026-11-17
 
+- Protect every original asset in both PRS and imported catalogs with shared read-only access. Native playback, analysis, insertion, dragging and export use private copies. Soundminer may remain open; source changes stop the import. Preparation takes additional time and disk space; Transfer uses the PRS export directory.
+
 - Add Soundminer import for observed V6/V7 SQLite metadata and compatible overview caches, with path mapping, offline entries and cancellation; sources remain read-only. The imported Soundminer library and the existing PRS library are saved and loaded independently. Selecting a library reads that library without merging or overwriting the other. [Compatibility record (Chinese)](SOUNDMINER_FORMAT_zh-CN.md).
 - This is a prerelease; 0.9.3 Stable retains the Beta 18 feature set. Choose independent catalog windows, resume canceled imports and keep automatic folder discovery disabled in Soundminer catalogs. [Beta release notes](releases/release-notes-webview-0.9.4-beta1.md).
 

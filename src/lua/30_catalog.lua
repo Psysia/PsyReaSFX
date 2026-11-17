@@ -65,7 +65,7 @@ function ensure_asset_identity(asset, probe_file)
   -- issue two synchronous filesystem calls per asset. Missing-file audits and
   -- Watch Folder jobs perform the authoritative background verification.
   if probe_file ~= false then
-    if HostApi.file_exists(asset.path or "") then
+    if source_file_exists(asset.path or "") then
       asset.last_seen = os.time()
     end
   end

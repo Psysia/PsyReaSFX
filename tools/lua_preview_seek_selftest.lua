@@ -18,6 +18,7 @@ end
 function clamp(value, minimum, maximum)
   return math.max(minimum, math.min(maximum, value))
 end
+function source_file_exists() return true end
 
 assert(load(region(
   "function preview_percent_from_position(",

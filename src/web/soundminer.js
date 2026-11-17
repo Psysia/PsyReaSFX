@@ -71,7 +71,7 @@ export async function openSoundminerImport(command) {
   if (document.querySelector(".soundminer-dialog")) return;
   const dialog = el("dialog", undefined, "soundminer-dialog");
   const title = el("h2", "导入 Soundminer 音效库");
-  const help = el("p", "在独立库中读取 Soundminer 数据库及波形缓存，导入后打开对应窗口。请先关闭 Soundminer；原数据库和音频保持只读。", "muted");
+  const help = el("p", "在独立库中读取 Soundminer 数据库及波形缓存，导入后打开对应窗口。可与 Soundminer 同时运行；数据库正在写入时暂停本次导入。", "muted");
   const status = el("p", "正在查找 Soundminer 音效库…", "soundminer-status");
   status.setAttribute("role", "status");
   const select = el("select");

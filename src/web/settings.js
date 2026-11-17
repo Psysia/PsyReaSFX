@@ -215,7 +215,9 @@ export function createSettings({
                 ? { zh: "简体中文", en: "English" }[option]
                 : option,
             ];
-        input.append(new Option(label, key));
+        const choice = new Option(label, key);
+        if (settings.sourceProtection && definition.key === "transfer_collision" && key === "overwrite") choice.disabled = true;
+        input.append(choice);
       }
     } else
       input.type =
@@ -245,6 +247,17 @@ export function createSettings({
     };
     if (definition.key === "transfer_dir") {
       const entry = el("span", "path-control");
+      if (settings.sourceProtection) {
+        input.readOnly = true;
+        const useProtected = button("使用 PRS 导出目录", () => {
+          input.value = settings.protectedTransferDir;
+          onChange(settings.protectedTransferDir);
+        });
+        entry.append(input, useProtected);
+        caption.append(el("small", null, "为保护源库，本版导出到 PRS 专属目录，已有文件不会被覆盖。"));
+        row.append(entry);
+        return row;
+      }
       const browse = button("浏览…", async () => {
         const result = await command("path.choose", {
           kind: "folder",
@@ -712,6 +725,9 @@ export function createSettings({
   }
   function extra() {
     if (section === "general") {
+      if (settings.sourceProtection)
+        card("原音频保护").append(el("p", "muted",
+          "所有素材保持只读；首次播放、分析或插入会在后台准备音频副本，占用额外磁盘，可在任务中取消。"));
       const target = card(
         "试听控制",
         "停止按钮始终结束试听；暂停会保留位置，再次播放从该位置继续。",

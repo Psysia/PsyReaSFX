@@ -221,7 +221,7 @@ local VERSION = "0.9.4 Beta 1"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.4-beta1",
-  source_sha256 = "9034a1dabc5fd460820ed116774a9d4627914434de901499ea82ef8d6bf56cac",
+  source_sha256 = "ce1df915c75a70e11285e4cea8ac219025031faafcd52345829c6c16444b88a6",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -3929,15 +3929,17 @@ function windows_extended_path(path)
 end
 
 function open_source_binary_file(path)
-  local file, reason = io.open(path, "rb")
-  if file then return file end
-  local extended = windows_extended_path(path)
-  if extended ~= path then
-    local extended_file, extended_reason = io.open(extended, "rb")
-    if extended_file then return extended_file end
-    reason = extended_reason or reason
+  if SoundminerReadOnly and type(SoundminerReadOnly.open) == "function" then
+    return SoundminerReadOnly.open(path)
   end
-  return nil, reason
+  return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
+end
+
+function source_file_exists(path)
+  local file = open_source_binary_file(path)
+  if not file then return false end
+  file:close()
+  return true
 end
 
 function file_size(path)
@@ -4001,46 +4003,11 @@ end
 
 function directory_exists(path)
   path = normalize_external_path(path)
-
-  if path == "" then
-    return false
-  end
-
-  -- A trailing separator makes the no-op rename a directory probe instead of
-  -- the ambiguous `rename(path, path)`, which also succeeds for regular files
-  -- on Windows. Do not reject a path only because `reaper.file_exists()` says
-  -- true: some host/filesystem combinations report readable directories too.
-  local probe = path
-  if probe:sub(-1) ~= SEP then
-    probe = probe .. SEP
-  end
-
-  local ok, _, code = os.rename(probe, probe)
-  if ok or code == 13 then
-    return true
-  end
-
-  -- REAPER's enumerators use its native path layer and can still recognize a
-  -- populated directory when the Lua C runtime cannot probe a long/UNC path.
-  if type(reaper.EnumerateFiles) == "function" then
-    local listed, entry = pcall(reaper.EnumerateFiles, path, 0)
-    if listed and entry ~= nil then
-      return true
-    end
-  end
-
-  if type(reaper.EnumerateSubdirectories) == "function" then
-    local listed, entry = pcall(
-      reaper.EnumerateSubdirectories,
-      path,
-      0
-    )
-    if listed and entry ~= nil then
-      return true
-    end
-  end
-
-  return false
+  if path == "" or not SoundminerReadOnly then return false end
+  -- Even a no-op rename requests mutation rights. Probe directories through
+  -- the same shared read-only native handle used for source files.
+  local info = SoundminerReadOnly.stat(path)
+  return info ~= nil and info.directory == true
 end
 
 function path_is_inside(path, root)
@@ -4846,25 +4813,106 @@ function can_run_heavy_job()
     ))
 end
 
-function normalized_cache_directory(path)
-  local normalized =
-    normalize_slashes(
-      trim(path or "")
-    )
-
-  if normalized == "" then
-    normalized = DEFAULT_WAVE_CACHE_DIR
+-- Cache paths must be absolute and unambiguous before any write or cleanup.
+-- This resolves lexical aliases, not filesystem links: Lua has no portable
+-- realpath/reparse-point API. File ownership checks are still required even
+-- inside a managed directory, including one reached through a junction.
+function prs_wave_cache_directory_path(path)
+  path = normalize_slashes(trim(path or ""))
+  if path == "" or path:find("[%z\1-\31]") then return nil end
+  if SEP == "\\" then
+    path = path:gsub("^\\\\%?\\[Uu][Nn][Cc]\\", "\\\\")
+    path = path:gsub("^\\\\%?\\", "")
   end
+  local root
+  if SEP == "\\" then
+    root = path:match("^%a:\\") or path:match("^\\\\[^\\]+\\[^\\]+\\?")
+    if not root or root:find('[<>"|?*]') or root:match("^\\\\%.\\") then return nil end
+    if root:sub(1, 2) == "\\\\" then
+      for part in root:gmatch("[^\\]+") do
+        if part:find(":") or part:find("[ .]$") then return nil end
+      end
+    end
+  else
+    root = path:sub(1, 1) == "/" and "/" or nil
+    if not root then return nil end
+  end
+  local segments = {}
+  for segment in path:sub(#root + 1):gmatch("[^\\/]+") do
+    if segment == ".." then
+      if #segments == 0 then return nil end
+      segments[#segments] = nil
+    elseif segment ~= "." then
+      -- Windows strips trailing spaces/dots and interprets colons as streams.
+      -- Refuse those spellings instead of letting checks and I/O disagree.
+      if SEP == "\\" and (segment:find('[<>:"|?*]') or segment:find("[ .]$")) then
+        return nil
+      end
+      if SEP == "\\" then
+        local device = (segment:match("^([^.]+)") or ""):upper()
+        if device == "CON" or device == "PRN" or device == "AUX" or device == "NUL"
+          or device:match("^COM[1-9]$") or device:match("^LPT[1-9]$") then return nil end
+      end
+      segments[#segments + 1] = segment
+    end
+  end
+  if root:sub(-1) ~= SEP then root = root .. SEP end
+  return root .. table.concat(segments, SEP)
+end
 
+function prs_wave_cache_directory_is_managed(path)
+  local normalized = prs_wave_cache_directory_path(path)
+  local default = prs_wave_cache_directory_path(DEFAULT_WAVE_CACHE_DIR)
+  return normalized ~= nil and (
+    (default and path_key(normalized) == path_key(default))
+      or path_key(basename(normalized)) == path_key("PsyReaSFX-wave-cache")
+  ) or false
+end
+
+-- An extension alone never proves ownership. Preserve files without a PRS
+-- signature, including old numeric-header caches; they can be regenerated.
+-- A recognized header is sufficient for ownership so a truncated PRS payload
+-- can still be diagnosed/quarantined by validate_wave_cache_file().
+function prs_wave_cache_file_owned(path)
+  local name = basename(path or "")
+  if #name ~= 12 or not name:match("^%x%x%x%x%x%x%x%x%.rwf$") then return false end
+  local file = io.open(path, "rb")
+  if not file then return false end
+  local prefix = file:read(80) or ""
+  file:close()
+  local header = prefix:match("^([^\r\n]*)\r?\n")
+  if not header then return false end
+  local version, count, channels = header:match("^(RWF[34]) (%d+) (%d+)$")
+  if not version then
+    version, count = header:match("^(RWF2) (%d+)$")
+    channels = "1"
+  end
+  count, channels = tonumber(count), tonumber(channels)
+  return version ~= nil and count ~= nil and count >= 1
+    and count <= (LARGE_WAVE_MAX_POINTS or 4096)
+    and channels ~= nil and channels >= 1 and channels <= 8
+end
+
+function normalized_cache_directory(path)
+  path = trim(path or "")
+  if path == "" then path = DEFAULT_WAVE_CACHE_DIR end
+  local normalized = prs_wave_cache_directory_path(path)
+  if not normalized then
+    return DEFAULT_WAVE_CACHE_DIR, "波形缓存目录必须是有效的绝对路径"
+  end
+  if not prs_wave_cache_directory_is_managed(normalized) then
+    normalized = join_path(normalized, "PsyReaSFX-wave-cache")
+  end
   return normalized
 end
 
 function apply_wave_cache_directory(path)
-  local normalized =
+  local normalized, warning =
     normalized_cache_directory(path)
 
   WAVE_CACHE_DIR = normalized
   state.wave_cache_dir = normalized
+  AppState.set("wave_cache_directory_warning", warning)
 
   reaper.RecursiveCreateDirectory(
     WAVE_CACHE_DIR,
@@ -7631,15 +7679,17 @@ function move_wave_cache_files(
   old_directory,
   new_directory
 )
-  old_directory =
-    normalized_cache_directory(
-      old_directory
-    )
-
-  new_directory =
-    normalized_cache_directory(
-      new_directory
-    )
+  -- Never reinterpret an old external folder as a cache to be emptied. Old
+  -- custom settings are redirected to a PRS subdirectory when loaded; their
+  -- original contents stay untouched, even when the user later requests a
+  -- migration back to the default directory.
+  old_directory = prs_wave_cache_directory_path(old_directory)
+  if not old_directory or not prs_wave_cache_directory_is_managed(old_directory) then
+    return 0, 1
+  end
+  local warning
+  new_directory, warning = normalized_cache_directory(new_directory)
+  if warning then return 0, 1 end
 
   if path_key(old_directory)
       == path_key(new_directory) then
@@ -7687,17 +7737,42 @@ function move_wave_cache_files(
         filename
       )
 
-    if HostApi.file_exists(target_path) then
-      os.remove(source_path)
-      moved = moved + 1
-    elseif copy_file_streaming(
-      source_path,
-      target_path
-    ) then
-      os.remove(source_path)
-      moved = moved + 1
-    else
-      failed = failed + 1
+    if prs_wave_cache_file_owned(source_path) then
+      -- Keep both copies on a name collision. A matching cache key neither
+      -- proves identical bytes nor grants permission to replace a file.
+      if HostApi.file_exists(target_path) then
+        failed = failed + 1
+      else
+        -- A waveform is small; capture it before creating the destination.
+        -- Do not use the generic atomic copier here: it removes an existing
+        -- temporary/backup filename which need not belong to PRS.
+        local input = io.open(source_path, "rb")
+        local bytes = input and input:read(128 * 1024 + 1)
+        if input then input:close() end
+        local output
+        if bytes and #bytes <= 128 * 1024
+          and prs_wave_cache_file_owned(source_path)
+          and not HostApi.file_exists(target_path) then
+          output = io.open(target_path, "wb")
+        end
+        local written = output and output:write(bytes)
+        local closed = output and output:close()
+        local copied = false
+        if written and closed and prs_wave_cache_file_owned(target_path) then
+          local target = io.open(target_path, "rb")
+          local target_bytes = target and target:read(128 * 1024 + 1)
+          if target then target:close() end
+          local source = io.open(source_path, "rb")
+          local source_bytes = source and source:read(128 * 1024 + 1)
+          if source then source:close() end
+          -- A concurrently regenerated source must not be removed after an
+          -- older snapshot was copied. A failed copy always leaves it intact.
+          copied = target_bytes == bytes and source_bytes == bytes
+            and prs_wave_cache_file_owned(source_path)
+            and os.remove(source_path) and true or false
+        end
+        if copied then moved = moved + 1 else failed = failed + 1 end
+      end
     end
   end
 
@@ -7714,10 +7789,15 @@ function switch_wave_cache_directory(
         or WAVE_CACHE_DIR
     )
 
-  new_directory =
+  local warning
+  new_directory, warning =
     normalized_cache_directory(
       new_directory
     )
+  if warning then
+    set_status(warning, true)
+    return false
+  end
 
   if path_key(old_directory)
       == path_key(new_directory) then
@@ -7788,12 +7868,17 @@ function prompt_wave_cache_directory()
     return
   end
 
-  local new_directory =
+  local new_directory, warning =
     normalized_cache_directory(input)
+  if warning then
+    set_status(warning, true)
+    return
+  end
 
   local answer =
     HostApi.MB(
       "是否将现有波形缓存移动到新目录？\n\n"
+        .. new_directory .. "\n\n"
         .. "是：移动已有缓存并切换。\n"
         .. "否：直接切换，旧目录保持不变。\n"
         .. "取消：不修改。",
@@ -8566,11 +8651,120 @@ end
 
 end
 do
--- Read-only SQLite table reader for offline Soundminer libraries.
+-- Shared, bounded source reads. Never fall back to CRT io.open: its Windows
+-- sharing flags can deny another application's rename/delete operations.
+SoundminerReadOnly = {}
+local sm_read_methods = {}
+local sm_read_cap = 16 * 1024 * 1024
+
+local function sm_read_request(path, offset, count)
+  local api = type(reaper) == "table" and reaper.ReaWeb_ReadSharedRange
+  if type(api) ~= "function" then
+    return nil, "当前 ReaWebAPI 缺少共享只读接口；请更新兼容运行库后导入，已有素材库仍可浏览", 38
+  end
+  local called, response = pcall(api, path, string.format("%.0f", offset), count)
+  if not called then return nil, "Shared source read failed: " .. tostring(response), 5 end
+  if type(response) ~= "string" or #response > 132000 then return nil, "Invalid shared read response", 5 end
+  -- This intentionally accepts only the flat, ASCII, versioned native wire
+  -- format. Binary payloads never cross ReaScript's NUL-terminated ABI directly.
+  local hex, size, mtime, identity, directory = response:match(
+    '^%{"protocol":1,"ok":true,"dataHex":"(%x*)","size":"(%d+)","mtime":"([%d:%-]+)","fileId":"([%d:]+)","directory":(%a+)%}$')
+  if not hex then
+    local code, os_error = response:match('^%{"protocol":1,"ok":false,"code":"([A-Z_]+)","osError":(%d+)%}$')
+    local errno = code == "NOT_FOUND" and 2 or tonumber(os_error) or 5
+    return nil, "Shared source read: " .. tostring(code or "INVALID_RESPONSE"), errno
+  end
+  size = tonumber(size)
+  if not size or size > 9007199254740991 or #hex % 2 ~= 0 or #hex > count * 2
+    or (directory ~= "true" and directory ~= "false") then
+    return nil, "Invalid shared read bounds", 5
+  end
+  local bytes = hex:gsub("..", function(pair) return string.char(tonumber(pair, 16)) end)
+  return { bytes = bytes, size = size, mtime = mtime, identity = identity, directory = directory == "true" }
+end
+
+local function sm_read_path(path)
+  return type(path) == "string" and #path > 0 and #path <= 32768 and not path:find("[%z\1-\31]")
+    and (path:match("^%a:[/\\]") or path:sub(1, 1) == "/" or path:sub(1, 2) == "\\\\")
+end
+
+local function sm_read_same(first, second)
+  return first.size == second.size and first.mtime == second.mtime and first.identity == second.identity
+    and first.directory == second.directory
+end
+
+function SoundminerReadOnly.available()
+  return type(reaper) == "table" and type(reaper.ReaWeb_ReadSharedRange) == "function"
+end
+
+function SoundminerReadOnly.stat(path)
+  if not sm_read_path(path) then return nil, "Invalid absolute source path", 22 end
+  return sm_read_request(path, 0, 0)
+end
+
+function SoundminerReadOnly.open(path)
+  local info, reason, code = SoundminerReadOnly.stat(path)
+  if not info then return nil, reason, code end
+  if info.directory then return nil, "Source path is a directory", 21 end
+  info.path, info.position, info.closed = path, 0, false
+  return setmetatable(info, { __index = sm_read_methods })
+end
+
+function sm_read_methods:close()
+  self.closed = true
+  return true
+end
+
+function sm_read_methods:unchanged()
+  if self.closed or self.failed then return false end
+  local current = SoundminerReadOnly.stat(self.path)
+  if not current or not sm_read_same(self, current) then self.failed = true; return false end
+  return true
+end
+
+function sm_read_methods:seek(whence, offset)
+  if self.closed or self.failed then return nil, "Shared source reader is closed or changed" end
+  whence, offset = whence or "cur", offset or 0
+  local base = whence == "set" and 0 or whence == "cur" and self.position or whence == "end" and self.size
+  if not base or type(offset) ~= "number" or offset % 1 ~= 0 or math.abs(offset) > 9007199254740991 then
+    return nil, "Invalid shared source seek"
+  end
+  local position = base + offset
+  if position < 0 or position > 9007199254740991 then return nil, "Shared source seek outside bounds" end
+  self.position = position
+  return position
+end
+
+function sm_read_methods:read(count)
+  if self.closed or self.failed then return nil, "Shared source reader is closed or changed" end
+  if type(count) ~= "number" or count % 1 ~= 0 or count < 0 or count > sm_read_cap then
+    return nil, "Shared source read requires a bounded byte count (at most 16 MiB)"
+  end
+  if count == 0 then return "" end
+  if self.position >= self.size then return nil end
+  local remaining = math.min(count, self.size - self.position)
+  local parts = {}
+  while remaining > 0 do
+    local wanted = math.min(remaining, 65536)
+    local result, reason = sm_read_request(self.path, self.position, wanted)
+    if not result or not sm_read_same(self, result) or #result.bytes ~= wanted then
+      self.failed = true
+      return nil, reason or "Shared source changed during read"
+    end
+    parts[#parts + 1] = result.bytes
+    self.position, remaining = self.position + wanted, remaining - wanted
+  end
+  return table.concat(parts)
+end
+
+end
+do
+-- Read-only SQLite table reader for stable Soundminer snapshots.
 -- File-format reference: https://sqlite.org/fileformat2.html
 -- No SQL is executed, no database is opened for writing, and no extensions load.
--- Active WAL/journals are deliberately refused: close Soundminer or export a
--- checkpointed copy first. unchanged() detects observed changes, not an OS lock.
+-- Active WAL/journals are refused without recovery/checkpoint/locking SQL.
+-- Soundminer may keep running: use a stable exported copy when it is writing.
+-- unchanged() detects observed changes; it does not lock another application's DB.
 SoundminerSQLite = {}
 
 local sm_sqlite_methods = {}
@@ -8603,51 +8797,61 @@ local function sm_sqlite_varint(bytes, pos, limit)
 end
 
 local function sm_sqlite_sidecars_clear(path)
-  local wal, _, wal_error = io.open(path .. "-wal", "rb")
+  local wal, _, wal_error = SoundminerReadOnly.open(path .. "-wal")
   if not wal and wal_error and wal_error ~= 2 then return false end
   if wal then
     local size = wal:seek("end")
+    local stable = wal:unchanged()
     wal:close()
-    if not size or size > 0 then return false end
+    if not stable or not size or size > 0 then return false end
   end
-  local journal, _, journal_error = io.open(path .. "-journal", "rb")
+  local journal, _, journal_error = SoundminerReadOnly.open(path .. "-journal")
   if not journal and journal_error and journal_error ~= 2 then return false end
   if journal then
-    local header = journal:read(28) or ""
+    local wanted = math.min(journal.size, 28)
+    local header = journal:read(wanted)
+    local stable = journal:unchanged()
     journal:close()
     -- PERSIST journals are harmless after SQLite zeros their header.
-    if header:find("[^%z]") then return false end
+    if not stable or not header or #header ~= wanted or header:find("[^%z]") then return false end
   end
   return true
 end
 
 function sm_sqlite_methods:close()
-  if self.file then self.file:close(); self.file = nil end
+  self.closed = true
   self.cache, self.cache_order = {}, {}
 end
 
 function sm_sqlite_methods:unchanged()
-  if not self.file or not sm_sqlite_sidecars_clear(self.path) then return false end
-  local fresh = io.open(self.path, "rb")
+  if self.closed or not sm_sqlite_sidecars_clear(self.path) then return false end
+  local fresh = SoundminerReadOnly.open(self.path)
   if not fresh then return false end
   local header = fresh:read(100)
   local size = fresh:seek("end")
   fresh:close()
-  return header == self.header and size == self.size
+  return header == self.header and size == self.size and fresh.identity == self.identity and fresh.mtime == self.mtime
 end
 
 function sm_sqlite_methods:_page(number)
-  sm_sqlite_require(self.file ~= nil, "database is closed")
+  sm_sqlite_require(not self.closed, "database is closed")
   sm_sqlite_require(math.type(number) == "integer" and number >= 1 and number <= self.page_count,
     "page outside database")
   if self.cache[number] then return self.cache[number] end
   self.read_count = self.read_count + 1
-  if self.read_count % 128 == 0 then
-    sm_sqlite_require(self:unchanged(), "database changed or has an active journal")
-  end
-  sm_sqlite_require(self.file:seek("set", (number - 1) * self.page_size) ~= nil, "page seek failed")
-  local bytes = self.file:read(self.page_size)
+  sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
+  -- Every source open (including sidecars) uses the native shared reader. There
+  -- is no CRT fallback that could deny Soundminer's rename/delete operations.
+  local file, open_error = SoundminerReadOnly.open(self.path)
+  sm_sqlite_require(file, open_error or "database read failed")
+  local ok, bytes = pcall(function()
+    sm_sqlite_require(file:seek("set", (number - 1) * self.page_size) ~= nil, "page seek failed")
+    return file:read(self.page_size)
+  end)
+  file:close()
+  sm_sqlite_require(ok, bytes)
   sm_sqlite_require(bytes and #bytes == self.page_size, "truncated page")
+  sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
   -- Bounded FIFO cache (at most 4 MiB at the largest SQLite page size).
   local slot = (self.cache_next % 64) + 1
   local old = self.cache_order[slot]
@@ -8969,12 +9173,15 @@ function sm_sqlite_methods:rows(name)
   sm_sqlite_require(schema, "unsupported or missing table " .. tostring(name))
   local next_row = sm_sqlite_raw_rows(self, schema.root)
   return function()
+    sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
     local values, rowid, count = next_row()
+    sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
     if values then return sm_sqlite_mapped_row(schema, values, rowid, count) end
   end
 end
 
 function sm_sqlite_methods:get(name, rowid)
+  sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
   sm_sqlite_require(math.type(rowid) == "integer", "rowid must be an integer")
   local schema = self:tables()[name]
   sm_sqlite_require(schema, "unsupported or missing table " .. tostring(name))
@@ -8999,7 +9206,10 @@ function sm_sqlite_methods:get(name, rowid)
     if page.kind == 13 then
       if not match then return nil end
       local values, key, count = sm_sqlite_leaf_row(self, page, match)
-      if key == rowid then return sm_sqlite_mapped_row(schema, values, key, count) end
+      if key == rowid then
+        sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
+        return sm_sqlite_mapped_row(schema, values, key, count)
+      end
       return nil
     end
     number = match and sm_sqlite_uint(page.bytes, sm_sqlite_cell(self, page, match), 4)
@@ -9018,6 +9228,7 @@ local function sm_sqlite_binary_compare(left, right)
 end
 
 function sm_sqlite_methods:lookup(name, column, value)
+  sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
   sm_sqlite_require(type(value) == "string", "index lookup requires a text key")
   self:tables()
   local index = self.indexes[name] and self.indexes[name][column]
@@ -9053,10 +9264,11 @@ end
 
 function SoundminerSQLite.open(path)
   if type(path) ~= "string" or path == "" or path:find("%z") then return nil, "Invalid database path" end
-  local file, open_error = io.open(path, "rb")
+  if type(SoundminerReadOnly) ~= "table" then return nil, "Shared read-only runtime is unavailable" end
+  local file, open_error = SoundminerReadOnly.open(path)
   if not file then return nil, open_error end
   local ok, result = pcall(function()
-    sm_sqlite_require(sm_sqlite_sidecars_clear(path), "active WAL/journal; close Soundminer or use a checkpointed copy")
+    sm_sqlite_require(sm_sqlite_sidecars_clear(path), "active WAL/journal; Soundminer may keep running; use a stable exported copy")
     local header = file:read(100)
     sm_sqlite_require(header and #header == 100 and header:sub(1, 16) == "SQLite format 3\0", "not a SQLite 3 database")
     local page_size = sm_sqlite_uint(header, 17, 2)
@@ -9075,11 +9287,14 @@ function SoundminerSQLite.open(path)
     if recorded > 0 and header:sub(25, 28) == header:sub(93, 96) then
       sm_sqlite_require(recorded == page_count, "database page count mismatch")
     end
-    return setmetatable({ path = path, file = file, header = header, page_size = page_size,
+    return setmetatable({ path = path, closed = false, header = header, page_size = page_size,
+      identity = file.identity, mtime = file.mtime,
       usable = usable, size = size, page_count = page_count, cache = {}, cache_order = {},
       cache_next = 0, read_count = 0 }, { __index = sm_sqlite_methods })
   end)
-  if not ok then file:close(); return nil, tostring(result) end
+  file:close()
+  if not ok then return nil, tostring(result) end
+  if not result:unchanged() then return nil, "Soundminer SQLite: database changed while opening; use a stable copy" end
   return result
 end
 
@@ -9377,6 +9592,212 @@ end
 
 end
 do
+-- REAPER may create peak sidecars or retain source handles. Soundminer media
+-- therefore reaches native media APIs only through a PRS-owned private copy.
+-- Source reads use the host's share-read/write/delete adapter, never io.open.
+SoundminerMedia = { copies = {}, queue = {}, serial = 0 }
+do
+  local M = SoundminerMedia
+  function M.requires(asset)
+    -- This beta protects every original, including files independently added
+    -- to PRS which may also be in a currently running Soundminer catalog.
+    return true
+  end
+  local function key(asset)
+    return path_key(tostring(asset and asset.path or ""))
+  end
+  local function signature(reader)
+    return table.concat({tostring(reader.identity), tostring(reader.mtime), tostring(reader.size)}, "|")
+  end
+  function M.open_source(path)
+    if not SoundminerReadOnly or type(SoundminerReadOnly.open) ~= "function" then
+      return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
+    end
+    return SoundminerReadOnly.open(path)
+  end
+  function M.path(asset)
+    if not asset then return nil, "没有素材" end
+    if not M.requires(asset) then return asset.path end
+    local cached = M.copies[key(asset)]
+    if not cached then return nil, "需要准备 PRS 私有音频副本" end
+    local reader, reason = M.open_source(asset.path)
+    if not reader then return nil, reason end
+    local matches = cached.signature == signature(reader)
+    reader:close()
+    if not matches or not reaper.file_exists(cached.path) then
+      M.copies[key(asset)] = nil
+      return nil, "源音频已更新，需要重新准备副本"
+    end
+    return cached.path
+  end
+  function M.all_ready(assets)
+    for _, asset in ipairs(assets or {}) do
+      if not M.path(asset) then return false end
+    end
+    return true
+  end
+  function M.ensure_path(asset, owner, label)
+    local path, reason = M.path(asset)
+    if path then return path end
+    if owner.media_finished then return nil, owner.media_error or reason end
+    if not owner.media_session then
+      local session, failure = M.prepare({asset}, function(ok, why)
+        owner.media_session = nil
+        owner.media_finished = true
+        owner.media_error = not ok and (why or "私有副本准备已取消") or nil
+      end, label)
+      owner.media_session = session
+      if not session then owner.media_finished = true owner.media_error = failure return nil, failure end
+    end
+    return nil, "pending"
+  end
+  local function publish(session)
+    AppState.set("soundminer_media_session", session)
+  end
+  local function close_copy(session, discard)
+    if session.reader then pcall(function() session.reader:close() end) session.reader = nil end
+    if session.writer then pcall(function() session.writer:close() end) session.writer = nil end
+    if discard and session.partial then os.remove(session.partial) end
+    session.partial = nil
+  end
+  local function finish(session, ok, reason)
+    close_copy(session, not ok)
+    if session.job_token then Jobs.finish(session.job_token, ok, reason or "") end
+    if M.active == session then M.active = nil publish(nil) end
+    if not ok and not session.canceled then set_status(reason or "无法准备私有音频副本", true) end
+    if session.callback then
+      local cb_ok, cb_error = pcall(session.callback, ok, reason)
+      if not cb_ok then set_status("音频准备操作失败：" .. tostring(cb_error), true) end
+    end
+  end
+  function M.cancel(session)
+    session = session or M.active
+    if session then
+      session.canceled = true
+      if session.job_token then Jobs.cancel(session.job_token) end
+    end
+  end
+  function M.cancel_all()
+    if M.active then M.cancel(M.active) finish(M.active, false, "canceled") end
+    for _, session in ipairs(M.queue) do M.cancel(session) finish(session, false, "canceled") end
+    M.queue = {}
+  end
+  -- A callback runs only after every required copy is closed and verified.
+  -- The caller decides whether a delayed action is still relevant.
+  function M.prepare(assets, callback, label)
+    if #M.queue >= 32 then return nil, "私有音频准备队列已满" end
+    local captured = {}
+    for _, asset in ipairs(assets or {}) do
+      if #captured >= 4096 then return nil, "一次最多准备 4096 个素材" end
+      captured[#captured + 1] = asset
+    end
+    if not Jobs.accepting then return nil, "程序正在关闭" end
+    local session = {assets = captured, index = 1, total = #captured, copied = 0,
+      callback = callback, label = label or "准备私有音频副本"}
+    M.queue[#M.queue + 1] = session
+    set_status(session.label .. "（可在任务中取消）")
+    return session
+  end
+  function M.defer(assets, callback, label)
+    if M.all_ready(assets) then return false end
+    local project = reaper.EnumProjects and reaper.EnumProjects(-1, "")
+    local session, reason = M.prepare(assets, function(ok)
+      if ok and (not project or project == reaper.EnumProjects(-1, "")) then callback() end
+    end, label)
+    if not session then set_status(reason, true) end
+    return true
+  end
+  local function begin_copy(session, asset)
+    local reader, reason = M.open_source(asset.path)
+    if not reader then return false, reason end
+    if type(reader.size) ~= "number" or reader.size <= 0 then
+      reader:close() return false, "源音频为空或长度无效"
+    end
+    if asset.source_max_bytes ~= nil then
+      local maximum = tonumber(asset.source_max_bytes)
+      if not maximum or maximum ~= maximum or maximum <= 0 or maximum == math.huge
+        or reader.size > maximum then
+        reader:close() return false, "源文件超过允许的副本大小"
+      end
+    end
+    if not M.directory then
+      local directory = join_path(DATA_DIR, "native_media")
+      if reaper.RecursiveCreateDirectory(directory, 0) <= 0
+        and not directory_exists(directory) then
+        reader:close() return false, "无法创建 PRS 私有音频目录"
+      end
+      M.directory = directory
+    end
+    local suffix = tostring(asset.path):match("%.([%w]+)$") or "media"
+    if #suffix > 12 then suffix = "media" end
+    local target
+    for _ = 1, 1000 do
+      M.serial = M.serial + 1
+      target = join_path(M.directory, string.format("sm_%s_%s_%d.%s",
+        os.date("%Y%m%d_%H%M%S"), tostring(math.floor(reaper.time_precise() * 1000000)), M.serial, suffix))
+      if not reaper.file_exists(target) and not reaper.file_exists(target .. ".partial") then break end
+      target = nil
+    end
+    if not target then reader:close() return false, "无法分配独立音频副本文件名" end
+    local writer, write_error = io.open(target .. ".partial", "wb")
+    if not writer then reader:close() return false, write_error end
+    session.reader, session.writer = reader, writer
+    session.partial, session.target = target .. ".partial", target
+    session.signature, session.bytes, session.size = signature(reader), 0, reader.size
+    return true
+  end
+  function M.process()
+    if not M.active then
+      M.active = table.remove(M.queue, 1)
+      if M.active then
+        M.active.job_token = Jobs.begin("soundminer_media", "soundminer_media", false)
+        if not M.active.job_token then finish(M.active, false, "无法启动私有音频准备任务") return end
+      end
+      publish(M.active)
+    end
+    local session = M.active
+    if not session then return end
+    if session.canceled or session.job_token.cancel_requested then
+      session.canceled = true finish(session, false, "canceled") return
+    end
+    local asset = session.assets[session.index]
+    if not asset then finish(session, true) return end
+    if not session.reader then
+      if M.path(asset) then session.index = session.index + 1 return end
+      local ok, reason = begin_copy(session, asset)
+      if not ok then finish(session, false, reason) return end
+    end
+    local deadline = reaper.time_precise() + 0.004
+    -- At most 256 KiB per defer slice, with no unbounded whole-file allocation.
+    for _ = 1, 4 do
+      local count = math.min(65536, session.size - session.bytes)
+      if count <= 0 then break end
+      local bytes, reason = session.reader:read(count)
+      if not bytes or #bytes ~= count then finish(session, false, reason or "源音频读取不完整") return end
+      local wrote, write_error = session.writer:write(bytes)
+      if not wrote then finish(session, false, write_error or "私有副本写入失败") return end
+      session.bytes = session.bytes + #bytes
+      session.progress = (session.index - 1 + session.bytes / session.size) / math.max(1, session.total)
+      if reaper.time_precise() >= deadline then break end
+    end
+    if session.bytes < session.size then return end
+    local unchanged, reason = session.reader:unchanged()
+    if not unchanged then finish(session, false, reason or "复制期间源音频已变化") return end
+    local closed, close_error = session.writer:close()
+    session.writer = nil
+    if not closed then finish(session, false, close_error or "私有副本无法完成写入") return end
+    session.reader:close() session.reader = nil
+    local renamed, rename_error = os.rename(session.partial, session.target)
+    if not renamed then finish(session, false, rename_error or "私有副本提交失败") return end
+    session.partial = nil
+    M.copies[key(asset)] = {path = session.target, signature = session.signature}
+    session.copied = session.copied + 1
+    session.index = session.index + 1
+  end
+end
+
+end
+do
 -- Catalog identity, metadata, configuration and library persistence.
 HostApi = Host or reaper
 
@@ -9444,7 +9865,7 @@ function ensure_asset_identity(asset, probe_file)
   -- issue two synchronous filesystem calls per asset. Missing-file audits and
   -- Watch Folder jobs perform the authoritative background verification.
   if probe_file ~= false then
-    if HostApi.file_exists(asset.path or "") then
+    if source_file_exists(asset.path or "") then
       asset.last_seen = os.time()
     end
   end
@@ -13078,8 +13499,13 @@ function request_loudness_analysis(asset, force)
 
   if not state.show_loudness_metrics
     or not asset
-    or not HostApi.file_exists(asset.path)
+    or not source_file_exists(asset.path)
     or type(HostApi.CalculateNormalization) ~= "function" then
+    return
+  end
+  if SoundminerMedia and SoundminerMedia.requires(asset)
+    and SoundminerMedia.defer({asset}, function() request_loudness_analysis(asset, force) end,
+      "正在准备响度分析副本") then
     return
   end
 
@@ -13160,10 +13586,10 @@ function process_loudness_queue()
 
     state.loudness_queued[queued.key] = nil
 
-    local source =
-      HostApi.PCM_Source_CreateFromFile(
-        queued.asset.path
-      )
+    local native_path = queued.asset.path
+    if SoundminerMedia then native_path = SoundminerMedia.path(queued.asset) end
+    if not native_path then return end
+    local source = HostApi.PCM_Source_CreateFromFile(native_path)
 
     if not source then
       return
@@ -15792,8 +16218,13 @@ function neural_similarity_try_start(session)
 end
 
 function neural_similarity_cancel(session)
+  local media = session and session.neural_media_pending
+  if media and SoundminerMedia then
+    session.neural_media_pending = nil
+    SoundminerMedia.cancel(media)
+  end
   local job = session and session.neural_job
-  if not job then return false end
+  if not job then return media ~= nil end
   local file = io.open(job.paths.cancel, "wb")
   if not file then return false end
   file:write("cancel\n")
@@ -15802,6 +16233,10 @@ function neural_similarity_cancel(session)
 end
 
 function neural_similarity_cleanup_session(session, keep_cancel)
+  if session and session.neural_media_pending and SoundminerMedia then
+    SoundminerMedia.cancel(session.neural_media_pending)
+    session.neural_media_pending = nil
+  end
   neural_abort_manifest(session)
   neural_cleanup_job(session and session.neural_job, true, keep_cancel)
 end
@@ -16074,6 +16509,7 @@ end
 
 local function neural_process_manifest(session)
   if not can_run_heavy_job() then return end
+  if session.neural_media_pending then return end
   local manifest = session.neural_manifest
   if not manifest or not manifest.file then
     neural_fallback(session, "missing_manifest")
@@ -16086,13 +16522,29 @@ local function neural_process_manifest(session)
     and processed < Similarity.frame_records
     and (processed == 0 or host.time_precise() < deadline) do
     local asset = session.neural_assets[manifest.index]
+    local audio_path = asset.path
+    if SoundminerMedia and SoundminerMedia.requires(asset) then
+      audio_path = SoundminerMedia.path(asset)
+      if not audio_path then
+        local pending
+        local reason
+        pending, reason = SoundminerMedia.prepare({ asset }, function(ok, failure)
+          if session.neural_media_pending ~= pending then return end
+          session.neural_media_pending = nil
+          if not ok then neural_fallback(session, failure or "media_copy_failed") end
+        end, "准备神经检索音频副本")
+        if not pending then neural_fallback(session, reason or "media_copy_failed"); return end
+        session.neural_media_pending = pending
+        return
+      end
+    end
     local size = tonumber(asset.size) or 0
     if size <= 0 then size = file_size(asset.path) asset.size = size end
     if size <= 0 then neural_fallback(session, "asset_size") return end
     local written, write_error = manifest.file:write(table.concat({
       similarity_asset_signature(asset),
       "\t", tostring(math.floor(size)),
-      "\t-1\t", neural_json_encode(asset.path), "\n",
+      "\t-1\t", neural_json_encode(audio_path), "\n",
     }))
     if not written then neural_fallback(session, write_error) return end
     manifest.index = manifest.index + 1
@@ -17854,11 +18306,11 @@ function close_duplicate_comparison(comparison)
 end
 
 function begin_duplicate_comparison(left_path, right_path)
-  local left = io.open(left_path, "rb")
+  local left = open_source_binary_file(left_path)
   if not left then
     return nil, "left_open"
   end
-  local right = io.open(right_path, "rb")
+  local right = open_source_binary_file(right_path)
   if not right then
     left:close()
     return nil, "right_open"
@@ -17915,11 +18367,11 @@ function step_duplicate_comparison(comparison, chunk_size)
   elseif left_chunk ~= right_chunk then
     comparison.result = "different"
   elseif not left_chunk then
-    local left_changed = duplicate_file_changed_since(
+    local left_changed = (type(comparison.left.unchanged) == "function" and not comparison.left:unchanged()) or duplicate_file_changed_since(
       comparison.left_stat,
       duplicate_file_stat(comparison.left_path, comparison.bytes_compared)
     )
-    local right_changed = duplicate_file_changed_since(
+    local right_changed = (type(comparison.right.unchanged) == "function" and not comparison.right:unchanged()) or duplicate_file_changed_since(
       comparison.right_stat,
       duplicate_file_stat(comparison.right_path, comparison.bytes_compared)
     )
@@ -18148,7 +18600,7 @@ end
 
 end
 do
--- Soundminer libraries are read as offline SQLite files; never execute their SQL.
+-- Soundminer libraries are read without SQL, source writes or process control.
 -- The normal catalog job owns cancellation, persistence and exclusive mutations.
 SoundminerImport = {}
 
@@ -18281,10 +18733,10 @@ function SoundminerImport.inspect(path)
       if not row then break end
       samples[#samples + 1] = SoundminerImport.resolve_path(row, "", "") or ""
     end
-    assert(db:unchanged(), "Soundminer 数据库已变化，请关闭 Soundminer 后重试")
+    assert(db:unchanged(), "Soundminer 数据库正在变化，本次读取已停止；可保持 Soundminer 运行，改用稳定副本重试")
     local cache = sm_cache_path(path)
     return { path = path, samples = samples,
-      cachePath = HostApi.file_exists(cache) and cache or "",
+      cachePath = SoundminerReadOnly.stat(cache) and cache or "",
       name = basename(path):gsub("%.[^.]+$", "") }
   end)
   db:close()
@@ -18400,7 +18852,7 @@ local function sm_wave(session, asset, row)
   if not original then return end
   local blob
   if session.cache then
-    assert(session.cache:unchanged(), "Soundminer 波形缓存已变化，请关闭 Soundminer 后重试")
+    assert(session.cache:unchanged(), "Soundminer 波形缓存正在变化，本次导入已停止；请改用稳定副本")
     local found = session.cache:lookup("overviews", "filepathhash", sm_text(row._FilePathHash))
     if not found then found = session.cache:lookup("overviews", "filepath", sm_text(row.FilePath)) end
     if found and sm_same_path(found.filepath, original) then blob = found.overviews end
@@ -18415,10 +18867,10 @@ local function sm_wave(session, asset, row)
     frames > 0 and frames or nil, coroutine.yield)
   if not waveform then session.wave_skipped = session.wave_skipped + 1; return end
   assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存已变化，请关闭 Soundminer 后重试")
+    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
   local thumbnail = SoundminerWaveform.resample(waveform, state.mini_wave_points, coroutine.yield)
   assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存已变化，请关闭 Soundminer 后重试")
+    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
   if thumbnail then
     if not wave_cache_file_exists(asset, state.mini_wave_points) then save_wave_to_disk(asset, state.mini_wave_points, thumbnail) end
     if wave_cache_file_exists(asset, state.mini_wave_points) then session.waveforms = session.waveforms + 1
@@ -18428,7 +18880,7 @@ local function sm_wave(session, asset, row)
     coroutine.yield()
     local detail = SoundminerWaveform.resample(waveform, points, coroutine.yield)
     assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-      "Soundminer 数据或波形缓存已变化，请关闭 Soundminer 后重试")
+      "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
     for _, preserve in ipairs({ false, true }) do
       if not wave_cache_file_exists(asset, points, preserve) then save_wave_to_disk(asset, points, detail, preserve) end
     end
@@ -18436,6 +18888,8 @@ local function sm_wave(session, asset, row)
 end
 
 local function sm_import_row(session, row)
+  assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
+    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
   local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
   if not path then session.failed = session.failed + 1; return end
   local asset = state.by_path[path_key(path)]
@@ -18452,7 +18906,8 @@ local function sm_import_row(session, row)
     if frames > 0 and asset.sample_rate > 0 then asset.duration = frames / asset.sample_rate end
     asset.channels = math.floor(sm_number(row.Channels, 1024))
     asset.bit_depth = math.floor(sm_number(row.BitDepth, 128))
-    asset.size = file_size(path)
+    local source_info = SoundminerReadOnly.stat(path)
+    asset.size = source_info and source_info.size or 0
     asset.description = sm_text(row.Description)
     if asset.description == "" then asset.description = sm_text(row.BWDescription) end
     asset.keywords = sm_text(row.Keywords)
@@ -18465,7 +18920,7 @@ local function sm_import_row(session, row)
     asset.ucs_status = (asset.catid ~= "" or asset.category ~= "" or asset.subcategory ~= "") and "manual" or "unclassified"
     asset.ucs_source = "soundminer"
     asset.indexed, asset.ready = true, true
-    local exists = HostApi.file_exists(path)
+    local exists = source_info ~= nil
     asset.last_seen = exists and os.time() or 0
     if not exists then session.offline = session.offline + 1 end
     add_or_update_asset(asset, false)
@@ -18476,6 +18931,8 @@ local function sm_import_row(session, row)
   if session.import_waveforms then
     local ok, err = pcall(sm_wave, session, asset, row)
     if not ok then
+      assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
+        "Soundminer 数据或波形缓存正在变化，本次导入已停止；已导入部分保留，请改用稳定副本")
       session.wave_skipped = session.wave_skipped + 1
       session.cache_error = tostring(err)
       if session.cache then session.cache:close(); session.cache = nil end
@@ -18494,14 +18951,14 @@ local function sm_work(session)
     session.total = session.total + 1
     coroutine.yield()
   end
-  assert(session.database:unchanged(), "Soundminer 数据库已变化，请关闭 Soundminer 后重试")
+  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
   session.phase = "soundminer_import"
   for row in session.database:rows("justinmetadata") do
     sm_import_row(session, row)
     session.done = session.done + 1
     coroutine.yield()
   end
-  assert(session.database:unchanged(), "Soundminer 数据库已变化；已完成部分保留，请关闭 Soundminer 后重试")
+  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；已完成部分保留，请改用稳定副本")
   if session.cache and not session.cache:unchanged() then session.cache_error = "Soundminer 波形缓存已变化" end
 end
 
@@ -18530,7 +18987,7 @@ function SoundminerImport.start(params)
   if session.import_waveforms then
     local cache_path = sm_path(params.cachePath)
     if cache_path == "" then cache_path = sm_cache_path(path) end
-    if HostApi.file_exists(cache_path) then
+    if SoundminerReadOnly.stat(cache_path) then
       local cache_ok, cache, cache_tables = pcall(sm_open, cache_path)
       if cache_ok and cache_tables.overviews then session.cache = cache
       elseif cache_ok then cache:close(); session.cache_error = "不支持的 Soundminer 波形缓存结构"
@@ -18954,14 +19411,14 @@ local function prompt_runtime_install(missing_api)
     or (installed and "ReaWebAPI" or "PsyReaSFX WebView Runtime")
   local instructions = installed
       and "已发现 ReaWebAPI 的安装记录或 DLL。请先重启 REAPER，使已安装的组件生效。\n" .. "版本缺少接口时，请在原组件中检查更新。\n"
-    or "首次安装可选择 PsyReaSFX WebView Runtime，并在 Psysia 软件源启用预发布和同步。\n"
+    or "首次安装请同步 Psysia 软件源，安装 PsyReaSFX WebView Runtime 0.3.9.30。\n"
   if owner then
     instructions = instructions .. "当前归属 " .. owner.label .. "\n"
   end
   local title = SCRIPT_NAME .. " · WebView 运行时未就绪"
   local destination = has_reapack
       and (installed and "是否打开现有组件的 ReaPack 页面，检查安装与更新？" or "是否现在打开 ReaPack，并定位到首次安装的运行时组件？")
-    or "当前未检测到 ReaPack。是否打开发布页，下载完整测试版安装包？"
+    or "当前未检测到 ReaPack。是否打开发布页，下载完整安装包？"
   local choice = reaper.MB(
     "未检测到可用的 ReaWebAPI，或当前版本缺少所需接口。\n\n"
       .. instructions
@@ -19116,6 +19573,7 @@ function WebUI.task_details()
     end
   end
   for name, session in pairs({ scan = state.scan, import = state.import_session,
+    media = state.soundminer_media_session,
     precache = state.precache_session, transfer = state.transfer_job,
     relink = state.relink_plan_session, remove = state.root_removal_session,
     ai = state.ai_semantic_session, verify = state.cache_verify_session }) do
@@ -19134,7 +19592,7 @@ function WebUI.task_details()
         -- Verification stores its file list under `files`; never serialize job arrays.
         files = counter(session.files), directories = counter(session.directories), failed = counter(session.failed),
         added = counter(session.added), skippedDirectories = counter(session.skipped_directories),
-        jobId = (name == "scan" or name == "import") and session.job_token
+        jobId = (name == "scan" or name == "import" or name == "media") and session.job_token
           and counter(session.job_token.generation) or nil,
         automatic = session.watch == true, canceling = canceling == true,
         paused = not canceling and session.paused or nil,
@@ -19166,7 +19624,9 @@ WebUI.handlers["session.ready"] = function()
     copyright = COPYRIGHT_TEXT,
     runtimePolicy = WebUI.runtime_policy,
     catalogScope = SoundminerCatalog.current(),
+    sourceProtection = true,
     capabilities = {
+      sharedSourceReads = SoundminerReadOnly.available(),
       catalog = true,
       preview = true,
       metadata = true,
@@ -19198,6 +19658,31 @@ WebUI.handlers["path.choose"] = function(params)
     error("未知路径选择类型")
   end
   return { path = path, cancelled = not path or path == "" }
+end
+
+WebUI.handlers["artwork.prepare"] = function(params)
+  local path = normalize_external_path(text(params.path, 4096))
+  local extension = path:match("%.([%w]+)$")
+  assert(extension and ({png=true, jpg=true, jpeg=true, webp=true, gif=true, bmp=true})[extension:lower()], "不支持的封面格式")
+  local info, reason = SoundminerReadOnly.stat(path)
+  assert(info and not info.directory and info.size > 0 and info.size <= 2 * 1024 * 1024, reason or "封面大小超出限制")
+  WebUI.artwork_preparations = WebUI.artwork_preparations or {}
+  local entries = WebUI.artwork_preparations
+  local owner = entries[path]
+  if not owner then
+    local count = 0
+    for key, entry in pairs(entries) do
+      if entry.media_finished then entries[key] = nil else count = count + 1 end
+    end
+    assert(count < 16, "封面正在准备，请稍后重试")
+    owner = {}
+    entries[path] = owner
+  end
+  local private_path, failure = SoundminerMedia.ensure_path({path = path, source_max_bytes = 2 * 1024 * 1024}, owner, "准备封面副本")
+  if private_path then entries[path] = nil return {path = private_path} end
+  if failure == "pending" then return {pending = true} end
+  entries[path] = nil
+  error(failure or "无法准备封面副本")
 end
 
 WebUI.handlers["catalog.page"] = function(params)
@@ -20024,11 +20509,11 @@ end
 WebUI.handlers["tasks.cancel"] = function(params)
   local task = params and params.task
   local known = { scan=true, import=true, similar=true, ai=true, transfer=true, precache=true,
-    classify=true, transients=true, relink=true, remove=true, verify=true, missing=true, duplicates=true, loudness=true }
+    classify=true, transients=true, relink=true, remove=true, verify=true, missing=true, duplicates=true, loudness=true, media=true }
   assert(task == nil or known[task], "未知任务")
-  if params and params.jobId ~= nil and (task == "scan" or task == "import") then
+  if params and params.jobId ~= nil and (task == "scan" or task == "import" or task == "media") then
     local id = number(params.jobId, 1, 9007199254740991)
-    local session = task == "scan" and state.scan or state.import_session
+    local session = task == "scan" and state.scan or task == "media" and state.soundminer_media_session or state.import_session
     -- Discovery can hand the same owner to metadata import between a snapshot
     -- and its click. Follow that owner, but never cancel a newer unrelated job.
     if task == "scan" and not state.scan then task, session = "import", state.import_session end
@@ -20041,6 +20526,7 @@ WebUI.handlers["tasks.cancel"] = function(params)
   if cancel("import") and state.import_session then
     cancel_import_session()
   end
+  if cancel("media") and SoundminerMedia then SoundminerMedia.cancel_all() end
   if cancel("similar") and state.similarity_session then
     cancel_similarity_search()
   end
@@ -20456,6 +20942,8 @@ WebUI.handlers["settings.get"] = function()
     presets[#presets + 1] = { id = preset.id, name = preset.name }
   end
   return {
+    sourceProtection = true,
+    protectedTransferDir = DEFAULT_TRANSFER_DIR,
     transfer_dir = state.transfer_dir,
     transfer_template = state.transfer_template,
     transfer_format = state.transfer_format,
@@ -20482,6 +20970,9 @@ end
 
 WebUI.handlers["settings.update"] = function(params)
   writable()
+  assert((params.values or {}).transfer_dir == nil
+    or path_key(normalize_external_path(params.values.transfer_dir)) == path_key(DEFAULT_TRANSFER_DIR),
+    "原音频保护已启用，请使用 PRS 导出目录")
   assert(PsyReaSFXScope.kind ~= "soundminer" or (params.values or {}).watch_enabled ~= true,
     "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。")
   local updates = {}
@@ -21241,6 +21732,7 @@ function webview_publish()
     taskDetails = WebUI.task_details(),
     soundminerReport = state.soundminer_report,
     tasks = {
+      media = state.soundminer_media_session ~= nil,
       scan = state.scan ~= nil,
       import = state.import_session ~= nil,
       transfer = state.transfer_running,
@@ -23620,7 +24112,7 @@ function artwork_image_dimensions(path)
   end
 
   local width, height = nil, nil
-  local file = io.open(path, "rb")
+  local file = open_source_binary_file(path)
 
   if file then
     local data = file:read(262144) or ""
@@ -23934,7 +24426,7 @@ function artwork_file_exists(path)
     cache.entries[path] = entry
     cache.count = cache.count + 1
   end
-  entry.exists = reaper.file_exists(path) == true
+  entry.exists = source_file_exists(path) == true
   entry.checked = now
   return entry.exists
 end
@@ -24236,7 +24728,7 @@ function process_artwork_queue()
       tostring(asset.artwork_path or "")
 
     if current == ""
-      or not reaper.file_exists(current) then
+      or not source_file_exists(current) then
       local found, shared =
         discover_artwork_path(asset)
 
@@ -24364,10 +24856,23 @@ function artwork_image_from_path(path)
     return nil
   end
 
-  local was_ordered = entry ~= nil and not entry.failed
+  local was_ordered = entry ~= nil and entry.image ~= nil and not entry.failed
+  local native_path = path
+  if SoundminerMedia then
+    if not entry then entry = {last_used = now} state.artwork_images[key] = entry end
+    local reason
+    native_path, reason = SoundminerMedia.ensure_path({path = path}, entry, "正在准备封面副本")
+    if not native_path then
+      if reason ~= "pending" then
+        entry.failed, entry.last_used = true, now
+        entry.media_finished, entry.media_error = nil, nil
+      end
+      return nil
+    end
+  end
 
   local ok, image =
-    pcall(ImGui.CreateImage, path)
+    pcall(ImGui.CreateImage, native_path)
 
   if not ok or not image then
     state.artwork_images[key] = {
@@ -24751,15 +25256,27 @@ function metadata_pick(map, names)
   return ""
 end
 
-function index_asset(asset)
+function index_asset(asset, owner)
   if not asset
-    or not reaper.file_exists(asset.path) then
+    or not source_file_exists(asset.path) then
     if asset then asset.meta_failed_at = os.time() end
     return false
   end
 
-  local source =
-    reaper.PCM_Source_CreateFromFile(asset.path)
+  local native_path = asset.path
+  if SoundminerMedia and SoundminerMedia.requires(asset) then
+    native_path = SoundminerMedia.path(asset)
+    if not native_path then
+      if asset.indexed then return true end
+      local reason
+      if owner then native_path, reason = SoundminerMedia.ensure_path(asset, owner, "正在准备元数据分析副本") end
+      if not native_path then
+        if reason ~= "pending" then asset.meta_failed_at = os.time() end
+        return false, reason or "私有音频副本未就绪"
+      end
+    end
+  end
+  local source = reaper.PCM_Source_CreateFromFile(native_path)
 
   if not source then
     asset.meta_failed_at = os.time()
@@ -25266,12 +25783,13 @@ function process_metadata_queue()
     return
   end
 
-  local job = table.remove(state.meta_queue, 1)
-  state.meta_queued[job.key] = nil
-
+  local job = state.meta_queue[1]
   if job.asset then
-    index_asset(job.asset)
+    local _, reason = index_asset(job.asset, job)
+    if reason == "pending" then return end
   end
+  table.remove(state.meta_queue, 1)
+  state.meta_queued[job.key] = nil
 
   state.next_meta_job = now + META_INTERVAL
 end
@@ -26504,10 +27022,15 @@ function save_wave_to_disk(
   preserve_channels,
   spectral
 )
+  if not prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR) then return nil, "unmanaged cache directory" end
   ensure_dirs()
 
   local cache_key =
     wave_cache_key(asset, points, preserve_channels, spectral)
+  local cache_path = join_path(WAVE_CACHE_DIR, cache_key .. ".rwf")
+  if reaper.file_exists(cache_path) and not prs_wave_cache_file_owned(cache_path) then
+    return nil, "refusing to overwrite a foreign cache file"
+  end
   -- A new disk file makes any earlier "not on disk" probe stale.
   if state and state.wave_checked then
     state.wave_checked[cache_key] = nil
@@ -26515,7 +27038,7 @@ function save_wave_to_disk(
 
   local file =
     io.open(
-      join_path(WAVE_CACHE_DIR, cache_key .. ".rwf"),
+      cache_path,
       "wb"
     )
 
@@ -26651,6 +27174,8 @@ function direct_waveform_path_required(path)
 end
 
 function direct_wave_read_format(file)
+  local physical_size = file:seek("end")
+  if not physical_size or not file:seek("set", 0) then return nil, "无法读取 WAV 文件长度" end
   local header = file:read(12)
   if not header or #header ~= 12 then return nil, "WAV 文件头不完整" end
   local container = header:sub(1, 4)
@@ -26663,12 +27188,13 @@ function direct_wave_read_format(file)
   local data_offset = nil
   local data_size = nil
   local rf64_data_size = nil
-  while true do
+  for _ = 1, 1024 do
     local chunk_header = file:read(8)
     if not chunk_header or #chunk_header ~= 8 then break end
     local chunk_id = chunk_header:sub(1, 4)
     local chunk_size = string.unpack("<I4", chunk_header, 5)
     local chunk_start = file:seek()
+    if not chunk_start then return nil, "无法读取 WAV 块位置" end
     if chunk_id == "ds64" then
       local payload = file:read(math.min(chunk_size, 28))
       if payload and #payload >= 16 then
@@ -26696,11 +27222,13 @@ function direct_wave_read_format(file)
     end
     if format_info and data_offset and data_size then break end
     local next_chunk = chunk_start + chunk_size + (chunk_size % 2)
+    if next_chunk > physical_size then break end
     if not file:seek("set", next_chunk) then break end
   end
 
   if not format_info then return nil, "WAV 缺少 fmt 数据块" end
   if not data_offset or not data_size then return nil, "WAV 缺少 data 数据块" end
+  if data_size <= 0 or data_size > physical_size - data_offset then return nil, "WAV 音频数据越界" end
   local channels = tonumber(format_info.channels) or 0
   local block_align = tonumber(format_info.block_align) or 0
   local bytes_per_sample = channels > 0 and block_align / channels or 0
@@ -26753,7 +27281,12 @@ function direct_wave_decode_sample(bytes, offset, format_tag, bytes_per_sample)
 end
 
 function start_direct_wave_job(job)
-  local file, open_error = open_source_binary_file(job.asset.path)
+  local file, open_error
+  if SoundminerMedia and SoundminerMedia.requires(job.asset) then
+    file, open_error = SoundminerMedia.open_source(job.asset.path)
+  else
+    file, open_error = open_source_binary_file(job.asset.path)
+  end
   if not file then return false, "无法直接读取长路径 WAV：" .. tostring(open_error) end
   local format_info, format_error = direct_wave_read_format(file)
   if not format_info then file:close() return false, format_error end
@@ -26841,6 +27374,10 @@ function step_direct_wave_job(job, maximum_points)
   job.direct_point = last + 1
   job.progress = clamp((job.direct_point - 1) / waveform.count, 0, 1)
   if job.direct_point <= waveform.count then return "working" end
+  if file.unchanged then
+    local unchanged, reason = file:unchanged()
+    if not unchanged then return "failed", nil, reason or "读取期间源音频已变化" end
+  end
   file:close()
   job.direct_file = nil
   return "done", waveform
@@ -27000,6 +27537,10 @@ function read_waveform_from_source(
 end
 
 function destroy_wave_job(job)
+  if job and job.media_session and SoundminerMedia then
+    SoundminerMedia.cancel(job.media_session)
+    job.media_session = nil
+  end
   if job and job.direct_file then
     job.direct_file:close()
     job.direct_file = nil
@@ -27013,17 +27554,20 @@ end
 function start_wave_job(job)
   if not job
     or not job.asset
-    or not reaper.file_exists(job.asset.path) then
+    or not source_file_exists(job.asset.path) then
     return false, "文件不可用"
   end
+  local native_path = job.asset.path
+  if SoundminerMedia then native_path = SoundminerMedia.path(job.asset) end
+  if not native_path then return false, "原音频禁止原生峰值构建；私有音频副本未就绪" end
 
   local source = nil
   if (job.reopen_count or 0) > 0
     and type(reaper.PCM_Source_CreateFromFileEx) == "function" then
-    source = reaper.PCM_Source_CreateFromFileEx(job.asset.path, true)
+    source = reaper.PCM_Source_CreateFromFileEx(native_path, true)
   end
   if not source then
-    source = reaper.PCM_Source_CreateFromFile(job.asset.path)
+    source = reaper.PCM_Source_CreateFromFile(native_path)
   end
 
   if not source then
@@ -27075,6 +27619,30 @@ end
 function step_wave_job(job)
   if not job then
     return "failed", nil, "空任务"
+  end
+
+  if SoundminerMedia and SoundminerMedia.requires(job.asset) and not job.source then
+    if job.phase == "direct_read" then
+      local status, waveform, reason = step_direct_wave_job(job, 4)
+      if status ~= "failed" then return status, waveform, reason end
+      destroy_wave_job(job) job.direct_wave_error = reason job.phase = nil
+    end
+    local native_path = SoundminerMedia.path(job.asset)
+    if not native_path and not job.direct_wave_attempted then
+      job.direct_wave_attempted = true
+      local started, reason = start_direct_wave_job(job)
+      if started then return step_direct_wave_job(job, 4) end
+      job.direct_wave_error = reason
+    end
+    if not native_path then
+      local reason
+      native_path, reason = SoundminerMedia.ensure_path(job.asset, job, "正在准备原生波形分析副本")
+      if not native_path then
+        if reason == "pending" then return "working" end
+        return "failed", nil, reason
+      end
+    end
+    job.direct_wave_attempted = true
   end
 
   if job.phase == "direct_read" then
@@ -27583,7 +28151,7 @@ function process_wave_precache()
       elseif include and session.filter_library_id then
         include = asset.library_id == session.filter_library_id
       end
-      if include and reaper.file_exists(asset.path) then
+      if include and source_file_exists(asset.path) then
         session.assets[#session.assets + 1] = asset
       end
     end
@@ -27698,22 +28266,23 @@ end
 
 function clear_wave_cache()
   reset_wave_cache_runtime()
-
-  while true do
-    local file =
-      reaper.EnumerateFiles(
-        WAVE_CACHE_DIR,
-        0
-      )
-
-    if not file then
-      break
-    end
-
-    os.remove(join_path(WAVE_CACHE_DIR, file))
+  if not prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR) then
+    set_status("未清理：目录不是 PRS 专属波形缓存目录", true)
+    return
   end
-
-  set_status("已清空波形缓存")
+  local files, index = {}, 0
+  while true do
+    local file = reaper.EnumerateFiles(WAVE_CACHE_DIR, index)
+    if not file then break end
+    local path = join_path(WAVE_CACHE_DIR, file)
+    if prs_wave_cache_file_owned(path) then files[#files + 1] = path end
+    index = index + 1
+  end
+  local removed = 0
+  for _, path in ipairs(files) do
+    if prs_wave_cache_file_owned(path) and os.remove(path) then removed = removed + 1 end
+  end
+  set_status(string.format("已清理 %d 个 PRS 波形缓存", removed))
 end
 
 function validate_wave_cache_file(path)
@@ -27804,7 +28373,8 @@ function start_wave_cache_verification()
       break
     end
 
-    if safe_lower(extension(filename)) == "rwf" then
+    if prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR)
+      and prs_wave_cache_file_owned(join_path(WAVE_CACHE_DIR, filename)) then
       files[#files + 1] = filename
     end
 
@@ -27860,9 +28430,13 @@ function process_wave_cache_verification()
     end
 
     local path = join_path(WAVE_CACHE_DIR, filename)
-    local valid = validate_wave_cache_file(path)
+    local owned = prs_wave_cache_directory_is_managed(WAVE_CACHE_DIR)
+      and prs_wave_cache_file_owned(path)
+    local valid = owned and validate_wave_cache_file(path)
 
-    if valid then
+    if not owned then
+      -- A file changed ownership after enumeration; never move/delete it.
+    elseif valid then
       session.valid = session.valid + 1
     else
       local quarantine = join_path(
@@ -27870,7 +28444,8 @@ function process_wave_cache_verification()
         os.date("%Y%m%d_%H%M%S_") .. filename
       )
 
-      if copy_file_streaming(path, quarantine) then
+      if not reaper.file_exists(quarantine) and copy_file_streaming(path, quarantine)
+        and prs_wave_cache_file_owned(path) then
         os.remove(path)
       end
 
@@ -27942,8 +28517,9 @@ function cancel_import_session()
 
   if session.phase ~= "cancel_cleanup"
     and session.phase ~= "cancel_rebuild" then
-    if session.current and session.current.wave_job then
-      destroy_wave_job(session.current.wave_job)
+    if session.current then
+      if session.current.wave_job then destroy_wave_job(session.current.wave_job) end
+      if SoundminerMedia and session.current.media_session then SoundminerMedia.cancel(session.current.media_session) end
     end
     session.current = nil
     session.phase = "cancel_cleanup"
@@ -28094,10 +28670,11 @@ function step_import_session(session)
     current.progress = 0.08
 
     if not asset.indexed then
-      local ok = index_asset(asset)
+      local ok, reason = index_asset(asset, current)
+      if reason == "pending" then return false end
 
       if not ok then
-        asset.wave_error = "媒体文件无法读取"
+        asset.wave_error = reason or "媒体文件无法读取"
         record_failed_task(asset, "metadata", asset.wave_error)
         asset.ready = true
         session.failed = session.failed + 1
@@ -28240,6 +28817,10 @@ function destroy_preview_sources(after_fade)
 end
 
 function stop_preview()
+  if SoundminerMedia and SoundminerMedia.preview_session then
+    SoundminerMedia.cancel(SoundminerMedia.preview_session)
+    SoundminerMedia.preview_session = nil
+  end
   local preview_job_token = state.preview_job_token
   state.preview_job_token = nil
 
@@ -28564,16 +29145,42 @@ function play_preview(
     return
   end
 
-  if not reaper.file_exists(asset.path) then
+  if not source_file_exists(asset.path) then
     set_status("文件不存在：" .. asset.path, true)
     return
+  end
+
+  local native_path = asset.path
+  if SoundminerMedia and SoundminerMedia.requires(asset) then
+    native_path = SoundminerMedia.path(asset)
+    if not native_path then
+      stop_preview()
+      local captured = capture_transfer_settings()
+      local range = captured_range or {start = state.region_start, finish = state.region_end}
+      local project = reaper.EnumProjects and reaper.EnumProjects(-1, "")
+      local session, reason
+      session, reason = SoundminerMedia.prepare({asset}, function(ok)
+        local current = SoundminerMedia.preview_session == session
+        if current then SoundminerMedia.preview_session = nil end
+        if ok and current and (not project or project == reaper.EnumProjects(-1, "")) then
+          local live = capture_transfer_settings()
+          AppState.apply(captured)
+          local succeeded, failure = pcall(play_preview, asset, start_percent, use_selection, resume_position, range)
+          AppState.apply(live)
+          if not succeeded then set_status(tostring(failure), true) end
+        end
+      end, "正在准备试听副本")
+      SoundminerMedia.preview_session = session
+      if not session then set_status(reason, true) end
+      return
+    end
   end
 
   queue_metadata(asset, true)
   stop_preview()
 
   if type(reaper.CF_CreatePreview) ~= "function" then
-    reaper.OpenMediaExplorer(asset.path, true)
+    reaper.OpenMediaExplorer(native_path, true)
     state.preview_backend = "Media Explorer"
     record_preview_history(asset)
 
@@ -28591,7 +29198,7 @@ function play_preview(
   end
 
   local source =
-    reaper.PCM_Source_CreateFromFile(asset.path)
+    reaper.PCM_Source_CreateFromFile(native_path)
 
   if not source then
     set_status("无法建立试听源", true)
@@ -29253,6 +29860,18 @@ function apply_insert_settings(asset)
   )
 end
 
+function defer_native_media_action(assets, callback, label)
+  if not SoundminerMedia or SoundminerMedia.all_ready(assets) then return false end
+  local captured = capture_transfer_settings()
+  return SoundminerMedia.defer(assets, function()
+    local live = capture_transfer_settings()
+    AppState.apply(captured)
+    local ok, reason = pcall(callback)
+    AppState.apply(live)
+    if not ok then set_status(tostring(reason), true) end
+  end, label)
+end
+
 function insert_asset(asset, new_track, bwf)
   if state.root_removal_session then
     set_status("请等待来源移除完成后再插入素材", true)
@@ -29264,10 +29883,25 @@ function insert_asset(asset, new_track, bwf)
     return
   end
 
-  if not reaper.file_exists(asset.path) then
+  if not source_file_exists(asset.path) then
     set_status("文件不存在：" .. asset.path, true)
     return
   end
+  local position = reaper.GetCursorPosition()
+  local selected_track = reaper.GetSelectedTrack(PROJ, 0)
+  if defer_native_media_action({asset}, function()
+    if selected_track then
+      if not reaper.ValidatePtr2(PROJ, selected_track, "MediaTrack*") then
+        set_status("插入已取消：目标轨道已移除", true) return
+      end
+      reaper.SetOnlyTrackSelected(selected_track)
+    end
+    reaper.SetEditCurPos(position, false, false)
+    insert_asset(asset, new_track, bwf)
+  end, "正在准备插入副本") then return end
+  local native_path = asset.path
+  if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
+  if not native_path then return end
 
   stop_preview()
 
@@ -29295,7 +29929,7 @@ function insert_asset(asset, new_track, bwf)
 
   local result =
     reaper.InsertMediaSection(
-      asset.path,
+      native_path,
       mode,
       start_percent,
       end_percent,
@@ -29671,7 +30305,18 @@ function transfer_path_key(path)
   return path_key(root .. table.concat(segments, SEP))
 end
 
+function soundminer_transfer_path_allowed(path, asset)
+  local protected = SoundminerMedia and SoundminerMedia.requires(asset)
+    or (state.transfer_job and state.transfer_job.readonly_sources)
+  if not protected then return true end
+  local root, target = transfer_path_key(DEFAULT_TRANSFER_DIR), transfer_path_key(path)
+  if not root or not target then return false end
+  root = root:gsub("[/\\]+$", "")
+  return target == root or target:sub(1, #root + 1) == root .. SEP
+end
+
 function transfer_output_is_source(path, asset)
+  if not soundminer_transfer_path_allowed(path, asset) then return true end
   local key = transfer_path_key(path)
   if not key then return true end -- Ambiguous relative/device paths cannot be proven safe.
   return (asset and transfer_path_key(asset.path) == key)
@@ -29702,7 +30347,8 @@ function resolve_transfer_output(asset, index, variant, captured_name)
 
   if state.transfer_collision == "skip" then
     return nil, "skip", candidate
-  elseif state.transfer_collision == "overwrite" then
+  elseif state.transfer_collision == "overwrite"
+    and not (SoundminerMedia and SoundminerMedia.requires(asset)) then
     return candidate, "overwrite"
   end
 
@@ -30000,6 +30646,9 @@ function detect_transfer_tail_end(
 end
 
 function create_transfer_item(asset, use_selection, variant)
+  local native_path = asset.path
+  if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
+  if not native_path then return nil, nil, "私有音频副本未就绪" end
   variant = variant or {
     pitch = state.pitch,
     rate = state.rate,
@@ -30021,7 +30670,7 @@ function create_transfer_item(asset, use_selection, variant)
     true
   )
 
-  local source = reaper.PCM_Source_CreateFromFile(asset.path)
+  local source = reaper.PCM_Source_CreateFromFile(native_path)
 
   if not source then
     return track, nil, "source"
@@ -30236,6 +30885,7 @@ function configure_transfer_render(asset, output_path)
 end
 
 function unique_transfer_sidecar_path(output_path, label, task_index)
+  if not soundminer_transfer_path_allowed(output_path) then return nil end
   local directory = dirname(output_path)
   local extension_name =
     output_path:match("%.([^%.\\/]*)$") or "wav"
@@ -30274,8 +30924,12 @@ function commit_transfer_output(
   replace_existing,
   task_index
 )
-  if transfer_output_is_source(output_path) then
+  if transfer_output_is_source(output_path) or transfer_output_is_source(temporary_path) then
     return false, translate_ui_text("输出路径与源素材重合，请更换输出目录或文件名")
+  end
+  if SoundminerMedia and SoundminerMedia.requires()
+    and reaper.file_exists(output_path) then
+    return false, "原音频保护模式不会覆盖已有输出，请使用递增文件名"
   end
   if not temporary_path
     or not reaper.file_exists(temporary_path) then
@@ -30432,7 +31086,7 @@ function render_transfer_asset(task)
   end
 
   if not render_ok then
-    if reaper.file_exists(temporary_path) then
+    if not transfer_output_is_source(temporary_path, asset) and reaper.file_exists(temporary_path) then
       os.remove(temporary_path)
     end
 
@@ -30508,6 +31162,10 @@ end
 function finish_transfer_job(job, canceled)
   if not job then
     return
+  end
+  if SoundminerMedia and job.media_session then
+    SoundminerMedia.cancel(job.media_session)
+    job.media_session = nil
   end
 
   local report_ok, report_error = write_transfer_report(job, canceled)
@@ -30600,6 +31258,13 @@ function process_transfer_job()
     return
   end
 
+  if state.transfer_cancel_requested
+    or (job.job_token
+      and job.job_token.cancel_requested) then
+    finish_transfer_job(job, true)
+    return
+  end
+
   if (reaper.GetPlayStateEx(PROJ) & 1) == 1 then
     set_status(
       translate_ui_text(
@@ -30610,13 +31275,6 @@ function process_transfer_job()
     return
   end
 
-  if state.transfer_cancel_requested
-    or (job.job_token
-      and job.job_token.cancel_requested) then
-    finish_transfer_job(job, true)
-    return
-  end
-
   local task = job.tasks[job.next_index]
 
   if not task then
@@ -30624,10 +31282,30 @@ function process_transfer_job()
     return
   end
 
+  if SoundminerMedia and SoundminerMedia.requires(task.asset)
+    and not SoundminerMedia.path(task.asset) and not task.media_finished then
+    if not task.media_requested then
+      task.media_requested = true
+      local session, reason = SoundminerMedia.prepare({task.asset}, function(ok, failure)
+        task.media_finished = true
+        task.media_error = not ok and (failure or "私有副本准备已取消") or nil
+        job.media_session = nil
+      end, "正在准备导出副本")
+      job.media_session = session
+      if not session then task.media_finished = true task.media_error = reason end
+    end
+    return
+  end
+
   local started_at = reaper.time_precise()
   local live_settings = capture_transfer_settings()
   if job.settings then AppState.apply(job.settings) end
-  local call_ok, ok, output, message, skipped = pcall(render_transfer_asset, task)
+  local call_ok, ok, output, message, skipped
+  if task.media_error then
+    call_ok, ok, message = true, false, task.media_error
+  else
+    call_ok, ok, output, message, skipped = pcall(render_transfer_asset, task)
+  end
   AppState.apply(live_settings)
   if not call_ok then ok, output, message, skipped = false, nil, tostring(ok), false end
   local elapsed =
@@ -30699,6 +31377,16 @@ function run_transfer(assets, batch_mode)
   if not transfer_path_key(directory) then
     set_status("请选择绝对路径的输出目录", true)
     return
+  end
+  local readonly_sources = false
+  for _, asset in ipairs(assets) do
+    if SoundminerMedia and SoundminerMedia.requires(asset) then
+      readonly_sources = true
+      if not soundminer_transfer_path_allowed(directory, asset) then
+        set_status("原音频保护模式请导出到当前 PRS 素材库的 Transfer 目录", true)
+        return
+      end
+    end
   end
 
   if reaper.RecursiveCreateDirectory(directory, 0) <= 0
@@ -30835,6 +31523,7 @@ function run_transfer(assets, batch_mode)
   state.transfer_last_outputs = {}
   state.transfer_last_summary = ""
   state.transfer_job = {
+    readonly_sources = readonly_sources,
     tasks = tasks,
     total = #tasks,
     next_index = 1,
@@ -30886,9 +31575,12 @@ function insert_asset_at(
   if state.root_removal_session then
     return false
   end
-  if not asset or not reaper.file_exists(asset.path) then
+  if not asset or not source_file_exists(asset.path) then
     return false
   end
+  local native_path = asset.path
+  if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
+  if not native_path then return false end
 
   track_index = math.max(0, math.floor(track_index or 0))
   ensure_track_index(track_index)
@@ -30917,7 +31609,7 @@ function insert_asset_at(
 
   local result =
     reaper.InsertMediaSection(
-      asset.path,
+      native_path,
       mode,
       start_percent,
       end_percent,
@@ -30931,6 +31623,41 @@ function insert_asset_at(
   end
 
   return false
+end
+
+function insert_assets_at(assets, base_index, position, start_percent, end_percent, title)
+  if SoundminerMedia and not SoundminerMedia.all_ready(assets) then
+    local append = base_index >= reaper.CountTracks(PROJ)
+    local target = not append and reaper.GetTrack(PROJ, base_index) or nil
+    if not append and not target then set_status("插入已取消：目标轨道不可用", true) return end
+    if defer_native_media_action(assets, function()
+      local resumed_index
+      if append then
+        resumed_index = reaper.CountTracks(PROJ)
+      elseif reaper.ValidatePtr2(PROJ, target, "MediaTrack*") then
+        resumed_index = math.max(0, math.floor(reaper.GetMediaTrackInfo_Value(target, "IP_TRACKNUMBER")) - 1)
+      else
+        set_status("插入已取消：目标轨道已移除", true)
+        return
+      end
+      insert_assets_at(assets, resumed_index, position, start_percent, end_percent, title)
+    end, "正在准备批量插入副本") then return end
+  end
+  reaper.Undo_BeginBlock2(PROJ)
+  reaper.PreventUIRefresh(1)
+  local inserted = 0
+  local ok, reason = xpcall(function()
+    for index, asset in ipairs(assets) do
+      if insert_asset_at(asset, base_index + index - 1, position, start_percent, end_percent) then
+        inserted = inserted + 1
+      end
+    end
+  end, debug.traceback)
+  reaper.PreventUIRefresh(-1)
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock2(PROJ, title, -1)
+  if not ok then set_status("插入素材失败：" .. tostring(reason), true) return end
+  set_status(string.format("已在 %.3f 秒放置 %d 个素材", position, inserted))
 end
 
 function insert_selected_stack(
@@ -30976,38 +31703,8 @@ function insert_selected_stack(
     or reaper.CountTracks(PROJ)
 
   local position = reaper.GetCursorPosition()
-
-  reaper.Undo_BeginBlock2(PROJ)
-  reaper.PreventUIRefresh(1)
-
-  local inserted = 0
-
-  for index, asset in ipairs(assets) do
-    if insert_asset_at(
-      asset,
-      base_index + index - 1,
-      position,
-      start_percent or 0,
-      end_percent or 1
-    ) then
-      inserted = inserted + 1
-    end
-  end
-
-  reaper.PreventUIRefresh(-1)
-  reaper.UpdateArrange()
-  reaper.Undo_EndBlock2(
-    PROJ,
-    "PsyReaSFX：分轨插入多个素材",
-    -1
-  )
-
-  set_status(
-    string.format(
-      "已分轨插入 %d 个素材",
-      inserted
-    )
-  )
+  insert_assets_at(assets, base_index, position, start_percent or 0, end_percent or 1,
+    "PsyReaSFX：分轨插入多个素材")
 end
 
 function begin_external_drag(
@@ -31104,45 +31801,8 @@ function drop_external_drag()
     base_index = reaper.CountTracks(PROJ)
   end
 
-  reaper.Undo_BeginBlock2(PROJ)
-  reaper.PreventUIRefresh(1)
-
-  local inserted = 0
-
-  local ok, failure = xpcall(function()
-    for index, asset in ipairs(drag.assets) do
-      if insert_asset_at(
-        asset,
-        base_index + index - 1,
-        position,
-        drag.start_percent,
-        drag.end_percent
-      ) then
-        inserted = inserted + 1
-      end
-    end
-  end, debug.traceback)
-
-  reaper.PreventUIRefresh(-1)
-  reaper.UpdateArrange()
-  reaper.Undo_EndBlock2(
-    PROJ,
-    "PsyReaSFX：拖拽素材到编排区",
-    -1
-  )
-
-  if not ok then
-    set_status("拖入素材失败：" .. tostring(failure), true)
-    return
-  end
-
-  set_status(
-    string.format(
-      "已在 %.3f 秒放置 %d 个素材",
-      position,
-      inserted
-    )
-  )
+  insert_assets_at(drag.assets, base_index, position, drag.start_percent, drag.end_percent,
+    "PsyReaSFX：拖拽素材到编排区")
 end
 
 function process_external_drag()
@@ -31195,12 +31855,12 @@ function reveal_file(path)
     )
   elseif os_name:match("OSX") then
     reaper.ExecProcess(
-      'open -R "' .. path .. '"',
+      "open -R '" .. path:gsub("'", "'\\''") .. "'",
       0
     )
   else
     reaper.ExecProcess(
-      'xdg-open "' .. dirname(path) .. '"',
+      "xdg-open '" .. dirname(path):gsub("'", "'\\''") .. "'",
       0
     )
   end
@@ -31261,13 +31921,13 @@ function open_folder(path)
 
   if os_name:match("Win") then
     command =
-      'cmd.exe /D /S /C start "" "'
+      'explorer.exe "'
         .. path:gsub('"', "")
         .. '"'
   elseif os_name:match("OSX") then
-    command = 'open "' .. path:gsub('"', '\\"') .. '"'
+    command = "open '" .. path:gsub("'", "'\\''") .. "'"
   else
-    command = 'xdg-open "' .. path:gsub('"', '\\"') .. '"'
+    command = "xdg-open '" .. path:gsub("'", "'\\''") .. "'"
   end
 
   local ok = pcall(reaper.ExecProcess, command, -1)
@@ -32165,7 +32825,7 @@ function migrate_asset_path(asset, new_path, record)
     record.path
   )
   -- One existence probe answers both the identity timestamp and `missing`.
-  local present = reaper.file_exists(asset.path)
+  local present = source_file_exists(asset.path)
   ensure_asset_identity(asset, false)
   if present then
     asset.last_seen = os.time()
@@ -32236,7 +32896,7 @@ function process_relink_plan_entry(plan, asset)
         plan.targets[target_key] = asset
       end
 
-      if not reaper.file_exists(target) then
+      if not source_file_exists(target) then
         plan.missing = plan.missing + 1
       end
 
@@ -32557,7 +33217,7 @@ function process_missing_audit()
     end
 
     local missing = session.offline[tostring(asset.root_id or "")]
-      or not reaper.file_exists(asset.path)
+      or not source_file_exists(asset.path)
     asset.missing = missing == true
     if asset.missing then
       local key = asset_path_sort_key(asset)
@@ -32577,7 +33237,7 @@ function process_missing_audit()
 end
 
 function sampled_file_fingerprint(path, known_size)
-  local file = io.open(path, "rb")
+  local file = open_source_binary_file(path)
   if not file then
     return nil
   end
@@ -32591,6 +33251,7 @@ function sampled_file_fingerprint(path, known_size)
     file:seek("set", position)
     chunks[#chunks + 1] = file:read(chunk_size) or ""
   end
+  if file.unchanged and not file:unchanged() then file:close() return nil end
   file:close()
 
   -- Same digest as hashing "size|head|middle|tail" and "size|tail|middle|head"
@@ -42435,7 +43096,10 @@ function product_navigation_source_names(asset)
   if cached and cached.fingerprint == fingerprint then return cached.names end
   local names = {}
   local metadata_ok = false
-  local opened, source = pcall(reaper.PCM_Source_CreateFromFile, asset.path)
+  local native_path = asset.path
+  if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
+  local opened, source = false, nil
+  if native_path then opened, source = pcall(reaper.PCM_Source_CreateFromFile, native_path) end
   if not opened then source = nil end
   if source then
     local ok, metadata = pcall(metadata_map, source)
@@ -42454,7 +43118,7 @@ end
 
 function product_navigation_folder_cover(folder, reference)
   local exact = join_path(folder, basename(reference))
-  if reaper.file_exists(exact) then return exact end
+  if source_file_exists(exact) then return exact end
   local cached = state.artwork_folder_cache[path_key(folder)]
   if type(cached) == "string" then return cached end
   for index=0,31 do
@@ -42471,14 +43135,14 @@ function product_navigation_same_artwork(left, right, cache)
   local function read(path)
     local key = path_key(path)
     if cache[key] ~= nil then return cache[key] or nil end
-    local file = io.open(path, "rb")
+    local file = open_source_binary_file(path)
     if not file then cache[key] = false return nil end
     local size = file:seek("end")
     if not size or size == 0 or size > ProductNavigation.artwork_max_bytes then
       file:close() cache[key] = false return nil
     end
     file:seek("set", 0)
-    local data = file:read("*a") file:close()
+    local data = file:read(size) file:close()
     cache[key] = data or false
     return data
   end
@@ -42495,7 +43159,7 @@ function browse_asset_library(asset)
   local record = root_record_for_asset(asset)
   local cover = tostring(asset.artwork_path or "")
   if cover == "" and record then cover = tostring(record.artwork_path or "") end
-  if cover ~= "" and cover ~= "-" and not reaper.file_exists(cover) then cover = "" end
+  if cover ~= "" and cover ~= "-" and not source_file_exists(cover) then cover = "" end
   local cover_data = {}
   local target, reason = resolve_asset_product_folder(asset, {
     metadata_names = product_navigation_source_names(asset),
@@ -47457,6 +48121,7 @@ end
 
 function cleanup()
   if WEBVIEW_MODE then webview_close() end
+  if SoundminerMedia then SoundminerMedia.cancel_all() end
   if state.import_session and state.import_session.soundminer then
     SoundminerImport.cancel(state.import_session)
   end
@@ -47854,6 +48519,10 @@ function loop()
   else
     process_background_slice()
   end
+  -- Exclusive jobs (especially Transfer) can themselves be waiting for a
+  -- private source copy. Run this worker even when they own the main budget.
+  bg_mark("source-copy")
+  if not moving and SoundminerMedia then SoundminerMedia.process() end
   bg_mark("counts")
   process_library_count_rebuild()
   process_ucs_count_rebuild()

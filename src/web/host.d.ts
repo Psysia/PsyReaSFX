@@ -85,6 +85,7 @@ export interface Session {
   protocol: 1;
   version?: string;
   catalogScope?: CatalogScope;
+  sourceProtection?: boolean;
   author?: string;
   copyright?: string;
   host: "reaper" | "desktop";

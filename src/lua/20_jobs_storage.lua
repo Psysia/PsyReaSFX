@@ -1631,15 +1631,17 @@ function move_wave_cache_files(
   old_directory,
   new_directory
 )
-  old_directory =
-    normalized_cache_directory(
-      old_directory
-    )
-
-  new_directory =
-    normalized_cache_directory(
-      new_directory
-    )
+  -- Never reinterpret an old external folder as a cache to be emptied. Old
+  -- custom settings are redirected to a PRS subdirectory when loaded; their
+  -- original contents stay untouched, even when the user later requests a
+  -- migration back to the default directory.
+  old_directory = prs_wave_cache_directory_path(old_directory)
+  if not old_directory or not prs_wave_cache_directory_is_managed(old_directory) then
+    return 0, 1
+  end
+  local warning
+  new_directory, warning = normalized_cache_directory(new_directory)
+  if warning then return 0, 1 end
 
   if path_key(old_directory)
       == path_key(new_directory) then
@@ -1687,17 +1689,42 @@ function move_wave_cache_files(
         filename
       )
 
-    if HostApi.file_exists(target_path) then
-      os.remove(source_path)
-      moved = moved + 1
-    elseif copy_file_streaming(
-      source_path,
-      target_path
-    ) then
-      os.remove(source_path)
-      moved = moved + 1
-    else
-      failed = failed + 1
+    if prs_wave_cache_file_owned(source_path) then
+      -- Keep both copies on a name collision. A matching cache key neither
+      -- proves identical bytes nor grants permission to replace a file.
+      if HostApi.file_exists(target_path) then
+        failed = failed + 1
+      else
+        -- A waveform is small; capture it before creating the destination.
+        -- Do not use the generic atomic copier here: it removes an existing
+        -- temporary/backup filename which need not belong to PRS.
+        local input = io.open(source_path, "rb")
+        local bytes = input and input:read(128 * 1024 + 1)
+        if input then input:close() end
+        local output
+        if bytes and #bytes <= 128 * 1024
+          and prs_wave_cache_file_owned(source_path)
+          and not HostApi.file_exists(target_path) then
+          output = io.open(target_path, "wb")
+        end
+        local written = output and output:write(bytes)
+        local closed = output and output:close()
+        local copied = false
+        if written and closed and prs_wave_cache_file_owned(target_path) then
+          local target = io.open(target_path, "rb")
+          local target_bytes = target and target:read(128 * 1024 + 1)
+          if target then target:close() end
+          local source = io.open(source_path, "rb")
+          local source_bytes = source and source:read(128 * 1024 + 1)
+          if source then source:close() end
+          -- A concurrently regenerated source must not be removed after an
+          -- older snapshot was copied. A failed copy always leaves it intact.
+          copied = target_bytes == bytes and source_bytes == bytes
+            and prs_wave_cache_file_owned(source_path)
+            and os.remove(source_path) and true or false
+        end
+        if copied then moved = moved + 1 else failed = failed + 1 end
+      end
     end
   end
 
@@ -1714,10 +1741,15 @@ function switch_wave_cache_directory(
         or WAVE_CACHE_DIR
     )
 
-  new_directory =
+  local warning
+  new_directory, warning =
     normalized_cache_directory(
       new_directory
     )
+  if warning then
+    set_status(warning, true)
+    return false
+  end
 
   if path_key(old_directory)
       == path_key(new_directory) then
@@ -1788,12 +1820,17 @@ function prompt_wave_cache_directory()
     return
   end
 
-  local new_directory =
+  local new_directory, warning =
     normalized_cache_directory(input)
+  if warning then
+    set_status(warning, true)
+    return
+  end
 
   local answer =
     HostApi.MB(
       "是否将现有波形缓存移动到新目录？\n\n"
+        .. new_directory .. "\n\n"
         .. "是：移动已有缓存并切换。\n"
         .. "否：直接切换，旧目录保持不变。\n"
         .. "取消：不修改。",

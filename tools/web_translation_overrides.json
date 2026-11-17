@@ -524,7 +524,7 @@
   "路径映射需要同时填写原路径和新路径": "Enter both the original and the new path prefix.",
   "未检测到本机 Soundminer 库，请浏览选择数据库文件。": "No local Soundminer libraries found. Browse to a database file.",
   "稳定发行基线 · 实机验收记录待补充": "Stable distribution baseline · Native acceptance evidence pending",
-  "在独立库中读取 Soundminer 数据库及波形缓存，导入后打开对应窗口。请先关闭 Soundminer；原数据库和音频保持只读。": "Read Soundminer metadata and waveforms into an independent catalog and open its window. Close Soundminer first; source databases and audio remain read-only.",
+  "在独立库中读取 Soundminer 数据库及波形缓存，导入后打开对应窗口。可与 Soundminer 同时运行；数据库正在写入时暂停本次导入。": "Read Soundminer metadata and waveforms into an independent catalog and open its window. Soundminer may stay open; PRS stops its import if the database is being written.",
   "已识别 Soundminer 素材库。与 PRS 原有库独立保存和加载；离线路径仍会导入。": "Soundminer library recognized. Saved and loaded independently from the original PRS catalog; offline paths are imported.",
   "正在读取独立库列表…": "Loading independent catalogs…",
   "选择独立库": "Choose catalog",
@@ -535,5 +535,11 @@
   "补全取消或失败的导入，保留此独立库中已导入的素材": "Resume a canceled or failed import and keep assets already imported into this catalog",
   "请在对应的独立 Soundminer 库中导入": "Import into the matching independent Soundminer catalog",
   "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。": "Independent Soundminer catalogs are updated by database import, without automatic folder scanning.",
-  "已有独立库会直接打开；需要补全时，从“选择独立库”点击“继续导入”。": "An existing catalog opens directly. To complete an import, use Resume import in Choose catalog."
+  "已有独立库会直接打开；需要补全时，从“选择独立库”点击“继续导入”。": "An existing catalog opens directly. To complete an import, use Resume import in Choose catalog.",
+  "原音频保护": "Original media protection",
+  "准备音频副本": "Preparing media copies",
+  "使用 PRS 导出目录": "Use PRS export directory",
+  "为保护源库，本版导出到 PRS 专属目录，已有文件不会被覆盖。": "To protect source libraries, this version exports into the PRS directory without overwriting existing files.",
+  "所有素材保持只读；首次播放、分析或插入会在后台准备音频副本，占用额外磁盘，可在任务中取消。": "All original media remain read-only. First playback, analysis or insertion prepares private copies in the background, requiring extra disk space. Cancel them in Tasks.",
+  "原音频保护需要新版共享只读接口。请安装 0.9.4 Beta 1 随包运行库并完全重启 REAPER；已有库仍可浏览。": "Original media protection requires the shared read-only API. Install the runtime bundled with 0.9.4 Beta 1 and restart REAPER. Existing catalogs remain browsable."
 }

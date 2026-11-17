@@ -21,6 +21,7 @@ end
 local runtime, core, catalog = read(runtime_path), read(core_path), read(catalog_path)
 
 SEP = "/"
+function source_file_exists(path) return reaper.file_exists(path) end
 function path_key(path) return (tostring(path or ""):gsub("\\", "/"):lower()) end
 function clamp(value, minimum, maximum) return math.max(minimum, math.min(maximum, value)) end
 function trim(value) return (tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")) end

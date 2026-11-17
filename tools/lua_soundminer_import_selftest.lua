@@ -6,6 +6,7 @@ local fixture = assert(arg[2], "fresh synthetic fixture directory required"):gsu
 assert(fixture:match("^%a:/") or fixture:sub(1, 1) == "/", "fixture path must be absolute")
 local resource = fixture .. "/runtime"
 local native_open, native_remove, native_rename = io.open, os.remove, os.rename
+local shared_read_fixture = assert(loadfile("tools/lua_shared_readonly_fixture.lua"))()
 local function key(path) return tostring(path):gsub("\\", "/"):gsub("/+$", ""):lower() end
 local function writable(path)
   assert(key(path):sub(1, #key(fixture) + 1) == key(fixture) .. "/", "write outside fixture: " .. tostring(path))
@@ -60,6 +61,13 @@ local function boot(path, context)
   env.loadfile = function(file, mode) return loadfile(file, mode or "t", env) end
   local deferred
   env.reaper = {
+    ReaWeb_ReadSharedRange = function(file, offset, count)
+      if inventory[key(file)] then
+        if count == 0 then return '{"protocol":1,"ok":true,"dataHex":"","size":"0","mtime":"0","fileId":"1","directory":true}' end
+        return '{"protocol":1,"ok":false,"code":"NOT_FILE","osError":21}'
+      end
+      return shared_read_fixture(file, offset, count)
+    end,
     GetResourcePath = function() return resource end,
     GetOS = function() return "Win64" end,
     time_precise = os.clock,
@@ -258,6 +266,7 @@ assert(sm.neural_json_decode(first.soundminer_metadata).CustomField == "keep me\
 assert(asset(sm, "FX/offline.wav").last_seen == 0)
 sm.start_scan("Soundminer offline retention test", { fixture .. "/audio" })
 for _ = 1, 10000 do
+  if sm.SoundminerMedia then sm.SoundminerMedia.process() end
   if sm.runtime.scan then sm.process_scan()
   elseif sm.runtime.import_session then sm.process_import_session()
   else break end
@@ -298,9 +307,14 @@ assert(cancel.save_libraries() and cancel.save_database_now() and #cancel.runtim
 prs.SoundminerCatalog.open({ path = fixture .. "/changing.sqlite", waveforms = false })
 local changing = launch(); changing.SoundminerCatalog.process_pending()
 assert(coroutine.resume(changing.runtime.import_session.worker))
-local mutation = assert(io.open(fixture .. "/changing.sqlite", "r+b"))
-mutation:seek("set", 60); local old = assert(mutation:read(4)); mutation:seek("set", 60)
-mutation:write(string.char(old:byte(1) ~ 1) .. old:sub(2)); mutation:close()
+if arg[4] == "concurrent-writer" then
+  io.stdout:write("CONCURRENT_IMPORT_READY\n"); io.stdout:flush()
+  assert(io.stdin:read("*l") == "writer-started")
+else
+  local mutation = assert(io.open(fixture .. "/changing.sqlite", "r+b"))
+  mutation:seek("set", 60); local old = assert(mutation:read(4)); mutation:seek("set", 60)
+  mutation:write(string.char(old:byte(1) ~ 1) .. old:sub(2)); mutation:close()
+end
 local changed_report = finish(changing)
 assert(changed_report.error ~= "" and changed_report.added == 0 and #changing.runtime.root_records == 0)
 

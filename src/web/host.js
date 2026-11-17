@@ -211,10 +211,22 @@ export async function connectHost() {
     };
     connection.artworkUrl = async (path) => {
       if (!window.reaper.fs?.stat || !window.reaper.fs?.readFile) return null;
-      const info = await window.reaper.fs.stat(path);
+      // Native fs readers may retain restrictive handles. Only give them a
+      // closed PRS copy; the original is read by the shared source adapter.
+      let prepared;
+      const deadline = Date.now() + 25000;
+      do {
+        if (connection.closed) return null;
+        prepared = await connection.request("artwork.prepare", { path });
+        if (!prepared?.pending) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < deadline);
+      if (connection.closed || !prepared?.path) return null;
+      const privatePath = prepared.path;
+      const info = await window.reaper.fs.stat(privatePath);
       if (!info.exists || !info.size || info.size > 2 * 1024 * 1024)
         return null;
-      const bytes = await window.reaper.fs.readFile(path, {
+      const bytes = await window.reaper.fs.readFile(privatePath, {
         encoding: "binary",
       });
       const extension = path.split(".").pop().toLowerCase();
@@ -250,11 +262,16 @@ export async function connectHost() {
     if (connection.session.protocol !== 1) {
       throw new Error("宿主协议版本不匹配，请重新构建前端与 Lua 后端。");
     }
-    if (native)
+    if (native) {
       connection.runtime = inspectRuntime(
         native,
         connection.session.runtimePolicy,
       );
+      if (connection.session.sourceProtection && !connection.session.capabilities?.sharedSourceReads) {
+        connection.runtime.status = "shared_read_required";
+        connection.runtime.notice = "原音频保护需要新版共享只读接口。请安装 0.9.4 Beta 1 随包运行库并完全重启 REAPER；已有库仍可浏览。";
+      }
+    }
     return connection;
   } catch (error) {
     connection.close();

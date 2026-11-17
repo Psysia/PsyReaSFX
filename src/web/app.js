@@ -2851,6 +2851,7 @@ function renderFilterBar() {
   $("filter-bar").replaceChildren(...chips);
 }
 const taskLabels = {
+  media: "准备音频副本",
   scan: "扫描",
   import: "导入",
   transfer: "交付",
@@ -4598,7 +4599,7 @@ try {
   }
   preferencesReady = true;
   applyPreferences();
-  if (host.runtime?.status === "dock_patch_required")
+  if (["dock_patch_required", "shared_read_required"].includes(host.runtime?.status))
     report(host.runtime.notice);
   if (host.session.version) {
     $("app-version").textContent = host.session.version;

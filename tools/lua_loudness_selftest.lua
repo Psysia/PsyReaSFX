@@ -24,6 +24,7 @@ state = {
 }
 function path_key(path) return path:lower() end
 function file_size() return 128 end
+function source_file_exists(path) return HostApi.file_exists(path) end
 function can_run_heavy_job() return true end
 HostApi = {
   file_exists = function() return true end,

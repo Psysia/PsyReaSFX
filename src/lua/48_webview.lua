@@ -156,14 +156,14 @@ local function prompt_runtime_install(missing_api)
     or (installed and "ReaWebAPI" or "PsyReaSFX WebView Runtime")
   local instructions = installed
       and "已发现 ReaWebAPI 的安装记录或 DLL。请先重启 REAPER，使已安装的组件生效。\n" .. "版本缺少接口时，请在原组件中检查更新。\n"
-    or "首次安装可选择 PsyReaSFX WebView Runtime，并在 Psysia 软件源启用预发布和同步。\n"
+    or "首次安装请同步 Psysia 软件源，安装 PsyReaSFX WebView Runtime 0.3.9.30。\n"
   if owner then
     instructions = instructions .. "当前归属 " .. owner.label .. "\n"
   end
   local title = SCRIPT_NAME .. " · WebView 运行时未就绪"
   local destination = has_reapack
       and (installed and "是否打开现有组件的 ReaPack 页面，检查安装与更新？" or "是否现在打开 ReaPack，并定位到首次安装的运行时组件？")
-    or "当前未检测到 ReaPack。是否打开发布页，下载完整测试版安装包？"
+    or "当前未检测到 ReaPack。是否打开发布页，下载完整安装包？"
   local choice = reaper.MB(
     "未检测到可用的 ReaWebAPI，或当前版本缺少所需接口。\n\n"
       .. instructions
@@ -318,6 +318,7 @@ function WebUI.task_details()
     end
   end
   for name, session in pairs({ scan = state.scan, import = state.import_session,
+    media = state.soundminer_media_session,
     precache = state.precache_session, transfer = state.transfer_job,
     relink = state.relink_plan_session, remove = state.root_removal_session,
     ai = state.ai_semantic_session, verify = state.cache_verify_session }) do
@@ -336,7 +337,7 @@ function WebUI.task_details()
         -- Verification stores its file list under `files`; never serialize job arrays.
         files = counter(session.files), directories = counter(session.directories), failed = counter(session.failed),
         added = counter(session.added), skippedDirectories = counter(session.skipped_directories),
-        jobId = (name == "scan" or name == "import") and session.job_token
+        jobId = (name == "scan" or name == "import" or name == "media") and session.job_token
           and counter(session.job_token.generation) or nil,
         automatic = session.watch == true, canceling = canceling == true,
         paused = not canceling and session.paused or nil,
@@ -368,7 +369,9 @@ WebUI.handlers["session.ready"] = function()
     copyright = COPYRIGHT_TEXT,
     runtimePolicy = WebUI.runtime_policy,
     catalogScope = SoundminerCatalog.current(),
+    sourceProtection = true,
     capabilities = {
+      sharedSourceReads = SoundminerReadOnly.available(),
       catalog = true,
       preview = true,
       metadata = true,
@@ -400,6 +403,31 @@ WebUI.handlers["path.choose"] = function(params)
     error("未知路径选择类型")
   end
   return { path = path, cancelled = not path or path == "" }
+end
+
+WebUI.handlers["artwork.prepare"] = function(params)
+  local path = normalize_external_path(text(params.path, 4096))
+  local extension = path:match("%.([%w]+)$")
+  assert(extension and ({png=true, jpg=true, jpeg=true, webp=true, gif=true, bmp=true})[extension:lower()], "不支持的封面格式")
+  local info, reason = SoundminerReadOnly.stat(path)
+  assert(info and not info.directory and info.size > 0 and info.size <= 2 * 1024 * 1024, reason or "封面大小超出限制")
+  WebUI.artwork_preparations = WebUI.artwork_preparations or {}
+  local entries = WebUI.artwork_preparations
+  local owner = entries[path]
+  if not owner then
+    local count = 0
+    for key, entry in pairs(entries) do
+      if entry.media_finished then entries[key] = nil else count = count + 1 end
+    end
+    assert(count < 16, "封面正在准备，请稍后重试")
+    owner = {}
+    entries[path] = owner
+  end
+  local private_path, failure = SoundminerMedia.ensure_path({path = path, source_max_bytes = 2 * 1024 * 1024}, owner, "准备封面副本")
+  if private_path then entries[path] = nil return {path = private_path} end
+  if failure == "pending" then return {pending = true} end
+  entries[path] = nil
+  error(failure or "无法准备封面副本")
 end
 
 WebUI.handlers["catalog.page"] = function(params)
@@ -1226,11 +1254,11 @@ end
 WebUI.handlers["tasks.cancel"] = function(params)
   local task = params and params.task
   local known = { scan=true, import=true, similar=true, ai=true, transfer=true, precache=true,
-    classify=true, transients=true, relink=true, remove=true, verify=true, missing=true, duplicates=true, loudness=true }
+    classify=true, transients=true, relink=true, remove=true, verify=true, missing=true, duplicates=true, loudness=true, media=true }
   assert(task == nil or known[task], "未知任务")
-  if params and params.jobId ~= nil and (task == "scan" or task == "import") then
+  if params and params.jobId ~= nil and (task == "scan" or task == "import" or task == "media") then
     local id = number(params.jobId, 1, 9007199254740991)
-    local session = task == "scan" and state.scan or state.import_session
+    local session = task == "scan" and state.scan or task == "media" and state.soundminer_media_session or state.import_session
     -- Discovery can hand the same owner to metadata import between a snapshot
     -- and its click. Follow that owner, but never cancel a newer unrelated job.
     if task == "scan" and not state.scan then task, session = "import", state.import_session end
@@ -1243,6 +1271,7 @@ WebUI.handlers["tasks.cancel"] = function(params)
   if cancel("import") and state.import_session then
     cancel_import_session()
   end
+  if cancel("media") and SoundminerMedia then SoundminerMedia.cancel_all() end
   if cancel("similar") and state.similarity_session then
     cancel_similarity_search()
   end
@@ -1658,6 +1687,8 @@ WebUI.handlers["settings.get"] = function()
     presets[#presets + 1] = { id = preset.id, name = preset.name }
   end
   return {
+    sourceProtection = true,
+    protectedTransferDir = DEFAULT_TRANSFER_DIR,
     transfer_dir = state.transfer_dir,
     transfer_template = state.transfer_template,
     transfer_format = state.transfer_format,
@@ -1684,6 +1715,9 @@ end
 
 WebUI.handlers["settings.update"] = function(params)
   writable()
+  assert((params.values or {}).transfer_dir == nil
+    or path_key(normalize_external_path(params.values.transfer_dir)) == path_key(DEFAULT_TRANSFER_DIR),
+    "原音频保护已启用，请使用 PRS 导出目录")
   assert(PsyReaSFXScope.kind ~= "soundminer" or (params.values or {}).watch_enabled ~= true,
     "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。")
   local updates = {}
@@ -2443,6 +2477,7 @@ function webview_publish()
     taskDetails = WebUI.task_details(),
     soundminerReport = state.soundminer_report,
     tasks = {
+      media = state.soundminer_media_session ~= nil,
       scan = state.scan ~= nil,
       import = state.import_session ~= nil,
       transfer = state.transfer_running,

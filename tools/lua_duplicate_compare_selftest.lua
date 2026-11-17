@@ -1,6 +1,9 @@
 local root = assert(arg[1], "temporary test directory is required")
 local module_path = assert(arg[2], "duplicate comparison module is required")
 local sep = package.config:sub(1, 1)
+-- The standalone fixture supplies the source-reader boundary; production uses
+-- the shared read/write/delete native reader from 10_ui_core + 26_shared_readonly.
+function open_source_binary_file(value) return io.open(value, "rb") end
 
 local function path(name) return root .. sep .. name end
 local function write(path_value, value)
@@ -81,6 +84,15 @@ reaper.JS_File_Stat = function(stat_path)
 end
 assert(finish(assert(begin_duplicate_comparison(left, equal))) == "failed")
 reaper.JS_File_Stat = nil
+
+local changing = assert(begin_duplicate_comparison(left, equal))
+local original_reader = changing.left
+changing.left = {
+  read = function(_, ...) return original_reader:read(...) end,
+  close = function() return original_reader:close() end,
+  unchanged = function() return false end,
+}
+assert(finish(changing) == "failed", "shared-reader identity changes cannot be reported as equal")
 
 assert(finish(assert(begin_duplicate_comparison(left, different))) == "different")
 assert(finish(assert(begin_duplicate_comparison(left, shorter))) == "different")

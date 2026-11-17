@@ -1,4 +1,4 @@
--- Soundminer libraries are read as offline SQLite files; never execute their SQL.
+-- Soundminer libraries are read without SQL, source writes or process control.
 -- The normal catalog job owns cancellation, persistence and exclusive mutations.
 SoundminerImport = {}
 
@@ -131,10 +131,10 @@ function SoundminerImport.inspect(path)
       if not row then break end
       samples[#samples + 1] = SoundminerImport.resolve_path(row, "", "") or ""
     end
-    assert(db:unchanged(), "Soundminer 数据库已变化，请关闭 Soundminer 后重试")
+    assert(db:unchanged(), "Soundminer 数据库正在变化，本次读取已停止；可保持 Soundminer 运行，改用稳定副本重试")
     local cache = sm_cache_path(path)
     return { path = path, samples = samples,
-      cachePath = HostApi.file_exists(cache) and cache or "",
+      cachePath = SoundminerReadOnly.stat(cache) and cache or "",
       name = basename(path):gsub("%.[^.]+$", "") }
   end)
   db:close()
@@ -250,7 +250,7 @@ local function sm_wave(session, asset, row)
   if not original then return end
   local blob
   if session.cache then
-    assert(session.cache:unchanged(), "Soundminer 波形缓存已变化，请关闭 Soundminer 后重试")
+    assert(session.cache:unchanged(), "Soundminer 波形缓存正在变化，本次导入已停止；请改用稳定副本")
     local found = session.cache:lookup("overviews", "filepathhash", sm_text(row._FilePathHash))
     if not found then found = session.cache:lookup("overviews", "filepath", sm_text(row.FilePath)) end
     if found and sm_same_path(found.filepath, original) then blob = found.overviews end
@@ -265,10 +265,10 @@ local function sm_wave(session, asset, row)
     frames > 0 and frames or nil, coroutine.yield)
   if not waveform then session.wave_skipped = session.wave_skipped + 1; return end
   assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存已变化，请关闭 Soundminer 后重试")
+    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
   local thumbnail = SoundminerWaveform.resample(waveform, state.mini_wave_points, coroutine.yield)
   assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存已变化，请关闭 Soundminer 后重试")
+    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
   if thumbnail then
     if not wave_cache_file_exists(asset, state.mini_wave_points) then save_wave_to_disk(asset, state.mini_wave_points, thumbnail) end
     if wave_cache_file_exists(asset, state.mini_wave_points) then session.waveforms = session.waveforms + 1
@@ -278,7 +278,7 @@ local function sm_wave(session, asset, row)
     coroutine.yield()
     local detail = SoundminerWaveform.resample(waveform, points, coroutine.yield)
     assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-      "Soundminer 数据或波形缓存已变化，请关闭 Soundminer 后重试")
+      "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
     for _, preserve in ipairs({ false, true }) do
       if not wave_cache_file_exists(asset, points, preserve) then save_wave_to_disk(asset, points, detail, preserve) end
     end
@@ -286,6 +286,8 @@ local function sm_wave(session, asset, row)
 end
 
 local function sm_import_row(session, row)
+  assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
+    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
   local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
   if not path then session.failed = session.failed + 1; return end
   local asset = state.by_path[path_key(path)]
@@ -302,7 +304,8 @@ local function sm_import_row(session, row)
     if frames > 0 and asset.sample_rate > 0 then asset.duration = frames / asset.sample_rate end
     asset.channels = math.floor(sm_number(row.Channels, 1024))
     asset.bit_depth = math.floor(sm_number(row.BitDepth, 128))
-    asset.size = file_size(path)
+    local source_info = SoundminerReadOnly.stat(path)
+    asset.size = source_info and source_info.size or 0
     asset.description = sm_text(row.Description)
     if asset.description == "" then asset.description = sm_text(row.BWDescription) end
     asset.keywords = sm_text(row.Keywords)
@@ -315,7 +318,7 @@ local function sm_import_row(session, row)
     asset.ucs_status = (asset.catid ~= "" or asset.category ~= "" or asset.subcategory ~= "") and "manual" or "unclassified"
     asset.ucs_source = "soundminer"
     asset.indexed, asset.ready = true, true
-    local exists = HostApi.file_exists(path)
+    local exists = source_info ~= nil
     asset.last_seen = exists and os.time() or 0
     if not exists then session.offline = session.offline + 1 end
     add_or_update_asset(asset, false)
@@ -326,6 +329,8 @@ local function sm_import_row(session, row)
   if session.import_waveforms then
     local ok, err = pcall(sm_wave, session, asset, row)
     if not ok then
+      assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
+        "Soundminer 数据或波形缓存正在变化，本次导入已停止；已导入部分保留，请改用稳定副本")
       session.wave_skipped = session.wave_skipped + 1
       session.cache_error = tostring(err)
       if session.cache then session.cache:close(); session.cache = nil end
@@ -344,14 +349,14 @@ local function sm_work(session)
     session.total = session.total + 1
     coroutine.yield()
   end
-  assert(session.database:unchanged(), "Soundminer 数据库已变化，请关闭 Soundminer 后重试")
+  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
   session.phase = "soundminer_import"
   for row in session.database:rows("justinmetadata") do
     sm_import_row(session, row)
     session.done = session.done + 1
     coroutine.yield()
   end
-  assert(session.database:unchanged(), "Soundminer 数据库已变化；已完成部分保留，请关闭 Soundminer 后重试")
+  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；已完成部分保留，请改用稳定副本")
   if session.cache and not session.cache:unchanged() then session.cache_error = "Soundminer 波形缓存已变化" end
 end
 
@@ -380,7 +385,7 @@ function SoundminerImport.start(params)
   if session.import_waveforms then
     local cache_path = sm_path(params.cachePath)
     if cache_path == "" then cache_path = sm_cache_path(path) end
-    if HostApi.file_exists(cache_path) then
+    if SoundminerReadOnly.stat(cache_path) then
       local cache_ok, cache, cache_tables = pcall(sm_open, cache_path)
       if cache_ok and cache_tables.overviews then session.cache = cache
       elseif cache_ok then cache:close(); session.cache_error = "不支持的 Soundminer 波形缓存结构"

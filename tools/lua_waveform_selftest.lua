@@ -23,6 +23,7 @@ end
 function extension(path)
   return ((path or ""):match("%.([^%.]+)$") or ""):lower()
 end
+function source_file_exists(path) return reaper.file_exists(path) end
 function open_source_binary_file(path)
   if path == direct_alias_path then path = direct_fixture_path end
   local file, reason = io.open(path, "rb")

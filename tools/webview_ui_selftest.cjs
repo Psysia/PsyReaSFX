@@ -455,6 +455,8 @@ async function main() {
               aiPreset = request.params.id;
             if (request.method === "settings.get")
               result = {
+                sourceProtection: catalogScope.kind === "soundminer",
+                protectedTransferDir: "C:/PRS/Transfer",
                 ai_active_preset_id: aiPreset,
                 ai_presets: [
                   { id: "fixture-ai-one", name: "Preset One" },
@@ -2695,7 +2697,15 @@ async function main() {
     await page.locator("#settings-open").click();
     await page.locator('[data-section="general"]').click();
     assert.match(await page.locator("#settings-body").textContent(), /不自动扫描来源目录/);
+    assert.match(await page.locator("#settings-body").textContent(), /原音频保护.*所有素材保持只读/);
     assert.equal(await page.getByRole("checkbox", { name: /监视已导入来源文件夹|空闲时检查来源文件夹/ }).count(), 0);
+    await page.locator('[data-section="transfer"]').click();
+    assert.match(await page.locator("#settings-body").textContent(), /已有文件不会被覆盖/);
+    await page.getByRole("button", { name: "使用 PRS 导出目录", exact: true }).click();
+    assert.equal(await page.locator('[data-setting="transfer_dir"]').inputValue(), "C:/PRS/Transfer");
+    assert.equal(await page.locator('[data-setting="transfer_dir"]').evaluate(input => input.readOnly), true);
+    assert.equal(await page.getByRole("button", { name: "浏览输出目录", exact: true }).count(), 0);
+    await page.locator("#settings-discard").click();
     await page.locator("#settings-close").click();
     assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--sidebar-left")), "206px");
     const originalPrefs = await page.evaluate(() => localStorage.getItem("psyreasfx.workspace.v1"));

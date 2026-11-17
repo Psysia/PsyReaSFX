@@ -1,8 +1,9 @@
--- Read-only SQLite table reader for offline Soundminer libraries.
+-- Read-only SQLite table reader for stable Soundminer snapshots.
 -- File-format reference: https://sqlite.org/fileformat2.html
 -- No SQL is executed, no database is opened for writing, and no extensions load.
--- Active WAL/journals are deliberately refused: close Soundminer or export a
--- checkpointed copy first. unchanged() detects observed changes, not an OS lock.
+-- Active WAL/journals are refused without recovery/checkpoint/locking SQL.
+-- Soundminer may keep running: use a stable exported copy when it is writing.
+-- unchanged() detects observed changes; it does not lock another application's DB.
 SoundminerSQLite = {}
 
 local sm_sqlite_methods = {}
@@ -35,51 +36,61 @@ local function sm_sqlite_varint(bytes, pos, limit)
 end
 
 local function sm_sqlite_sidecars_clear(path)
-  local wal, _, wal_error = io.open(path .. "-wal", "rb")
+  local wal, _, wal_error = SoundminerReadOnly.open(path .. "-wal")
   if not wal and wal_error and wal_error ~= 2 then return false end
   if wal then
     local size = wal:seek("end")
+    local stable = wal:unchanged()
     wal:close()
-    if not size or size > 0 then return false end
+    if not stable or not size or size > 0 then return false end
   end
-  local journal, _, journal_error = io.open(path .. "-journal", "rb")
+  local journal, _, journal_error = SoundminerReadOnly.open(path .. "-journal")
   if not journal and journal_error and journal_error ~= 2 then return false end
   if journal then
-    local header = journal:read(28) or ""
+    local wanted = math.min(journal.size, 28)
+    local header = journal:read(wanted)
+    local stable = journal:unchanged()
     journal:close()
     -- PERSIST journals are harmless after SQLite zeros their header.
-    if header:find("[^%z]") then return false end
+    if not stable or not header or #header ~= wanted or header:find("[^%z]") then return false end
   end
   return true
 end
 
 function sm_sqlite_methods:close()
-  if self.file then self.file:close(); self.file = nil end
+  self.closed = true
   self.cache, self.cache_order = {}, {}
 end
 
 function sm_sqlite_methods:unchanged()
-  if not self.file or not sm_sqlite_sidecars_clear(self.path) then return false end
-  local fresh = io.open(self.path, "rb")
+  if self.closed or not sm_sqlite_sidecars_clear(self.path) then return false end
+  local fresh = SoundminerReadOnly.open(self.path)
   if not fresh then return false end
   local header = fresh:read(100)
   local size = fresh:seek("end")
   fresh:close()
-  return header == self.header and size == self.size
+  return header == self.header and size == self.size and fresh.identity == self.identity and fresh.mtime == self.mtime
 end
 
 function sm_sqlite_methods:_page(number)
-  sm_sqlite_require(self.file ~= nil, "database is closed")
+  sm_sqlite_require(not self.closed, "database is closed")
   sm_sqlite_require(math.type(number) == "integer" and number >= 1 and number <= self.page_count,
     "page outside database")
   if self.cache[number] then return self.cache[number] end
   self.read_count = self.read_count + 1
-  if self.read_count % 128 == 0 then
-    sm_sqlite_require(self:unchanged(), "database changed or has an active journal")
-  end
-  sm_sqlite_require(self.file:seek("set", (number - 1) * self.page_size) ~= nil, "page seek failed")
-  local bytes = self.file:read(self.page_size)
+  sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
+  -- Every source open (including sidecars) uses the native shared reader. There
+  -- is no CRT fallback that could deny Soundminer's rename/delete operations.
+  local file, open_error = SoundminerReadOnly.open(self.path)
+  sm_sqlite_require(file, open_error or "database read failed")
+  local ok, bytes = pcall(function()
+    sm_sqlite_require(file:seek("set", (number - 1) * self.page_size) ~= nil, "page seek failed")
+    return file:read(self.page_size)
+  end)
+  file:close()
+  sm_sqlite_require(ok, bytes)
   sm_sqlite_require(bytes and #bytes == self.page_size, "truncated page")
+  sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
   -- Bounded FIFO cache (at most 4 MiB at the largest SQLite page size).
   local slot = (self.cache_next % 64) + 1
   local old = self.cache_order[slot]
@@ -401,12 +412,15 @@ function sm_sqlite_methods:rows(name)
   sm_sqlite_require(schema, "unsupported or missing table " .. tostring(name))
   local next_row = sm_sqlite_raw_rows(self, schema.root)
   return function()
+    sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
     local values, rowid, count = next_row()
+    sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
     if values then return sm_sqlite_mapped_row(schema, values, rowid, count) end
   end
 end
 
 function sm_sqlite_methods:get(name, rowid)
+  sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
   sm_sqlite_require(math.type(rowid) == "integer", "rowid must be an integer")
   local schema = self:tables()[name]
   sm_sqlite_require(schema, "unsupported or missing table " .. tostring(name))
@@ -431,7 +445,10 @@ function sm_sqlite_methods:get(name, rowid)
     if page.kind == 13 then
       if not match then return nil end
       local values, key, count = sm_sqlite_leaf_row(self, page, match)
-      if key == rowid then return sm_sqlite_mapped_row(schema, values, key, count) end
+      if key == rowid then
+        sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
+        return sm_sqlite_mapped_row(schema, values, key, count)
+      end
       return nil
     end
     number = match and sm_sqlite_uint(page.bytes, sm_sqlite_cell(self, page, match), 4)
@@ -450,6 +467,7 @@ local function sm_sqlite_binary_compare(left, right)
 end
 
 function sm_sqlite_methods:lookup(name, column, value)
+  sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
   sm_sqlite_require(type(value) == "string", "index lookup requires a text key")
   self:tables()
   local index = self.indexes[name] and self.indexes[name][column]
@@ -485,10 +503,11 @@ end
 
 function SoundminerSQLite.open(path)
   if type(path) ~= "string" or path == "" or path:find("%z") then return nil, "Invalid database path" end
-  local file, open_error = io.open(path, "rb")
+  if type(SoundminerReadOnly) ~= "table" then return nil, "Shared read-only runtime is unavailable" end
+  local file, open_error = SoundminerReadOnly.open(path)
   if not file then return nil, open_error end
   local ok, result = pcall(function()
-    sm_sqlite_require(sm_sqlite_sidecars_clear(path), "active WAL/journal; close Soundminer or use a checkpointed copy")
+    sm_sqlite_require(sm_sqlite_sidecars_clear(path), "active WAL/journal; Soundminer may keep running; use a stable exported copy")
     local header = file:read(100)
     sm_sqlite_require(header and #header == 100 and header:sub(1, 16) == "SQLite format 3\0", "not a SQLite 3 database")
     local page_size = sm_sqlite_uint(header, 17, 2)
@@ -507,10 +526,13 @@ function SoundminerSQLite.open(path)
     if recorded > 0 and header:sub(25, 28) == header:sub(93, 96) then
       sm_sqlite_require(recorded == page_count, "database page count mismatch")
     end
-    return setmetatable({ path = path, file = file, header = header, page_size = page_size,
+    return setmetatable({ path = path, closed = false, header = header, page_size = page_size,
+      identity = file.identity, mtime = file.mtime,
       usable = usable, size = size, page_count = page_count, cache = {}, cache_order = {},
       cache_next = 0, read_count = 0 }, { __index = sm_sqlite_methods })
   end)
-  if not ok then file:close(); return nil, tostring(result) end
+  file:close()
+  if not ok then return nil, tostring(result) end
+  if not result:unchanged() then return nil, "Soundminer SQLite: database changed while opening; use a stable copy" end
   return result
 end

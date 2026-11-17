@@ -166,7 +166,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
 
-**Soundminer 一键导入（0.9.4 Beta 1 预发布）：** 从音效库菜单或设置打开 **导入 Soundminer 音效库**，选择数据库并点击 **一键导入**。读取元数据及兼容的 V6/V7 overview 波形缓存，支持路径映射和离线条目。Soundminer 导入库与原有 PRS 库独立保存和加载；选择哪个库就读取哪个库，二者不合并、不互相覆盖。导入前请关闭 Soundminer。[格式证据与兼容边界](docs/SOUNDMINER_FORMAT_zh-CN.md)。
+**Soundminer 一键导入（0.9.4 Beta 1 预发布）：** 从音效库菜单或设置打开 **导入 Soundminer 音效库**，选择数据库并点击 **一键导入**。读取元数据及兼容的 V6/V7 overview 波形缓存，支持路径映射和离线条目。Soundminer 导入库与原有 PRS 库独立保存和加载；选择哪个库就读取哪个库，二者不合并、不互相覆盖。Soundminer 可以同时运行；数据库发生变更或存在活动日志时，PRS 停止本次导入。所有原素材经共享只读接口读取，原生试听、分析、插入和导出使用 PRS 私有副本；需要 Beta 1 配套运行库、额外磁盘空间和首次准备时间。[格式证据与保护边界](docs/SOUNDMINER_FORMAT_zh-CN.md)。
 
 Beta 18 的逐项功能入口与测试步骤见 [验收清单：117 项功能、73 个设置](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md)。
 

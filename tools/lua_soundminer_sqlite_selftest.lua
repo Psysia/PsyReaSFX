@@ -1,6 +1,14 @@
 local module = arg[1] or "src/lua/27_sqlite_reader.lua"
 local fixtures = assert(arg[2], "fixture directory is required")
+assert(not arg[3], "This test uses synthetic fixtures only; do not pass a user database")
+reaper = { ReaWeb_ReadSharedRange = assert(loadfile("tools/lua_shared_readonly_fixture.lua"))() }
+dofile(module:gsub("27_sqlite_reader.lua$", "26_shared_readonly.lua"))
 assert(loadfile(module))()
+local fixture_mutation_open = io.open
+io.open = function(path, mode)
+  assert(mode ~= "rb", "production SQLite source reader attempted a CRT fallback")
+  return fixture_mutation_open(path, mode)
+end
 
 local function open(name)
   return assert(SoundminerSQLite.open(fixtures .. "/" .. name))
@@ -82,15 +90,5 @@ mutation:seek("set", 60)
 mutation:write(previous_bytes)
 mutation:close()
 
-if arg[3] then
-  local db = assert(SoundminerSQLite.open(arg[3]))
-  local count, started = 0, os.clock()
-  for row in db:rows("justinmetadata") do
-    assert(row.recid and row.Filename and row.FilePath)
-    count = count + 1
-  end
-  assert(db:unchanged())
-  db:close()
-  print(string.format("Read-only Soundminer sample: %d rows, %.3f CPU seconds", count, os.clock() - started))
-end
+io.open = fixture_mutation_open
 print("Soundminer SQLite reader: PASS (real SQLite fixtures, overflow, rowid lookup, corruption and change detection)")

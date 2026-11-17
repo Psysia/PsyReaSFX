@@ -137,6 +137,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Soundminer import fixtures failed.' }
           lua tools/lua_soundminer_import_selftest.lua PsyReaSFX_WebView.lua $importFixture
           if ($LASTEXITCODE -ne 0) { throw 'Soundminer import regression failed.' }
+          lua tools/lua_shared_readonly_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Shared source-read regression failed.' }
+          lua tools/lua_soundminer_media_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Private media isolation regression failed.' }
+          python tools/test_soundminer_source_concurrency.py --lua (Get-Command lua).Source --runtime (Resolve-Path PsyReaSFX_WebView.lua) --output (Join-Path $env:RUNNER_TEMP 'PsyReaSFX-source-concurrency')
+          if ($LASTEXITCODE -ne 0) { throw 'Concurrent source writer regression failed.' }
 
       - name: Verify WebView layout and interactions
         shell: pwsh
@@ -168,6 +174,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Website content check failed.' }
           node tools/website_ui_selftest.cjs (Join-Path $webTestTools 'node_modules/playwright')
           if ($LASTEXITCODE -ne 0) { throw 'Website browser regression failed.' }
+
+      - name: Verify wave cache ownership safety
+        shell: pwsh
+        run: |
+          lua tools/lua_wave_cache_safety_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Wave cache ownership regression failed.' }
 
       - name: Run Lua persistence fault injection
         shell: pwsh

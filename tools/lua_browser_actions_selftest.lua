@@ -1,3 +1,4 @@
+PsyReaSFXScope = { kind = "prs" }
 local file=assert(io.open("src/lua/50_runtime_ui.lua","rb")) local source=file:read("*a") file:close()
 local function region(first,last)
   local start=assert(source:find(first,1,true)) local finish=assert(source:find(last,start+#first,true))

@@ -27,6 +27,7 @@ local identity_source = region(catalog, "function ensure_asset_identity(asset, p
 assert(identity_source:find("probe_file ~= false", 1, true), "asset identity must support trusted persisted rows")
 
 local file_probes = 0
+function source_file_exists(path) return HostApi.file_exists(path) end
 HostApi = {
   file_exists = function()
     file_probes = file_probes + 1

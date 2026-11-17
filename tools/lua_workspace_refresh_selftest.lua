@@ -1,3 +1,4 @@
+PsyReaSFXScope = { kind = "prs" }
 local function read(path)
   local file=assert(io.open(path,"rb")) local value=file:read("*a") file:close() return value
 end
