@@ -443,6 +443,8 @@ WebUI.handlers["catalog.page"] = function(params)
     item.selected = state.selected_set[asset_path_sort_key(asset)] == true
     if params.waveforms ~= false then
       item.waveform = waveform(asset, state.mini_wave_points, false)
+      local key = memory_wave_key(asset, state.mini_wave_points, false, false)
+      item.waveError = not item.waveform and not not asset.wave_error and not state.wave_queued[key]
     end
     local size = #neural_json_encode(item)
     if bytes + size > 700000 then
@@ -651,19 +653,20 @@ WebUI.handlers["selection.all"] = function()
 end
 WebUI.handlers["waveform.get"] = function(params)
   local asset = asset_for(params.path)
-  if params.retry then
-    asset.wave_error = nil
-    clear_failed_task(asset)
-  end
   local points = math.floor(number(params.points or 1024, 64, 4096))
   if state.multichannel_waveform ~= false then
     points = math.min(points, math.max(64, math.floor(24000 / (math.max(1, asset.channels or 1) + 3))))
   end
+  local preserve = state.multichannel_waveform ~= false
+  if params.retry then retry_wave_request(asset, points, preserve, state.spectral_peaks_enabled) end
+  local wave = waveform(asset, points, true)
+  local status = not wave and wave_request_status(asset, points, preserve, state.spectral_peaks_enabled) or nil
   return {
     path = asset.path,
     duration = asset.duration or 0,
-    waveform = waveform(asset, points, true),
-    error = asset.wave_error and ("波形读取失败：" .. text(asset.wave_error, 250)) or nil,
+    waveform = wave,
+    status = status,
+    error = status and status.phase == "failed" and (translate_ui_text("波形读取失败：") .. translate_ui_text(text(asset.wave_error, 250))) or nil,
   }
 end
 WebUI.handlers["preview.play"] = function(params)

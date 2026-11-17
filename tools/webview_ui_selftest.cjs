@@ -403,7 +403,13 @@ async function main() {
               }
             }
             if (request.method === "waveform.get") {
-              if (request.params.retry) window.testWaveFailure = false;
+              if (request.params.retry) {
+                window.testWaveFailure = false;
+                if (window.testWaveReadyOnRetry) {
+                  window.testWaveMisses = 0;
+                  window.testWaveReadyOnRetry = false;
+                }
+              }
               result = {
                 path: request.params.path,
                 duration: selected?.duration || 8.24,
@@ -419,6 +425,7 @@ async function main() {
               } else if (window.testWaveMisses > 0) {
                 window.testWaveMisses--;
                 result.waveform = null;
+                result.status = window.testWaveStatus || { phase: "cache" };
               }
             }
             if (request.method === "catalog.query") {
@@ -2123,6 +2130,23 @@ async function main() {
       retryLatency < 700,
       `cached waveform polling must not add an 850ms delay: ${retryLatency}`,
     );
+    for (const [language, expected] of [["zh", "正在生成高精度波形… 42%"], ["en", "Generating detailed waveform… 42%"]]) {
+      await page.evaluate((language) => {
+        window.testWaveMisses = 100;
+        window.testWaveStatus = { phase: "decode", progress: 0.42 };
+        window.testSetState({ language });
+      }, language);
+      await page.locator(".result-cell.name").nth(language === "zh" ? 3 : 4).click();
+      await page.waitForFunction((expected) => {
+        const status = document.getElementById("wave-status");
+        return !status.hidden && status.textContent === expected;
+      }, expected);
+      assert(await page.locator("#wave-retry").isVisible(), "pending wave must remain retryable");
+      await page.evaluate(() => { window.testWaveReadyOnRetry = true; });
+      await page.locator("#wave-retry").click();
+      await page.waitForFunction(() => document.getElementById("wave-status").hidden);
+    }
+    await page.evaluate(() => window.testSetState({ language: "zh" }));
     await page.evaluate(() =>
       window.testSetState({ regionStart: 0, regionEnd: 1 }),
     );

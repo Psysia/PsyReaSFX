@@ -1301,6 +1301,13 @@ I18N_MISSING_UNIQUE = 0
 I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
+  ["波形读取失败："] = "Unable to read waveform: ",
+  ["波形生成超时，请重试或检查音频文件"] = "Waveform generation timed out; retry or check the audio file",
+  ["波形任务异常，请重试"] = "Waveform task failed; please retry",
+  ["正在等待波形处理…"] = "Waiting for waveform processing…",
+  ["正在准备波形分析副本…"] = "Preparing a private copy for waveform analysis…",
+  ["正在生成高精度波形…"] = "Generating detailed waveform…",
+  ["当前任务结束后继续生成波形…"] = "Waveform generation will resume after the current task…",
   ["Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"] = "Soundminer: added %d, duplicates %d, offline %d, skipped %d, waveforms %d, waveforms to rebuild %d",
   ["正在读取 Soundminer 音效库…"] = "Reading Soundminer library…",
   ["导入 Soundminer 音效库"] = "Import Soundminer library",
@@ -2092,6 +2099,7 @@ I18N_EN = {
 }
 
 I18N_PREFIX_EN = {
+  ["波形任务异常，请重试: "] = "Waveform task failed; please retry: ",
   ["已读取 "] = "Loaded ",
   ["后台恢复扫描："] = "Resuming scan: ",
   ["后台接续素材："] = "Resuming unfinished assets: ",

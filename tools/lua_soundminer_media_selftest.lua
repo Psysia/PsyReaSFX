@@ -152,6 +152,16 @@ local job = {asset = pcm, points = 32, preserve_channels = true}
 local status, waveform
 for _=1,12 do status,waveform = step_wave_job(job) if status ~= "working" then break end end
 assert(status == "done" and waveform.count == 32 and waveform.peaks[1] == 0.5 and native_calls == 0)
+local budget_job = {asset=pcm, points=512}
+assert(step_wave_job(budget_job) == "working" and budget_job.direct_point == 65,
+  "fast protected reads should use a bounded batch rather than four points per frame")
+local stable_clock, simulated_time = reaper.time_precise, 200
+reaper.time_precise = function() simulated_time = simulated_time + 0.004; return simulated_time end
+assert(step_wave_job(budget_job) == "working" and budget_job.direct_point == 66,
+  "slow shared reads must yield at the time budget after one point")
+reaper.time_precise = stable_clock
+destroy_wave_job(budget_job)
+assert(not budget_job.direct_file and native_calls == 0, "budgeted reads must retain original-media protection")
 local bad = asset("compressed.wav", "fLaC" .. string.rep("x", 100))
 local compressed_job = {asset=bad,points=32}
 assert(step_wave_job(compressed_job) == "working" and native_calls == 0)
@@ -309,7 +319,7 @@ for _,name in ipairs({"bg_mark", "process_asset_library_binding_refresh", "proce
   "process_ai_semantic_search", "process_import_recovery_audit", "process_library_count_rebuild",
   "process_ucs_count_rebuild", "process_config_save", "process_auxiliary_save", "cleanup_retired_preview_sources",
   "poll_preview", "poll_current_project_binding", "directory_online_pump", "watch_folders", "autosave",
-  "frame_stats_record", "draw_main", "process_background_slice"}) do _G[name] = function() end end
+  "frame_stats_record", "draw_main", "process_background_slice", "process_wave_cache_queue"}) do _G[name] = function() end end
 reaper.defer = function() end
 reaper.GetPlayStateEx = function() return 0 end
 WEBVIEW_MODE, state.open = false, true

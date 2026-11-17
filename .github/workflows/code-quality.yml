@@ -305,6 +305,9 @@ jobs:
         shell: pwsh
         run: |
           lua tools/lua_waveform_selftest.lua (Resolve-Path 'src/lua/50_runtime_ui.lua')
+          if ($LASTEXITCODE -ne 0) { throw 'Waveform decoder regression failed.' }
+          lua tools/lua_wave_queue_selftest.lua
+          if ($LASTEXITCODE -ne 0) { throw 'Waveform scheduling regression failed.' }
 
       - name: Run Lua preview seek self-test
         shell: pwsh

@@ -158,7 +158,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 | 通道 | 版本 | 说明 |
 |---|---|---|
 | 正式版 | **0.9.3 WebView** | Windows x64 默认更新版本，保留 Beta 18 的可靠性修复，需要 ReaWebAPI。 |
-| WebView 测试版 | **0.9.4-beta3** | 内置运行组件、独立 Soundminer 库与波形导入，需启用预发布。 |
+| WebView 测试版 | **0.9.4-beta4** | 内置运行组件、独立 Soundminer 库与波形导入，需启用预发布。 |
 | 上一 WebView 测试版 | **0.9.3-beta18（0.9.a）** | 保留预发布版本供回退。 |
 | 旧界面测试版 | **0.9.2-beta4** | 可在 Versions 中选择回退。 |
 | 历史稳定版 | **0.9.1 / 0.9.0 / 0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
@@ -166,9 +166,9 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
 
-**0.9.4 Beta 3 已内置运行组件：** ReaPack 启用预发布后，只需更新 **PsyReaSFX.lua**。首次启动自动准备组件，按提示重启一次 REAPER；离线完整 ZIP 统一使用 **Install-PsyReaSFX.cmd**。已知 PRS 旧组件会备份并升级，未知来源的共享组件会保留。[Beta 3 版本说明](docs/releases/release-notes-webview-0.9.4-beta3.md)。
+**0.9.4 Beta 4 已内置运行组件：** ReaPack 启用预发布后，只需更新 **PsyReaSFX.lua**。首次启动自动准备组件，按提示重启一次 REAPER；离线完整 ZIP 统一使用 **Install-PsyReaSFX.cmd**。已知 PRS 旧组件会备份并升级，未知来源的共享组件会保留。[Beta 4 版本说明](docs/releases/release-notes-webview-0.9.4-beta4.md)。
 
-安装弹窗跟随 Windows 显示语言：中文系统用中文，其他系统语言用英文。Beta 2 已正常使用的用户，本次语言修复无需更新原生组件或重启。
+安装弹窗跟随 Windows 显示语言：中文系统用中文，其他系统语言用英文。Beta 4 修复波形队列堵住已有缓存的搜索结果，并显示处理阶段和重试入口。更新后关闭再打开 PRS；Beta 2/3 已正常使用的用户无需更新原生组件或重启 REAPER。
 
 **Soundminer 一键导入（0.9.4 预发布）：** 从音效库菜单或设置打开 **导入 Soundminer 音效库**，选择数据库并点击 **一键导入**。读取元数据及兼容的 V6/V7 overview 波形缓存，支持路径映射和离线条目。Soundminer 导入库与原有 PRS 库独立保存和加载；选择哪个库就读取哪个库，二者不合并、不互相覆盖。Soundminer 可以同时运行；数据库发生变更或存在活动日志时，PRS 停止本次导入。所有原素材经共享只读接口读取，原生试听、分析、插入和导出使用 PRS 私有副本；配套组件已包含在主包中，副本需要额外磁盘空间和首次准备时间。[格式证据与保护边界](docs/SOUNDMINER_FORMAT_zh-CN.md)。
 
@@ -178,7 +178,7 @@ Beta 18 修复元数据保存／切换时的草稿丢失、FX 延迟输入覆盖
 
 神经解码修复另装预发布数据包 **0.9.1-beta1（sidecar 0.5.2）**，或下载[完整新版神经 ZIP](https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.3-beta18/PsyReaSFX_Neural_Similarity_v0_9_1_beta1_win_x64.zip)；0.9.0 正式组件继续保留。Desktop 服务修复另见 Alpha 8 Light RC2。
 
-0.9.3 稳定版使用 `0.3.9.30-prs.2`；0.9.4 Beta 3 已随主包提供 `0.3.9.30-prs.3`，首次启用或升级已加载的组件需重启一次 REAPER。
+0.9.3 稳定版使用 `0.3.9.30-prs.2`；0.9.4 Beta 4 已随主包提供 `0.3.9.30-prs.3`，首次启用或升级已加载的组件需重启一次 REAPER。
 
 [底层复查记录](docs/WEBVIEW_CORE_AUDIT_0_9_3_BETA10_zh-CN.md)已追加 Beta 11 对 Windows 任务栏所有者检查的修正。升级后先关闭一次旧窗口；继续运行公共 `PsyReaSFX.lua` 动作，再次运行会唤回原窗口。音量常驻走带区，列设置在表头右键，当前任务显示在走带栏空余处，悬停查看详情。
 
