@@ -624,6 +624,20 @@ do
   process_wave_queue()
   local recovered_detail = WebUI.handlers["waveform.get"]({ path = asset.path, points = 512 })
   assert(recovered_detail.waveform and not recovered_detail.error and not asset.wave_error)
+  local error_key = memory_wave_key(asset, 256, runtime.multichannel_waveform ~= false, runtime.spectral_peaks_enabled)
+  runtime.wave_checked[error_key] = true
+  local language = runtime.language
+  for _, reason in ipairs({"波形任务异常，请重试: fixture failure", "波形生成超时，请重试或检查音频文件"}) do
+    asset.wave_error = reason
+    runtime.language = "en"
+    local failure = WebUI.handlers["waveform.get"]({ path = asset.path, points = 256 })
+    assert(failure.status.phase == "failed" and failure.error:find("Unable to read waveform: Waveform", 1, true)
+      and not failure.error:find("波形", 1, true), "new failures must explain recovery in English")
+    runtime.language = "zh"
+    assert(WebUI.handlers["waveform.get"]({ path = asset.path, points = 256 }).error:find(reason, 1, true),
+      "failure language must follow PRS after switching back to Chinese")
+  end
+  runtime.language, asset.wave_error = language, nil
   local channels, multichannel = asset.channels, runtime.multichannel_waveform
   asset.channels = 128
   runtime.multichannel_waveform = true

@@ -6236,7 +6236,7 @@ function process_wave_queue()
   local job = state.wave_active
   local ok, result, waveform, err = pcall(step_wave_job, job)
   if not ok then
-    err = translate_ui_text("波形任务异常，请重试") .. ": " .. tostring(result)
+    err = "波形任务异常，请重试: " .. tostring(result)
     result, waveform = "failed", nil
   end
 

@@ -221,7 +221,7 @@ local VERSION = "0.9.4 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.4-beta4",
-  source_sha256 = "5776625fba18c52679cff29ef2cbb12c3674fe271d24ff2d9eb01cd3acfd390b",
+  source_sha256 = "e9f0d17e7169668482efeae39a7541c1313b16b8566a3a8ae8c35b44dc5a7a4a",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -2099,6 +2099,7 @@ I18N_EN = {
 }
 
 I18N_PREFIX_EN = {
+  ["波形任务异常，请重试: "] = "Waveform task failed; please retry: ",
   ["已读取 "] = "Loaded ",
   ["后台恢复扫描："] = "Resuming scan: ",
   ["后台接续素材："] = "Resuming unfinished assets: ",
@@ -28009,7 +28010,7 @@ function process_wave_queue()
   local job = state.wave_active
   local ok, result, waveform, err = pcall(step_wave_job, job)
   if not ok then
-    err = translate_ui_text("波形任务异常，请重试") .. ": " .. tostring(result)
+    err = "波形任务异常，请重试: " .. tostring(result)
     result, waveform = "failed", nil
   end
 

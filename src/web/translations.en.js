@@ -1065,6 +1065,7 @@ export default {
   "波形与分析设置": "Waveform and analysis settings",
   "波形与缓存": "Waveforms and cache",
   "波形任务异常，请重试": "Waveform task failed; please retry",
+  "波形任务异常，请重试: ": "Waveform task failed; please retry: ",
   "波形列随字体同比缩放，手动列宽按基准尺寸保存；空间不足时保留横向滚动，不压扁波形。小窗口临时折叠侧栏，不改保存的开关。": "Waveform columns scale with the font. Manual widths are saved at base scale; horizontal scrolling preserves waveform detail. Narrow windows temporarily fold side panels without changing saved visibility.",
   "波形单击试听，拖动选择区间，双击复位缩放，滚轮缩放，Shift+滚轮或中键拖动平移，右键按住移动擦播。文件名可拖入 REAPER，底部“拖入选区”保留当前区间。Alt+拖动列表行可拖出原文件。": "Click a waveform to audition; drag to select a range. Double-click resets zoom; the wheel zooms. Shift+wheel or middle-drag pans. Right-drag scrubs. Drag filenames into REAPER; Drag selection preserves the range. Alt-drag copies original files.",
   "波形建立失败": "Waveform generation failed",

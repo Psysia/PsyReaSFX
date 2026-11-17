@@ -2099,6 +2099,7 @@ I18N_EN = {
 }
 
 I18N_PREFIX_EN = {
+  ["波形任务异常，请重试: "] = "Waveform task failed; please retry: ",
   ["已读取 "] = "Loaded ",
   ["后台恢复扫描："] = "Resuming scan: ",
   ["后台接续素材："] = "Resuming unfinished assets: ",
