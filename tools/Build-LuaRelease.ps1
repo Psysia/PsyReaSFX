@@ -29,6 +29,7 @@ $modules = @(
     "36_asset_journal.lua",
     "37_catalog_caches.lua",
     "38_incremental_persistence.lua",
+    "39_quick_catalog.lua",
     "40_analysis.lua",
     "42_similarity.lua",
     "43_neural_similarity.lua",

@@ -725,9 +725,15 @@ export function createSettings({
   }
   function extra() {
     if (section === "general") {
-      if (settings.sourceProtection)
-        card("原音频保护").append(el("p", "muted",
-          "所有素材保持只读；首次播放、分析或插入会在后台准备音频副本，占用额外磁盘，可在任务中取消。"));
+      if (settings.sourceProtection) {
+        const capabilities = getHost()?.session?.capabilities;
+        const text = capabilities?.auditionDecoder === false
+          ? "随包试听组件尚未加载。更新后请完全重启 REAPER；若仍提示，请重新安装 PRS 完整包。"
+          : capabilities?.swsPreview === false
+            ? "流式试听需要 SWS 扩展。当前使用 PRS 专用副本试听。"
+            : "WAV、AIFF、FLAC 和 MP3 可共享只读试听。其他格式、插入及部分分析会在后台准备专用副本，可在任务中取消。";
+        card("原音频保护").append(el("p", "muted", text));
+      }
       const target = card(
         "试听控制",
         "停止按钮始终结束试听；暂停会保留位置，再次播放从该位置继续。",

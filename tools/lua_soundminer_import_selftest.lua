@@ -143,6 +143,12 @@ local function finish(env)
   error("import did not finish")
 end
 local function asset(env, relative) return assert(env.runtime.by_path[env.path_key(fixture .. "/audio/" .. relative)]) end
+-- The fixture generator creates these source folders before the host starts.
+-- A real shared stat can see them independently of REAPER's mkdir calls.
+register_directory(fixture .. "/audio/FX")
+register_directory(fixture .. "/audio/Music")
+inventory[key(fixture .. "/audio/FX")].files = {"fallback.wav","impact.wav","local.wav","no-frames.wav","not-in-soundminer.wav"}
+inventory[key(fixture .. "/audio/Music")].files = {"tone.wav"}
 local prs = boot(entry)
 assert(not pcall(boot, entry, { id = "../../original" }), "invalid wrapper context rejected before data access")
 local db_path = fixture .. "/SoundminerV7/Databases/Synthetic.sqlite"

@@ -540,6 +540,6 @@
   "准备音频副本": "Preparing media copies",
   "使用 PRS 导出目录": "Use PRS export directory",
   "为保护源库，本版导出到 PRS 专属目录，已有文件不会被覆盖。": "To protect source libraries, this version exports into the PRS directory without overwriting existing files.",
-  "所有素材保持只读；首次播放、分析或插入会在后台准备音频副本，占用额外磁盘，可在任务中取消。": "All original media remain read-only. First playback, analysis or insertion prepares private copies in the background, requiring extra disk space. Cancel them in Tasks.",
+  "WAV、AIFF、FLAC 和 MP3 可共享只读试听。其他格式、插入及部分分析会在后台准备专用副本，可在任务中取消。": "WAV, AIFF, FLAC and MP3 support shared read-only preview. Other formats, insertion and some analyses prepare private copies in the background. You can cancel them in Tasks.",
   "原音频保护需要新版共享只读接口。请安装 0.9.4 Beta 1 随包运行库并完全重启 REAPER；已有库仍可浏览。": "Original media protection requires the shared read-only API. Install the runtime bundled with 0.9.4 Beta 1 and restart REAPER. Existing catalogs remain browsable."
 }

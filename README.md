@@ -159,7 +159,7 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 | Channel | Version | Notes |
 |---|---|---|
 | Stable | **0.9.3 WebView** | Default Windows x64 release, including the Beta 18 reliability fixes; requires ReaWebAPI. |
-| WebView beta | **0.9.4-beta4** | Bundled runtime, independent Soundminer catalogs and waveform import; enable pre-releases. |
+| WebView beta | **0.9.4-beta5** | Quick catalog startup, streamed previews and waveform updates. |
 | Previous WebView beta | **0.9.3-beta18 (0.9.a)** | Retained for rollback through pre-releases. |
 | Legacy-renderer beta | **0.9.2-beta4** | Available in Versions for rollback. |
 | Archived Stable | **0.9.1 / 0.9.0 / 0.8.5 / 0.7.23** | Retained in ReaPack Versions and GitHub Releases. |
@@ -167,11 +167,11 @@ Detailed behavior, edge cases, dependencies, and shortcut suggestions are docume
 
 PsyReaSFX keeps normal acoustic search available without the [optional neural component][neural-download]. AI semantic search is a separate API-based feature; user audio is not uploaded by that feature.
 
-**0.9.4 Beta 4 includes its runtime:** enable pre-releases and update only **PsyReaSFX.lua** in ReaPack. First launch prepares the included component; close and reopen REAPER once when prompted. The offline ZIP uses **Install-PsyReaSFX.cmd** for the complete application. Known PRS components are backed up and upgraded; unknown shared components are preserved. [Beta 4 release notes](docs/releases/release-notes-webview-0.9.4-beta4.md).
+**0.9.4 Beta 5 includes its runtime and audition decoder.** Enable pre-releases in ReaPack, update **PsyReaSFX.lua**, then fully restart REAPER to load the decoder. For an offline installation, close REAPER, extract the ZIP and run **Install-PsyReaSFX.cmd**. [Beta 5 release notes](docs/releases/release-notes-webview-0.9.4-beta5.md)
 
-Setup dialogs follow the Windows display language: Chinese for Chinese UI and English otherwise. Beta 4 fixes waveform queues blocking cached search results and adds processing status with retry. Close and reopen PRS after updating; an already working Beta 2/3 installation needs no native component update or REAPER restart.
+Setup dialogs use Chinese when the Windows display language is Chinese and English otherwise.
 
-**Soundminer import (0.9.4 prerelease):** open **Import Soundminer Library** from the library menu or Settings, choose a database and click the import action. Metadata and compatible V6/V7 overview waveforms are read locally; optional path mapping supports relocated media, offline entries are retained. Each imported library and the original PRS catalog have separate indexes, settings and caches. Soundminer may stay open; PRS stops its import if the database changes or has an active journal. All original media use shared read-only access, and native playback, analysis, insertion and export use private PRS copies. The component is included; copies require additional storage and preparation time. [Compatibility and protection limits (Chinese)](docs/SOUNDMINER_FORMAT_zh-CN.md).
+**Soundminer import (0.9.4 prerelease).** Open **Import Soundminer Library** from the library menu or Settings, choose a database and click the import action. PRS reads metadata and compatible V6/V7 overview waveforms locally, supports relocated media and retains offline entries. Each imported library and the original PRS catalog have separate indexes, settings and caches. Soundminer may stay open. PRS stops its import if the database changes or has an active journal. SWS can audition supported audio through a shared read-only decoder. Other formats, insertion, export and some analyses use private PRS copies. [Compatibility and protection limits (Chinese)](docs/SOUNDMINER_FORMAT_zh-CN.md)
 
 See the [Beta 18 acceptance checklist: 117 workflows and 73 settings (Chinese)](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md) for source mappings, entry points and native acceptance steps.
 

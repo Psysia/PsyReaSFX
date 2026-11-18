@@ -94,6 +94,8 @@ const localizer = createLocalizer();
 localizer.setLanguage(prefs.language);
 let host;
 let snapshot;
+let quickSequence = 0;
+let quickDraft = null;
 let page;
 let pageSequence = 0;
 let selectionIntent = 0;
@@ -685,12 +687,13 @@ function renderRows() {
             0,
             0.999,
           );
-          if (!(await selectAsset(asset, event, false))) return;
+          if (!(await selectAsset(asset, event, false, false))) return;
           await command("preview.play", {
             path: asset.path,
             position,
             selection: false,
           });
+          requestPage();
         });
         cell.ondblclick = (event) => event.stopPropagation();
         cell.title = "点击波形任意位置试听；Ctrl / Shift 点击多选";
@@ -811,7 +814,7 @@ function schedulePlayback() {
     playbackFrame = requestAnimationFrame(animatePlayback);
 }
 
-async function selectAsset(asset, event = {}, autoPlay) {
+async function selectAsset(asset, event = {}, autoPlay, refresh = true) {
   const intent = ++selectionIntent;
   let result = await command("selection.set", {
     index: asset.index,
@@ -838,7 +841,7 @@ async function selectAsset(asset, event = {}, autoPlay) {
     if (intent !== selectionIntent) return false;
     if (result?.stale) throw new Error("列表仍在更新，请稍后选择");
   }
-  await requestPage();
+  if (refresh) await requestPage();
   return intent === selectionIntent;
 }
 
@@ -1409,13 +1412,23 @@ function applySnapshot(next) {
   $("no-results").hidden =
     !ready || !next.loaded || next.count > 0 || next.pending;
   $("startup-state").hidden = ready;
-  $("startup-elapsed").textContent =
-    next.startup?.elapsed != null ? `${next.startup.elapsed.toFixed(1)} s` : "";
   $("startup-phase").textContent =
-    next.startup?.failure || next.startup?.phase || "";
-  $("startup-count").textContent = next.startup
-    ? `${next.loaded.toLocaleString()} 个素材`
-    : "";
+    next.startup?.failure || localizer.text(next.startup?.indexed
+      ? "可搜索当前素材库，点击结果即可试听。"
+      : "正在恢复完整列表，可先输入关键词。");
+  if (next.startup?.quickSearch && !previous?.startup?.quickSearch)
+    action(requestQuickSearch)(quickDraft ?? $("search").value, quickDraft !== null);
+  if (next.startup && !next.startup.quickSearch && previous?.startup?.quickSearch) {
+    ++quickSequence;
+    $("startup-hits").replaceChildren();
+  }
+  if ((previous?.startup || (!previous && quickDraft !== null)) && ready) {
+    ++quickSequence;
+    $("startup-hits").replaceChildren();
+    if (quickDraft !== null && next.search !== quickDraft)
+      action(command)("catalog.query", {search: quickDraft, view: "all"});
+    quickDraft = null;
+  }
   for (const id of [
     "play",
     "stop",
@@ -1425,6 +1438,7 @@ function applySnapshot(next) {
     "drag-selection",
   ])
     $(id).disabled = !ready || !next.selected;
+  if (!ready && next.playing) $("stop").disabled = false;
   if (arrangeGesture?.accepted && next.arrangeDragging === false)
     clearArrangeGesture();
   $("ai-search").disabled = !ready;
@@ -1541,12 +1555,15 @@ function applySnapshot(next) {
     renderTabs();
   }
   if (
-    document.activeElement !== $("search") &&
+    quickDraft === null && document.activeElement !== $("search") &&
     (previous?.search !== next.search || previous?.activeTab !== next.activeTab)
   )
     $("search").value = next.search;
   let refreshPage = false;
   let refreshInspector = false;
+  if (prefs.columns.waveform && previous?.waveReadyRevision !== next.waveReadyRevision &&
+      page?.items.some((asset) => !asset.waveform && !asset.waveError))
+    refreshPage = true;
   if (
     ready &&
     (!previous || previous.startup || previous.revision !== next.revision)
@@ -1559,7 +1576,8 @@ function applySnapshot(next) {
     $("result-scroll").scrollLeft = position.left;
     refreshPage = true;
   }
-  if (!previous || previous?.selected?.path !== next.selected?.path) {
+  const changedSelection = !previous || previous?.selected?.path !== next.selected?.path;
+  if (changedSelection) {
     regionDrag = null;
     detailWave = detailWaveCache.get(detailWaveKey(next.selected)) || null;
     if (!detailWave) {
@@ -1585,11 +1603,12 @@ function applySnapshot(next) {
   ) {
     refreshInspector = true;
   }
-  if (
+  if (!changedSelection && (
     previous?.spectralPeaks !== next.spectralPeaks ||
     previous?.detailPoints !== next.detailPoints ||
-    previous?.multichannelWaveform !== next.multichannelWaveform
-  )
+    previous?.multichannelWaveform !== next.multichannelWaveform ||
+    (waveRetry && wavePending && previous?.waveReadyRevision !== next.waveReadyRevision)
+  ))
     requestDetailWave();
   if (
     (previous?.selectedCount !== next.selectedCount || previousEditor !== nextEditor) &&
@@ -1655,6 +1674,7 @@ async function requestDetailWave(retry = false, attempt = 0) {
   const selected = snapshot?.selected;
   const sequence = ++waveSequence;
   clearTimeout(waveRetry);
+  waveRetry = null;
   wavePending = Boolean(selected);
   if (!selected) {
     drawDetail();
@@ -1668,6 +1688,8 @@ async function requestDetailWave(retry = false, attempt = 0) {
     });
     if (sequence !== waveSequence || snapshot?.selected?.path !== result.path)
       return;
+    if (result.overview && (!detailWave || detailWave.overview))
+      detailWave = { ...result.overview, overview: true };
     if (result.waveform) {
       detailWave = result.waveform;
       const key = detailWaveKey(selected);
@@ -3658,6 +3680,22 @@ let suggestionSequence = 0;
 let suggestions = [];
 let activeSuggestion = -1;
 const suggestionBox = $("search-suggestions");
+async function requestQuickSearch(query, explicit) {
+  if (!snapshot?.startup) return;
+  if (explicit) quickDraft = query;
+  const sequence = ++quickSequence;
+  if (!snapshot.startup.quickSearch && !explicit) return;
+  const result = await command("startup.search", {query, explicit});
+  if (!snapshot?.startup || sequence !== quickSequence) return;
+  const buttons = (Array.isArray(result?.items) ? result.items : []).map((asset) => {
+    const button = node("button", "startup-hit", asset.name);
+    button.type = "button";
+    button.title = asset.path;
+    button.onclick = action(() => command("startup.preview", {path: asset.path}));
+    return button;
+  });
+  $("startup-hits").replaceChildren(...buttons);
+}
 function hideSearchSuggestions() {
   ++suggestionSequence;
   clearTimeout(suggestionTimer);
@@ -3679,6 +3717,12 @@ $("search").addEventListener("input", () => {
   hideSearchSuggestions();
   const sequence = suggestionSequence;
   const query = $("search").value;
+  if (!snapshot || snapshot.startup) {
+    quickDraft = query;
+    ++quickSequence;
+    if (snapshot) suggestionTimer = setTimeout(action(() => requestQuickSearch(query, true)), 45);
+    return;
+  }
   if (query.trim().length < 2) return;
   suggestionTimer = setTimeout(
     action(async () => {
@@ -3765,6 +3809,8 @@ $("search").addEventListener("blur", () =>
 $("search-form").onsubmit = action((event) => {
   event.preventDefault();
   hideSearchSuggestions();
+  if (!snapshot) { quickDraft = $("search").value; return; }
+  if (snapshot?.startup) return requestQuickSearch($("search").value, true);
   $("result-scroll").scrollTop = 0;
   return command("catalog.query", {
     search: $("search").value,

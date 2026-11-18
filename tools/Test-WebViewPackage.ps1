@@ -81,6 +81,9 @@ Expect-Failure { & $install @installOptions -ReaperResourcePath $fresh } 'Runnin
 $global:PsyReaSFXTestReaperRunning = $false
 & $install @installOptions -ReaperResourcePath $fresh
 Assert-Equal (Get-SHA256 (Plugin-Path $fresh)) $runtimeLock.binary.sha256 'Fresh runtime installed'
+$auditionFile = Join-Path $fresh 'UserPlugins/reaper_prs_audition.dll'
+$auditionHash = Get-SHA256 (Join-Path $PackagePath 'runtime/audition/reaper_prs_audition.dll')
+Assert-Equal (Get-SHA256 $auditionFile) $auditionHash 'Private audition extension installed from this package'
 Read-Package (Join-Path $fresh 'Scripts/PsyReaSFX-WebView') | Out-Null
 foreach ($asset in @('brand/psyreasfx-icon.png', 'ucs/ucs-8.2.1.tsv', 'neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx')) {
     if (-not (Test-Path -LiteralPath (Join-Path $fresh "Scripts/PsyReaSFX-WebView/assets/$asset"))) { throw "Installed asset missing: $asset" }
@@ -90,8 +93,10 @@ $firstTransaction = Get-Content -LiteralPath (Join-Path $fresh 'Scripts/PsyReaSF
 Expect-Failure { & $restore -ReaperResourcePath $fresh -TransactionId $firstTransaction } 'Older transaction must not replace a more recent install of the same package'
 & $restore -ReaperResourcePath $fresh
 Assert-Equal (Get-SHA256 (Plugin-Path $fresh)) $runtimeLock.binary.sha256 'Reused runtime survives app rollback'
+Assert-Equal (Get-SHA256 $auditionFile) $auditionHash 'Reused audition extension survives rollback'
 & $restore -ReaperResourcePath $fresh
 Assert-Equal (Test-Path -LiteralPath (Plugin-Path $fresh)) $false 'Fresh runtime removed by rollback'
+Assert-Equal (Test-Path -LiteralPath $auditionFile) $false 'Owned audition extension removed by rollback'
 Assert-Equal (Test-Path -LiteralPath (Join-Path $fresh 'Scripts/PsyReaSFX-WebView')) $false 'Fresh app restored to absent'
 
 $external = New-Resource 'r-shared'

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 function Get-ChildPath([string]$Root, [string]$Relative) {
     if ([IO.Path]::IsPathRooted($Relative) -or $Relative -match '(^|[\\/])\.\.([\\/]|$)' -or $Relative.Contains(':')) {
@@ -14,6 +14,17 @@ function Get-ChildPath([string]$Root, [string]$Relative) {
 
 function Get-SHA256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-AuditionMessage([string]$English, [string]$Chinese) {
+    if ([Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -eq 'zh') { return $Chinese }
+    return $English
+}
+
+function Get-AuditionAction([string]$Plugin, [string]$Hash) {
+    if (-not (Test-Path -LiteralPath $Plugin)) { return 'install' }
+    if ((Get-SHA256 $Plugin) -ceq $Hash) { return 'reuse' }
+    throw (Get-AuditionMessage 'The PRS audition component differs from this package. Move the existing file aside and retry.' '现有 PRS 试听组件与安装包不同。请先将该文件移至其他目录，再重试。')
 }
 
 function Read-Package([string]$Root) {
@@ -34,6 +45,7 @@ function Read-Package([string]$Root) {
         'PsyReaSFX.lua', 'web/index.html', 'web/app.json', 'web/soundminer.js', 'runtime-lock.json',
         'Install-BundledRuntime.ps1', 'runtime-setup.lua', 'bundled-runtime.json',
         'runtime/reawebapi/reaper_reawebapi-x64.dll',
+        'runtime/audition/reaper_prs_audition.dll', 'licenses/audition/dr_libs.txt',
         'Install-PsyReaSFX.ps1', 'Restore-PsyReaSFX.ps1', 'installer-common.ps1',
         'assets/brand/psyreasfx-icon.png', 'assets/ucs/ucs-8.2.1.tsv',
         'assets/neural/mn04_as_scene_320_v1/manifest-v1.json', 'LICENSE'
@@ -132,6 +144,11 @@ function Restore-Transaction([string]$Resource, [string]$Id) {
     $previousApp = Get-ChildPath $Resource "Data/PsyReaSFX-WebView/transactions/$Id/previous-app"
     $retainedApp = Get-ChildPath $Resource "Data/PsyReaSFX-WebView/transactions/$Id/restored-app"
     $plugin = Get-ChildPath $Resource 'UserPlugins/reaper_reawebapi-x64.dll'
+    $audition = Get-ChildPath $Resource 'UserPlugins/reaper_prs_audition.dll'
+    $removeAudition = $receipt.auditionAction -eq 'install' -and (Test-Path -LiteralPath $audition)
+    if ($removeAudition -and (Get-SHA256 $audition) -cne $receipt.auditionHash) {
+        throw (Get-AuditionMessage 'The PRS audition component changed after installation. Restore its installed version before rollback.' '安装后的 PRS 试听组件已更改。请还原安装时的组件后再回滚。')
+    }
     if (((Test-Path -LiteralPath $previousApp) -or -not $receipt.appExisted) -and (Test-Path -LiteralPath $app)) {
         $installed = Get-Content -LiteralPath (Join-Path $app 'package-manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $installedTransaction = Get-Content -LiteralPath (Join-Path $app '.install-transaction') -Raw
@@ -153,6 +170,7 @@ function Restore-Transaction([string]$Resource, [string]$Id) {
             else { Remove-Item -LiteralPath $plugin }
         }
     }
+    if ($removeAudition) { Remove-Item -LiteralPath $audition }
     if ((Test-Path -LiteralPath $previousApp) -or -not $receipt.appExisted) {
         if (Test-Path -LiteralPath $app) {
             [IO.Directory]::Move($app, $retainedApp)

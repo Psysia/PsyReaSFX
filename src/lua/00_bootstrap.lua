@@ -1302,6 +1302,13 @@ I18N_MISSING_LIMIT = 256
 
 I18N_EN = {
   ["波形读取失败："] = "Unable to read waveform: ",
+  ["素材库已更新，请重新搜索"] = "The catalog changed. Search again.",
+  ["此格式可在完整素材库就绪后试听"] = "This format can be auditioned once the full catalog is ready.",
+  ["随包试听组件尚未加载。更新后请完全重启 REAPER；若仍提示，请重新安装 PRS 完整包。"] = "The bundled audition component has not loaded. Restart REAPER after updating. If this message persists, reinstall the complete PRS package.",
+  ["流式试听需要 SWS 扩展。当前使用 PRS 专用副本试听。"] = "Streamed audition requires the SWS extension. PRS is currently using private copies for playback.",
+  ["共享音频读取中断，请重试或检查原文件"] = "The shared audio read was interrupted. Retry or check the source file.",
+  ["可搜索当前素材库，点击结果即可试听。"] = "Search this catalog and click a result to audition it.",
+  ["正在恢复完整列表，可先输入关键词。"] = "Enter search terms while the full list is restored.",
   ["波形生成超时，请重试或检查音频文件"] = "Waveform generation timed out; retry or check the audio file",
   ["波形任务异常，请重试"] = "Waveform task failed; please retry",
   ["正在等待波形处理…"] = "Waiting for waveform processing…",

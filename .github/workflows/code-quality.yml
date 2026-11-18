@@ -126,6 +126,16 @@ jobs:
           New-Item -ItemType Directory -Path $webFixture | Out-Null
           lua tools/lua_webview_selftest.lua (Join-Path $webBuild 'PsyReaSFX_Runtime.lua') $webFixture
           if ($LASTEXITCODE -ne 0) { throw 'WebView backend regression failed.' }
+          $quickFixture = New-Item -ItemType Directory (Join-Path $env:RUNNER_TEMP 'psfx-quick-fixture')
+          lua tools/lua_quick_catalog_selftest.lua $quickFixture.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Quick catalog regression failed.' }
+          python tools/test_audition_native.py (Join-Path $webBuild 'runtime/audition/reaper_prs_audition.dll') --out (Join-Path $env:RUNNER_TEMP 'psfx-audition-fixture')
+          if ($LASTEXITCODE -ne 0) { throw 'Native audition and search regression failed.' }
+          $luaDll = Join-Path (Split-Path (Get-Command lua).Source) 'lua54.dll'
+          if (Test-Path -LiteralPath $luaDll) {
+            python -B tools/test_quick_start.py $webBuild --lua-dll $luaDll
+            if ($LASTEXITCODE -ne 0) { throw 'Startup search and playback RPC regression failed.' }
+          }
 
       - name: Verify Soundminer database and waveform import
         shell: pwsh

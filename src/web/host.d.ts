@@ -47,6 +47,8 @@ export interface DetailWaveform {
   path: string;
   duration: number;
   waveform?: Waveform | null;
+  overview?: Waveform | null;
+  status?: { phase: "cache" | "queued" | "copy" | "decode" | "paused" | "ready" | "failed"; progress?: number };
   error?: string;
 }
 

@@ -2065,37 +2065,23 @@ dialog::backdrop {
 }
 
 #startup-state {
-  inset: 0;
-  gap: 14px;
+  inset: 48px 0 0;
+  justify-content: flex-start;
+  align-items: stretch;
+  text-align: left;
+  padding: 10px 12px;
+  gap: 8px;
+  overflow: auto;
 }
-.startup-logo {
-  width: 72px;
-  height: 72px;
-  stroke: var(--accent);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  fill: none;
-  animation: startup-pulse 1.6s ease-in-out infinite alternate;
+#startup-hits {
+  display: grid;
+  gap: 1px;
 }
-#startup-state .startup-brand {
-  font-size: 30px;
-  letter-spacing: -0.8px;
-}
-#startup-phase {
-  margin-top: 8px;
-}
-#startup-count,
-#startup-elapsed {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-@keyframes startup-pulse {
-  from {
-    opacity: 0.5;
-  }
-  to {
-    opacity: 1;
-  }
+.startup-hit {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @media (prefers-reduced-motion: reduce) {
   .startup-logo {

@@ -31,6 +31,14 @@ if ($Target -eq 'reaper') {
     & (Join-Path $PSScriptRoot 'Build-LuaRelease.ps1') -Ui webview -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX_Runtime.lua')
     & (Join-Path $PSScriptRoot 'Build-WebLauncher.ps1') -Version $Version -OutputPath (Join-Path $OutputPath 'PsyReaSFX.lua')
     & (Join-Path $PSScriptRoot 'Get-ReaWebAPIRuntime.ps1') -LockPath $DependencyLockPath -CachePath $DependencyCachePath -Destination $OutputPath
+    $audition = Join-Path $repoRoot 'native/audition/win64/reaper_prs_audition.dll'
+    $expected = [IO.File]::ReadAllText((Join-Path $repoRoot 'native/audition/win64/SHA256SUMS.txt')).Split(' ')[0]
+    if ((Get-FileHash -LiteralPath $audition).Hash.ToLowerInvariant() -cne $expected) { throw 'PRS audition extension checksum mismatch.' }
+    foreach ($folder in @('runtime/audition','licenses/audition')) {
+        [IO.Directory]::CreateDirectory((Join-Path $OutputPath $folder)) | Out-Null
+    }
+    Copy-Item -LiteralPath $audition -Destination (Join-Path $OutputPath 'runtime/audition')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'native/audition/vendor/LICENSE') -Destination (Join-Path $OutputPath 'licenses/audition/dr_libs.txt')
     $dependency = Get-Content -LiteralPath $DependencyLockPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $noticePath = Join-Path $repoRoot 'dependencies/reawebapi/licenses/PRS_PATCH.md'
     # Keep the exact corresponding source archive. Ship the current supplement
