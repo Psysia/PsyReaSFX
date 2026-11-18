@@ -35,6 +35,7 @@ $webVersion = (Get-Content -LiteralPath (Join-Path $repoRoot 'src/web/app.json')
 if ($webVersion -notmatch '^0\.9\.\d+(?:-beta\d+(?:\.\d+)?)?$') { throw "Unexpected WebView version: $webVersion" }
 # The legacy renderer remains available while the independently versioned WebView line becomes stable.
 $mainVersions = @($webVersion)
+if ($webVersion -ne '0.9.4-beta6') { $mainVersions += '0.9.4-beta6' }
 if ($webVersion -ne '0.9.4-beta5') { $mainVersions += '0.9.4-beta5' }
 if ($webVersion -ne '0.9.4-beta4') { $mainVersions += '0.9.4-beta4' }
 if ($webVersion -ne '0.9.4-beta3') { $mainVersions += '0.9.4-beta3' }

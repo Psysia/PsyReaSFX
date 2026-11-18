@@ -1479,6 +1479,21 @@ function applySnapshot(next) {
   if (next.error && (!previous?.error || next.status !== previous.status))
     report(next.status);
   $("empty-state").hidden = !ready || next.loaded > 0;
+  const soundminer = next.catalogScope?.kind === "soundminer";
+  const smImport = next.taskDetails?.import;
+  const inspecting = smImport?.phase === "soundminer_inspect";
+  if (!$("empty-state").hidden) {
+    $("empty-add").hidden = soundminer;
+    $("empty-resume").hidden = !soundminer || Boolean(next.tasks?.import || next.soundminerReport?.saving || next.soundminerWaiting);
+    $("empty-title").textContent = soundminer
+      ? `Soundminer · ${next.catalogScope.name}` : localizer.text("建立你的声音工作区");
+    const description = inspecting
+      ? `${localizer.text("已读取的素材记录")} · ${smImport.total.toLocaleString()}`
+      : smImport?.phase === "soundminer_import"
+        ? `${localizer.text("导入 Soundminer 音效库")} · ${smImport.completed.toLocaleString()} / ${smImport.total.toLocaleString()}`
+        : next.soundminerReport?.error || localizer.text(next.soundminerWaiting ? "正在读取 Soundminer 音效库…" : "当前独立库没有素材");
+    $("empty-description").textContent = soundminer ? description : localizer.text("添加来源文件夹，开始浏览、试听与整理。");
+  }
   $("no-results").hidden =
     !ready || !next.loaded || next.count > 0 || next.pending;
   $("startup-state").hidden = ready;
@@ -1561,7 +1576,9 @@ function applySnapshot(next) {
     (key) => next.tasks[key],
   );
   const detail = next.taskDetails?.[firstTask];
-  if (detail?.total > 0)
+  if (firstTask === "import" && inspecting)
+    activity = `${localizer.text("已读取的素材记录")} · ${smImport.total.toLocaleString()}`;
+  else if (detail?.total > 0)
     activity = `${localizer.text(taskLabels[firstTask] || firstTask)} ${detail.completed}/${detail.total}${tasks.length > 1 ? ` · +${tasks.length - 1}` : ""}`;
   else if (firstTask === "scan" && detail?.files != null)
     activity = detail.automatic
@@ -4078,6 +4095,7 @@ for (const id of ["add-library", "empty-add"])
     applyPreferences();
     persist();
   });
+$("empty-resume").onclick = action(() => command("soundminer.catalog.resume"));
 $("new-collection").onclick = () => collectionCreateMenu($("new-collection"));
 function renderUcs() {
   if (!ucsCatalog) return;

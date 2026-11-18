@@ -317,12 +317,14 @@ function commit_atomic_temporary(
 )
   backup_path = backup_path or (target_path .. ".bak")
   local had_original = HostApi.file_exists(target_path)
-  os.remove(backup_path)
 
-  if had_original
-    and not os.rename(target_path, backup_path) then
-    os.remove(temporary_path)
-    return false, had_original
+  if had_original then
+    os.remove(backup_path)
+    local moved, reason, code = os.rename(target_path, backup_path)
+    if not moved then
+      os.remove(temporary_path)
+      return false, had_original, reason, code
+    end
   end
 
   if state.persistence_fault_injection == "after_backup" then
@@ -333,15 +335,13 @@ function commit_atomic_temporary(
     return false, had_original
   end
 
-  if not os.rename(
-    temporary_path,
-    target_path
-  ) then
+  local installed, reason, code = os.rename(temporary_path, target_path)
+  if not installed then
     if had_original then
       os.rename(backup_path, target_path)
     end
     os.remove(temporary_path)
-    return false, had_original
+    return false, had_original, reason, code
   end
 
   if not keep_backup then
@@ -790,9 +790,9 @@ function atomic_file_writer(target_path)
   local backup_path = target_path .. ".bak"
   os.remove(temporary_path)
 
-  local raw, open_error = io.open(temporary_path, "wb")
+  local raw, open_error, open_code = io.open(temporary_path, "wb")
   if not raw then
-    return nil, open_error
+    return nil, open_error, open_code
   end
 
   -- Large snapshots are written as many small fragments; a 1 MiB full
@@ -855,13 +855,13 @@ function atomic_file_writer(target_path)
       return false, "injected failure after temporary close"
     end
 
-    local committed = commit_atomic_temporary(
+    local committed, _, reason, code = commit_atomic_temporary(
       self.target_path,
       self.temporary_path,
       self.backup_path
     )
     if not committed then
-      return false, "could not install completed file"
+      return false, reason or "could not install completed file", code
     end
     return true
   end

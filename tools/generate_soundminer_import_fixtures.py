@@ -103,6 +103,7 @@ def main():
     database(target / "cancel.sqlite", [{"FilePath": f"/Volumes/Cancel/item-{index:03}.wav"} for index in range(80)])
     database(target / "owned.sqlite", [{"FilePath": (target / "owned" / "new.wav").as_posix()}])
     database(target / "Second.sqlite", [{"FilePath": old + "/FX/impact.wav", "Description": "Second isolated library"}])
+    database(target / "empty.sqlite", [])
     shutil.copyfile(main_db, target / "changing.sqlite")
     shutil.copyfile(main_db, target / "wal.sqlite")
     (target / "wal.sqlite-wal").write_bytes(b"active write-ahead log")

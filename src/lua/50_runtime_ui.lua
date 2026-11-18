@@ -495,6 +495,7 @@ function cancel_database_snapshot(reason)
   state.database_snapshot_session = nil
   Jobs.cancel(session.job_token)
   Jobs.finish(session.job_token, true, reason or "canceled")
+  if session.soundminer_report then SoundminerImport.snapshot_finished(session, translate_ui_text("索引保存已取消")) end
   return true
 end
 
@@ -568,6 +569,7 @@ function fail_database_snapshot(session, message)
   state.database_snapshot_session = nil
   Jobs.finish(session.job_token, false, message)
   set_status("无法保存索引：" .. tostring(message or "写入失败"), true)
+  if session.soundminer_report then SoundminerImport.snapshot_finished(session, message or translate_ui_text("写入失败")) end
 end
 
 function process_database_snapshot()
@@ -626,6 +628,7 @@ function process_database_snapshot()
     session.total,
     now - session.started
   ))
+  if session.soundminer_report then SoundminerImport.snapshot_finished(session) end
 end
 
 function save_database()
@@ -26490,7 +26493,7 @@ function cleanup()
   if WEBVIEW_MODE then webview_close() end
   if SoundminerMedia then SoundminerMedia.cancel_all() end
   if state.import_session and state.import_session.soundminer then
-    SoundminerImport.cancel(state.import_session)
+    SoundminerImport.cancel(state.import_session, true)
   end
   if state.startup_session then
     if state.preview then stop_preview() end

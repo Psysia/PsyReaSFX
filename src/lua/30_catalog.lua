@@ -1596,17 +1596,32 @@ function cancel_config_save()
   AppState.set("config_dirty", true)
 end
 
+local function config_save_failed(reason, code, background)
+  AppState.set("config_dirty", true)
+  local retry = state.config_save_retry
+  local attempts = retry and retry.attempts or 0
+  -- Windows can temporarily deny opening or renaming a settings file while
+  -- another reader holds it. Retry from fresh settings on later defer frames.
+  if background and (code == 2 or code == 13 or code == 16 or code == 32 or code == 33) and attempts < 3 then
+    AppState.set("config_save_retry", { attempts = attempts + 1, at = HostApi.time_precise() + 0.25 * 2 ^ attempts })
+  else
+    AppState.set("config_save_retry", nil)
+    set_status(translate_ui_text("无法保存配置") .. " · " .. CONFIG_FILE
+      .. (reason and (" · " .. translate_ui_text(reason)) or ""), true)
+  end
+  return false
+end
+
 function save_config()
   if state.root_removal_session then return false end
   cancel_config_save()
+  AppState.set("config_save_retry", nil)
   ensure_dirs()
-  local file = atomic_file_writer(CONFIG_FILE)
-  if not file then set_status("无法保存配置", true); return false end
+  local file, reason, code = atomic_file_writer(CONFIG_FILE)
+  if not file then return config_save_failed(reason, code) end
   write_config_settings(file, true)
-  if not file:close() then
-    set_status("无法保存配置", true)
-    return false
-  end
+  local saved, close_error, close_code = file:close()
+  if not saved then return config_save_failed(close_error, close_code) end
   AppState.set("config_dirty", false)
   return true
 end
@@ -1614,11 +1629,12 @@ end
 function start_config_save()
   if state.config_save_session or not state.config_dirty
     or state.persistence_read_only or state.root_removal_session then return false end
+  if state.config_save_retry and HostApi.time_precise() < state.config_save_retry.at then return false end
   ensure_dirs()
-  local writer = atomic_file_writer(CONFIG_FILE)
-  if not writer then set_status("无法保存配置", true); return false end
+  local writer, reason, code = atomic_file_writer(CONFIG_FILE)
+  if not writer then return config_save_failed(reason, code, true) end
   write_config_settings(writer, false)
-  if writer.failed then writer:abort(); set_status("无法保存配置", true); return false end
+  if writer.failed then writer:abort(); return config_save_failed(writer.failure) end
   AppState.set("config_save_session", {
     writer = writer, job = new_path_set_persistence_job(state.favorites, "favorite", false),
   })
@@ -1628,7 +1644,10 @@ end
 
 function process_config_save()
   local session = state.config_save_session
-  if not session then return end
+  if not session then
+    if state.config_save_retry then start_config_save() end
+    return
+  end
   if state.root_removal_session or state.persistence_read_only then cancel_config_save(); return end
   local complete, reason = step_path_set_persistence_job(
     session.job, session.writer, 4000, escape_tsv,
@@ -1636,13 +1655,12 @@ function process_config_save()
   )
   if reason then
     cancel_config_save()
-    set_status("无法保存配置：" .. tostring(reason), true)
+    config_save_failed(session.writer.failure or reason)
   elseif complete then
     AppState.set("config_save_session", nil)
-    if not session.writer:close() then
-      AppState.set("config_dirty", true)
-      set_status("无法保存配置", true)
-    end
+    local saved, close_error, close_code = session.writer:close()
+    if not saved then config_save_failed(close_error, close_code, true)
+    else AppState.set("config_save_retry", nil) end
     -- Do not clear config_dirty here: the user may have changed settings
     -- while this generation was being written.
   end

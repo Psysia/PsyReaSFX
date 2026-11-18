@@ -148,6 +148,29 @@ local function sm_close(session)
   session.worker = nil
 end
 
+local function sm_outcome(report, phase)
+  local saved, reason = pcall(SoundminerCatalog.set_outcome, phase)
+  if not saved then
+    report.error = translate_ui_text("无法保存独立库导入进度") .. " · " .. tostring(reason)
+  end
+end
+
+function SoundminerImport.snapshot_finished(snapshot, reason)
+  local report = snapshot.soundminer_report
+  if not report then return end
+  report.saving = false
+  if reason then
+    report.error = translate_ui_text("保存失败；素材仍在当前会话，请检查数据目录和磁盘空间")
+      .. " · " .. tostring(reason)
+  else
+    sm_outcome(report, "complete")
+  end
+  if report.error ~= "" then
+    snapshot.soundminer_job.state, snapshot.soundminer_job.message = "failed", report.error
+    set_status(report.error, true)
+  end
+end
+
 function SoundminerImport.finish(session, reason)
   sm_close(session)
   if state.import_session == session then AppState.set("import_session", nil) end
@@ -159,11 +182,14 @@ function SoundminerImport.finish(session, reason)
     invalidate_library_counts()
     invalidate_folder_navigation()
     mark_database_snapshot_dirty()
-    local libraries_ok, libraries_saved = pcall(save_libraries)
+  end
+  if session.added > 0 or state.libraries_dirty or state.db_dirty then
+    local libraries_ok, libraries_saved = true, true
+    if state.libraries_dirty then libraries_ok, libraries_saved = pcall(save_libraries) end
     local database_ok, database_saved = false, false
     if libraries_ok and libraries_saved then database_ok, database_saved = pcall(save_database_changes) end
     if not libraries_ok or not libraries_saved or not database_ok or not database_saved then
-      reason = (reason and reason .. " · " or "") .. "保存失败；素材仍在当前会话，请检查数据目录和磁盘空间"
+      reason = (reason and reason .. " · " or "") .. translate_ui_text("保存失败；素材仍在当前会话，请检查数据目录和磁盘空间")
       session.job_token.state, session.job_token.message = "failed", reason
     end
   end
@@ -173,20 +199,32 @@ function SoundminerImport.finish(session, reason)
     skipped = session.failed, waveforms = session.waveforms, waveSkipped = session.wave_skipped,
     cacheError = session.cache_error or "", error = reason or "", canceled = session.job_token.cancel_requested == true,
   }
+  if report.canceled and not session.interrupted then
+    sm_outcome(report, "canceled")
+  elseif not reason then
+    if state.database_snapshot_session then
+      report.saving = true
+      state.database_snapshot_session.soundminer_report = report
+      state.database_snapshot_session.soundminer_job = session.job_token
+    else
+      sm_outcome(report, "complete")
+    end
+  end
   AppState.set("soundminer_report", report)
   local message = string.format(translate_ui_text("Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"),
     report.added, report.duplicates, report.offline, report.skipped, report.waveforms, report.waveSkipped)
-  if reason then message = message .. " · " .. tostring(reason) end
+  if report.error ~= "" then message = message .. " · " .. report.error end
   if report.cacheError ~= "" then message = message .. " · " .. report.cacheError end
-  set_status(message, reason ~= nil or report.skipped > 0)
+  set_status(message, report.error ~= "" or report.skipped > 0)
   return report
 end
 
-function SoundminerImport.cancel(session)
+function SoundminerImport.cancel(session, interrupted)
   session = session or state.import_session
   if not session or not session.soundminer then return end
+  session.interrupted = interrupted
   Jobs.cancel(session.job_token)
-  return SoundminerImport.finish(session, "已取消；已导入素材保留")
+  return SoundminerImport.finish(session, translate_ui_text("已取消；已导入素材保留"))
 end
 
 local function sm_root(session, path)
@@ -324,6 +362,11 @@ local function sm_import_row(session, row)
     add_or_update_asset(asset, false)
     mark_asset_database_change(asset)
     session.added = session.added + 1
+    local now = HostApi.time_precise()
+    if not state.results_job and now >= (session.next_results_refresh or 0) then
+      AppState.set("results_dirty", true)
+      session.next_results_refresh = now + 2
+    end
   end
   session.current = { asset = asset }
   if session.import_waveforms then
@@ -340,13 +383,15 @@ end
 
 local function sm_work(session)
   -- First pass validates records and computes compact source roots without audio I/O.
-  for row in session.database:rows("justinmetadata") do
-    local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
-    if path then
-      local group, folder = sm_group(path), sm_path(dirname(path))
-      session.roots[group] = session.roots[group] and sm_common(session.roots[group], folder) or folder
+  for batch in session.database:row_batches("justinmetadata", HostApi.time_precise) do
+    for _, row in ipairs(batch) do
+      local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
+      if path then
+        local group, folder = sm_group(path), sm_path(dirname(path))
+        session.roots[group] = session.roots[group] and sm_common(session.roots[group], folder) or folder
+      end
     end
-    session.total = session.total + 1
+    session.total = session.total + #batch
     coroutine.yield()
   end
   assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")

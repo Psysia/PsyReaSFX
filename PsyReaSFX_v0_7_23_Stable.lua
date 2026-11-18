@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "c55b46d2f1017908c273269f7a39bc23fb52dd6d228c3743f8fe2324b8f1b207",
+  source_sha256 = "cb8704297c79407f7f39def693a4365eb1b76aa3ee30900c9c94e0d35c87c585",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -2129,6 +2129,12 @@ I18N_PREFIX_EN = {
   ["已迁移旧版音效库路径与偏好设置"] =
     "Migrated legacy library paths and preferences",
   ["无法保存配置"] = "Unable to save configuration",
+  ["无法保存独立库导入进度"] = "Unable to save import progress for this catalog",
+  ["已取消；已导入素材保留"] = "Import canceled. Previously imported assets have been kept.",
+  ["独立 Soundminer 素材库"] = "Independent Soundminer catalog",
+  ["保存失败；素材仍在当前会话，请检查数据目录和磁盘空间"] = "Could not save the catalog. Assets are still in this session. Check the data folder and free disk space.",
+  ["索引保存已取消"] = "Index save was canceled",
+  ["写入失败"] = "Write failed",
   ["无法保存索引"] = "Unable to save database index",
   ["无法保存素材增量日志："] = "Unable to save the asset journal: ",
   ["无法保存播放列表"] = "Unable to save playlists",
@@ -6384,12 +6390,14 @@ function commit_atomic_temporary(
 )
   backup_path = backup_path or (target_path .. ".bak")
   local had_original = HostApi.file_exists(target_path)
-  os.remove(backup_path)
 
-  if had_original
-    and not os.rename(target_path, backup_path) then
-    os.remove(temporary_path)
-    return false, had_original
+  if had_original then
+    os.remove(backup_path)
+    local moved, reason, code = os.rename(target_path, backup_path)
+    if not moved then
+      os.remove(temporary_path)
+      return false, had_original, reason, code
+    end
   end
 
   if state.persistence_fault_injection == "after_backup" then
@@ -6400,15 +6408,13 @@ function commit_atomic_temporary(
     return false, had_original
   end
 
-  if not os.rename(
-    temporary_path,
-    target_path
-  ) then
+  local installed, reason, code = os.rename(temporary_path, target_path)
+  if not installed then
     if had_original then
       os.rename(backup_path, target_path)
     end
     os.remove(temporary_path)
-    return false, had_original
+    return false, had_original, reason, code
   end
 
   if not keep_backup then
@@ -6857,9 +6863,9 @@ function atomic_file_writer(target_path)
   local backup_path = target_path .. ".bak"
   os.remove(temporary_path)
 
-  local raw, open_error = io.open(temporary_path, "wb")
+  local raw, open_error, open_code = io.open(temporary_path, "wb")
   if not raw then
-    return nil, open_error
+    return nil, open_error, open_code
   end
 
   -- Large snapshots are written as many small fragments; a 1 MiB full
@@ -6922,13 +6928,13 @@ function atomic_file_writer(target_path)
       return false, "injected failure after temporary close"
     end
 
-    local committed = commit_atomic_temporary(
+    local committed, _, reason, code = commit_atomic_temporary(
       self.target_path,
       self.temporary_path,
       self.backup_path
     )
     if not committed then
-      return false, "could not install completed file"
+      return false, reason or "could not install completed file", code
     end
     return true
   end
@@ -9197,15 +9203,42 @@ local function sm_sqlite_mapped_row(schema, values, rowid, stored_count)
   return row
 end
 
-function sm_sqlite_methods:rows(name)
-  local schema = self:tables()[name]
+local function sm_sqlite_row_iterator(db, name)
+  local schema = db:tables()[name]
   sm_sqlite_require(schema, "unsupported or missing table " .. tostring(name))
-  local next_row = sm_sqlite_raw_rows(self, schema.root)
+  local next_row = sm_sqlite_raw_rows(db, schema.root)
+  return function()
+    local values, rowid, count = next_row()
+    if values then return sm_sqlite_mapped_row(schema, values, rowid, count) end
+  end
+end
+
+function sm_sqlite_methods:rows(name)
+  local next_row = sm_sqlite_row_iterator(self, name)
   return function()
     sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
-    local values, rowid, count = next_row()
+    local row = next_row()
     sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
-    if values then return sm_sqlite_mapped_row(schema, values, rowid, count) end
+    return row
+  end
+end
+
+-- Inspect a small batch from one verified generation. _page also checks every
+-- physical read. A mutation discards the entire batch before the caller sees it.
+function sm_sqlite_methods:row_batches(name, now)
+  local next_row = sm_sqlite_row_iterator(self, name)
+  local finished = false
+  return function()
+    if finished then return end
+    sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
+    local rows, deadline = {}, now() + 0.003
+    repeat
+      local row = next_row()
+      if not row then finished = true; break end
+      rows[#rows + 1] = row
+    until #rows >= 64 or now() >= deadline
+    sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
+    if #rows > 0 then return rows end
   end
 end
 
@@ -11465,17 +11498,32 @@ function cancel_config_save()
   AppState.set("config_dirty", true)
 end
 
+local function config_save_failed(reason, code, background)
+  AppState.set("config_dirty", true)
+  local retry = state.config_save_retry
+  local attempts = retry and retry.attempts or 0
+  -- Windows can temporarily deny opening or renaming a settings file while
+  -- another reader holds it. Retry from fresh settings on later defer frames.
+  if background and (code == 2 or code == 13 or code == 16 or code == 32 or code == 33) and attempts < 3 then
+    AppState.set("config_save_retry", { attempts = attempts + 1, at = HostApi.time_precise() + 0.25 * 2 ^ attempts })
+  else
+    AppState.set("config_save_retry", nil)
+    set_status(translate_ui_text("无法保存配置") .. " · " .. CONFIG_FILE
+      .. (reason and (" · " .. translate_ui_text(reason)) or ""), true)
+  end
+  return false
+end
+
 function save_config()
   if state.root_removal_session then return false end
   cancel_config_save()
+  AppState.set("config_save_retry", nil)
   ensure_dirs()
-  local file = atomic_file_writer(CONFIG_FILE)
-  if not file then set_status("无法保存配置", true); return false end
+  local file, reason, code = atomic_file_writer(CONFIG_FILE)
+  if not file then return config_save_failed(reason, code) end
   write_config_settings(file, true)
-  if not file:close() then
-    set_status("无法保存配置", true)
-    return false
-  end
+  local saved, close_error, close_code = file:close()
+  if not saved then return config_save_failed(close_error, close_code) end
   AppState.set("config_dirty", false)
   return true
 end
@@ -11483,11 +11531,12 @@ end
 function start_config_save()
   if state.config_save_session or not state.config_dirty
     or state.persistence_read_only or state.root_removal_session then return false end
+  if state.config_save_retry and HostApi.time_precise() < state.config_save_retry.at then return false end
   ensure_dirs()
-  local writer = atomic_file_writer(CONFIG_FILE)
-  if not writer then set_status("无法保存配置", true); return false end
+  local writer, reason, code = atomic_file_writer(CONFIG_FILE)
+  if not writer then return config_save_failed(reason, code, true) end
   write_config_settings(writer, false)
-  if writer.failed then writer:abort(); set_status("无法保存配置", true); return false end
+  if writer.failed then writer:abort(); return config_save_failed(writer.failure) end
   AppState.set("config_save_session", {
     writer = writer, job = new_path_set_persistence_job(state.favorites, "favorite", false),
   })
@@ -11497,7 +11546,10 @@ end
 
 function process_config_save()
   local session = state.config_save_session
-  if not session then return end
+  if not session then
+    if state.config_save_retry then start_config_save() end
+    return
+  end
   if state.root_removal_session or state.persistence_read_only then cancel_config_save(); return end
   local complete, reason = step_path_set_persistence_job(
     session.job, session.writer, 4000, escape_tsv,
@@ -11505,13 +11557,12 @@ function process_config_save()
   )
   if reason then
     cancel_config_save()
-    set_status("无法保存配置：" .. tostring(reason), true)
+    config_save_failed(session.writer.failure or reason)
   elseif complete then
     AppState.set("config_save_session", nil)
-    if not session.writer:close() then
-      AppState.set("config_dirty", true)
-      set_status("无法保存配置", true)
-    end
+    local saved, close_error, close_code = session.writer:close()
+    if not saved then config_save_failed(close_error, close_code, true)
+    else AppState.set("config_save_retry", nil) end
     -- Do not clear config_dirty here: the user may have changed settings
     -- while this generation was being written.
   end
@@ -19003,6 +19054,29 @@ local function sm_close(session)
   session.worker = nil
 end
 
+local function sm_outcome(report, phase)
+  local saved, reason = pcall(SoundminerCatalog.set_outcome, phase)
+  if not saved then
+    report.error = translate_ui_text("无法保存独立库导入进度") .. " · " .. tostring(reason)
+  end
+end
+
+function SoundminerImport.snapshot_finished(snapshot, reason)
+  local report = snapshot.soundminer_report
+  if not report then return end
+  report.saving = false
+  if reason then
+    report.error = translate_ui_text("保存失败；素材仍在当前会话，请检查数据目录和磁盘空间")
+      .. " · " .. tostring(reason)
+  else
+    sm_outcome(report, "complete")
+  end
+  if report.error ~= "" then
+    snapshot.soundminer_job.state, snapshot.soundminer_job.message = "failed", report.error
+    set_status(report.error, true)
+  end
+end
+
 function SoundminerImport.finish(session, reason)
   sm_close(session)
   if state.import_session == session then AppState.set("import_session", nil) end
@@ -19014,11 +19088,14 @@ function SoundminerImport.finish(session, reason)
     invalidate_library_counts()
     invalidate_folder_navigation()
     mark_database_snapshot_dirty()
-    local libraries_ok, libraries_saved = pcall(save_libraries)
+  end
+  if session.added > 0 or state.libraries_dirty or state.db_dirty then
+    local libraries_ok, libraries_saved = true, true
+    if state.libraries_dirty then libraries_ok, libraries_saved = pcall(save_libraries) end
     local database_ok, database_saved = false, false
     if libraries_ok and libraries_saved then database_ok, database_saved = pcall(save_database_changes) end
     if not libraries_ok or not libraries_saved or not database_ok or not database_saved then
-      reason = (reason and reason .. " · " or "") .. "保存失败；素材仍在当前会话，请检查数据目录和磁盘空间"
+      reason = (reason and reason .. " · " or "") .. translate_ui_text("保存失败；素材仍在当前会话，请检查数据目录和磁盘空间")
       session.job_token.state, session.job_token.message = "failed", reason
     end
   end
@@ -19028,20 +19105,32 @@ function SoundminerImport.finish(session, reason)
     skipped = session.failed, waveforms = session.waveforms, waveSkipped = session.wave_skipped,
     cacheError = session.cache_error or "", error = reason or "", canceled = session.job_token.cancel_requested == true,
   }
+  if report.canceled and not session.interrupted then
+    sm_outcome(report, "canceled")
+  elseif not reason then
+    if state.database_snapshot_session then
+      report.saving = true
+      state.database_snapshot_session.soundminer_report = report
+      state.database_snapshot_session.soundminer_job = session.job_token
+    else
+      sm_outcome(report, "complete")
+    end
+  end
   AppState.set("soundminer_report", report)
   local message = string.format(translate_ui_text("Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"),
     report.added, report.duplicates, report.offline, report.skipped, report.waveforms, report.waveSkipped)
-  if reason then message = message .. " · " .. tostring(reason) end
+  if report.error ~= "" then message = message .. " · " .. report.error end
   if report.cacheError ~= "" then message = message .. " · " .. report.cacheError end
-  set_status(message, reason ~= nil or report.skipped > 0)
+  set_status(message, report.error ~= "" or report.skipped > 0)
   return report
 end
 
-function SoundminerImport.cancel(session)
+function SoundminerImport.cancel(session, interrupted)
   session = session or state.import_session
   if not session or not session.soundminer then return end
+  session.interrupted = interrupted
   Jobs.cancel(session.job_token)
-  return SoundminerImport.finish(session, "已取消；已导入素材保留")
+  return SoundminerImport.finish(session, translate_ui_text("已取消；已导入素材保留"))
 end
 
 local function sm_root(session, path)
@@ -19179,6 +19268,11 @@ local function sm_import_row(session, row)
     add_or_update_asset(asset, false)
     mark_asset_database_change(asset)
     session.added = session.added + 1
+    local now = HostApi.time_precise()
+    if not state.results_job and now >= (session.next_results_refresh or 0) then
+      AppState.set("results_dirty", true)
+      session.next_results_refresh = now + 2
+    end
   end
   session.current = { asset = asset }
   if session.import_waveforms then
@@ -19195,13 +19289,15 @@ end
 
 local function sm_work(session)
   -- First pass validates records and computes compact source roots without audio I/O.
-  for row in session.database:rows("justinmetadata") do
-    local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
-    if path then
-      local group, folder = sm_group(path), sm_path(dirname(path))
-      session.roots[group] = session.roots[group] and sm_common(session.roots[group], folder) or folder
+  for batch in session.database:row_batches("justinmetadata", HostApi.time_precise) do
+    for _, row in ipairs(batch) do
+      local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
+      if path then
+        local group, folder = sm_group(path), sm_path(dirname(path))
+        session.roots[group] = session.roots[group] and sm_common(session.roots[group], folder) or folder
+      end
     end
-    session.total = session.total + 1
+    session.total = session.total + #batch
     coroutine.yield()
   end
   assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
@@ -19331,7 +19427,11 @@ end
 local function smc_manifest_path(id) return join_path(smc_root(id), "catalog.json") end
 
 local function smc_read_manifest(id)
-  local file, open_error, open_code = io.open(smc_manifest_path(id), "rb")
+  local path = smc_manifest_path(id)
+  local file, open_error, open_code = io.open(path, "rb")
+  -- A crash between the two Windows renames can leave the previous manifest
+  -- at .bak. The same identity validation applies to both generations.
+  if not file and open_code == 2 then file, open_error, open_code = io.open(path .. ".bak", "rb") end
   if not file then assert(open_code == 2, open_error); return nil end
   local bytes = file:read(262145) or ""; file:close()
   assert(#bytes <= 262144, "独立素材库清单过大")
@@ -19350,7 +19450,7 @@ local function smc_write(path, bytes)
   local writer, reason = atomic_file_writer(path)
   assert(writer, reason)
   local ok, err = writer:write(bytes)
-  if not ok then writer:close(); error(err or "无法写入独立素材库", 0) end
+  if not ok then writer:abort(); error(err or "无法写入独立素材库", 0) end
   local closed, close_error = writer:close()
   assert(closed, close_error)
 end
@@ -19462,7 +19562,7 @@ function SoundminerCatalog.open(params)
   else
     local inspected = SoundminerImport.inspect(normalized.path)
     manifest = { schema = "PsyReaSFX-Soundminer-Catalog-v1", id = id, identity = identity,
-      name = smc_name(inspected.name), params = normalized, consumed = false }
+      name = smc_name(inspected.name), params = normalized, importState = "pending", consumed = false }
     assert(manifest.name ~= "" and not manifest.name:find("[%z\1-\31]"), "Soundminer 数据库名称无效")
     HostApi.RecursiveCreateDirectory(smc_root(id), 0)
     smc_wrapper(manifest)
@@ -19473,15 +19573,30 @@ function SoundminerCatalog.open(params)
   return opened
 end
 
-function SoundminerCatalog.resume()
+local function smc_current_manifest()
   assert(PsyReaSFXScope.kind == "soundminer", "请选择独立 Soundminer 素材库")
   local manifest = assert(smc_read_manifest(PsyReaSFXScope.id), "独立素材库清单缺失")
   assert(manifest.identity == PsyReaSFXScope.identity, "独立素材库来源已改变")
+  return manifest
+end
+
+local function smc_import_state(manifest, phase)
+  if manifest.importState == phase then return end
+  manifest.importState, manifest.consumed = phase, phase ~= "pending"
+  smc_save_manifest(manifest)
+end
+
+function SoundminerCatalog.set_outcome(phase)
+  -- Re-read so changes to the user's cache options in another window survive.
+  smc_import_state(smc_current_manifest(), phase)
+end
+
+function SoundminerCatalog.resume()
+  local manifest = smc_current_manifest()
+  assert(not state.import_session and not state.database_snapshot_session, "请等待当前扫描或导入完成")
   local started = SoundminerImport.start(manifest.params)
-  assert(started and started.started, "无法开始独立素材库导入")
-  manifest.consumed = true
-  local saved, save_error = pcall(smc_save_manifest, manifest)
-  if not saved then SoundminerImport.cancel(); error(save_error, 0) end
+  local saved, reason = pcall(smc_import_state, manifest, "pending")
+  if not saved then SoundminerImport.cancel(state.import_session, true); error(reason, 0) end
   AppState.set("soundminer_catalog_checked", true)
   return started
 end
@@ -19493,14 +19608,20 @@ function SoundminerCatalog.process_pending()
     if job.resource == "catalog_exclusive" then return end
   end
   local ok, reason = pcall(function()
-    local manifest = assert(smc_read_manifest(PsyReaSFXScope.id), "独立素材库清单缺失")
-    assert(manifest.identity == PsyReaSFXScope.identity, "独立素材库来源已改变")
-    if manifest.consumed then AppState.set("soundminer_catalog_checked", true); return end
+    local manifest = smc_current_manifest()
+    -- Older versions marked the job consumed before reading its first row.
+    -- A committed index (including one emptied by the user) is authoritative.
+    if manifest.importState == "complete" or manifest.importState == "canceled"
+      or (manifest.importState == nil and manifest.consumed and HostApi.file_exists(DATABASE_FILE)) then
+      AppState.set("soundminer_catalog_checked", true); return
+    end
     SoundminerCatalog.resume()
   end)
   if not ok then
     AppState.set("soundminer_catalog_checked", true)
-    set_status("独立 Soundminer 素材库：" .. tostring(reason), true)
+    local message = translate_ui_text("独立 Soundminer 素材库") .. " · " .. translate_ui_text(reason)
+    AppState.set("soundminer_report", { error = message })
+    set_status(message, true)
   end
 end
 
@@ -20003,6 +20124,7 @@ function cancel_database_snapshot(reason)
   state.database_snapshot_session = nil
   Jobs.cancel(session.job_token)
   Jobs.finish(session.job_token, true, reason or "canceled")
+  if session.soundminer_report then SoundminerImport.snapshot_finished(session, translate_ui_text("索引保存已取消")) end
   return true
 end
 
@@ -20076,6 +20198,7 @@ function fail_database_snapshot(session, message)
   state.database_snapshot_session = nil
   Jobs.finish(session.job_token, false, message)
   set_status("无法保存索引：" .. tostring(message or "写入失败"), true)
+  if session.soundminer_report then SoundminerImport.snapshot_finished(session, message or translate_ui_text("写入失败")) end
 end
 
 function process_database_snapshot()
@@ -20134,6 +20257,7 @@ function process_database_snapshot()
     session.total,
     now - session.started
   ))
+  if session.soundminer_report then SoundminerImport.snapshot_finished(session) end
 end
 
 function save_database()
@@ -45998,7 +46122,7 @@ function cleanup()
   if WEBVIEW_MODE then webview_close() end
   if SoundminerMedia then SoundminerMedia.cancel_all() end
   if state.import_session and state.import_session.soundminer then
-    SoundminerImport.cancel(state.import_session)
+    SoundminerImport.cancel(state.import_session, true)
   end
   if state.startup_session then
     if state.preview then stop_preview() end

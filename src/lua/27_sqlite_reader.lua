@@ -407,15 +407,42 @@ local function sm_sqlite_mapped_row(schema, values, rowid, stored_count)
   return row
 end
 
-function sm_sqlite_methods:rows(name)
-  local schema = self:tables()[name]
+local function sm_sqlite_row_iterator(db, name)
+  local schema = db:tables()[name]
   sm_sqlite_require(schema, "unsupported or missing table " .. tostring(name))
-  local next_row = sm_sqlite_raw_rows(self, schema.root)
+  local next_row = sm_sqlite_raw_rows(db, schema.root)
+  return function()
+    local values, rowid, count = next_row()
+    if values then return sm_sqlite_mapped_row(schema, values, rowid, count) end
+  end
+end
+
+function sm_sqlite_methods:rows(name)
+  local next_row = sm_sqlite_row_iterator(self, name)
   return function()
     sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
-    local values, rowid, count = next_row()
+    local row = next_row()
     sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
-    if values then return sm_sqlite_mapped_row(schema, values, rowid, count) end
+    return row
+  end
+end
+
+-- Inspect a small batch from one verified generation. _page also checks every
+-- physical read. A mutation discards the entire batch before the caller sees it.
+function sm_sqlite_methods:row_batches(name, now)
+  local next_row = sm_sqlite_row_iterator(self, name)
+  local finished = false
+  return function()
+    if finished then return end
+    sm_sqlite_require(self:unchanged(), "database changed or has an active journal; use a stable copy")
+    local rows, deadline = {}, now() + 0.003
+    repeat
+      local row = next_row()
+      if not row then finished = true; break end
+      rows[#rows + 1] = row
+    until #rows >= 64 or now() >= deadline
+    sm_sqlite_require(self:unchanged(), "database changed while reading; use a stable copy")
+    if #rows > 0 then return rows end
   end
 end
 

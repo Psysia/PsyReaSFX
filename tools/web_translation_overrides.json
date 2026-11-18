@@ -538,6 +538,8 @@
   "每个库独立保存素材、设置和缓存。选择后打开对应窗口；已打开的库会切到前台。": "Each catalog keeps its own assets, settings and caches. Choose one to open its window or bring an existing window to the front.",
   "当前库": "Current catalog",
   "继续导入": "Resume import",
+  "已读取的素材记录": "Source records read",
+  "当前独立库没有素材": "This catalog has no assets",
   "补全取消或失败的导入，保留此独立库中已导入的素材": "Resume a canceled or failed import and keep assets already imported into this catalog",
   "请在对应的独立 Soundminer 库中导入": "Import into the matching independent Soundminer catalog",
   "独立 Soundminer 库通过数据库导入更新，不自动扫描来源目录。": "Independent Soundminer catalogs are updated by database import, without automatic folder scanning.",
