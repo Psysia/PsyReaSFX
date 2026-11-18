@@ -8675,10 +8675,10 @@ function transfer_output_is_source(path, asset)
     or (state.by_path and state.by_path[key] ~= nil) or false
 end
 
-function resolve_transfer_output(asset, index, variant, captured_name)
+function resolve_transfer_output(asset, index, variant, captured_name, drag_directory)
   local extension_name = transfer_format_info()
   local base = captured_name or expand_transfer_template(asset, index, variant)
-  local directory = normalize_slashes(trim(state.transfer_dir or ""))
+  local directory = normalize_slashes(trim(drag_directory or state.transfer_dir or ""))
 
   if directory == "" then
     directory = DEFAULT_TRANSFER_DIR
@@ -8697,9 +8697,9 @@ function resolve_transfer_output(asset, index, variant, captured_name)
     return candidate, "new"
   end
 
-  if state.transfer_collision == "skip" then
+  if not drag_directory and state.transfer_collision == "skip" then
     return nil, "skip", candidate
-  elseif state.transfer_collision == "overwrite"
+  elseif not drag_directory and state.transfer_collision == "overwrite"
     and not (SoundminerMedia and SoundminerMedia.requires(asset)) then
     return candidate, "overwrite"
   end
@@ -8997,7 +8997,7 @@ function detect_transfer_tail_end(
     )
 end
 
-function create_transfer_item(asset, use_selection, variant)
+function create_transfer_item(asset, use_selection, variant, drag_range)
   local native_path = asset.path
   if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
   if not native_path then return nil, nil, "私有音频副本未就绪" end
@@ -9039,7 +9039,9 @@ function create_transfer_item(asset, use_selection, variant)
   local start_percent = 0
   local end_percent = 1
 
-  if use_selection and has_selection() then
+  if drag_range then
+    start_percent, end_percent = drag_range.first, drag_range.last
+  elseif use_selection and has_selection() then
     start_percent = clamp(state.region_start, 0, 1)
     end_percent = clamp(state.region_end, start_percent, 1)
 
@@ -9344,7 +9346,8 @@ function render_transfer_asset(task)
       asset,
       task.asset_index,
       task.variant,
-      task.output_name
+      task.output_name,
+      task.drag_range and DEFAULT_TRANSFER_DIR
     )
 
   if collision == "skip" then
@@ -9387,7 +9390,8 @@ function render_transfer_asset(task)
       create_transfer_item(
         asset,
         task.use_selection,
-        task.variant
+        task.variant,
+        task.drag_range
       )
 
     if render_error then
@@ -9453,6 +9457,8 @@ function render_transfer_asset(task)
       false
   end
 
+  -- The receiving application owns placement of a file dragged from the waveform.
+  if task.drag_range then return true, output_path end
   push_recent(
     asset,
     state.transfer_insert_after

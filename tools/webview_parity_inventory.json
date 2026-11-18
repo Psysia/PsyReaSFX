@@ -741,10 +741,10 @@
       "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"
     },
     {
-      "feature": "拖出原文件/拖出选区",
-      "entry": "Alt+拖动列表行；底部拖入选区",
-      "rpc": "drag.begin,drag.cancel",
-      "acceptance": "放到 REAPER 对应轨道/时间位置；窗口外松开有清理；源文件不被改写。",
+        "feature": "拖出素材副本或波形选区",
+        "entry": "Alt+拖动列表行、波形选区手柄、底部拖入选区",
+        "rpc": "drag.begin,drag.cancel,drag.prepareFile",
+        "acceptance": "编排区接收指定轨道和时间位置。外部程序接收私有副本或按入出点渲染的片段。取消时结束准备。",
       "id": "F083",
       "group": "插入 REAPER 与 Transfer",
       "source": "draw_action_strip;draw_transfer_settings_content;draw_transfer_popup;row_popup"

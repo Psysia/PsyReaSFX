@@ -53,7 +53,10 @@ end
 
 function SoundminerReadOnly.stat(path)
   if not sm_read_path(path) then return nil, "Invalid absolute source path", 22 end
-  return sm_read_request(path, 0, 0)
+  local native_path = windows_extended_path and windows_extended_path(path) or path
+  local info, reason, code = sm_read_request(native_path, 0, 0)
+  if info then info.native_path = native_path end
+  return info, reason, code
 end
 
 function SoundminerReadOnly.open(path)
@@ -71,7 +74,7 @@ end
 
 function sm_read_methods:unchanged()
   if self.closed or self.failed then return false end
-  local current = SoundminerReadOnly.stat(self.path)
+  local current = sm_read_request(self.native_path, 0, 0)
   if not current or not sm_read_same(self, current) then self.failed = true; return false end
   return true
 end
@@ -100,7 +103,7 @@ function sm_read_methods:read(count)
   local parts = {}
   while remaining > 0 do
     local wanted = math.min(remaining, 65536)
-    local result, reason = sm_read_request(self.path, self.position, wanted)
+    local result, reason = sm_read_request(self.native_path, self.position, wanted)
     if not result or not sm_read_same(self, result) or #result.bytes ~= wanted then
       self.failed = true
       return nil, reason or "Shared source changed during read"

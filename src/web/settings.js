@@ -891,7 +891,8 @@ export function createSettings({
         ["Enter / Ctrl+Enter", "插入 / 新轨插入（需在常规设置中启用）"],
         ["滚轮 / Shift+滚轮", "波形缩放 / 平移"],
         ["右键拖动波形", "擦播"],
-        ["Alt+拖动列表行", "拖出原文件"],
+        ["Alt+拖动列表行", "拖出素材的私有副本"],
+        ["按住波形选区", "将选中片段拖到目标应用"],
       ]) {
         const row = el("div", "shortcut-row");
         row.append(el("kbd", null, keys), el("span", null, description));

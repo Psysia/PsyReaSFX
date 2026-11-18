@@ -340,7 +340,7 @@ async function main() {
                 protocol: 1,
                 version: displayVersion,
                 host: window.reaper ? "reaper" : "desktop",
-                capabilities: { preview: true, insert: true },
+                capabilities: { preview: true, insert: true, selectionFileDrag: true },
                 runtimePolicy: {
                   protocol: 1,
                   runtime_contracts: [2],
@@ -395,6 +395,8 @@ async function main() {
               request.params.action === "channelMode"
             )
               selected.channelMode = request.params.mode;
+            if (request.method === "drag.prepareFile")
+              result = window.testDragPending ? {pending:true} : {path:"C:/PRS/Transfer/selected-edit.wav"};
             if (request.method === "selection.set") {
               if (window.testStaleOnce) {
                 window.testStaleOnce = false;
@@ -587,6 +589,25 @@ async function main() {
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     await page.waitForSelector(".result-row");
+    async function checkScopeMenu(label) {
+      const scope = page.locator("#scope");
+      await page.waitForFunction((label) => document.querySelector("#scope option")?.textContent === label, label);
+      await scope.click();
+      const menu = await scope.evaluate((select) => {
+        const options = Array.from(select.options);
+        const style = getComputedStyle(options[1]);
+        return { names: options.map((o) => o.textContent), ink: style.color, paper: style.backgroundColor,
+          customizable: CSS.supports("appearance", "base-select"), open: select.matches(":open") };
+      });
+      assert(menu.names.includes("Mechanical Motion") && menu.names.includes(label));
+      assert.notEqual(menu.ink, menu.paper);
+      assert.notEqual(menu.paper, "rgba(0, 0, 0, 0)", "unselected menu entries need an opaque surface");
+      if (menu.customizable) assert(menu.open, "real library picker must open");
+      await page.keyboard.press("Escape");
+    }
+    await checkScopeMenu("全部音效库");
+    const rowWithDescription = page.locator(".result-row").first();
+    assert((await rowWithDescription.getAttribute("title")).includes(await rowWithDescription.getAttribute("data-path")));
     assert.equal(
       await page.evaluate(() =>
         document.documentElement.style.getPropertyValue("--sidebar-left"),
@@ -825,6 +846,9 @@ async function main() {
     );
     fs.mkdirSync(output, { recursive: true });
     await page.screenshot({ path: path.join(output, "english-settings.png") });
+    await page.getByRole("button", { name: "Close settings", exact: true }).click();
+    await checkScopeMenu("All libraries");
+    await page.locator("#settings-open").click();
     await page.locator('[data-setting="language"]').selectOption("zh");
     await page.locator("#settings-apply").click();
     await page.waitForFunction(() => document.documentElement.lang === "zh-CN");
@@ -1085,6 +1109,40 @@ async function main() {
       window.testCalls.some((call) => call.method === "drag.cancel"),
     );
     assert(!(await page.locator("#drag-hint").isVisible()));
+    const hand = page.locator("#wave-drag-handle");
+    const handle = await hand.boundingBox();
+    assert(handle && handle.width > 10);
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.waitForFunction(() => window.testCalls.some((c) => c.method === "drag.files"));
+    await page.mouse.up();
+    const handCalls = await page.evaluate(() => window.testCalls.filter((c) => c.method === "drag.prepareFile" || c.method === "drag.files"));
+    assert.equal(handCalls[0].params.start, 0.2);
+    assert.equal(handCalls[0].params.finish, 0.6);
+    assert(handCalls[0].params.selection);
+    assert.deepEqual(handCalls.at(-1).params.paths, ["C:/PRS/Transfer/selected-edit.wav"]);
+    await page.evaluate(() => { window.testDragPending = true; });
+    await page.mouse.down();
+    await page.waitForFunction(() => window.testCalls.filter((c) => c.method === "drag.prepareFile").length >= 2);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await page.evaluate(() => { window.testDragPending = false; });
+    assert.equal(await page.evaluate(() => window.testCalls.filter((c) => c.method === "drag.files").length), 1,
+      "cancelled preparation must never send a file");
+    const waveBox = await page.locator("#detail-wave").boundingBox();
+    const wavePoint = (fraction) => [waveBox.x + waveBox.width * fraction, waveBox.y + waveBox.height * 0.7];
+    await page.mouse.move(...wavePoint(0.4));
+    await page.mouse.down();
+    await page.waitForFunction(() => window.testCalls.filter((c) => c.method === "drag.files").length === 2);
+    await page.mouse.up();
+    const previous = await page.evaluate(() => window.testCalls.length);
+    await page.mouse.move(...wavePoint(0.2));
+    await page.mouse.down();
+    await page.mouse.move(...wavePoint(0.3), {steps:4});
+    await page.mouse.up();
+    await page.waitForFunction((offset) => window.testCalls.slice(offset).some((c) => c.method === "preview.region"), previous);
+    const trimmed = await page.evaluate((offset) => window.testCalls.slice(offset).find((c) => c.method === "preview.region").params, previous);
+    assert(Math.abs(trimmed.start - 0.3) < 0.005 && trimmed.finish === 0.6, "trimming the left edge must preserve the right edge");
     await page.evaluate(() =>
       window.testSetState({ regionStart: undefined, regionEnd: undefined }),
     );
