@@ -1026,6 +1026,33 @@ do
   assert(refresh == 0 and undo == 0 and not runtime.external_drag, "insertion failure must balance UI refresh and undo")
   reaper.JS_Mouse_GetState = nil
   assert(not pcall(begin), "missing native input support must be reported before dragging")
+  do
+    local media, render, playstate, mkdir = SoundminerMedia, render_transfer_asset, reaper.GetPlayStateEx, reaper.RecursiveCreateDirectory
+    local pending, cancelled, renders = true, 0, 0
+    SoundminerMedia = {ensure_path=function(_, owner)
+      if pending then owner.media_session={}; return nil, "pending" end
+      return "C:/PRS/native_media/private.wav"
+    end, cancel=function() cancelled=cancelled+1 end}
+    reaper.GetPlayStateEx = function() return 0 end
+    reaper.RecursiveCreateDirectory = function() return 1 end
+    render_transfer_asset=function(task)
+      assert(task.asset==asset and task.drag_range.first==0.25 and task.drag_range.last==0.75)
+      renders=renders+1; return true,"C:/PRS/Transfer/captured.wav"
+    end
+    local prepare=WebUI.handlers["drag.prepareFile"]
+    local request={id="render",path=asset.path,selection=true,start=0.25,finish=0.75,begin=true}
+    assert(prepare(request).pending)
+    WebUI.handlers["drag.cancel"]({id="render"})
+    request.begin=false
+    assert(prepare(request).cancelled and cancelled==1 and renders==0)
+    request.begin=true; assert(prepare(request).pending)
+    request.begin=false; pending=false; runtime.region_start,runtime.region_end=0,1
+    assert(prepare(request).path=="C:/PRS/Transfer/captured.wav" and renders==1)
+    assert(prepare(request).cancelled, "a completed drag cannot render twice")
+    request.begin=true; request.selection=false
+    assert(prepare(request).path=="C:/PRS/native_media/private.wav" and renders==1)
+    SoundminerMedia, render_transfer_asset, reaper.GetPlayStateEx, reaper.RecursiveCreateDirectory=media,render,playstate,mkdir
+  end
   insert_asset_at = original_insert
   for key, value in pairs(api) do reaper[key] = value[1] end
   for key, value in pairs(saved) do runtime[key] = value[1] end

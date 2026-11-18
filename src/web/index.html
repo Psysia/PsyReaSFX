@@ -339,9 +339,11 @@
           <div id="detail-wave-wrap">
             <canvas
               id="detail-wave"
-              aria-label="详细波形，拖动选择区间，双击试听，滚轮缩放"
+              aria-label="详细波形：拖动选择区间，按住选区拖出，双击复位缩放"
               tabindex="0"
             ></canvas
+            ><button type="button" id="wave-drag-handle" hidden
+              aria-label="按住并拖出选区到目标应用" title="按住并拖出选区到目标应用"></button
             ><span id="detail-playhead" hidden></span
             ><span id="wave-status">等待选择素材</span>
             <button id="wave-retry" hidden>重试波形</button>

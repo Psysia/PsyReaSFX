@@ -1038,11 +1038,12 @@ end
 
 function windows_extended_path(path)
   path = tostring(path or "")
+  if #path < 248 then return path end
   local get_os = Host and Host.GetOS or reaper and reaper.GetOS
   local os_name = type(get_os) == "function" and tostring(get_os()) or ""
   if not os_name:match("Win") or path == "" then return path end
   path = path:gsub("/", "\\")
-  if path:sub(1, 4) == "\\\\?\\" then return path end
+  if path:sub(1, 4) == "\\\\?\\" or path:sub(1, 4) == "\\\\.\\" then return path end
   if path:sub(1, 2) == "\\\\" then
     return "\\\\?\\UNC\\" .. path:sub(3)
   end

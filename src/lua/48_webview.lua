@@ -20,7 +20,7 @@ local function number(value, minimum, maximum)
 end
 
 local function asset_for(path)
-  local asset = state.by_path[path_key(text(path))]
+  local asset = state.by_path[path_key(text(path, 32768))]
   assert(asset, "素材已移除，请刷新列表")
   return asset
 end
@@ -259,6 +259,7 @@ function webview_open()
 end
 
 function webview_close()
+  WebUI.cancel_file_drag()
   WebUI.arrange_drag = nil
   AppState.set("external_drag", nil)
   AppState.set("external_drag_started", false)
@@ -380,6 +381,7 @@ WebUI.handlers["session.ready"] = function()
       transfer = true,
       insert = true,
       nativeDrag = true,
+      selectionFileDrag = true,
       tasks = true,
     },
   }
@@ -771,7 +773,7 @@ end
 WebUI.handlers["preview.region"] = function(params)
   if params.path then
     local asset = selected_asset()
-    assert(asset and path_key(asset.path) == path_key(text(params.path)), "所选素材已改变，请重新设置选区")
+    assert(asset and path_key(asset.path) == path_key(text(params.path, 32768)), "所选素材已改变，请重新设置选区")
   end
   WebUI.paused_preview = nil
   local first = number(params.start, 0, 1)
@@ -1064,7 +1066,66 @@ WebUI.handlers["drag.begin"] = function(params)
   return { started = true }
 end
 
+function WebUI.cancel_file_drag(id)
+  local drag = WebUI.file_drag
+  if drag and (not id or drag.id == id) then
+    WebUI.file_drag = nil
+    if drag.media_session then SoundminerMedia.cancel(drag.media_session) end
+  end
+end
+
+-- Only a closed PRS copy or a rendered selection may leave the WebView as a file.
+WebUI.handlers["drag.prepareFile"] = function(params)
+  writable()
+  local id = text(params.id, 80)
+  local asset = asset_for(params.path)
+  local project = reaper.EnumProjects(-1, "")
+  local drag = WebUI.file_drag
+  if params.begin == true then
+    WebUI.cancel_file_drag()
+    assert(id ~= "", "请重新开始拖拽")
+    drag = {id = id, path = asset.path, project = project}
+    if params.selection == true then
+      local first, last = number(params.start, 0, 1), number(params.finish, 0, 1)
+      assert(last > first and (first > 0 or last < 1), "请先选择有效区间")
+      drag.range = {first = first, last = last}
+      drag.variant = {pitch=state.pitch, rate=state.rate, gain_db=state.gain_db, reverse=state.reverse}
+    end
+    WebUI.file_drag = drag
+  end
+  if not drag or drag.id ~= id then return {cancelled = true} end
+  if drag.path ~= asset.path or drag.project ~= project
+    or (drag.range and selected_asset() ~= asset)
+    or (type(reaper.JS_Mouse_GetState) == "function" and reaper.JS_Mouse_GetState(1) & 1 == 0) then
+    WebUI.cancel_file_drag(id)
+    return {cancelled = true}
+  end
+  if state.root_removal_session or state.transfer_running then
+    WebUI.cancel_file_drag(id)
+    error("请等待当前任务完成后再拖入素材")
+  end
+  if drag.range and (reaper.GetPlayStateEx(PROJ) & 5) ~= 0 then
+    WebUI.cancel_file_drag(id)
+    error("工程正在播放，停止后再执行 Transfer")
+  end
+  local private, reason = SoundminerMedia.ensure_path(asset, drag, "正在准备拖拽文件")
+  if not private and reason == "pending" then return {pending = true} end
+  WebUI.file_drag = nil
+  assert(private, reason or "无法准备私有音频副本")
+  if not drag.range then return {path = private} end
+  assert(reaper.RecursiveCreateDirectory(DEFAULT_TRANSFER_DIR, 0) > 0 or directory_exists(DEFAULT_TRANSFER_DIR),
+    "无法创建输出目录")
+  local ok, path, failure = render_transfer_asset({asset=asset, asset_index=1, task_index=1,
+    variant=drag.variant, drag_range=drag.range})
+  assert(ok and path, failure or "Transfer 渲染失败")
+  if type(reaper.JS_Mouse_GetState) == "function" and reaper.JS_Mouse_GetState(1) & 1 == 0 then
+    return {cancelled = true}
+  end
+  return {path = path}
+end
+
 WebUI.handlers["drag.cancel"] = function(params)
+  WebUI.cancel_file_drag(params.id)
   if WebUI.arrange_drag and (not params.id or params.id == WebUI.arrange_drag.id) then
     WebUI.arrange_drag = nil
     AppState.set("external_drag", nil)

@@ -4,7 +4,7 @@ const urgentMethods = new Set([
 ]);
 const dialogMethods = new Set([
   "path.choose", "library.add", "library.drop", "management.action",
-  "transfer.directory", "records.action", "asset.action",
+  "transfer.directory", "records.action", "asset.action", "drag.prepareFile",
 ]);
 export class HostConnection extends EventTarget {
   constructor(send) {

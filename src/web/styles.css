@@ -59,6 +59,11 @@ select:hover {
   background: var(--raised);
   border-color: var(--muted);
 }
+select option,
+select optgroup {
+  color: var(--text);
+  background-color: var(--surface);
+}
 button:disabled {
   opacity: 0.4;
   cursor: default;
@@ -213,8 +218,34 @@ small {
 }
 .scope-control select {
   max-width: 170px;
-  background: transparent;
+  background-color: var(--surface);
   border-color: #51484c;
+}
+@supports (appearance: base-select) {
+  #scope, #scope::picker(select) {
+    appearance: base-select;
+  }
+  #scope::picker(select) {
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+  #scope option {
+    padding: 4px 8px;
+  }
+  #scope option:is(:hover, :focus-visible, :checked) {
+    background-color: var(--selected);
+  }
+}
+@media (forced-colors: active) {
+  select option, select optgroup, #scope::picker(select) {
+    color: CanvasText;
+    background-color: Canvas;
+  }
+  #scope option:is(:hover, :focus-visible, :checked) {
+    color: HighlightText;
+    background-color: Highlight;
+  }
 }
 .workspace-bar {
   height: 34px;
@@ -729,6 +760,24 @@ body.right-hidden #inspector {
   color: var(--muted);
   pointer-events: none;
 }
+#wave-drag-handle {
+  position: absolute;
+  top: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--selected);
+  cursor: grab;
+  touch-action: none;
+}
+#wave-drag-handle .ui-icon { width: 14px; height: 14px; pointer-events: none; }
+#wave-drag-handle:active { cursor: grabbing; }
 #wave-retry {
   position: absolute;
   left: 50%;

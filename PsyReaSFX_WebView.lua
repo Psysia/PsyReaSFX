@@ -1,5 +1,5 @@
 -- @description PsyReaSFX 后台运行（请从 PsyReaSFX.lua 启动）
--- @version 0.9.4-beta5
+-- @version 0.9.4-beta6
 -- @author Psysia
 -- @link https://github.com/Psysia/PsyReaSFX
 -- @maintenance
@@ -216,12 +216,12 @@ local SCRIPT_NAME = "PsyReaSFX"
 -- Display name shown in the title bar, About page and splash. The release build
 -- derives it from @version (tools/Build-LuaRelease.ps1) and
 -- tools/Test-ReaPackVersionPolicy.ps1 fails when this literal disagrees.
-local VERSION = "0.9.4 Beta 5"
+local VERSION = "0.9.4 Beta 6"
 -- Official release provenance. This carries no user identifier and never phones home.
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
-  release_id = "PsyReaSFX/0.9.4-beta5",
-  source_sha256 = "8d93fa07deee03a6b0d732bfa2b174cda7a56392183e237edeb325ffcaff4c9a",
+  release_id = "PsyReaSFX/0.9.4-beta6",
+  source_sha256 = "534891406bdcacaef9fbcda7585f9b054fb84975d584249081b29cf3b814c104",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1438,6 +1438,9 @@ I18N_EN = {
   ["工程正在播放，停止后再执行 Transfer"] = "Stop project playback before running Transfer",
   ["请选择有效的输出目录"] = "Choose a valid output directory",
   ["无法创建输出目录"] = "Could not create output directory",
+  ["正在准备拖拽文件"] = "Preparing the file for dragging",
+  ["无法准备私有音频副本"] = "Could not prepare the private audio copy",
+  ["请重新开始拖拽"] = "Start the drag again",
   ["Transfer 渲染失败"] = "Transfer render failed",
   ["已跳过已有文件："] = "Skipped existing file: ",
   ["Transfer 完成："] = "Transfer complete: ",
@@ -3931,11 +3934,12 @@ end
 
 function windows_extended_path(path)
   path = tostring(path or "")
+  if #path < 248 then return path end
   local get_os = Host and Host.GetOS or reaper and reaper.GetOS
   local os_name = type(get_os) == "function" and tostring(get_os()) or ""
   if not os_name:match("Win") or path == "" then return path end
   path = path:gsub("/", "\\")
-  if path:sub(1, 4) == "\\\\?\\" then return path end
+  if path:sub(1, 4) == "\\\\?\\" or path:sub(1, 4) == "\\\\.\\" then return path end
   if path:sub(1, 2) == "\\\\" then
     return "\\\\?\\UNC\\" .. path:sub(3)
   end
@@ -8721,7 +8725,10 @@ end
 
 function SoundminerReadOnly.stat(path)
   if not sm_read_path(path) then return nil, "Invalid absolute source path", 22 end
-  return sm_read_request(path, 0, 0)
+  local native_path = windows_extended_path and windows_extended_path(path) or path
+  local info, reason, code = sm_read_request(native_path, 0, 0)
+  if info then info.native_path = native_path end
+  return info, reason, code
 end
 
 function SoundminerReadOnly.open(path)
@@ -8739,7 +8746,7 @@ end
 
 function sm_read_methods:unchanged()
   if self.closed or self.failed then return false end
-  local current = SoundminerReadOnly.stat(self.path)
+  local current = sm_read_request(self.native_path, 0, 0)
   if not current or not sm_read_same(self, current) then self.failed = true; return false end
   return true
 end
@@ -8768,7 +8775,7 @@ function sm_read_methods:read(count)
   local parts = {}
   while remaining > 0 do
     local wanted = math.min(remaining, 65536)
-    local result, reason = sm_read_request(self.path, self.position, wanted)
+    local result, reason = sm_read_request(self.native_path, self.position, wanted)
     if not result or not sm_read_same(self, result) or #result.bytes ~= wanted then
       self.failed = true
       return nil, reason or "Shared source changed during read"
@@ -19521,7 +19528,7 @@ local function number(value, minimum, maximum)
 end
 
 local function asset_for(path)
-  local asset = state.by_path[path_key(text(path))]
+  local asset = state.by_path[path_key(text(path, 32768))]
   assert(asset, "素材已移除，请刷新列表")
   return asset
 end
@@ -19760,6 +19767,7 @@ function webview_open()
 end
 
 function webview_close()
+  WebUI.cancel_file_drag()
   WebUI.arrange_drag = nil
   AppState.set("external_drag", nil)
   AppState.set("external_drag_started", false)
@@ -19881,6 +19889,7 @@ WebUI.handlers["session.ready"] = function()
       transfer = true,
       insert = true,
       nativeDrag = true,
+      selectionFileDrag = true,
       tasks = true,
     },
   }
@@ -20272,7 +20281,7 @@ end
 WebUI.handlers["preview.region"] = function(params)
   if params.path then
     local asset = selected_asset()
-    assert(asset and path_key(asset.path) == path_key(text(params.path)), "所选素材已改变，请重新设置选区")
+    assert(asset and path_key(asset.path) == path_key(text(params.path, 32768)), "所选素材已改变，请重新设置选区")
   end
   WebUI.paused_preview = nil
   local first = number(params.start, 0, 1)
@@ -20565,7 +20574,66 @@ WebUI.handlers["drag.begin"] = function(params)
   return { started = true }
 end
 
+function WebUI.cancel_file_drag(id)
+  local drag = WebUI.file_drag
+  if drag and (not id or drag.id == id) then
+    WebUI.file_drag = nil
+    if drag.media_session then SoundminerMedia.cancel(drag.media_session) end
+  end
+end
+
+-- Only a closed PRS copy or a rendered selection may leave the WebView as a file.
+WebUI.handlers["drag.prepareFile"] = function(params)
+  writable()
+  local id = text(params.id, 80)
+  local asset = asset_for(params.path)
+  local project = reaper.EnumProjects(-1, "")
+  local drag = WebUI.file_drag
+  if params.begin == true then
+    WebUI.cancel_file_drag()
+    assert(id ~= "", "请重新开始拖拽")
+    drag = {id = id, path = asset.path, project = project}
+    if params.selection == true then
+      local first, last = number(params.start, 0, 1), number(params.finish, 0, 1)
+      assert(last > first and (first > 0 or last < 1), "请先选择有效区间")
+      drag.range = {first = first, last = last}
+      drag.variant = {pitch=state.pitch, rate=state.rate, gain_db=state.gain_db, reverse=state.reverse}
+    end
+    WebUI.file_drag = drag
+  end
+  if not drag or drag.id ~= id then return {cancelled = true} end
+  if drag.path ~= asset.path or drag.project ~= project
+    or (drag.range and selected_asset() ~= asset)
+    or (type(reaper.JS_Mouse_GetState) == "function" and reaper.JS_Mouse_GetState(1) & 1 == 0) then
+    WebUI.cancel_file_drag(id)
+    return {cancelled = true}
+  end
+  if state.root_removal_session or state.transfer_running then
+    WebUI.cancel_file_drag(id)
+    error("请等待当前任务完成后再拖入素材")
+  end
+  if drag.range and (reaper.GetPlayStateEx(PROJ) & 5) ~= 0 then
+    WebUI.cancel_file_drag(id)
+    error("工程正在播放，停止后再执行 Transfer")
+  end
+  local private, reason = SoundminerMedia.ensure_path(asset, drag, "正在准备拖拽文件")
+  if not private and reason == "pending" then return {pending = true} end
+  WebUI.file_drag = nil
+  assert(private, reason or "无法准备私有音频副本")
+  if not drag.range then return {path = private} end
+  assert(reaper.RecursiveCreateDirectory(DEFAULT_TRANSFER_DIR, 0) > 0 or directory_exists(DEFAULT_TRANSFER_DIR),
+    "无法创建输出目录")
+  local ok, path, failure = render_transfer_asset({asset=asset, asset_index=1, task_index=1,
+    variant=drag.variant, drag_range=drag.range})
+  assert(ok and path, failure or "Transfer 渲染失败")
+  if type(reaper.JS_Mouse_GetState) == "function" and reaper.JS_Mouse_GetState(1) & 1 == 0 then
+    return {cancelled = true}
+  end
+  return {path = path}
+end
+
 WebUI.handlers["drag.cancel"] = function(params)
+  WebUI.cancel_file_drag(params.id)
   if WebUI.arrange_drag and (not params.id or params.id == WebUI.arrange_drag.id) then
     WebUI.arrange_drag = nil
     AppState.set("external_drag", nil)
@@ -30718,10 +30786,10 @@ function transfer_output_is_source(path, asset)
     or (state.by_path and state.by_path[key] ~= nil) or false
 end
 
-function resolve_transfer_output(asset, index, variant, captured_name)
+function resolve_transfer_output(asset, index, variant, captured_name, drag_directory)
   local extension_name = transfer_format_info()
   local base = captured_name or expand_transfer_template(asset, index, variant)
-  local directory = normalize_slashes(trim(state.transfer_dir or ""))
+  local directory = normalize_slashes(trim(drag_directory or state.transfer_dir or ""))
 
   if directory == "" then
     directory = DEFAULT_TRANSFER_DIR
@@ -30740,9 +30808,9 @@ function resolve_transfer_output(asset, index, variant, captured_name)
     return candidate, "new"
   end
 
-  if state.transfer_collision == "skip" then
+  if not drag_directory and state.transfer_collision == "skip" then
     return nil, "skip", candidate
-  elseif state.transfer_collision == "overwrite"
+  elseif not drag_directory and state.transfer_collision == "overwrite"
     and not (SoundminerMedia and SoundminerMedia.requires(asset)) then
     return candidate, "overwrite"
   end
@@ -31040,7 +31108,7 @@ function detect_transfer_tail_end(
     )
 end
 
-function create_transfer_item(asset, use_selection, variant)
+function create_transfer_item(asset, use_selection, variant, drag_range)
   local native_path = asset.path
   if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
   if not native_path then return nil, nil, "私有音频副本未就绪" end
@@ -31082,7 +31150,9 @@ function create_transfer_item(asset, use_selection, variant)
   local start_percent = 0
   local end_percent = 1
 
-  if use_selection and has_selection() then
+  if drag_range then
+    start_percent, end_percent = drag_range.first, drag_range.last
+  elseif use_selection and has_selection() then
     start_percent = clamp(state.region_start, 0, 1)
     end_percent = clamp(state.region_end, start_percent, 1)
 
@@ -31387,7 +31457,8 @@ function render_transfer_asset(task)
       asset,
       task.asset_index,
       task.variant,
-      task.output_name
+      task.output_name,
+      task.drag_range and DEFAULT_TRANSFER_DIR
     )
 
   if collision == "skip" then
@@ -31430,7 +31501,8 @@ function render_transfer_asset(task)
       create_transfer_item(
         asset,
         task.use_selection,
-        task.variant
+        task.variant,
+        task.drag_range
       )
 
     if render_error then
@@ -31496,6 +31568,8 @@ function render_transfer_asset(task)
       false
   end
 
+  -- The receiving application owns placement of a file dragged from the waveform.
+  if task.drag_range then return true, output_path end
   push_recent(
     asset,
     state.transfer_insert_after

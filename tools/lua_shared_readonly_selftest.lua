@@ -1,13 +1,18 @@
 local module = arg[1] or "src/lua/26_shared_readonly.lua"
 dofile(module)
+local core = assert(io.open("src/lua/10_ui_core.lua", "rb"))
+local path_helper = assert(core:read("*a"):match("(function windows_extended_path%(path%).-)function open_source_binary_file"))
+core:close()
+assert(load(path_helper))()
 local original_open = io.open
 io.open = function() error("source adapter attempted CRT fallback") end
 reaper = {}
 local missing, reason = SoundminerReadOnly.open("C:/synthetic/source.bin")
 assert(not missing and reason:find("ReaWebAPI"), "missing capability refuses source access")
 local bytes, stamp, identity, calls, directory = string.rep("\0\255abcd", 30000), "1", "1:22:3", {}, false
+local expected_path = "C:/synthetic/source.bin"
 reaper.ReaWeb_ReadSharedRange = function(path, offset, count)
-  assert(path == "C:/synthetic/source.bin")
+  assert(path == expected_path, path)
   assert(type(offset) == "string" and offset:match("^%d+$"))
   assert(count >= 0 and count <= 65536)
   calls[#calls + 1] = { tonumber(offset), count }
@@ -17,6 +22,16 @@ reaper.ReaWeb_ReadSharedRange = function(path, offset, count)
   return string.format('{"protocol":1,"ok":true,"dataHex":"%s","size":"%d","mtime":"%s","fileId":"%s","directory":%s}', hex, #bytes, stamp, identity, tostring(directory))
 end
 assert(not SoundminerReadOnly.open("relative.bin"))
+reaper.GetOS = function() return "Win64" end
+local suffix = string.rep("素材目录/", 40) .. "声音.wav"
+for _, pair in ipairs({{"D:/", "\\\\?\\D:\\"}, {"//server/share/", "\\\\?\\UNC\\server\\share\\"}}) do
+  local path = pair[1] .. suffix
+  expected_path = pair[2] .. suffix:gsub("/", "\\")
+  local reader = assert(SoundminerReadOnly.open(path))
+  assert(reader.path == path and reader:read(15) == bytes:sub(1,15) and reader:unchanged())
+  reader:close()
+end
+expected_path = "C:/synthetic/source.bin"
 local source = assert(SoundminerReadOnly.open("C:/synthetic/source.bin"))
 assert(source.size == #bytes and source.identity == identity and source:unchanged())
 assert(source:read(131073) == bytes:sub(1, 131073))

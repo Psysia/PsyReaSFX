@@ -476,6 +476,72 @@ function drawPeaks(canvas, waveform, color, selected = false) {
 
 let arrangeGesture;
 let arrangeSequence = 0;
+let fileDrag;
+function endFileDrag(cancel = true) {
+  const drag = fileDrag;
+  if (!drag) return;
+  fileDrag = null;
+  clearTimeout(drag.timer);
+  if (!drag.body && drag.element.hasPointerCapture(drag.pointerId))
+    drag.element.releasePointerCapture(drag.pointerId);
+  if (cancel && drag.phase === "preparing")
+    host.request("drag.cancel", { id: drag.id }).catch(report);
+  $("drag-hint").hidden = true;
+}
+async function prepareFileDrag(drag) {
+  if (drag !== fileDrag || drag.phase !== "armed") return;
+  clearTimeout(drag.timer);
+  drag.phase = "preparing";
+  if (drag.body) { regionDrag = null; drawDetail(); updateReadouts(); }
+  const hint = $("drag-hint");
+  hint.textContent = localizer.text("正在准备拖拽文件");
+  hint.hidden = false;
+  let begin = true;
+  try {
+    while (fileDrag === drag) {
+      const reply = await host.request("drag.prepareFile", {
+        id: drag.id, path: drag.path, selection: Boolean(drag.range), ...drag.range, begin,
+      });
+      if (fileDrag !== drag || reply.cancelled) break;
+      if (!reply.pending) {
+        if (!reply.path) throw new Error(localizer.text("无法准备私有音频副本"));
+        drag.phase = "native";
+        hint.textContent = localizer.text("拖到目标应用后松开");
+        await host.dragFiles([reply.path]);
+        break;
+      }
+      begin = false;
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+  } catch (error) {
+    if (fileDrag === drag) report(error);
+  } finally {
+    if (fileDrag === drag) endFileDrag();
+  }
+}
+function armFileDrag(event, element, path, range, body = false) {
+  if (!path || event.button !== 0 || !host?.session?.capabilities?.selectionFileDrag) return;
+  endFileDrag();
+  cancelArrangeGesture();
+  const drag = { id: `file-${++arrangeSequence}`, element, pointerId: event.pointerId,
+    x: event.clientX, y: event.clientY, path, range, body, phase: "armed" };
+  fileDrag = drag;
+  element.setPointerCapture(event.pointerId);
+  drag.timer = setTimeout(() => prepareFileDrag(drag), 260);
+}
+window.addEventListener("pointermove", (event) => {
+  const drag = fileDrag;
+  if (!drag || drag.pointerId !== event.pointerId || drag.phase !== "armed"
+    || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) <= 5) return;
+  // An immediate sweep on the wave edits the range. Holding it first exports the range.
+  if (drag.body) endFileDrag();
+  else prepareFileDrag(drag);
+}, true);
+for (const name of ["pointerup", "pointercancel"]) {
+  window.addEventListener(name, (event) => {
+    if (fileDrag?.pointerId === event.pointerId && fileDrag.phase !== "native") endFileDrag();
+  }, true);
+}
 function clearArrangeGesture() {
   if (arrangeGesture) {
     const { element, pointerId } = arrangeGesture;
@@ -526,6 +592,7 @@ function attachArrangeDrag(element, assetPath, selection) {
     gesture.id = `arrange-${++arrangeSequence}`;
     element.dataset.dragged = "true";
     element.style.cursor = "grabbing";
+    $("drag-hint").textContent = localizer.text("拖到 REAPER 编排区后松开；Esc 取消");
     $("drag-hint").hidden = false;
     command("drag.begin", {
       id: gesture.id,
@@ -563,15 +630,18 @@ function attachArrangeDrag(element, assetPath, selection) {
 window.addEventListener(
   "keydown",
   (event) => {
-    if (event.key === "Escape" && arrangeGesture) {
+    if (event.key === "Escape" && (arrangeGesture || fileDrag)) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (fileDrag?.body) { regionDrag = null; drawDetail(); updateReadouts(); }
       cancelArrangeGesture();
+      endFileDrag();
     }
   },
   true,
 );
 window.addEventListener("pagehide", cancelArrangeGesture);
+window.addEventListener("pagehide", () => endFileDrag());
 
 const thumbnailCache = new Map();
 function thumbnail(path) {
@@ -606,9 +676,10 @@ function renderRows() {
     row.classList.toggle("marked", Boolean(asset.marked));
     row.setAttribute("role", "row");
     row.setAttribute("aria-selected", String(Boolean(selected)));
-    row.title = `${asset.name}\n${asset.description || asset.path}`;
+    row.title = [asset.name, asset.path, asset.description].filter(Boolean).join("\n");
     attachArrangeDrag(row, () => asset.path, false);
     row.onclick = action((event) => {
+      if (event.altKey) return;
       if (row.dataset.dragged) {
         delete row.dataset.dragged;
         return;
@@ -627,8 +698,7 @@ function renderRows() {
       rowMenu(event, asset);
     };
     row.onpointerdown = (event) => {
-      if (event.altKey && event.button === 0)
-        host?.dragFiles([asset.path]).catch(report);
+      if (event.altKey && event.button === 0) armFileDrag(event, row, asset.path, null);
     };
     for (const [key] of visibleColumns()) {
       const cell = node("div", `result-cell ${key}`);
@@ -1578,6 +1648,7 @@ function applySnapshot(next) {
   }
   const changedSelection = !previous || previous?.selected?.path !== next.selected?.path;
   if (changedSelection) {
+    if (fileDrag?.range) endFileDrag();
     regionDrag = null;
     detailWave = detailWaveCache.get(detailWaveKey(next.selected)) || null;
     if (!detailWave) {
@@ -1845,6 +1916,16 @@ function drawDetail() {
   playhead.style.background = snapshot?.rowAppearance?.playhead || "#b8d6c3";
   const canvas = $("detail-wave");
   const rect = canvas.getBoundingClientRect();
+  const handle = $("wave-drag-handle");
+  const startVisible = clamp(((snapshot?.regionStart ?? 0) - zoomStart) / (zoomEnd - zoomStart), 0, 1) * rect.width;
+  const endVisible = clamp(((snapshot?.regionEnd ?? 1) - zoomStart) / (zoomEnd - zoomStart), 0, 1) * rect.width;
+  handle.hidden = !snapshot?.selected || snapshot.startup || regionDrag != null
+    || !host?.session?.capabilities?.selectionFileDrag || !(snapshot.regionStart > 0 || snapshot.regionEnd < 1)
+    || endVisible - startVisible < 20;
+  if (!handle.hidden) {
+    handle.style.left = `${startVisible + 4}px`;
+    handle.style.width = `${endVisible - startVisible - 8}px`;
+  }
   detailWidth = rect.width;
   paintPlayheads(performance.now());
   if (!rect.width || !rect.height) return;
@@ -4206,6 +4287,10 @@ $("zoom-reset").onclick = () => {
 
 const detailCanvas = $("detail-wave");
 attachArrangeDrag($("drag-selection"), () => snapshot?.selected?.path, true);
+const waveHandle = $("wave-drag-handle");
+waveHandle.replaceChildren(icon("hand"));
+waveHandle.onpointerdown = (event) => armFileDrag(event, waveHandle, snapshot?.selected?.path,
+  { start: snapshot?.regionStart, finish: snapshot?.regionEnd });
 function wavePercent(event) {
   const rect = detailCanvas.getBoundingClientRect();
   return clamp(
@@ -4226,11 +4311,18 @@ detailCanvas.onpointerdown = (event) => {
     return;
   }
   if (event.button !== 0 || !snapshot?.selected) return;
+  const position = wavePercent(event);
+  const first = snapshot.regionStart ?? 0, last = snapshot.regionEnd ?? 1;
+  const tolerance = (5 / detailCanvas.getBoundingClientRect().width) * (zoomEnd - zoomStart);
+  const partial = last > first && (first > 0 || last < 1);
+  const edge = partial && Math.min(Math.abs(position - first), Math.abs(position - last)) <= tolerance;
   regionDrag = {
     path: snapshot.selected.path,
-    start: wavePercent(event),
-    current: wavePercent(event),
+    start: edge ? (Math.abs(position - first) <= Math.abs(position - last) ? last : first) : position,
+    current: position, downX: event.clientX, pointerId: event.pointerId, edge,
   };
+  if (partial && !edge && position > first && position < last)
+    armFileDrag(event, detailCanvas, snapshot.selected.path, { start: first, finish: last }, true);
   detailCanvas.setPointerCapture(event.pointerId);
 };
 detailCanvas.onpointermove = (event) => {
@@ -4258,20 +4350,24 @@ detailCanvas.onpointermove = (event) => {
       selection: false,
     }).catch(report);
   }
-  if (!regionDrag) return;
+  if (!regionDrag || regionDrag.pointerId !== event.pointerId) return;
   regionDrag.current = wavePercent(event);
   drawDetail();
   updateReadouts();
 };
 detailCanvas.onpointerup = action(async (event) => {
   wavePanX = null;
-  if (!regionDrag) return;
+  if (!regionDrag || regionDrag.pointerId !== event.pointerId) return;
   const path = regionDrag.path;
+  const tap = Math.abs(event.clientX - regionDrag.downX) < 3;
+  const edge = regionDrag.edge;
   const start = Math.min(regionDrag.start, regionDrag.current);
   const finish = Math.max(regionDrag.start, regionDrag.current);
   regionDrag = null;
-  if (Math.abs(finish - start) < 0.001) {
-    await command("preview.play", { path, position: start, selection: false });
+  drawDetail();
+  updateReadouts();
+  if (tap || finish === start) {
+    if (!edge) await command("preview.play", { path, position: wavePercent(event), selection: false });
   } else {
     await command("preview.region", { path, start, finish });
     if (snapshot?.selected?.path !== path) return;

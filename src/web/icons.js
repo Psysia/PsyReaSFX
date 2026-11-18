@@ -12,6 +12,7 @@ const paths = {
   columns: "M3 4h18v16H3z M9 4v16 M15 4v16",
   panel: "M3 4h18v16H3z M15 4v16",
   menu: "M4 6h16 M4 12h16 M4 18h16",
+  hand: "M8 13V6a1.5 1.5 0 0 1 3 0v5-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v6-3a1.5 1.5 0 0 1 3 0v6c0 4-2 7-6 7h-2c-2 0-3-1-4-2l-4-5a1.5 1.5 0 0 1 2-2l2 1Z",
 };
 export function icon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

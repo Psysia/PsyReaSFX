@@ -221,7 +221,7 @@ local VERSION = "0.9.2 Beta 4"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.2-beta4",
-  source_sha256 = "efee175d68e7eec91f8460c9d7f021c0cdca896367ea95380186b65f0c8924b2",
+  source_sha256 = "c55b46d2f1017908c273269f7a39bc23fb52dd6d228c3743f8fe2324b8f1b207",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -1438,6 +1438,9 @@ I18N_EN = {
   ["工程正在播放，停止后再执行 Transfer"] = "Stop project playback before running Transfer",
   ["请选择有效的输出目录"] = "Choose a valid output directory",
   ["无法创建输出目录"] = "Could not create output directory",
+  ["正在准备拖拽文件"] = "Preparing the file for dragging",
+  ["无法准备私有音频副本"] = "Could not prepare the private audio copy",
+  ["请重新开始拖拽"] = "Start the drag again",
   ["Transfer 渲染失败"] = "Transfer render failed",
   ["已跳过已有文件："] = "Skipped existing file: ",
   ["Transfer 完成："] = "Transfer complete: ",
@@ -3931,11 +3934,12 @@ end
 
 function windows_extended_path(path)
   path = tostring(path or "")
+  if #path < 248 then return path end
   local get_os = Host and Host.GetOS or reaper and reaper.GetOS
   local os_name = type(get_os) == "function" and tostring(get_os()) or ""
   if not os_name:match("Win") or path == "" then return path end
   path = path:gsub("/", "\\")
-  if path:sub(1, 4) == "\\\\?\\" then return path end
+  if path:sub(1, 4) == "\\\\?\\" or path:sub(1, 4) == "\\\\.\\" then return path end
   if path:sub(1, 2) == "\\\\" then
     return "\\\\?\\UNC\\" .. path:sub(3)
   end
@@ -8721,7 +8725,10 @@ end
 
 function SoundminerReadOnly.stat(path)
   if not sm_read_path(path) then return nil, "Invalid absolute source path", 22 end
-  return sm_read_request(path, 0, 0)
+  local native_path = windows_extended_path and windows_extended_path(path) or path
+  local info, reason, code = sm_read_request(native_path, 0, 0)
+  if info then info.native_path = native_path end
+  return info, reason, code
 end
 
 function SoundminerReadOnly.open(path)
@@ -8739,7 +8746,7 @@ end
 
 function sm_read_methods:unchanged()
   if self.closed or self.failed then return false end
-  local current = SoundminerReadOnly.stat(self.path)
+  local current = sm_read_request(self.native_path, 0, 0)
   if not current or not sm_read_same(self, current) then self.failed = true; return false end
   return true
 end
@@ -8768,7 +8775,7 @@ function sm_read_methods:read(count)
   local parts = {}
   while remaining > 0 do
     local wanted = math.min(remaining, 65536)
-    local result, reason = sm_read_request(self.path, self.position, wanted)
+    local result, reason = sm_read_request(self.native_path, self.position, wanted)
     if not result or not sm_read_same(self, result) or #result.bytes ~= wanted then
       self.failed = true
       return nil, reason or "Shared source changed during read"
@@ -28176,10 +28183,10 @@ function transfer_output_is_source(path, asset)
     or (state.by_path and state.by_path[key] ~= nil) or false
 end
 
-function resolve_transfer_output(asset, index, variant, captured_name)
+function resolve_transfer_output(asset, index, variant, captured_name, drag_directory)
   local extension_name = transfer_format_info()
   local base = captured_name or expand_transfer_template(asset, index, variant)
-  local directory = normalize_slashes(trim(state.transfer_dir or ""))
+  local directory = normalize_slashes(trim(drag_directory or state.transfer_dir or ""))
 
   if directory == "" then
     directory = DEFAULT_TRANSFER_DIR
@@ -28198,9 +28205,9 @@ function resolve_transfer_output(asset, index, variant, captured_name)
     return candidate, "new"
   end
 
-  if state.transfer_collision == "skip" then
+  if not drag_directory and state.transfer_collision == "skip" then
     return nil, "skip", candidate
-  elseif state.transfer_collision == "overwrite"
+  elseif not drag_directory and state.transfer_collision == "overwrite"
     and not (SoundminerMedia and SoundminerMedia.requires(asset)) then
     return candidate, "overwrite"
   end
@@ -28498,7 +28505,7 @@ function detect_transfer_tail_end(
     )
 end
 
-function create_transfer_item(asset, use_selection, variant)
+function create_transfer_item(asset, use_selection, variant, drag_range)
   local native_path = asset.path
   if SoundminerMedia then native_path = SoundminerMedia.path(asset) end
   if not native_path then return nil, nil, "私有音频副本未就绪" end
@@ -28540,7 +28547,9 @@ function create_transfer_item(asset, use_selection, variant)
   local start_percent = 0
   local end_percent = 1
 
-  if use_selection and has_selection() then
+  if drag_range then
+    start_percent, end_percent = drag_range.first, drag_range.last
+  elseif use_selection and has_selection() then
     start_percent = clamp(state.region_start, 0, 1)
     end_percent = clamp(state.region_end, start_percent, 1)
 
@@ -28845,7 +28854,8 @@ function render_transfer_asset(task)
       asset,
       task.asset_index,
       task.variant,
-      task.output_name
+      task.output_name,
+      task.drag_range and DEFAULT_TRANSFER_DIR
     )
 
   if collision == "skip" then
@@ -28888,7 +28898,8 @@ function render_transfer_asset(task)
       create_transfer_item(
         asset,
         task.use_selection,
-        task.variant
+        task.variant,
+        task.drag_range
       )
 
     if render_error then
@@ -28954,6 +28965,8 @@ function render_transfer_asset(task)
       false
   end
 
+  -- The receiving application owns placement of a file dragged from the waveform.
+  if task.drag_range then return true, output_path end
   push_recent(
     asset,
     state.transfer_insert_after
