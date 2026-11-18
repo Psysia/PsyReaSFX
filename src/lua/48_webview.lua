@@ -372,6 +372,8 @@ WebUI.handlers["session.ready"] = function()
     sourceProtection = true,
     capabilities = {
       sharedSourceReads = SoundminerReadOnly.available(),
+      auditionDecoder = type(reaper.PRS_Audio_Open) == "function",
+      swsPreview = type(reaper.CF_CreatePreview) == "function",
       catalog = true,
       preview = true,
       metadata = true,
@@ -660,14 +662,40 @@ WebUI.handlers["waveform.get"] = function(params)
   local preserve = state.multichannel_waveform ~= false
   if params.retry then retry_wave_request(asset, points, preserve, state.spectral_peaks_enabled) end
   local wave = waveform(asset, points, true)
+  local overview
+  if not wave then
+    local small = queue_wave(asset, state.mini_wave_points, true, false, false, true)
+    if small then overview = {peaks=small.peaks,count=small.count} end
+  end
   local status = not wave and wave_request_status(asset, points, preserve, state.spectral_peaks_enabled) or nil
   return {
     path = asset.path,
     duration = asset.duration or 0,
     waveform = wave,
+    overview = overview,
     status = status,
     error = status and status.phase == "failed" and (translate_ui_text("波形读取失败：") .. translate_ui_text(text(asset.wave_error, 250))) or nil,
   }
+end
+WebUI.handlers["startup.search"] = function(params)
+  local query = text(params.query, 512)
+  if params.explicit == true then
+    if state.startup_session then WebUI.early_search = query
+    else WebUI.handlers["catalog.query"]({search=query, view="all"}) end
+  end
+  return {items=state.startup_session and QuickCatalog.find(query) or {}}
+end
+WebUI.handlers["startup.preview"] = function(params)
+  local asset = state.startup_session and QuickCatalog.asset(text(params.path,32768))
+    or (not state.startup_session and asset_for(params.path))
+  assert(asset, "素材库已更新，请重新搜索")
+  play_preview(asset,0,false)
+  local started = state.preview_path == asset.path and state.preview ~= nil
+  if started and state.startup_session then
+    WebUI.early_played = WebUI.early_played or {}
+    WebUI.early_played[#WebUI.early_played+1] = asset.path
+  end
+  return started
 end
 WebUI.handlers["preview.play"] = function(params)
   if params.selection == true and params.path then
@@ -2250,7 +2278,8 @@ function webview_receive()
       local ok, result
       if not valid then
         ok, result = false, "无效宿主请求"
-      elseif state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get" then
+      elseif state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get"
+        and request.method ~= "startup.search" and request.method ~= "startup.preview" and request.method ~= "preview.stop" then
         ok, result = false, "素材库正在加载，请稍后重试"
       elseif handler then
         ok, result = pcall(handler, request.params or {})
@@ -2399,12 +2428,14 @@ function webview_publish()
     } or nil,
     revision = WebUI.revision,
     count = #state.results,
+    waveReadyRevision = state.wave_ready_revision or 0,
     loaded = #state.assets,
     pending = results_pending(),
     startup = state.startup_session and {
       phase = state.startup_session.phase,
       failure = state.startup_session.failure,
-      elapsed = now - (state.startup_session.started_at or now),
+      quickSearch = QuickCatalog and QuickCatalog.reader ~= nil or false,
+      indexed = QuickCatalog and QuickCatalog.reader and QuickCatalog.reader.id ~= nil or false,
     } or nil,
     status = text(translate_ui_text(state.status)),
     error = state.status_error,

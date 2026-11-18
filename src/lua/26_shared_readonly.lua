@@ -3,6 +3,13 @@
 SoundminerReadOnly = {}
 local sm_read_methods = {}
 local sm_read_cap = 16 * 1024 * 1024
+local sm_hex_bytes = {}
+for byte = 0, 255 do
+  local pair = string.format("%02x", byte)
+  sm_hex_bytes[pair], sm_hex_bytes[pair:upper()] = string.char(byte), string.char(byte)
+  local high, low = pair:sub(1,1), pair:sub(2)
+  sm_hex_bytes[high:upper() .. low], sm_hex_bytes[high .. low:upper()] = string.char(byte), string.char(byte)
+end
 
 local function sm_read_request(path, offset, count)
   local api = type(reaper) == "table" and reaper.ReaWeb_ReadSharedRange
@@ -26,7 +33,7 @@ local function sm_read_request(path, offset, count)
     or (directory ~= "true" and directory ~= "false") then
     return nil, "Invalid shared read bounds", 5
   end
-  local bytes = hex:gsub("..", function(pair) return string.char(tonumber(pair, 16)) end)
+  local bytes = hex:gsub("..", sm_hex_bytes)
   return { bytes = bytes, size = size, mtime = mtime, identity = identity, directory = directory == "true" }
 end
 

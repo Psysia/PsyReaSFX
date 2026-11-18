@@ -130,7 +130,11 @@ if ($app.bundledRuntime) {
     foreach ($required in @('runtime-setup.lua','Install-BundledRuntime.ps1','installer-common.ps1','bundled-runtime.json','licenses/reawebapi/PRS_PATCH.md')) {
         if (-not (Test-Path -LiteralPath (Join-Path $FixtureDirectory "Scripts/Psysia/$required"))) { throw "Missing bundled component: $required" }
     }
-    if (Test-Path -LiteralPath (Join-Path $FixtureDirectory 'UserPlugins')) { throw 'Main package must not claim the shared extension owned by other ReaPack packages.' }
+    $claimed = @(Get-ChildItem -LiteralPath (Join-Path $FixtureDirectory 'UserPlugins') -File)
+    if ($claimed.Count -ne 1 -or $claimed[0].Name -cne 'reaper_prs_audition.dll' -or
+        (Get-FileHash -LiteralPath $claimed[0].FullName).Hash -cne (Get-FileHash -LiteralPath (Join-Path $PackagePath 'runtime/audition/reaper_prs_audition.dll')).Hash) {
+        throw 'Main package must install only its own verified audition extension under UserPlugins.'
+    }
 } else {
     $binaryPath = Join-Path $FixtureDirectory 'UserPlugins/reaper_reawebapi-x64.dll'
     $sourcePath = Join-Path $FixtureDirectory 'Data/PsyReaSFX-WebView/ReaWebAPI/sources/ReaWebAPI-source.zip'

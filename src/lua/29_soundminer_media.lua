@@ -1,6 +1,5 @@
--- REAPER may create peak sidecars or retain source handles. Soundminer media
--- therefore reaches native media APIs only through a PRS-owned private copy.
--- Source reads use the host's share-read/write/delete adapter, never io.open.
+-- Give REAPER a pathless PRS decoder for audition, or a PRS-owned private
+-- copy for file-based operations. Original reads share read/write/delete.
 SoundminerMedia = { copies = {}, queue = {}, serial = 0 }
 do
   local M = SoundminerMedia
@@ -20,6 +19,47 @@ do
       return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
     end
     return SoundminerReadOnly.open(path)
+  end
+  local stream_types = {wav=true, wave=true, bwf=true, rf64=true, w64=true, aif=true, aiff=true, aifc=true, flac=true, mp3=true}
+  function M.stream(asset, lo, hi, reverse)
+    if type(reaper.PRS_Audio_Open) ~= "function" or type(reaper.PRS_Audio_Close) ~= "function"
+      or not stream_types[(tostring(asset.path):match("%.([%w]+)$") or ""):lower()] then return nil end
+    local id = reaper.PRS_Audio_Open(asset.path, tonumber(asset.duration) or 0, lo or 0, hi or 1, reverse == true)
+    return type(id) == "number" and id > 0 and id or nil
+  end
+  function M.preview_source(asset, lo, hi, reverse)
+    if type(reaper.CF_CreatePreview) ~= "function" or type(reaper.PCM_Source_CreateFromType) ~= "function" then return nil end
+    local token = M.stream(asset, lo, hi, reverse)
+    if not token then return nil end
+    local ok, src = pcall(reaper.PCM_Source_CreateFromType, "PRS_AUDITION_" .. token)
+    reaper.PRS_Audio_Close(token) -- no-op if consumed; release even if the factory failed.
+    return ok and src or nil
+  end
+  function M.step_peaks(job)
+    local data = reaper.PRS_Audio_Peaks(job.stream_token, job.points, job.preserve_channels == true)
+    local count, channels, first, after, hex = tostring(data):match("^(%d+):(%d+):(%d+):(%d+):([%x]*)$")
+    count, channels, first, after = tonumber(count), tonumber(channels), tonumber(first), tonumber(after)
+    local lanes = job.preserve_channels and channels or 1
+    if not count or count < 1 or count > job.points or channels < 1 or channels > 8 or
+      first ~= (job.stream_point or 0) or after < first or after > count or after-first > 64 or
+      #hex ~= (after-first)*lanes*4 then return "failed", nil, "共享音频读取中断，请重试或检查原文件" end
+    local wave = job.stream_wave or {count=count,channels=channels,peaks={},spectral_available=false}
+    if job.preserve_channels and not wave.channel_peaks then
+      wave.channel_peaks = {}
+      for ch=1,lanes do wave.channel_peaks[ch]={} end
+    end
+    local pos=1
+    for point=first+1,after do
+      local maximum=0
+      for ch=1,lanes do
+        local v=tonumber(hex:sub(pos,pos+3),16)/65535
+        if wave.channel_peaks then wave.channel_peaks[ch][point]=v end
+        maximum=math.max(maximum,v);pos=pos+4
+      end
+      wave.peaks[point]=maximum
+    end
+    job.stream_wave, job.stream_point, job.progress = wave, after, after/count
+    return after==count and "done" or "working", after==count and wave or nil
   end
   function M.path(asset)
     if not asset then return nil, "没有素材" end

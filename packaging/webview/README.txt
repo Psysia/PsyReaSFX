@@ -1,4 +1,4 @@
-PsyReaSFX 0.9.4 Beta 4 WebView - Windows x64 prerelease
+PsyReaSFX 0.9.4 Beta 5 WebView - Windows x64 prerelease
 
 The default stable release remains 0.9.3. This beta retains the Beta18 fixes.
 Setup prompts follow the Windows display language: Chinese for Chinese UI,
@@ -13,9 +13,11 @@ overview caches into independent catalogs. Soundminer may remain open. Select a 
 map an old audio root to its current location, then use the import action.
 See docs/SOUNDMINER_FORMAT_zh-CN.md for supported formats and cache limits.
 Active journals or changes stop PRS imports. All original media use shared
-read-only access; native playback, analysis, insertion and dragging use private
+read-only access. The included PRS decoder streams WAV, AIFF, FLAC and MP3
+for audition. Unsupported formats, insertion, dragging and some analyses use private
 copies. These require extra disk space and first-use preparation. Copies remain
 available to REAPER projects and may be created again in a new PRS session.
+WAV、AIFF、FLAC、MP3 由随包共享只读解码器试听。插入、拖放、其他格式及部分分析仍使用专用副本。
 Transfer uses the PRS export directory and does not overwrite existing files.
 
 The main package includes the 0.3.9.30-prs.3 shared-read component. No separate

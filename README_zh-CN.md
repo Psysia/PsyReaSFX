@@ -158,7 +158,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 | 通道 | 版本 | 说明 |
 |---|---|---|
 | 正式版 | **0.9.3 WebView** | Windows x64 默认更新版本，保留 Beta 18 的可靠性修复，需要 ReaWebAPI。 |
-| WebView 测试版 | **0.9.4-beta4** | 内置运行组件、独立 Soundminer 库与波形导入，需启用预发布。 |
+| WebView 测试版 | **0.9.4-beta5** | 启动时可搜索，支持共享只读流式试听和波形刷新。 |
 | 上一 WebView 测试版 | **0.9.3-beta18（0.9.a）** | 保留预发布版本供回退。 |
 | 旧界面测试版 | **0.9.2-beta4** | 可在 Versions 中选择回退。 |
 | 历史稳定版 | **0.9.1 / 0.9.0 / 0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
@@ -166,7 +166,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
 
-**0.9.4 Beta 4 已内置运行组件：** ReaPack 启用预发布后，只需更新 **PsyReaSFX.lua**。首次启动自动准备组件，按提示重启一次 REAPER；离线完整 ZIP 统一使用 **Install-PsyReaSFX.cmd**。已知 PRS 旧组件会备份并升级，未知来源的共享组件会保留。[Beta 4 版本说明](docs/releases/release-notes-webview-0.9.4-beta4.md)。
+**0.9.4 Beta 5 已内置运行组件和试听解码器。** ReaPack 启用预发布后，只需更新 **PsyReaSFX.lua**。首次启动自动准备组件，按提示重启一次 REAPER；离线完整 ZIP 统一使用 **Install-PsyReaSFX.cmd**。已知 PRS 旧组件会备份并升级，未知来源的共享组件会保留。[Beta 5 版本说明](docs/releases/release-notes-webview-0.9.4-beta5.md)。
 
 安装弹窗跟随 Windows 显示语言：中文系统用中文，其他系统语言用英文。Beta 4 修复波形队列堵住已有缓存的搜索结果，并显示处理阶段和重试入口。更新后关闭再打开 PRS；Beta 2/3 已正常使用的用户无需更新原生组件或重启 REAPER。
 

@@ -8,4 +8,5 @@
 /neural/package/package.json -text
 # Preserve upstream license bytes, including their original spacing and line endings.
 /dependencies/reawebapi/licenses/** -text -whitespace
+/native/audition/vendor/** -text -whitespace
 /desktop/licenses/** -text -whitespace

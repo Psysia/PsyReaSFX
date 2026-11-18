@@ -5779,6 +5779,10 @@ function read_waveform_from_source(
 end
 
 function destroy_wave_job(job)
+  if job and job.stream_token then
+    reaper.PRS_Audio_Close(job.stream_token)
+    job.stream_token, job.stream_wave = nil, nil
+  end
   if job and job.media_session and SoundminerMedia then
     SoundminerMedia.cancel(job.media_session)
     job.media_session = nil
@@ -5865,6 +5869,18 @@ function step_wave_job(job)
   end
 
   if SoundminerMedia and SoundminerMedia.requires(job.asset) and not job.source then
+    if not job.stream_attempted then
+      job.stream_attempted = true
+      if not job.spectral and type(reaper.PRS_Audio_Peaks) == "function" then
+        job.stream_token = SoundminerMedia.stream(job.asset)
+        if job.stream_token then job.phase = "shared_peaks" end
+      end
+    end
+    if job.stream_token then
+      local status, wave, reason = SoundminerMedia.step_peaks(job)
+      if status ~= "working" then destroy_wave_job(job) end
+      return status, wave, reason
+    end
     if job.phase == "direct_read" then
       local status, waveform, reason = step_direct_wave_job(job, 64, 0.003)
       if status ~= "failed" then return status, waveform, reason end
@@ -6008,6 +6024,9 @@ function memory_wave_key(asset, points, preserve_channels, spectral)
 end
 
 function store_wave_memory(key, waveform)
+  if not state.wave_cache[key] then
+    state.wave_ready_revision = (state.wave_ready_revision or 0) + 1
+  end
   state.wave_clock = state.wave_clock + 1
 
   if not state.wave_cache[key] then
@@ -6165,14 +6184,20 @@ function wave_request_status(asset, points, preserve_channels, spectral)
   end
   if job and job.key == key then
     if job.media_session and not job.media_finished then return { phase = "copy" } end
-    return { phase = "decode", progress = job.phase == "direct_read" and job.progress or nil }
+    return { phase = "decode", progress = (job.phase == "direct_read" or job.phase == "shared_peaks") and job.progress or nil }
   end
   return { phase = state.wave_checked[key] and "queued" or "cache" }
 end
 
 function process_wave_queue()
-  local probed = process_wave_cache_queue()
-  if probed and not state.wave_active then return end
+  -- Warm visible rows in small batches. Misses must not postpone starting
+  -- the first cold decoder by one defer cycle per row on a search page.
+  local head = state.wave_queue[1]
+  local fresh_probe = head and head.probe_disk and not state.wave_checked[head.key] and head.key
+  local cache_deadline = reaper.time_precise() + 0.0015
+  for _ = 1, 8 do
+    if not process_wave_cache_queue() or reaper.time_precise() >= cache_deadline then break end
+  end
 
   if not can_run_heavy_job() then
     return
@@ -6186,7 +6211,7 @@ function process_wave_queue()
 
   local active, first = state.wave_active, state.wave_queue[1]
   if active and first and first.priority and first.asset.path == state.selected_path
-    and active.key ~= first.key then
+    and active.key ~= first.key and not (first.asset.path == active.asset.path and active.points < first.points) then
     -- Release native/copy ownership before prioritising the selected asset.
     -- Requeue only the request, never a live native source or canceled owner.
     destroy_wave_job(active)
@@ -6201,15 +6226,15 @@ function process_wave_queue()
   end
 
   if not state.wave_active then
+    first = state.wave_queue[1]
+    if first and first.probe_disk and not state.wave_checked[first.key] then return end
     local job = table.remove(state.wave_queue, 1)
 
     if not job then
       return
     end
 
-    -- WebView queues every visible row without doing disk I/O in the RPC.
-    -- Probe one queued cache per background tick, so later rows cannot starve.
-    if job.probe_disk then
+    if job.probe_disk and job.key ~= fresh_probe then
       -- Recheck a prior miss: import/precache may have written it since then.
       state.wave_checked[job.key] = true
       local cached = load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
@@ -7151,8 +7176,6 @@ function stop_preview()
   if state.preview
     and type(reaper.CF_Preview_Stop) == "function" then
     pcall(reaper.CF_Preview_Stop, state.preview)
-  elseif type(reaper.CF_Preview_StopAll) == "function" then
-    pcall(reaper.CF_Preview_StopAll)
   end
 
   state.preview = nil
@@ -7466,10 +7489,23 @@ function play_preview(
     return
   end
 
-  local native_path = asset.path
+  local range_start = captured_range and captured_range.start or state.region_start
+  local range_finish = captured_range and captured_range.finish or state.region_end
+  local range_span = range_finish - range_start
+  local selection = use_selection and range_span > 0.002 and range_span < 0.998
+  local native_path, stream_source = asset.path, nil
   if SoundminerMedia and SoundminerMedia.requires(asset) then
     native_path = SoundminerMedia.path(asset)
     if not native_path then
+      stream_source = SoundminerMedia.preview_source(asset, selection and range_start or 0,
+        selection and range_finish or 1, state.reverse)
+    end
+    if not native_path and not stream_source then
+      if state.startup_session then
+        stop_preview()
+        set_status("此格式可在完整素材库就绪后试听", true)
+        return
+      end
       stop_preview()
       local captured = capture_transfer_settings()
       local range = captured_range or {start = state.region_start, finish = state.region_end}
@@ -7492,13 +7528,13 @@ function play_preview(
     end
   end
 
-  queue_metadata(asset, true)
+  if not state.startup_session then queue_metadata(asset, true) end
   stop_preview()
 
   if type(reaper.CF_CreatePreview) ~= "function" then
     reaper.OpenMediaExplorer(native_path, true)
     state.preview_backend = "Media Explorer"
-    record_preview_history(asset)
+    if not state.startup_session then record_preview_history(asset) end
 
     if start_percent
       and start_percent > 0 then
@@ -7513,8 +7549,7 @@ function play_preview(
     return
   end
 
-  local source =
-    reaper.PCM_Source_CreateFromFile(native_path)
+  local source = stream_source or reaper.PCM_Source_CreateFromFile(native_path)
 
   if not source then
     set_status("无法建立试听源", true)
@@ -7529,16 +7564,15 @@ function play_preview(
   duration =
     is_qn and 0 or (duration or asset.duration or 0)
 
-  local range_start = captured_range and captured_range.start or state.region_start
-  local range_finish = captured_range and captured_range.finish or state.region_end
-  local range_span = range_finish - range_start
-  local selection = use_selection and range_span > 0.002 and range_span < 0.998
+  -- The shared decoder already applies the range/direction. SWS serializes
+  -- SECTION parents; a private, pathless source must never go through that.
+  if stream_source and selection then duration = duration / range_span end
 
   -- Always wrap audio previews in a SECTION source when SWS supports it.
   -- The section's source-boundary fade protects files whose first sample is
   -- not near zero. This is materially different from a UI volume animation:
   -- it is evaluated in the audio source path before the first audible buffer.
-  if type(reaper.CF_PCM_Source_SetSectionInfo)
+  if not stream_source and type(reaper.CF_PCM_Source_SetSectionInfo)
       == "function" then
 
     local section =
@@ -7707,7 +7741,7 @@ function play_preview(
       true,
       200
     )
-  record_preview_history(asset)
+  if not state.startup_session then record_preview_history(asset) end
 
   state.preview_map_start = map_start
   state.preview_map_span = map_span
@@ -7922,9 +7956,6 @@ function focus_asset(index, auto_play)
     state.wave_view_end = 1
     state.wave_pan_last_x = nil
     state.active_region_index = 0
-    queue_metadata(asset, true)
-    queue_wave(asset, LARGE_WAVE_DEFAULT_POINTS, true)
-
     if auto_play == nil then
       auto_play = state.auto_preview
     end
@@ -7932,6 +7963,11 @@ function focus_asset(index, auto_play)
     if auto_play then
       play_preview(asset, 0, false)
     end
+    queue_metadata(asset, true)
+    -- The web detail request knows the actual point count/channel/spectral
+    -- variant. A synchronous 2048-point probe here delayed the click and
+    -- queued a second, usually different decode ahead of the visible rows.
+    queue_wave(asset, WEBVIEW_MODE and state.mini_wave_points or LARGE_WAVE_DEFAULT_POINTS, true, false, false, true)
   end
 end
 
@@ -26412,6 +26448,12 @@ end
 -- budgets of every background worker on REAPER's UI thread. Round-robin
 -- resumes where the previous frame yielded, so no queue starves.
 BackgroundPump = { index = 1 }
+function process_startup_maintenance()
+  if not BackgroundPump.maintenance or state.preview or state.results_dirty or state.results_job
+    or (state.interaction_until or 0) > reaper.time_precise() then return end
+  local job = table.remove(BackgroundPump.maintenance, 1)
+  if job then job() else BackgroundPump.maintenance = nil end
+end
 function process_background_slice()
   if SoundminerCatalog then SoundminerCatalog.process_pending() end
   local pump = BackgroundPump
@@ -26424,6 +26466,8 @@ function process_background_slice()
     { "similarity-warmup", process_similarity_warmup }, { "similarity", process_similarity_search },
     { "wave-queue", process_wave_queue }, { "transients", process_pending_transient_detection },
     { "loudness", process_loudness_queue },
+    { "startup-maintenance", process_startup_maintenance },
+    { "quick-index", WEBVIEW_MODE and QuickCatalog and QuickCatalog.step or function() end },
   }
   local deadline = reaper.time_precise() + 0.004
   for _ = 1, #pump.workers do
@@ -26436,12 +26480,15 @@ function process_background_slice()
 end
 
 function cleanup()
+  if QuickCatalog then QuickCatalog.shutdown() end
   if WEBVIEW_MODE then webview_close() end
   if SoundminerMedia then SoundminerMedia.cancel_all() end
   if state.import_session and state.import_session.soundminer then
     SoundminerImport.cancel(state.import_session)
   end
   if state.startup_session then
+    if state.preview then stop_preview() end
+    cleanup_retired_preview_sources(true)
     if state.startup_session.reader then
       pcall(function() state.startup_session.reader:close() end)
     end
@@ -26640,7 +26687,14 @@ function initialize_runtime()
 ensure_dirs()
 recover_atomic_data_files()
 preflight_persistence_schemas()
-initialize_neural_similarity()
+if WEBVIEW_MODE and QuickCatalog then
+  local ok = pcall(QuickCatalog.begin)
+  if not ok then QuickCatalog.shutdown() end
+  if QuickCatalog.reader and coroutine.isyieldable() then
+    WebUI.next_publish = 0
+    coroutine.yield()
+  end
+end
 ai_semantic_initialize()
 if not state.persistence_read_only then
   migrate_legacy_data()
@@ -26709,11 +26763,10 @@ apply_waveform_palette()
 workspace_tabs_initialize()
 state.results_dirty = true
 
-if not state.persistence_read_only
-  and state.auto_backup
-  and state.backup_last_date ~= os.date("%Y%m%d") then
-  create_data_backup("auto", true)
-end
+BackgroundPump.maintenance = { initialize_neural_similarity, function()
+  if not state.persistence_read_only and state.auto_backup
+    and state.backup_last_date ~= os.date("%Y%m%d") then create_data_backup("auto", true) end
+end }
 
 local interrupted_scan = PsyReaSFXScope.kind ~= "soundminer" and state.resume_scan_on_start
   and load_scan_checkpoint()
@@ -26753,7 +26806,8 @@ function process_startup()
   -- the first usable catalog; playback keeps the shorter 12ms slice.
   local playing = reaper.GetPlayState and (reaper.GetPlayState() & 1) ~= 0
   local started = reaper.time_precise()
-  session.deadline = started + (playing and 0.012 or 0.036)
+  local interactive = playing or state.preview or (WEBVIEW_MODE and QuickCatalog and QuickCatalog.reader)
+  session.deadline = started + (interactive and 0.012 or 0.036)
   local ok, failure = coroutine.resume(session.thread)
   local finished = reaper.time_precise()
   session.frames = (session.frames or 0) + 1
@@ -26773,6 +26827,23 @@ function process_startup()
       assets = #state.assets, phases = phases,
     })
     AppState.set("startup_session", nil)
+    if QuickCatalog then QuickCatalog.finish() end
+    if WEBVIEW_MODE and WebUI.early_search ~= nil then
+      WebUI.handlers["catalog.query"]({search=WebUI.early_search, view="all"})
+      WebUI.early_search = nil
+    end
+    if WEBVIEW_MODE and WebUI.early_played then
+      for _, path in ipairs(WebUI.early_played) do
+        local asset = state.by_path[path_key(path)]
+        if asset then record_preview_history(asset) end
+      end
+      local path = WebUI.early_played[#WebUI.early_played]
+      if state.by_path[path_key(path)] then
+        selection_replace({[path_key(path)]=true})
+        state.selected_path = path
+      end
+      WebUI.early_played = nil
+    end
     AppState.set("next_watch", reaper.time_precise() + state.watch_interval)
   end
 end
@@ -26792,7 +26863,9 @@ function loop()
     -- Draw before resuming disk work so the first frame appears immediately.
     if WEBVIEW_MODE then webview_publish() else draw_main() end
     if state.open then
-      if state.startup_session.visible_once then
+      if state.preview then poll_preview() end
+      cleanup_retired_preview_sources(false)
+      if WEBVIEW_MODE or state.startup_session.visible_once then
         process_startup()
       else
         state.startup_session.visible_once = true

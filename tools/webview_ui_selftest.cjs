@@ -350,6 +350,9 @@ async function main() {
                   validation_status: "native_acceptance_pending",
                 },
               };
+            if (request.method === "startup.search") {
+              result = {items: [{name: "启动测试.wav", path: "C:/fixture/startup.wav"}]};
+            }
             if (request.method === "catalog.page") {
               const offset = request.params.offset;
               result = {
@@ -855,13 +858,18 @@ async function main() {
       await page.keyboard.press("Escape");
     }
     await page.evaluate(() =>
-      window.testSetState({ startup: { phase: "读取素材索引" } }),
+      window.testSetState({ startup: { phase: "读取素材索引", quickSearch: true, indexed: true } }),
     );
     await page.locator("#startup-state").waitFor();
     assert.match(
       await page.locator("#startup-state").textContent(),
-      /PsyReaSFX/,
+      /搜索当前素材库|Search this catalog/,
     );
+    await page.locator("#search").fill("启动");
+    await page.waitForFunction(() => window.testCalls.some(c => c.method === "startup.search" && c.params.query === "启动"));
+    await page.locator("#startup-hits button").first().click();
+    await page.waitForFunction(() => window.testCalls.some(c => c.method === "startup.preview" && c.params.path === "C:/fixture/startup.wav"));
+    await page.locator("#search").fill("");
     await page.screenshot({ path: path.join(output, "beta10-startup.png") });
     assert(
       await page.locator("#play").isDisabled(),
@@ -2721,7 +2729,7 @@ async function main() {
     await page.locator("#settings-open").click();
     await page.locator('[data-section="general"]').click();
     assert.match(await page.locator("#settings-body").textContent(), /不自动扫描来源目录/);
-    assert.match(await page.locator("#settings-body").textContent(), /原音频保护.*所有素材保持只读/);
+    assert.match(await page.locator("#settings-body").textContent(), /原音频保护.*FLAC 和 MP3 可共享只读试听/);
     assert.equal(await page.getByRole("checkbox", { name: /监视已导入来源文件夹|空闲时检查来源文件夹/ }).count(), 0);
     await page.locator('[data-section="transfer"]').click();
     assert.match(await page.locator("#settings-body").textContent(), /已有文件不会被覆盖/);
