@@ -653,7 +653,23 @@ async function main() {
     await page.locator(".soundminer-catalog").nth(1).getByRole("button", { name: "继续导入", exact: true }).click();
     await page.locator(".soundminer-dialog").waitFor({ state: "detached" });
     assert.equal(await page.evaluate(() => window.testCalls.filter((call) => call.method === "soundminer.catalog.resume").length), 1);
-    await page.evaluate(() => window.testSetState({ catalogScope: undefined }));
+    await page.evaluate(() => window.testSetState({
+      loaded: 0, count: 0, tasks: { import: true },
+      taskDetails: { import: { phase: "soundminer_inspect", completed: 0, total: 904 } },
+    }));
+    await page.waitForFunction(() => document.querySelector("#empty-description").textContent.includes("904"));
+    assert.equal(await page.locator("#empty-add").isVisible(), false);
+    assert.equal(await page.locator("#empty-resume").isVisible(), false);
+    await page.evaluate(() => window.testSetState({ language: "en" }));
+    await page.waitForFunction(() => document.querySelector("#empty-description").textContent === "Source records read · 904");
+    await page.evaluate(() => window.testSetState({ language: undefined }));
+    await page.evaluate(() => window.testSetState({ tasks: {}, taskDetails: {}, soundminerReport: { error: "fixture error" } }));
+    await page.getByRole("button", { name: "继续导入", exact: true }).click();
+    assert.equal(await page.evaluate(() => window.testCalls.filter((call) => call.method === "soundminer.catalog.resume").length), 2);
+    await page.evaluate(() => window.testSetState({
+      catalogScope: undefined, loaded: undefined, count: undefined,
+      tasks: undefined, taskDetails: undefined, soundminerReport: undefined,
+    }));
     await page.locator("#catalog-switch").click();
     await page.getByRole("button", { name: "导入 Soundminer 音效库", exact: true }).click();
     await page.getByRole("heading", { name: "导入 Soundminer 音效库", exact: true }).waitFor();

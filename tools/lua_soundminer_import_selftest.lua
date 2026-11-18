@@ -192,7 +192,28 @@ sm.runtime.persistence_read_only = true
 assert(not pcall(sm.SoundminerImport.start, params)); sm.runtime.persistence_read_only = false
 local exclusive = assert(sm.Jobs.begin("integration_lock", "catalog_exclusive", false))
 assert(not pcall(sm.SoundminerImport.start, params)); sm.Jobs.finish(exclusive, true)
-local report = finish(sm)
+local function manifest(env)
+  return env.neural_json_decode(read(env.PsyReaSFXScope.rootDirectory .. "/catalog.json"))
+end
+-- Reproduce a Beta 6 registration whose worker never committed an index.
+local interrupted = manifest(sm)
+interrupted.importState, interrupted.consumed = nil, true
+write(sm.PsyReaSFXScope.rootDirectory .. "/catalog.json", sm.neural_json_encode(interrupted))
+assert(os.rename(sm.PsyReaSFXScope.rootDirectory .. "/catalog.json", sm.PsyReaSFXScope.rootDirectory .. "/catalog.json.bak"))
+sm.SoundminerCatalog.process_pending()
+assert(sm.runtime.import_session and not manifest(sm).consumed)
+assert(coroutine.resume(sm.runtime.import_session.worker))
+sm.SoundminerImport.cancel(sm.runtime.import_session, true)
+assert(manifest(sm).importState == "pending")
+sm.webview_close()
+prs.SoundminerCatalog.activate(opened.id)
+sm = launch()
+sm.SoundminerCatalog.process_pending()
+while sm.runtime.import_session do sm.process_import_session() end
+assert(sm.runtime.database_snapshot_session and not manifest(sm).consumed, "queued index is not durable")
+drain_save(sm)
+assert(manifest(sm).importState == "complete" and manifest(sm).consumed)
+local report = sm.runtime.soundminer_report
 assert(report.error == "", report.error)
 assert(report.added == 6 and report.duplicates == 1 and report.skipped == 2 and report.offline == 1, sm.neural_json_encode(report))
 assert(report.waveforms == 5 and report.waveSkipped == 1, sm.neural_json_encode(report))
@@ -251,7 +272,17 @@ assert(repeat_report.added == 0 and repeat_report.duplicates == 7 and #sm.runtim
 
 local second_params = { path = fixture .. "/Second.sqlite", oldPrefix = params.oldPrefix, newPrefix = params.newPrefix, cachePath = cache_path }
 local second_opened = prs.SoundminerCatalog.open(second_params)
-local second = launch(); assert(finish(second).added == 1)
+local second = launch()
+second.SoundminerCatalog.process_pending()
+local snapshot_token = second.runtime.import_session.job_token
+while second.runtime.import_session do second.process_import_session() end
+assert(second.runtime.database_snapshot_session and not manifest(second).consumed)
+second.runtime.persistence_fault_injection = "after_close"
+drain_save(second)
+assert(second.runtime.soundminer_report.error ~= "" and snapshot_token.state == "failed" and not manifest(second).consumed)
+second.runtime.persistence_fault_injection = nil
+second.webview_close(); prs.SoundminerCatalog.activate(second_opened.id); second = launch()
+assert(finish(second).added == 1 and manifest(second).consumed)
 local second_asset = asset(second, "FX/impact.wav")
 assert(second_opened.id ~= opened.id and second_asset.description == "Second isolated library")
 assert(key(second.wave_cache_path(second_asset, thumbnail.count)) ~= key(sm.wave_cache_path(first, thumbnail.count)))
@@ -287,6 +318,10 @@ prs.SoundminerCatalog.open(cancel_params)
 local cancel = launch(); cancel.SoundminerCatalog.process_pending()
 cancel.cancel_import_session()
 assert(cancel.runtime.soundminer_report.canceled and #cancel.runtime.assets == 0)
+assert(manifest(cancel).importState == "canceled")
+cancel.webview_close(); prs.SoundminerCatalog.activate(cancel.PsyReaSFXScope.id); cancel = launch()
+cancel.SoundminerCatalog.process_pending()
+assert(not cancel.runtime.import_session, "explicit cancellation survives reopening")
 assert(cancel.SoundminerCatalog.resume().started)
 local cancel_session = cancel.runtime.import_session
 for _ = 1, 1000 do
@@ -308,7 +343,44 @@ cancel.runtime.persistence_fault_injection = nil
 assert(failed_save.added > 0 and failed_save.error:find("保存失败", 1, true), cancel.neural_json_encode(failed_save))
 assert(failed_token.state == "failed" and cancel.runtime.db_dirty)
 assert(read(saved_database) == previous_database and read(saved_libraries) == previous_libraries)
+assert(not manifest(cancel).consumed, "failed save remains resumable")
 assert(cancel.save_libraries() and cancel.save_database_now() and #cancel.runtime.assets == 80)
+
+local empty_opened = prs.SoundminerCatalog.open({ path = fixture .. "/empty.sqlite", waveforms = false })
+local empty = launch()
+assert(finish(empty).added == 0 and manifest(empty).importState == "complete")
+empty.webview_close(); prs.SoundminerCatalog.activate(empty_opened.id); empty = launch()
+empty.SoundminerCatalog.process_pending(); assert(not empty.runtime.import_session, "a completed empty source stays empty")
+
+-- A reader temporarily prevents Windows from renaming the existing settings.
+-- The deferred retry must retain changes made during the wait.
+assert(empty.save_config())
+local config = empty.PsyReaSFXScope.dataDirectory .. "/config.tsv"
+local original_settings, rename = read(config), os.rename
+local locked = true
+os.rename = function(a, b)
+  if locked and key(a) == key(config) then return nil, "locked by fixture", 13 end
+  return rename(a, b)
+end
+empty.runtime.config_dirty = true
+assert(empty.start_config_save()); empty.process_config_save()
+assert(empty.runtime.config_save_retry and empty.runtime.config_dirty and read(config) == original_settings)
+assert(not empty.runtime.status_error, "temporary lock must not raise a toast")
+empty.runtime.favorites[key(config)] = true
+locked = false
+empty.runtime.config_save_retry.at = 0
+empty.process_config_save(); empty.process_config_save()
+assert(not empty.runtime.config_dirty and not empty.runtime.config_save_retry)
+assert(read(config):find(key(config), 1, true), "retry includes recent changes")
+locked = true
+empty.runtime.config_dirty, empty.runtime.language = true, "en"
+for _ = 1, 4 do
+  if empty.runtime.config_save_retry then empty.runtime.config_save_retry.at = 0 end
+  assert(empty.start_config_save()); empty.process_config_save()
+end
+assert(empty.runtime.config_dirty and empty.runtime.status_error and not empty.runtime.config_save_retry)
+assert(empty.runtime.status:find("Unable to save configuration", 1, true) and empty.runtime.status:find("locked by fixture", 1, true))
+os.rename = rename
 
 prs.SoundminerCatalog.open({ path = fixture .. "/changing.sqlite", waveforms = false })
 local changing = launch(); changing.SoundminerCatalog.process_pending()

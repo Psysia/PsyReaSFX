@@ -2129,6 +2129,12 @@ I18N_PREFIX_EN = {
   ["已迁移旧版音效库路径与偏好设置"] =
     "Migrated legacy library paths and preferences",
   ["无法保存配置"] = "Unable to save configuration",
+  ["无法保存独立库导入进度"] = "Unable to save import progress for this catalog",
+  ["已取消；已导入素材保留"] = "Import canceled. Previously imported assets have been kept.",
+  ["独立 Soundminer 素材库"] = "Independent Soundminer catalog",
+  ["保存失败；素材仍在当前会话，请检查数据目录和磁盘空间"] = "Could not save the catalog. Assets are still in this session. Check the data folder and free disk space.",
+  ["索引保存已取消"] = "Index save was canceled",
+  ["写入失败"] = "Write failed",
   ["无法保存索引"] = "Unable to save database index",
   ["无法保存素材增量日志："] = "Unable to save the asset journal: ",
   ["无法保存播放列表"] = "Unable to save playlists",

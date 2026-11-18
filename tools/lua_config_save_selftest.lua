@@ -7,6 +7,7 @@ HostApi = { time_precise = os.clock }
 CONFIG_FILE, VERSION = "fixture-config", "test"
 function ensure_dirs() end
 function set_status(message, failed) state.status, state.error = message, failed end
+function translate_ui_text(value) return value end
 function escape_tsv(value) return value end
 local committed, active, close_failure, write_failure
 function atomic_file_writer()
@@ -19,7 +20,7 @@ function atomic_file_writer()
   function writer:abort() self.aborted = true end
   function writer:close()
     assert(not self.aborted)
-    if self.failed or close_failure then return false end
+    if self.failed or close_failure then return false, "fixture write failure" end
     committed = table.concat(self.lines)
     return true
   end
@@ -53,6 +54,7 @@ state.config_dirty, close_failure = true, true
 assert(start_config_save())
 while state.config_save_session do process_config_save() end
 assert(committed == old and state.config_dirty)
+assert(state.error and state.status:find(CONFIG_FILE, 1, true) and state.status:find("fixture write failure", 1, true))
 close_failure, write_failure = false, true
 assert(not start_config_save() and active.aborted and state.config_dirty)
 write_failure = false

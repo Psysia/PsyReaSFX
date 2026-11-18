@@ -60,7 +60,11 @@ end
 local function smc_manifest_path(id) return join_path(smc_root(id), "catalog.json") end
 
 local function smc_read_manifest(id)
-  local file, open_error, open_code = io.open(smc_manifest_path(id), "rb")
+  local path = smc_manifest_path(id)
+  local file, open_error, open_code = io.open(path, "rb")
+  -- A crash between the two Windows renames can leave the previous manifest
+  -- at .bak. The same identity validation applies to both generations.
+  if not file and open_code == 2 then file, open_error, open_code = io.open(path .. ".bak", "rb") end
   if not file then assert(open_code == 2, open_error); return nil end
   local bytes = file:read(262145) or ""; file:close()
   assert(#bytes <= 262144, "独立素材库清单过大")
@@ -79,7 +83,7 @@ local function smc_write(path, bytes)
   local writer, reason = atomic_file_writer(path)
   assert(writer, reason)
   local ok, err = writer:write(bytes)
-  if not ok then writer:close(); error(err or "无法写入独立素材库", 0) end
+  if not ok then writer:abort(); error(err or "无法写入独立素材库", 0) end
   local closed, close_error = writer:close()
   assert(closed, close_error)
 end
@@ -191,7 +195,7 @@ function SoundminerCatalog.open(params)
   else
     local inspected = SoundminerImport.inspect(normalized.path)
     manifest = { schema = "PsyReaSFX-Soundminer-Catalog-v1", id = id, identity = identity,
-      name = smc_name(inspected.name), params = normalized, consumed = false }
+      name = smc_name(inspected.name), params = normalized, importState = "pending", consumed = false }
     assert(manifest.name ~= "" and not manifest.name:find("[%z\1-\31]"), "Soundminer 数据库名称无效")
     HostApi.RecursiveCreateDirectory(smc_root(id), 0)
     smc_wrapper(manifest)
@@ -202,15 +206,30 @@ function SoundminerCatalog.open(params)
   return opened
 end
 
-function SoundminerCatalog.resume()
+local function smc_current_manifest()
   assert(PsyReaSFXScope.kind == "soundminer", "请选择独立 Soundminer 素材库")
   local manifest = assert(smc_read_manifest(PsyReaSFXScope.id), "独立素材库清单缺失")
   assert(manifest.identity == PsyReaSFXScope.identity, "独立素材库来源已改变")
+  return manifest
+end
+
+local function smc_import_state(manifest, phase)
+  if manifest.importState == phase then return end
+  manifest.importState, manifest.consumed = phase, phase ~= "pending"
+  smc_save_manifest(manifest)
+end
+
+function SoundminerCatalog.set_outcome(phase)
+  -- Re-read so changes to the user's cache options in another window survive.
+  smc_import_state(smc_current_manifest(), phase)
+end
+
+function SoundminerCatalog.resume()
+  local manifest = smc_current_manifest()
+  assert(not state.import_session and not state.database_snapshot_session, "请等待当前扫描或导入完成")
   local started = SoundminerImport.start(manifest.params)
-  assert(started and started.started, "无法开始独立素材库导入")
-  manifest.consumed = true
-  local saved, save_error = pcall(smc_save_manifest, manifest)
-  if not saved then SoundminerImport.cancel(); error(save_error, 0) end
+  local saved, reason = pcall(smc_import_state, manifest, "pending")
+  if not saved then SoundminerImport.cancel(state.import_session, true); error(reason, 0) end
   AppState.set("soundminer_catalog_checked", true)
   return started
 end
@@ -222,13 +241,19 @@ function SoundminerCatalog.process_pending()
     if job.resource == "catalog_exclusive" then return end
   end
   local ok, reason = pcall(function()
-    local manifest = assert(smc_read_manifest(PsyReaSFXScope.id), "独立素材库清单缺失")
-    assert(manifest.identity == PsyReaSFXScope.identity, "独立素材库来源已改变")
-    if manifest.consumed then AppState.set("soundminer_catalog_checked", true); return end
+    local manifest = smc_current_manifest()
+    -- Older versions marked the job consumed before reading its first row.
+    -- A committed index (including one emptied by the user) is authoritative.
+    if manifest.importState == "complete" or manifest.importState == "canceled"
+      or (manifest.importState == nil and manifest.consumed and HostApi.file_exists(DATABASE_FILE)) then
+      AppState.set("soundminer_catalog_checked", true); return
+    end
     SoundminerCatalog.resume()
   end)
   if not ok then
     AppState.set("soundminer_catalog_checked", true)
-    set_status("独立 Soundminer 素材库：" .. tostring(reason), true)
+    local message = translate_ui_text("独立 Soundminer 素材库") .. " · " .. translate_ui_text(reason)
+    AppState.set("soundminer_report", { error = message })
+    set_status(message, true)
   end
 end

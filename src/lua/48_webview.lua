@@ -2571,6 +2571,8 @@ function webview_publish()
     },
     taskDetails = WebUI.task_details(),
     soundminerReport = state.soundminer_report,
+    soundminerWaiting = PsyReaSFXScope.kind == "soundminer" and not state.soundminer_catalog_checked
+      and not state.persistence_read_only,
     tasks = {
       media = state.soundminer_media_session ~= nil,
       scan = state.scan ~= nil,

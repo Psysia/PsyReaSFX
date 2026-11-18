@@ -158,7 +158,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 | 通道 | 版本 | 说明 |
 |---|---|---|
 | 正式版 | **0.9.3 WebView** | Windows x64 默认更新版本，保留 Beta 18 的可靠性修复，需要 ReaWebAPI。 |
-| WebView 测试版 | **0.9.4-beta6** | 支持从波形拖出选区，修复 Windows 长路径素材的试听和波形。 |
+| WebView 测试版 | **0.9.4-beta7** | 自动恢复中断的 Soundminer 导入，显示读取和导入进度。 |
 | 上一 WebView 测试版 | **0.9.3-beta18（0.9.a）** | 保留预发布版本供回退。 |
 | 旧界面测试版 | **0.9.2-beta4** | 可在 Versions 中选择回退。 |
 | 历史稳定版 | **0.9.1 / 0.9.0 / 0.8.5 / 0.7.23** | 保留于 ReaPack Versions 与 GitHub Releases。 |
@@ -166,7 +166,7 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
 
-**0.9.4 Beta 6 已内置运行组件和试听解码器。** 在 ReaPack 中启用预发布，更新 **PsyReaSFX.lua**，然后完全重启 REAPER 以加载解码器。离线安装时请先关闭 REAPER，解压 ZIP 后运行 **Install-PsyReaSFX.cmd**。[Beta 6 版本说明](docs/releases/release-notes-webview-0.9.4-beta6.md)
+**0.9.4 Beta 7 已内置运行组件和试听解码器。** 在 ReaPack 中启用预发布，更新 **PsyReaSFX.lua**，然后完全重启 REAPER 以加载解码器。离线安装时请先关闭 REAPER，解压 ZIP 后运行 **Install-PsyReaSFX.cmd**。[Beta 7 版本说明](docs/releases/release-notes-webview-0.9.4-beta7.md)
 
 安装弹窗跟随 Windows 显示语言，中文系统显示中文，其他系统显示英文。
 
