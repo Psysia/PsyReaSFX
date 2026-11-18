@@ -166,11 +166,11 @@ AI 语义搜索是另一个功能，不依赖此包。
 
 未安装[神经组件][neural-download]时，PsyReaSFX 仍可使用原有声学相似检索。AI 语义搜索是独立的 API 功能，不会上传用户音频。
 
-**0.9.4 Beta 5 已内置运行组件和试听解码器。** ReaPack 启用预发布后，只需更新 **PsyReaSFX.lua**。首次启动自动准备组件，按提示重启一次 REAPER；离线完整 ZIP 统一使用 **Install-PsyReaSFX.cmd**。已知 PRS 旧组件会备份并升级，未知来源的共享组件会保留。[Beta 5 版本说明](docs/releases/release-notes-webview-0.9.4-beta5.md)。
+**0.9.4 Beta 5 已内置运行组件和试听解码器。** 在 ReaPack 中启用预发布，更新 **PsyReaSFX.lua**，然后完全重启 REAPER 以加载解码器。离线安装时请先关闭 REAPER，解压 ZIP 后运行 **Install-PsyReaSFX.cmd**。[Beta 5 版本说明](docs/releases/release-notes-webview-0.9.4-beta5.md)
 
-安装弹窗跟随 Windows 显示语言：中文系统用中文，其他系统语言用英文。Beta 4 修复波形队列堵住已有缓存的搜索结果，并显示处理阶段和重试入口。更新后关闭再打开 PRS；Beta 2/3 已正常使用的用户无需更新原生组件或重启 REAPER。
+安装弹窗跟随 Windows 显示语言，中文系统显示中文，其他系统显示英文。
 
-**Soundminer 一键导入（0.9.4 预发布）：** 从音效库菜单或设置打开 **导入 Soundminer 音效库**，选择数据库并点击 **一键导入**。读取元数据及兼容的 V6/V7 overview 波形缓存，支持路径映射和离线条目。Soundminer 导入库与原有 PRS 库独立保存和加载；选择哪个库就读取哪个库，二者不合并、不互相覆盖。Soundminer 可以同时运行；数据库发生变更或存在活动日志时，PRS 停止本次导入。所有原素材经共享只读接口读取，原生试听、分析、插入和导出使用 PRS 私有副本；配套组件已包含在主包中，副本需要额外磁盘空间和首次准备时间。[格式证据与保护边界](docs/SOUNDMINER_FORMAT_zh-CN.md)。
+**Soundminer 一键导入（0.9.4 预发布）。** 从音效库菜单或设置打开 **导入 Soundminer 音效库**，选择数据库并点击 **一键导入**。PRS 读取元数据及兼容的 V6/V7 概览波形缓存，支持路径映射和离线条目。每个导入库与原有 PRS 库独立保存索引、设置和缓存，选择哪个库就读取哪个库。Soundminer 可以同时运行。数据库发生变更或存在活动日志时，PRS 停止本次导入。SWS 试听支持的音频时通过共享只读解码器按需读取。其他格式、插入、导出及部分分析使用 PRS 私有副本。[格式与原文件保护说明](docs/SOUNDMINER_FORMAT_zh-CN.md)
 
 Beta 18 的逐项功能入口与测试步骤见 [验收清单：117 项功能、73 个设置](docs/WEBVIEW_ACCEPTANCE_0_9_3_zh-CN.md)。
 

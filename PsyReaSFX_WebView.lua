@@ -221,7 +221,7 @@ local VERSION = "0.9.4 Beta 5"
 local RELEASE_PROVENANCE = {
   project = "Psysia/PsyReaSFX",
   release_id = "PsyReaSFX/0.9.4-beta5",
-  source_sha256 = "e35a5a7e09cde80ee1bf6550bf4e947ed5014794f42658ffaee463ae402ec001",
+  source_sha256 = "8d93fa07deee03a6b0d732bfa2b174cda7a56392183e237edeb325ffcaff4c9a",
   license = "PsyReaSFX Free Use and No Redistribution License 1.1",
   official_url = "https://github.com/Psysia/PsyReaSFX"
 }
@@ -48531,7 +48531,9 @@ function cleanup()
   end
   if state.startup_session then
     if state.preview then stop_preview() end
-    cleanup_retired_preview_sources(true)
+    if state.retired_preview_sources and #state.retired_preview_sources > 0 then
+      cleanup_retired_preview_sources(true)
+    end
     if state.startup_session.reader then
       pcall(function() state.startup_session.reader:close() end)
     end
@@ -48883,7 +48885,7 @@ function process_startup()
       local path = WebUI.early_played[#WebUI.early_played]
       if state.by_path[path_key(path)] then
         selection_replace({[path_key(path)]=true})
-        state.selected_path = path
+        AppState.set("selected_path", path)
       end
       WebUI.early_played = nil
     end
@@ -48907,7 +48909,9 @@ function loop()
     if WEBVIEW_MODE then webview_publish() else draw_main() end
     if state.open then
       if state.preview then poll_preview() end
-      cleanup_retired_preview_sources(false)
+      if state.retired_preview_sources and #state.retired_preview_sources > 0 then
+        cleanup_retired_preview_sources(false)
+      end
       if WEBVIEW_MODE or state.startup_session.visible_once then
         process_startup()
       else
