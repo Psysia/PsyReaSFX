@@ -59,8 +59,9 @@ function SoundminerReadOnly.stat(path)
   return info, reason, code
 end
 
-function SoundminerReadOnly.open(path)
-  local info, reason, code = SoundminerReadOnly.stat(path)
+function SoundminerReadOnly.open(path, info)
+  local reason, code
+  if not info then info, reason, code = SoundminerReadOnly.stat(path) end
   if not info then return nil, reason, code end
   if info.directory then return nil, "Source path is a directory", 21 end
   info.path, info.position, info.closed = path, 0, false

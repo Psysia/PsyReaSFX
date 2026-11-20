@@ -34,5 +34,7 @@ run("c++","-target","x86_64-windows-gnu","-O2","-fno-exceptions","-fno-rtti","-I
     "-c",src/"extension.cpp","-o","extension.obj")
 run("c++","-target","x86_64-windows-gnu","-O2","-fno-exceptions","-fno-rtti",
     "-c",src/"quick_index.cpp","-o","quick.obj")
-run("cc","-target","x86_64-windows-gnu","-shared","-s","reader.obj","decoder.obj","extension.obj","quick.obj",
+run("c++","-target","x86_64-windows-gnu","-O2","-fno-exceptions","-fno-rtti",
+    "-c",src/"soundminer_sqlite.cpp","-o","soundminer.obj")
+run("cc","-target","x86_64-windows-gnu","-shared","-s","reader.obj","decoder.obj","extension.obj","quick.obj","soundminer.obj",
     "-o","reaper_prs_audition.dll")

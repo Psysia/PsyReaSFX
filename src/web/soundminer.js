@@ -145,7 +145,7 @@ export async function openSoundminerImport(command) {
   databaseRow.append(databasePath, browse);
   const mapping = el("details");
   mapping.append(el("summary", "音频已换盘或来自 Mac？设置路径映射"),
-    el("p", "将原路径前缀替换为本机路径，例如 /Volumes/SFX → D:/SFX；目录内的相对路径保持不变。", "muted"),
+    el("p", "PRS 会自动读取 Soundminer 已启用的实时路径映射。需要单独指定时，在下方填写原目录和本机目录。", "muted"),
     row("Soundminer 原音频路径", oldPrefix), row("本机音频路径", newPrefix));
   const actions = el("div", undefined, "action-row");
   actions.append(start, cancel);

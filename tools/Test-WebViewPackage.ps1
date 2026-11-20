@@ -83,6 +83,9 @@ $global:PsyReaSFXTestReaperRunning = $false
 Assert-Equal (Get-SHA256 (Plugin-Path $fresh)) $runtimeLock.binary.sha256 'Fresh runtime installed'
 $auditionFile = Join-Path $fresh 'UserPlugins/reaper_prs_audition.dll'
 $auditionHash = Get-SHA256 (Join-Path $PackagePath 'runtime/audition/reaper_prs_audition.dll')
+$previousAudition = '46b4c320ed1edced2049945f2bf2ca46706543c44bc6530c43a2db77c12638c6'
+Assert-Equal (Get-AuditionAction $previousAudition $auditionHash) 'replace' 'Released Beta 7 decoder can upgrade automatically'
+Expect-Failure { Get-AuditionAction ('a' * 64) $auditionHash } 'Unknown audition extension must be preserved'
 Assert-Equal (Get-SHA256 $auditionFile) $auditionHash 'Private audition extension installed from this package'
 Read-Package (Join-Path $fresh 'Scripts/PsyReaSFX-WebView') | Out-Null
 foreach ($asset in @('brand/psyreasfx-icon.png', 'ucs/ucs-8.2.1.tsv', 'neural/mn04_as_scene_320_v1/mn04_as_scene_320_v1.onnx')) {
@@ -157,16 +160,25 @@ if (Test-Path -LiteralPath $candidateApproval) {
         # using only a synthetic runtime and an approval in this fixture copy.
         $known = New-Resource 'r-known'
         $knownHash = Set-ExternalRuntime $known 'fixture previous PRS component'
+        $legacyAudition = Join-Path $known 'UserPlugins/reaper_prs_audition.dll'
+        [IO.File]::WriteAllText($legacyAudition, 'fixture previous audition component')
+        $legacyHash = Get-SHA256 $legacyAudition
+        $fixturePolicy = Join-Path $candidatePackage 'installer-common.ps1'
+        $policyText = [IO.File]::ReadAllText($fixturePolicy).Replace($previousAudition, $legacyHash)
+        [IO.File]::WriteAllText($fixturePolicy, $policyText, (New-Object Text.UTF8Encoding($true)))
         $candidateApprovalValue.replace_hashes = @($knownHash)
         [IO.File]::WriteAllText($candidateApproval, ($candidateApprovalValue | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
         $knownManifestPath = Join-Path $candidatePackage 'package-manifest.json'
         $knownManifest = Get-Content -LiteralPath $knownManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
         ($knownManifest.files | Where-Object path -CEQ 'bundled-runtime.json').sha256 = Get-SHA256 $candidateApproval
+        ($knownManifest.files | Where-Object path -CEQ 'installer-common.ps1').sha256 = Get-SHA256 $fixturePolicy
         [IO.File]::WriteAllText($knownManifestPath, ($knownManifest | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
         & (Join-Path $candidatePackage 'Install-PsyReaSFX.ps1') -ReaperResourcePath $known
         Assert-Equal (Get-SHA256 (Plugin-Path $known)) $runtimeLock.binary.sha256 'Known PRS runtime upgraded without extra flags'
+        Assert-Equal (Get-SHA256 $legacyAudition) $auditionHash 'Previous audition component upgraded'
         & (Join-Path $candidatePackage 'Restore-PsyReaSFX.ps1') -ReaperResourcePath $known
         Assert-Equal (Get-SHA256 (Plugin-Path $known)) $knownHash 'Automatic predecessor upgrade preserves a usable backup'
+        Assert-Equal (Get-SHA256 $legacyAudition) $legacyHash 'Rollback restores the previous audition component'
     }
     $candidateApprovalValue.app_version = 'unapproved-candidate'
     [IO.File]::WriteAllText($candidateApproval, ($candidateApprovalValue | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))

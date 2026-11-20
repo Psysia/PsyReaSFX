@@ -18,13 +18,16 @@ do
     if not SoundminerReadOnly or type(SoundminerReadOnly.open) ~= "function" then
       return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
     end
-    return SoundminerReadOnly.open(path)
+    return (SoundminerPaths or SoundminerReadOnly).open(path)
   end
   local stream_types = {wav=true, wave=true, bwf=true, rf64=true, w64=true, aif=true, aiff=true, aifc=true, flac=true, mp3=true}
   function M.stream(asset, lo, hi, reverse)
     if type(reaper.PRS_Audio_Open) ~= "function" or type(reaper.PRS_Audio_Close) ~= "function"
       or not stream_types[(tostring(asset.path):match("%.([%w]+)$") or ""):lower()] then return nil end
-    local id = reaper.PRS_Audio_Open(asset.path, tonumber(asset.duration) or 0, lo or 0, hi or 1, reverse == true)
+    local path = asset.path
+    if SoundminerPaths then path = SoundminerPaths.resolve(path) end
+    if not path then return nil end
+    local id = reaper.PRS_Audio_Open(path, tonumber(asset.duration) or 0, lo or 0, hi or 1, reverse == true)
     return type(id) == "number" and id > 0 and id or nil
   end
   function M.preview_source(asset, lo, hi, reverse)

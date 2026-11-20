@@ -65,8 +65,32 @@ static void *qo_va(void **a,int n){return (void*)(intptr_t)(n==3?prs_quick_open(
 static void *qa_va(void **a,int n){return (void*)(intptr_t)(n==3&&prs_quick_add((int)(intptr_t)a[0],(const char*)a[1],(const char*)a[2]));}
 static void *qc_va(void **a,int n){return (void*)(intptr_t)(n==2&&prs_quick_close((int)(intptr_t)a[0],!!a[1]));}
 static void *qf_va(void **a,int n){return (void*)(n==2?prs_quick_find((int)(intptr_t)a[0],(const char*)a[1]):"");}
+extern "C" int prs_sm_open(const char*);
+extern "C" void prs_sm_close(int);
+extern "C" bool prs_sm_valid(int);
+extern "C" const char *prs_sm_read(int,const char*,const char*,const char*,int);
+extern "C" const char *prs_sm_search(int,const char*,int);
+extern "C" const char *prs_sm_drives();
+extern "C" void prs_sm_unload();
+static void *sm_open_va(void **a,int n) { return (void*)(intptr_t)(n == 1 ? prs_sm_open((const char*)a[0]) : 0); }
+static void *sm_close_va(void **a,int n) { if (n == 1) prs_sm_close((int)(intptr_t)a[0]); return nullptr; }
+static void *sm_valid_va(void **a,int n) { return (void*)(intptr_t)(n == 1 && prs_sm_valid((int)(intptr_t)a[0])); }
+static void *sm_read_va(void **a,int n) {
+  return (void*)(n == 5 ? prs_sm_read((int)(intptr_t)a[0],(const char*)a[1],(const char*)a[2],
+    (const char*)a[3],(int)(intptr_t)a[4]) : "!argument");
+}
+static void *sm_search_va(void **a,int n) {
+  return (void*)(n == 3 ? prs_sm_search((int)(intptr_t)a[0],(const char*)a[1],(int)(intptr_t)a[2]) : "!argument");
+}
+static void *sm_drives_va(void**,int n) { return (void*)(n == 0 ? prs_sm_drives() : ""); }
 #define REG(name,func,va,def) {"API_" name,(void*)func},{"APIvararg_" name,(void*)va},{"APIdef_" name,(void*)def}
 static Registration registrations[]={
+  REG("PRS_SM_Open",prs_sm_open,sm_open_va,"int\0const char*\0path\0Open a generation-checked read-only Soundminer SQLite reader.\0"),
+  REG("PRS_SM_Close",prs_sm_close,sm_close_va,"void\0int\0id\0Close a Soundminer SQLite reader.\0"),
+  REG("PRS_SM_Valid",prs_sm_valid,sm_valid_va,"bool\0int\0id\0Check the source generation and its journal state.\0"),
+  REG("PRS_SM_Read",prs_sm_read,sm_read_va,"const char*\0int,const char*,const char*,const char*,int\0id,operation,key,indexName,limit\0Read a bounded batch or one indexed Soundminer row.\0"),
+  REG("PRS_SM_Search",prs_sm_search,sm_search_va,"const char*\0int,const char*,int\0id,terms,limit\0Search an existing compatible Soundminer full-text index.\0"),
+  REG("PRS_SM_LocalDrives",prs_sm_drives,sm_drives_va,"const char*\0\0\0List local Windows data drive letters.\0"),
   REG("PRS_Quick_Open",prs_quick_open,qo_va,"int\0const char*,const char*,bool\0scope,signature,build\0Open a PRS search projection.\0"),
   REG("PRS_Quick_Add",prs_quick_add,qa_va,"bool\0int,const char*,const char*\0id,offset,text\0Add a search row to a private staging index.\0"),
   REG("PRS_Quick_Close",prs_quick_close,qc_va,"bool\0int,bool\0id,publish\0Close or publish a PRS search projection.\0"),
@@ -84,6 +108,7 @@ static void unload() {
   if(host)while(registered){auto &r=registrations[--registered];char key[80];snprintf(key,sizeof(key),"-%s",r.key);host->Register(key,r.value);}
   for(auto &s:slots)if(s.reader)close_stream(s.id);
   prs_quick_unload();
+  prs_sm_unload();
   host=nullptr;
 }
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t *rec) {

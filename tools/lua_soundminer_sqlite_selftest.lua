@@ -91,4 +91,40 @@ mutation:write(previous_bytes)
 mutation:close()
 
 io.open = fixture_mutation_open
+
+-- The actual native DLL's query and sharing behavior is exercised by the
+-- Windows native test. Check the matching ReaScript packet decoder here.
+dofile(module:gsub("27_sqlite_reader.lua$", "27_soundminer_native.lua"))
+local active, generation, calls = true, true, 0
+reaper.PRS_SM_Open = function() return 3 end
+reaper.PRS_SM_Valid = function(handle) return handle == 3 and active and generation end
+reaper.PRS_SM_Close = function(handle) assert(active and handle == 3); active = false end
+reaper.PRS_SM_Read = function(handle, op, key, _, limit)
+  assert(handle == 3 and active and limit <= 64); calls = calls + 1
+  if not generation then return "!changed" end
+  if key ~= "" then return "+" end
+  if op == "paths" then return "+0i1:13s3:one" end
+  assert(op == "rows")
+  return "+0i1:11i1:12s3:one3x6:6100624i16:90071992547409935d16:000000000000f43f6s0:"
+end
+reaper.PRS_SM_Search = function(handle, text, limit)
+  assert(handle == 3 and active and text == "wo" and limit == 40)
+  return generation and "+1\n9007199254740993\n" or "!changed"
+end
+local native = open("ordinary.sqlite")
+assert(native.native and native:unchanged())
+local schema = native:tables().justinmetadata
+local rows = native:row_batches("justinmetadata", os.clock)
+local paths = native:path_batches(os.clock)
+local row = assert(rows()[1])
+assert(row._rowid == 1 and row[schema.columns[2]] == "one" and row[schema.columns[3]] == "a\0b")
+assert(row[schema.columns[4]] == 9007199254740993 and row[schema.columns[5]] == 1.25)
+assert(row[schema.columns[6]] == "" and row[schema.columns[7]] == nil)
+assert(paths()[1].Filename == "one" and paths() == nil and rows() == nil)
+assert(native:search_rowids("wo",100)[2] == 9007199254740993 and calls == 4)
+generation = false
+assert(not native:unchanged() and not pcall(function() native:get("justinmetadata",1) end))
+assert(not pcall(function() native:search_rowids("wo",100) end))
+native:close()
+assert(not active and not native:unchanged())
 print("Soundminer SQLite reader: PASS (real SQLite fixtures, overflow, rowid lookup, corruption and change detection)")

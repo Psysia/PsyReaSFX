@@ -1,8 +1,12 @@
 #pragma once
+#ifndef __cplusplus
+#include <stddef.h>
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
 typedef struct PrsAudio PrsAudio;
+wchar_t *prs_absolute_disk_path(const char *utf8);
 PrsAudio *prs_open(const char *utf8, double duration_hint, double lo, double hi, int reverse);
 PrsAudio *prs_duplicate(const PrsAudio *);
 void prs_close(PrsAudio *);

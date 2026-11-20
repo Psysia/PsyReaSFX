@@ -58,6 +58,10 @@ local function boot(path, context)
   local env = setmetatable({}, { __index = _G })
   env._G = env
   env.PRS_SOUNDMINER_CONTEXT = context
+  env.os = setmetatable({getenv = function(name)
+    if name == "APPDATA" then return fixture end
+    return os.getenv(name)
+  end}, {__index = os})
   env.loadfile = function(file, mode) return loadfile(file, mode or "t", env) end
   local deferred
   env.reaper = {
@@ -209,29 +213,103 @@ sm.webview_close()
 prs.SoundminerCatalog.activate(opened.id)
 sm = launch()
 sm.SoundminerCatalog.process_pending()
+-- The direct-search hit is a duplicate whose source row comes later. Walking
+-- the source must restore the first row's metadata and retain newer edits.
+local live = sm.runtime.import_session
+local media_stat, media_checks = sm.SoundminerPaths.stat, 0
+sm.SoundminerPaths.stat = function(path, directory)
+  if path:lower():match("%.wav$") then
+    assert(live.phase == "soundminer_verify_media" and #sm.runtime.assets == 6, "every metadata row precedes disk verification")
+    media_checks = media_checks + 1
+  end
+  return media_stat(path, directory)
+end
+local hit = assert(live.database:get("justinmetadata", 7))
+local lookups = 0
+live.database.native = true
+live.database.search_rowids = function(_, query, limit)
+  lookups = lookups + 1
+  assert(query == "impact" and limit == 32)
+  return { 7 }
+end
+sm.runtime.view, sm.runtime.search = "all", "impact"
+sm.SoundminerCatalog.process_search(live)
+sm.SoundminerCatalog.process_search(live)
+assert(lookups == 1, "one indexed lookup per query")
+assert(not sm.SoundminerImport.prioritize_row(live, hit))
+sm.runtime.search = ""
+sm.SoundminerCatalog.process_search(live)
+live.database.native, live.database.search_rowids = nil, nil
+local searched = asset(sm, "FX/impact.wav")
+assert(searched.description == "duplicate must not overwrite")
+searched.keywords = "edited after direct search"
+local original_size = sm.file_size
+sm.file_size = function() error("first visible Soundminer row opened audio for its waveform") end
+local early_points = 113
+sm.queue_wave(searched, early_points, true, false, false, true)
+local early_key = sm.wave_cache_key(searched, early_points)
+for _ = 1, 100 do
+  if sm.runtime.wave_cache[early_key] then break end
+  assert(sm.process_wave_cache_queue())
+end
+assert(sm.runtime.wave_cache[early_key] and live.done == 0, "direct-search waveform before sequential import")
+sm.file_size = original_size
 while sm.runtime.import_session do sm.process_import_session() end
+sm.SoundminerPaths.stat = media_stat
+assert(media_checks == 6 and live.pending_count == 0, "one media check per unique source, including direct hits")
 assert(sm.runtime.database_snapshot_session and not manifest(sm).consumed, "queued index is not durable")
 drain_save(sm)
 assert(manifest(sm).importState == "complete" and manifest(sm).consumed)
 local report = sm.runtime.soundminer_report
 assert(report.error == "", report.error)
 assert(report.added == 6 and report.duplicates == 1 and report.skipped == 2 and report.offline == 1, sm.neural_json_encode(report))
-assert(report.waveforms == 5 and report.waveSkipped == 1, sm.neural_json_encode(report))
 assert(#sm.runtime.libraries == 1 and #sm.runtime.root_records == 1)
 assert(key(sm.runtime.root_records[1].path) == key(fixture .. "/audio"))
 local first = asset(sm, "FX/impact.wav")
 assert(first.description == "中文描述\nsecond line" and first.notes == "note\ncomment")
+assert(first.keywords == "edited after direct search" and not first.soundminer_metadata:find("__prs_pending_rowid", 1, true))
 assert(first.duration == 1536 / 48000 and first.sample_rate == 48000 and first.channels == 1)
 assert(first.catid == "IMPTMetl" and first.ucs_source == "soundminer")
 local metadata = sm.neural_json_decode(first.soundminer_metadata)
 assert(metadata.CustomField == "keep me\t特殊" and metadata.Rating == 4 and metadata.Library == "Synthetic Library")
 assert(asset(sm, "FX/offline.wav").last_seen == 0 and asset(sm, "FX/offline.wav").ready)
 assert(asset(sm, "FX/fallback.wav").indexed and asset(sm, "FX/no-frames.wav").duration > 0)
-local thumbnail = assert(sm.load_wave_from_disk(first, sm.runtime.mini_wave_points))
+-- Metadata import does not touch waveform payloads or write offscreen caches.
+local mini = sm.runtime.mini_wave_points
+for _, item in ipairs(sm.runtime.assets) do
+  assert(not sm.wave_cache_file_exists(item, mini) and not sm.wave_cache_file_exists(item, 4096, true))
+end
+local function requested_wave(item, points, preserve)
+  sm.queue_wave(item, points, true, preserve, false, true)
+  local wave_key = sm.wave_cache_key(item, points, preserve)
+  for _ = 1, 100 do
+    local ready = sm.runtime.wave_cache[wave_key]
+    if ready then return ready.waveform end
+    if not sm.process_wave_cache_queue() then break end
+  end
+end
+-- A Beta 7 persisted metadata row has no underscored hash/link/duration.
+metadata._FilePathHash, metadata._WaveformLink, metadata._Time = nil, nil, nil
+first.soundminer_metadata = sm.neural_json_encode(metadata)
+local thumbnail = assert(requested_wave(first, mini, false))
 assert(thumbnail.count == sm.runtime.mini_wave_points and thumbnail.peaks[1] > 0.5)
-assert(sm.load_wave_from_disk(first, 4096, true).channels == 1)
-assert(sm.wave_cache_file_exists(asset(sm, "FX/local.wav"), sm.runtime.mini_wave_points))
-assert(sm.wave_cache_file_exists(asset(sm, "FX/no-frames.wav"), sm.runtime.mini_wave_points))
+assert(sm.wave_cache_file_exists(first, mini) and not sm.wave_cache_file_exists(first, 4096, true))
+assert(requested_wave(first, 4096, true).channels == 1 and not sm.wave_cache_file_exists(first, 2048, false))
+assert(requested_wave(asset(sm, "FX/local.wav"), mini, false), "local waveform by rowid")
+assert(requested_wave(asset(sm, "FX/no-frames.wav"), mini, false), "duration-derived overview")
+assert(requested_wave(asset(sm, "FX/offline.wav"), mini, false), "cached offline overview")
+local audio_only = asset(sm, "Music/tone.wav")
+assert(not requested_wave(audio_only, mini, false), "unknown overview falls back to audio")
+local audio_job = assert(sm.runtime.wave_queue[1])
+local result, from_audio
+for _ = 1, 100 do
+  result, from_audio = sm.step_wave_job(audio_job)
+  if result ~= "working" then break end
+  sm.SoundminerMedia.process()
+end
+assert(result == "done" and from_audio.count == mini, "normal protected audio fallback")
+sm.runtime.wave_queued[audio_job.key] = nil
+table.remove(sm.runtime.wave_queue, 1)
 assert(key(sm.wave_cache_path(first, thumbnail.count)) ~= key(prs.wave_cache_path(original, original_wave.count)), "cache namespaces")
 assert(original.description == "PRS-owned description" and original.duration == 9 and #prs.runtime.assets == 1)
 sm.set_watch_folder_enabled(true)
@@ -329,18 +407,23 @@ for _ = 1, 1000 do
   assert(coroutine.resume(cancel_session.worker))
 end
 assert(cancel_session.added > 0 and cancel_session.added < 80)
+assert(cancel_session.phase == "soundminer_import" and cancel_session.total == 0 and cancel.runtime.assets[1].last_seen == -1)
 cancel.cancel_import_session(); drain_save(cancel)
 assert(cancel.runtime.soundminer_report.canceled and #cancel.runtime.assets == cancel_session.added)
+assert(cancel.runtime.soundminer_report.unchecked == cancel_session.added and cancel.runtime.soundminer_report.offline == 0)
 assert(not cancel_session.database and not cancel.Jobs.active.catalog_pipeline)
 local saved_database = cancel.PsyReaSFXScope.dataDirectory .. "/index_v3.tsv"
 local saved_libraries = cancel.PsyReaSFXScope.dataDirectory .. "/libraries_v2.tsv"
 local previous_database, previous_libraries = read(saved_database), read(saved_libraries)
+cancel.webview_close(); prs.SoundminerCatalog.activate(cancel.PsyReaSFXScope.id); cancel = launch()
+assert(cancel.runtime.assets[1].last_seen == -1, "unverified rows survive a close and reopen")
 assert(cancel.SoundminerCatalog.resume().started)
 local failed_token = cancel.runtime.import_session.job_token
 cancel.runtime.persistence_fault_injection = "write"
 local failed_save = finish(cancel)
 cancel.runtime.persistence_fault_injection = nil
 assert(failed_save.added > 0 and failed_save.error:find("保存失败", 1, true), cancel.neural_json_encode(failed_save))
+assert(failed_save.offline == 80 and failed_save.unchecked == 0, "resumed media checks include previously saved rows")
 assert(failed_token.state == "failed" and cancel.runtime.db_dirty)
 assert(read(saved_database) == previous_database and read(saved_libraries) == previous_libraries)
 assert(not manifest(cancel).consumed, "failed save remains resumable")
@@ -401,6 +484,7 @@ assert(sm.SoundminerImport.resolve_path({ FilePath = "X:/FX/a.wav" }, "X:/", "Y:
 assert(sm.SoundminerImport.resolve_path({ FilePath = "x:/FX/a.wav" }, "X:/fx", "Y:/Moved") == "Y:/Moved/a.wav")
 assert(sm.SoundminerImport.resolve_path({ FilePath = "/Volumes/Audio/a.wav" }, "/Volumes/audio", "/new") == "/Volumes/Audio/a.wav")
 assert(not sm.SoundminerImport.resolve_path({ FilePath = "X:/FX/a.wav" }, "X:/", "Y:/../outside"))
+assert(loadfile("tools/lua_soundminer_paths_selftest.lua"))()(prs, fixture, launch, finish, key, read, write, mkdir)
 for path, bytes in pairs(protected) do assert(read(path) == bytes, "original PRS data/cache changed: " .. path) end
 assert(original.description == "PRS-owned description" and prs.runtime.favorites[prs.path_key(original.path)] and #prs.runtime.assets == 1)
 assert(read(db_path) == database_before and read(cache_path) == cache_before, "source SQLite/cache unchanged")

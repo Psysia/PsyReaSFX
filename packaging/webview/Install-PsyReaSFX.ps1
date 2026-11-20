@@ -35,7 +35,8 @@ foreach ($file in $manifest.files) {
 $installedHash = if (Test-Path -LiteralPath $plugin) { Get-SHA256 $plugin } else { '' }
 $action = Get-RuntimeAction $installedHash $bundledHash $bundledPolicy -Replace:$UseBundledRuntime
 if ($PlanOnly) {
-    return [pscustomobject]@{ Resource = $resource; Application = $app; Runtime = $action; Audition = (Get-AuditionAction $audition $auditionHash); Version = $manifest.version; RuntimeValidation = $runtimePolicy.validation_status; RuntimeDistribution = $runtimePolicy.distribution_channel }
+    $installedAudition = if (Test-Path -LiteralPath $audition) { Get-SHA256 $audition } else { '' }
+    return [pscustomobject]@{ Resource = $resource; Application = $app; Runtime = $action; Audition = (Get-AuditionAction $installedAudition $auditionHash); Version = $manifest.version; RuntimeValidation = $runtimePolicy.validation_status; RuntimeDistribution = $runtimePolicy.distribution_channel }
 }
 Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$allowPackaged
 Assert-ReaperClosed
@@ -49,7 +50,8 @@ try {
     }
     $installedHash = if (Test-Path -LiteralPath $plugin) { Get-SHA256 $plugin } else { '' }
     $action = Get-RuntimeAction $installedHash $bundledHash $bundledPolicy -Replace:$UseBundledRuntime
-    $auditionAction = Get-AuditionAction $audition $auditionHash
+    $installedAudition = if (Test-Path -LiteralPath $audition) { Get-SHA256 $audition } else { '' }
+    $auditionAction = Get-AuditionAction $installedAudition $auditionHash
     Assert-RuntimePolicy $action $runtimePolicy -BinarySha256 $bundledHash -AllowUnverified:$allowPackaged
     [IO.Directory]::CreateDirectory($transaction) | Out-Null
     [IO.Directory]::CreateDirectory($stage) | Out-Null
@@ -66,11 +68,18 @@ try {
         Copy-Item -LiteralPath $plugin -Destination $backup
         if ((Get-SHA256 $backup) -cne $installedHash) { throw 'Shared runtime changed while preparing its backup. Retry after the other updater finishes.' }
     }
+    if ($auditionAction -eq 'replace') {
+        $backupAudition = Join-Path $transaction 'previous-audition.dll'
+        Copy-Item -LiteralPath $audition -Destination $backupAudition
+        if ((Get-SHA256 $backupAudition) -cne $installedAudition) {
+            throw (Get-AuditionMessage 'The PRS component changed while backing up. Retry after the update finishes.' '备份时 PRS 组件已更改。请等待更新完成后重试。')
+        }
+    }
     $receipt = [pscustomobject]@{
         schema = 'PsyReaSFX-WebView-Install-v1'; id = $id; packageId = $manifest.id
         status = 'installing'; created = [DateTime]::UtcNow.ToString('o'); appExisted = (Test-Path -LiteralPath $app)
         runtimeAction = $action; previousRuntimeHash = $installedHash; installedRuntimeHash = $bundledHash
-        auditionAction = $auditionAction; auditionHash = $auditionHash
+        auditionAction = $auditionAction; auditionHash = $auditionHash; previousAuditionHash = $installedAudition
     }
     $receiptPath = Join-Path $transaction 'receipt.json'
     Write-Receipt $receiptPath $receipt
@@ -89,12 +98,18 @@ try {
             if ($action -eq 'replace') { [IO.File]::Replace($stagedPlugin, $plugin, [NullString]::Value) }
             else { [IO.File]::Move($stagedPlugin, $plugin) }
         }
-        if ($auditionAction -eq 'install') {
+        if ($auditionAction -in @('install', 'replace')) {
             [IO.Directory]::CreateDirectory((Split-Path -Parent $audition)) | Out-Null
             $stagedAudition = Join-Path $transaction 'audition-stage.dll'
             Copy-Item -LiteralPath $auditionFile -Destination $stagedAudition
             if ((Get-SHA256 $stagedAudition) -cne $auditionHash) { throw (Get-AuditionMessage 'The copied PRS audition component failed verification. Extract the package again.' '复制的 PRS 试听组件未通过校验。请重新解压安装包。') }
-            [IO.File]::Move($stagedAudition, $audition)
+            if ($auditionAction -eq 'replace') {
+                if ((Get-SHA256 $audition) -cne $installedAudition) {
+                    throw (Get-AuditionMessage 'The PRS component changed during installation. Retry after the update finishes.' '安装时 PRS 组件已更改。请等待更新完成后重试。')
+                }
+                [IO.File]::Replace($stagedAudition, $audition, [NullString]::Value)
+            }
+            else { [IO.File]::Move($stagedAudition, $audition) }
         }
         $receipt.status = 'installed'
         Write-Receipt $receiptPath $receipt

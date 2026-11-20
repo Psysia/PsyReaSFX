@@ -413,7 +413,7 @@ WebUI.handlers["artwork.prepare"] = function(params)
   local path = normalize_external_path(text(params.path, 4096))
   local extension = path:match("%.([%w]+)$")
   assert(extension and ({png=true, jpg=true, jpeg=true, webp=true, gif=true, bmp=true})[extension:lower()], "不支持的封面格式")
-  local info, reason = SoundminerReadOnly.stat(path)
+  local info, reason = (SoundminerPaths or SoundminerReadOnly).stat(path)
   assert(info and not info.directory and info.size > 0 and info.size <= 2 * 1024 * 1024, reason or "封面大小超出限制")
   WebUI.artwork_preparations = WebUI.artwork_preparations or {}
   local entries = WebUI.artwork_preparations
@@ -556,14 +556,16 @@ WebUI.handlers["catalog.folders"] = function(params)
   if not state.folder_navigation_ready then
     -- Scanning deliberately suspends the derived catalog index. Allow bounded
     -- disk navigation meanwhile; do not make the whole tree wait for a scan.
-    if type(reaper.EnumerateSubdirectories) == "function" and directory_exists(requested) then
+    local physical = requested
+    if SoundminerPaths then physical = SoundminerPaths.resolve(requested, true) end
+    if physical and type(reaper.EnumerateSubdirectories) == "function" and directory_exists(physical) then
       local items = {}
       for index = offset, offset + 99 do
-        local name = reaper.EnumerateSubdirectories(requested, index)
+        local name = reaper.EnumerateSubdirectories(physical, index)
         if not name then break end
         items[#items + 1] = { name = name, path = join_path(requested, name) }
       end
-      local more = reaper.EnumerateSubdirectories(requested, offset + #items) ~= nil
+      local more = reaper.EnumerateSubdirectories(physical, offset + #items) ~= nil
       return { pending = false, items = items, offset = offset,
         total = offset + #items + (more and 1 or 0), fromDisk = true }
     end
@@ -981,6 +983,15 @@ WebUI.handlers["soundminer.catalog.resume"] = function()
 end
 WebUI.handlers["soundminer.report"] = function()
   return state.soundminer_report or false
+end
+
+WebUI.handlers["soundminer.sourceLocation"] = function(params)
+  local path = text(params.path, 32768)
+  local asset = state.startup_session and QuickCatalog.asset(path) or asset_for(path)
+  assert(asset, "素材已移除，请刷新列表")
+  local local_path, reason = SoundminerPaths.resolve(asset.path)
+  if not local_path and params.allowOriginal ~= true then error(reason, 0) end
+  return { path = local_path or asset.path }
 end
 WebUI.handlers["library.add"] = function(params)
   writable()
@@ -2340,7 +2351,8 @@ function webview_receive()
       if not valid then
         ok, result = false, "无效宿主请求"
       elseif state.startup_session and request.method ~= "session.ready" and request.method ~= "settings.get"
-        and request.method ~= "startup.search" and request.method ~= "startup.preview" and request.method ~= "preview.stop" then
+        and request.method ~= "startup.search" and request.method ~= "startup.preview" and request.method ~= "preview.stop"
+        and request.method ~= "soundminer.sourceLocation" then
         ok, result = false, "素材库正在加载，请稍后重试"
       elseif handler then
         ok, result = pcall(handler, request.params or {})

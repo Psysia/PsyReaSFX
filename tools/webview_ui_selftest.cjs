@@ -662,6 +662,18 @@ async function main() {
     assert.equal(await page.locator("#empty-resume").isVisible(), false);
     await page.evaluate(() => window.testSetState({ language: "en" }));
     await page.waitForFunction(() => document.querySelector("#empty-description").textContent === "Source records read · 904");
+    await page.evaluate(() => window.testSetState({
+      taskDetails: { import: { phase: "soundminer_import", completed: 617, total: 0 } },
+    }));
+    await page.waitForFunction(() => document.querySelector("#empty-description").textContent === "Source records processed · 617");
+    await page.evaluate(() => window.testSetState({ language: undefined }));
+    await page.waitForFunction(() => document.querySelector("#empty-description").textContent === "已处理的素材记录 · 617");
+    await page.evaluate(() => window.testSetState({
+      taskDetails: { import: { phase: "soundminer_verify_media", completed: 41, total: 617 } },
+    }));
+    await page.waitForFunction(() => document.querySelector("#empty-description").textContent === "已检查的音频文件 · 41 / 617");
+    await page.evaluate(() => window.testSetState({ language: "en" }));
+    await page.waitForFunction(() => document.querySelector("#empty-description").textContent === "Audio files checked · 41 / 617");
     await page.evaluate(() => window.testSetState({ language: undefined }));
     await page.evaluate(() => window.testSetState({ tasks: {}, taskDetails: {}, soundminerReport: { error: "fixture error" } }));
     await page.getByRole("button", { name: "继续导入", exact: true }).click();

@@ -110,7 +110,7 @@ static int seek_bytes(PrsAudio *a, int offset, int origin) {
 CALLBACKS(drwav)
 CALLBACKS(drflac)
 CALLBACKS(drmp3)
-static wchar_t *absolute_path(const char *s) {
+wchar_t *prs_absolute_disk_path(const char *s) {
   if (!s || !*s || strlen(s) > 32768) return NULL;
   for (const unsigned char *p=(const unsigned char*)s; *p; ++p) if (*p < 32) return NULL;
   int n=MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s,-1,NULL,0);
@@ -173,7 +173,7 @@ fail: prs_close(a); return NULL;
 }
 PrsAudio *prs_open(const char *utf8,double hint,double lo,double hi,int reverse) {
   if(!(lo>=0 && lo<hi && hi<=1)) return NULL;
-  wchar_t *p=absolute_path(utf8); if(!p) return NULL;
+  wchar_t *p=prs_absolute_disk_path(utf8); if(!p) return NULL;
   PrsAudio *a=open_wide(p,NULL,hint); free(p);
   if(a) {
     a->lo=(int64_t)(lo*a->frames); a->hi=(int64_t)(hi*a->frames); a->reverse=!!reverse;
