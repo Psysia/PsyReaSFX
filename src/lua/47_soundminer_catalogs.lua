@@ -1,6 +1,34 @@
 -- Isolated catalog launchers share program files, never mutable catalog data.
 SoundminerCatalog = {}
 
+-- Read matching source records before the sequential import reaches them.
+-- PRS still applies the active view, filters and sorting to these same assets.
+function SoundminerCatalog.process_search(session)
+  local db = session.database
+  if session.phase ~= "soundminer_import" or not db or not db.native or not db.search_rowids then return end
+  local query = state.view == "all" and state.search or ""
+  if type(query) ~= "string" or #query < 2 or #query > 256 then query = "" end
+  if query ~= session.catalog_search then
+    session.catalog_search = query
+    session.catalog_search_at = 1
+    session.catalog_search_ids = query ~= "" and db:search_rowids(query, 32) or nil
+  end
+  local ids = session.catalog_search_ids
+  if not ids then return end
+  local deadline, changed = HostApi.time_precise() + 0.002, false
+  for _ = 1, 4 do
+    local id = ids[session.catalog_search_at]
+    if not id then session.catalog_search_ids = nil; break end
+    session.catalog_search_at = session.catalog_search_at + 1
+    if id > (session.last_read_rowid or -math.huge) then
+      local row = db:get("justinmetadata", id)
+      if row and SoundminerImport.prioritize_row(session, row) then changed = true end
+    end
+    if HostApi.time_precise() >= deadline then break end
+  end
+  if changed then AppState.set("results_dirty", true) end
+end
+
 local function smc_path(value, optional)
   if value == nil and optional then value = "" end
   assert(type(value) == "string" and #value <= 32768 and not value:find("[%z\1-\31]"), "Soundminer 路径无效")

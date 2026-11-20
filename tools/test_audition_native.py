@@ -10,6 +10,7 @@ import struct
 import subprocess
 import tempfile
 import time
+from test_soundminer_native import verify_soundminer_sqlite
 
 def host_api(path, resource):
     exports = {}
@@ -81,7 +82,7 @@ def main():
         return list(buf)
     def destroy(obj):
         method(obj,0,None,C.c_uint)(obj,1) # MSVC scalar deleting destructor
-    report={}
+    report=verify_soundminer_sqlite(api, resource_root / "soundminer-reader")
     with tempfile.TemporaryDirectory(dir=opt.out.resolve()) as tmp:
         root=Path(tmp); wav=root/"声音.wav"; frames=48000
         data=struct.pack("<"+"h"*frames,*(i%16000-8000 for i in range(frames)))

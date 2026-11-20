@@ -1,4 +1,4 @@
--- Soundminer libraries are read without SQL, source writes or process control.
+-- Soundminer libraries are read through shared, read-only database handles.
 -- The normal catalog job owns cancellation, persistence and exclusive mutations.
 SoundminerImport = {}
 
@@ -144,7 +144,6 @@ end
 
 local function sm_close(session)
   if session.database then session.database:close(); session.database = nil end
-  if session.cache then session.cache:close(); session.cache = nil end
   session.worker = nil
 end
 
@@ -196,8 +195,8 @@ function SoundminerImport.finish(session, reason)
   reset_watch_schedule(true)
   local report = {
     added = session.added, duplicates = session.duplicates, offline = session.offline,
-    skipped = session.failed, waveforms = session.waveforms, waveSkipped = session.wave_skipped,
-    cacheError = session.cache_error or "", error = reason or "", canceled = session.job_token.cancel_requested == true,
+    unchecked = session.pending_count,
+    skipped = session.failed, error = reason or "", canceled = session.job_token.cancel_requested == true,
   }
   if report.canceled and not session.interrupted then
     sm_outcome(report, "canceled")
@@ -211,10 +210,12 @@ function SoundminerImport.finish(session, reason)
     end
   end
   AppState.set("soundminer_report", report)
-  local message = string.format(translate_ui_text("Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d，波形 %d，待重建波形 %d"),
-    report.added, report.duplicates, report.offline, report.skipped, report.waveforms, report.waveSkipped)
+  local message = string.format(translate_ui_text("Soundminer：新增 %d，重复 %d，离线 %d，跳过 %d"),
+    report.added, report.duplicates, report.offline, report.skipped)
+  if report.unchecked > 0 then
+    message = message .. " · " .. string.format(translate_ui_text("待检查的音频文件 %d"), report.unchecked)
+  end
   if report.error ~= "" then message = message .. " · " .. report.error end
-  if report.cacheError ~= "" then message = message .. " · " .. report.cacheError end
   set_status(message, report.error ~= "" or report.skipped > 0)
   return report
 end
@@ -227,11 +228,24 @@ function SoundminerImport.cancel(session, interrupted)
   return SoundminerImport.finish(session, translate_ui_text("已取消；已导入素材保留"))
 end
 
+-- Explicit mappings and volume/share names give us a root from the first row.
+-- For a mapped drive root, keep its top-level source folders distinct.
+local function sm_anchor(session, path)
+  local prefix = session.new_prefix:gsub("/+$", "")
+  if session.new_prefix ~= "" and sm_same_path(path:sub(1, #prefix), prefix)
+    and path:sub(#prefix + 1, #prefix + 1) == "/" then
+    if session.new_prefix == "/" then return path:match("^(/[^/]+)/") or "/" end
+    if session.new_prefix:match("^%a:/$") then return path:match("^(%a:/[^/]+)/") or session.new_prefix end
+    return session.new_prefix
+  end
+  return path:match("^(/Volumes/[^/]+)/") or path:match("^(//[^/]+/[^/]+)/")
+end
+
 local function sm_root(session, path)
   local _, existing = root_for_path(path)
   if existing then return existing end
   local folder = sm_path(dirname(path))
-  local candidate = session.roots[sm_group(path)] or folder
+  local candidate = sm_anchor(session, path) or session.roots[sm_group(path)] or folder
   if candidate == "" or candidate == "/" or candidate:match("^%a:$") then candidate = folder end
   local valid, reason, conflict = validate_new_root(candidate)
   if not valid and (reason == "covered" or reason == "exact") and conflict.enabled ~= false then return conflict end
@@ -257,136 +271,237 @@ local function sm_root(session, path)
   return record
 end
 
-local function sm_metadata(row)
+local function sm_metadata(row, ahead_rowid)
   local values = {}
   for name, value in pairs(row) do
-    if name:sub(1, 1) ~= "_" and name ~= "recid" and type(value) ~= "table" then
+    if ((name:sub(1, 1) ~= "_" and name ~= "recid")
+      or name == "_FilePathHash" or name == "_WaveformLink" or name == "_Time") and type(value) ~= "table" then
       if type(value) == "string" and not value:find("%z") then values[name] = value
       elseif type(value) == "number" and value == value and math.abs(value) < math.huge then values[name] = value end
     end
   end
+  values.__prs_pending_rowid = ahead_rowid
   return neural_json_encode(values)
 end
 
-local function sm_wave(session, asset, row)
-  if not session.import_waveforms then return end
-  if wave_cache_file_exists(asset, state.mini_wave_points)
-    and wave_cache_file_exists(asset, 2048, true) and wave_cache_file_exists(asset, 4096, true)
-    and wave_cache_file_exists(asset, 2048, false) and wave_cache_file_exists(asset, 4096, false) then return end
-  local source_rate, source_channels = sm_number(row.SampleRate, 10000000), sm_number(row.Channels, 1024)
-  local source_frames = sm_number(row.TotalFrames, 9007199254740991)
-  local source_duration = source_frames > 0 and source_rate > 0 and source_frames / source_rate
-    or sm_number(row._Time, 31536000)
-  -- A repeated import must not attach an old overview to an asset rescanned
-  -- since the Soundminer snapshot (the PRS key includes the current file size).
-  if source_rate <= 0 or source_duration <= 0 or source_channels ~= asset.channels
-    or source_rate ~= asset.sample_rate or math.abs(source_duration - asset.duration) > 1 / source_rate then
-    session.wave_skipped = session.wave_skipped + 1
-    return
+-- Pre-Beta 8 rows retain their original FilePath but omit Soundminer's hidden
+-- filepathhash. Look it up by the same lowercase SHA-1 used in waveform caches.
+local function sm_path_sha1(path)
+  local bits = #path * 8
+  path = path .. "\128" .. string.rep("\0", (55 - #path) % 64) .. string.pack(">I8", bits)
+  local h0, h1, h2, h3, h4 = 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0
+  local function rot(value, count)
+    value = value & 0xffffffff
+    return ((value << count) | (value >> (32 - count))) & 0xffffffff
   end
-  local original = SoundminerImport.resolve_path(row, "", "")
-  if not original then return end
-  local blob
-  if session.cache then
-    assert(session.cache:unchanged(), "Soundminer 波形缓存正在变化，本次导入已停止；请改用稳定副本")
-    local found = session.cache:lookup("overviews", "filepathhash", sm_text(row._FilePathHash))
-    if not found then found = session.cache:lookup("overviews", "filepath", sm_text(row.FilePath)) end
-    if found and sm_same_path(found.filepath, original) then blob = found.overviews end
-  end
-  if not blob and session.local_wave and sm_number(row._WaveformLink, math.maxinteger) > 0 then
-    local found = session.database:get("waveform", math.floor(tonumber(row._WaveformLink)))
-    if found and sm_same_path(found.FilePath, original) then blob = found.waveformrep end
-  end
-  if not blob then session.wave_skipped = session.wave_skipped + 1; return end
-  local frames = sm_number(row.TotalFrames, 9007199254740991)
-  local waveform = SoundminerWaveform.decode(blob, original, asset.channels, asset.duration, asset.sample_rate,
-    frames > 0 and frames or nil, coroutine.yield)
-  if not waveform then session.wave_skipped = session.wave_skipped + 1; return end
-  assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
-  local thumbnail = SoundminerWaveform.resample(waveform, state.mini_wave_points, coroutine.yield)
-  assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
-  if thumbnail then
-    if not wave_cache_file_exists(asset, state.mini_wave_points) then save_wave_to_disk(asset, state.mini_wave_points, thumbnail) end
-    if wave_cache_file_exists(asset, state.mini_wave_points) then session.waveforms = session.waveforms + 1
-    else session.wave_skipped = session.wave_skipped + 1 end
-  end
-  for _, points in ipairs({ 2048, 4096 }) do
-    coroutine.yield()
-    local detail = SoundminerWaveform.resample(waveform, points, coroutine.yield)
-    assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-      "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
-    for _, preserve in ipairs({ false, true }) do
-      if not wave_cache_file_exists(asset, points, preserve) then save_wave_to_disk(asset, points, detail, preserve) end
+  local words = {}
+  for offset = 1, #path, 64 do
+    for i = 0, 15 do words[i] = string.unpack(">I4", path, offset + i * 4) end
+    for i = 16, 79 do words[i] = rot(words[i - 3] ~ words[i - 8] ~ words[i - 14] ~ words[i - 16], 1) end
+    local a, b, c, d, e = h0, h1, h2, h3, h4
+    for i = 0, 79 do
+      local f, k
+      if i < 20 then f, k = (b & c) | (~b & d), 0x5a827999
+      elseif i < 40 then f, k = b ~ c ~ d, 0x6ed9eba1
+      elseif i < 60 then f, k = (b & c) | (b & d) | (c & d), 0x8f1bbcdc
+      else f, k = b ~ c ~ d, 0xca62c1d6 end
+      local next_a = (rot(a, 5) + f + e + k + words[i]) & 0xffffffff
+      a, b, c, d, e = next_a, a, rot(b, 30), c, d
     end
+    h0, h1, h2 = (h0 + a) & 0xffffffff, (h1 + b) & 0xffffffff, (h2 + c) & 0xffffffff
+    h3, h4 = (h3 + d) & 0xffffffff, (h4 + e) & 0xffffffff
+  end
+  return string.format("%08x%08x%08x%08x%08x", h0, h1, h2, h3, h4)
+end
+
+local wave_sources = {}
+function SoundminerImport.close_wave_sources()
+  for key, source in pairs(wave_sources) do
+    if source.db then source.db:close() end
+    wave_sources[key] = nil
   end
 end
 
-local function sm_import_row(session, row)
-  assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-    "Soundminer 数据或波形缓存正在变化，本次导入已停止；请改用稳定副本")
+local function sm_wave_source(key, path, required_table)
+  local source = wave_sources[key]
+  local now = HostApi.time_precise()
+  if source and source.path == path then
+    if source.db and source.db:unchanged() then return source.db end
+    if not source.db and now < source.retry_at then return end
+  end
+  if source and source.db then source.db:close() end
+  source = {path = path, retry_at = now + 2}
+  wave_sources[key] = source
+  local ok, db, tables = pcall(sm_open, path)
+  if ok then
+    if tables[required_table] then source.db = db else db:close() end
+  end
+  return source.db
+end
+
+local function sm_overview(params, metadata, original)
+  local cache_path = sm_path(params.cachePath)
+  if cache_path == "" then cache_path = sm_cache_path(params.path) end
+  local hash = sm_text(metadata._FilePathHash)
+  local raw_path = sm_text(metadata.FilePath)
+  if raw_path == "" then raw_path = original end
+  if hash == "" then hash = sm_path_sha1(raw_path) end
+  local cache = sm_wave_source("overviews", cache_path, "overviews")
+  if cache then
+    local row = cache:lookup("overviews", "filepathhash", hash) or cache:lookup("overviews", "filepath", raw_path)
+    if row and sm_same_path(row.filepath, original) and type(row.overviews) == "string" then
+      return row.overviews, cache
+    end
+  end
+  local database = sm_wave_source("source", params.path, "waveform")
+  if not database then return end
+  local link = sm_number(metadata._WaveformLink, math.maxinteger)
+  if link == 0 and metadata._WaveformLink == nil then
+    -- Legacy rows can still resolve a local waveform through the source index.
+    local source = database:lookup("justinmetadata", "_FilePathHash", hash)
+      or database:lookup("justinmetadata", "FilePath", raw_path)
+    if source and sm_same_path(SoundminerImport.resolve_path(source, "", ""), original) then
+      link = sm_number(source._WaveformLink, math.maxinteger)
+    end
+  end
+  local row = link > 0 and database:get("waveform", math.floor(link)) or database:lookup("waveform", "FilePath", raw_path)
+  if row and sm_same_path(row.FilePath, original) then return row.waveformrep, database end
+end
+
+local function sm_read_wave(job, params)
+  local asset = job.asset
+  local metadata = neural_json_decode(asset.soundminer_metadata)
+  if type(metadata) ~= "table" then return end
+  local original = SoundminerImport.resolve_path(metadata, "", "")
+  if not original then return end
+  local rate = sm_number(metadata.SampleRate, 10000000)
+  local channels = sm_number(metadata.Channels, 1024)
+  local frames = sm_number(metadata.TotalFrames, 9007199254740991)
+  local duration = frames > 0 and rate > 0 and frames / rate or tonumber(metadata._Time) or asset.duration
+  if rate <= 0 or channels ~= asset.channels or rate ~= asset.sample_rate or duration <= 0
+    or math.abs(duration - asset.duration) > 1 / rate then return end
+  local blob, source = sm_overview(params, metadata, original)
+  if not blob then return end
+  local function yield_work()
+    if HostApi.time_precise() >= job.soundminer_deadline then coroutine.yield() end
+  end
+  local decoded = SoundminerWaveform.decode(blob, original, channels, duration, rate,
+    frames > 0 and frames or nil, yield_work)
+  if not decoded then return end
+  local wave = SoundminerWaveform.resample(decoded, job.points, yield_work)
+  if wave and source:unchanged() then return wave end
+end
+
+function SoundminerImport.step_wave(job)
+  if job.soundminer_checked then return end
+  local params = SoundminerImport.wave_params or PsyReaSFXScope.params
+  if not job.soundminer_worker then
+    if PsyReaSFXScope.kind ~= "soundminer" or not params or params.waveforms == false or job.spectral
+      or (job.asset.soundminer_metadata or "") == "" then return end
+    job.soundminer_worker = coroutine.create(function() return sm_read_wave(job, params) end)
+  end
+  job.soundminer_deadline = HostApi.time_precise() + 0.002
+  local ok, wave = coroutine.resume(job.soundminer_worker)
+  if ok and coroutine.status(job.soundminer_worker) ~= "dead" then return "working" end
+  job.soundminer_checked, job.soundminer_worker = true, nil
+  if ok and wave then return "done", wave end
+  -- Unsupported, missing or changing overviews fall through to protected audio.
+end
+
+local function sm_asset_fields(row, ahead_rowid)
+  local data = {
+    description = sm_text(row.Description), keywords = sm_text(row.Keywords), notes = sm_text(row.Notes),
+    catid = sm_text(row.CatID), category = sm_text(row.Category), subcategory = sm_text(row.SubCategory),
+    duration = sm_number(row._Time, 31536000), sample_rate = sm_number(row.SampleRate, 10000000),
+    channels = math.floor(sm_number(row.Channels, 1024)), bit_depth = math.floor(sm_number(row.BitDepth, 128)),
+    soundminer_metadata = sm_metadata(row, ahead_rowid), ucs_source = "soundminer",
+  }
+  if data.description == "" then data.description = sm_text(row.BWDescription) end
+  local comment = sm_text(row.UserComments)
+  if comment ~= "" then data.notes = data.notes .. (data.notes ~= "" and "\n" or "") .. comment end
+  local frames = sm_number(row.TotalFrames, 9007199254740991)
+  if frames > 0 and data.sample_rate > 0 then data.duration = frames / data.sample_rate end
+  data.ucs_status = (data.catid ~= "" or data.category ~= "" or data.subcategory ~= "") and "manual" or "unclassified"
+  return data
+end
+
+local function sm_import_row(session, row, ahead)
   local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
   if not path then session.failed = session.failed + 1; return end
-  local asset = state.by_path[path_key(path)]
+  local key, id = path_key(path), row._rowid
+  local asset = state.by_path[key]
   if asset then
     session.duplicates = session.duplicates + 1
-    -- Existing catalog metadata and user edits always win on repeat imports.
+    -- A direct search may expose a later duplicate before sequential import
+    -- reaches the first row for that path. Prefer source order, keeping edits.
+    local raw = asset.soundminer_metadata or ""
+    if raw:find('"__prs_pending_rowid":', 1, true) then
+      local prior = neural_json_decode(raw)
+      if type(prior) == "table" and type(prior.__prs_pending_rowid) == "number" and id <= prior.__prs_pending_rowid then
+        local previous = sm_asset_fields(prior, prior.__prs_pending_rowid)
+        previous.soundminer_metadata = raw
+        for field, value in pairs(sm_asset_fields(row, ahead and id)) do
+          if asset[field] == previous[field] then asset[field] = value end
+        end
+        asset._search_blob = nil
+        refresh_ucs_pending_membership(asset)
+        mark_asset_database_change(asset)
+        AppState.set("results_dirty", true)
+      end
+    end
   else
     local record = sm_root(session, path)
     if not record then session.failed = session.failed + 1; return end
     asset = make_placeholder(path, record.path, true)
-    asset.duration = sm_number(row._Time, 31536000)
-    asset.sample_rate = sm_number(row.SampleRate, 10000000)
-    local frames = sm_number(row.TotalFrames, 9007199254740991)
-    if frames > 0 and asset.sample_rate > 0 then asset.duration = frames / asset.sample_rate end
-    asset.channels = math.floor(sm_number(row.Channels, 1024))
-    asset.bit_depth = math.floor(sm_number(row.BitDepth, 128))
-    local source_info = SoundminerReadOnly.stat(path)
-    asset.size = source_info and source_info.size or 0
-    asset.description = sm_text(row.Description)
-    if asset.description == "" then asset.description = sm_text(row.BWDescription) end
-    asset.keywords = sm_text(row.Keywords)
-    asset.notes = sm_text(row.Notes)
-    if sm_text(row.UserComments) ~= "" then
-      asset.notes = asset.notes .. (asset.notes ~= "" and "\n" or "") .. row.UserComments
-    end
-    asset.soundminer_metadata = sm_metadata(row)
-    asset.catid, asset.category, asset.subcategory = sm_text(row.CatID), sm_text(row.Category), sm_text(row.SubCategory)
-    asset.ucs_status = (asset.catid ~= "" or asset.category ~= "" or asset.subcategory ~= "") and "manual" or "unclassified"
-    asset.ucs_source = "soundminer"
+    for field, value in pairs(sm_asset_fields(row, ahead and id)) do asset[field] = value end
+    -- Negative means metadata arrived before local media verification. The
+    -- saved marker lets a canceled/interrupted import resume exactly once.
+    asset.size, asset.last_seen = 0, -1
     asset.indexed, asset.ready = true, true
-    local exists = source_info ~= nil
-    asset.last_seen = exists and os.time() or 0
-    if not exists then session.offline = session.offline + 1 end
     add_or_update_asset(asset, false)
-    mark_asset_database_change(asset)
+    -- The catalog-exclusive import commits a full snapshot on completion or
+    -- cancel. Avoid a second journal copy of every new metadata row.
+    mark_database_snapshot_dirty()
     session.added = session.added + 1
     local now = HostApi.time_precise()
     if not state.results_job and now >= (session.next_results_refresh or 0) then
       AppState.set("results_dirty", true)
-      session.next_results_refresh = now + 2
+      session.next_results_refresh = now + 1
     end
+  end
+  if asset.last_seen == -1 and not session.pending_media[asset] then
+    session.pending_media[asset] = true
+    session.pending_count = session.pending_count + 1
   end
   session.current = { asset = asset }
-  if session.import_waveforms then
-    local ok, err = pcall(sm_wave, session, asset, row)
-    if not ok then
-      assert(session.database:unchanged() and (not session.cache or session.cache:unchanged()),
-        "Soundminer 数据或波形缓存正在变化，本次导入已停止；已导入部分保留，请改用稳定副本")
-      session.wave_skipped = session.wave_skipped + 1
-      session.cache_error = tostring(err)
-      if session.cache then session.cache:close(); session.cache = nil end
-    end
-  end
+  return asset
 end
 
-local function sm_work(session)
-  -- First pass validates records and computes compact source roots without audio I/O.
-  for batch in session.database:row_batches("justinmetadata", HostApi.time_precise) do
+function SoundminerImport.prioritize_row(session, row)
+  if session ~= state.import_session or session.phase ~= "soundminer_import" then return false end
+  local id = type(row) == "table" and row._rowid
+  if math.type(id) ~= "integer" or (session.last_read_rowid and id <= session.last_read_rowid)
+    or session.ahead[id] or session.ahead_count >= 256 then return false end
+  local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
+  if not path or not (sm_anchor(session, path) or session.roots_planned or root_for_path(path)) then return false end
+  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
+  local asset = sm_import_row(session, row, true)
+  session.ahead[id], session.ahead_count = asset or true, session.ahead_count + 1
+  return asset ~= nil
+end
+
+local function sm_plan_roots(session)
+  -- An unanchored local path could be below a user's home or drive root.
+  -- Derive the common source folders rather than registering such a broad root.
+  -- The native projection reads just path fields for this uncommon pass.
+  session.phase = "soundminer_inspect"
+  local database = session.database
+  local batches = database.path_batches and database:path_batches(HostApi.time_precise)
+    or database:row_batches("justinmetadata", HostApi.time_precise)
+  for batch in batches do
     for _, row in ipairs(batch) do
       local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
-      if path then
+      if path and not sm_anchor(session, path) then
         local group, folder = sm_group(path), sm_path(dirname(path))
         session.roots[group] = session.roots[group] and sm_common(session.roots[group], folder) or folder
       end
@@ -394,15 +509,67 @@ local function sm_work(session)
     session.total = session.total + #batch
     coroutine.yield()
   end
-  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
-  session.phase = "soundminer_import"
-  for row in session.database:rows("justinmetadata") do
-    sm_import_row(session, row)
-    session.done = session.done + 1
+  assert(database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
+  session.roots_planned, session.phase = true, "soundminer_import"
+end
+
+local function sm_work(session)
+  local database = session.database
+  for batch in database:row_batches("justinmetadata", HostApi.time_precise) do
     coroutine.yield()
+    assert(database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；请改用稳定副本")
+    for _, row in ipairs(batch) do
+      local path = SoundminerImport.resolve_path(row, session.old_prefix, session.new_prefix)
+      if path and not session.roots_planned and not sm_anchor(session, path) and not root_for_path(path) then
+        sm_plan_roots(session)
+      end
+      local id = row._rowid
+      local ahead = session.ahead[id]
+      if ahead then
+        session.ahead[id], session.ahead_count = nil, session.ahead_count - 1
+        if type(ahead) == "table" then
+          local raw = ahead.soundminer_metadata or ""
+          if raw:find('"__prs_pending_rowid":', 1, true) then
+            local fields = neural_json_decode(raw)
+            if fields.__prs_pending_rowid == id then
+              fields.__prs_pending_rowid = nil
+              ahead.soundminer_metadata = neural_json_encode(fields)
+              mark_asset_database_change(ahead)
+            end
+          end
+        end
+      else
+        sm_import_row(session, row)
+      end
+      session.last_read_rowid, session.done = id, session.done + 1
+      if HostApi.time_precise() >= (session.deadline or 0) then
+        coroutine.yield()
+        assert(database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；已完成部分保留，请改用稳定副本")
+      end
+    end
   end
-  assert(session.database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；已完成部分保留，请改用稳定副本")
-  if session.cache and not session.cache:unchanged() then session.cache_error = "Soundminer 波形缓存已变化" end
+  assert(database:unchanged(), "Soundminer 数据库正在变化，本次导入已停止；已完成部分保留，请改用稳定副本")
+  session.total = session.done
+  database:close()
+  session.database = nil
+  if session.pending_count == 0 then return end
+
+  -- All rows can now be searched and selected, even if checking an external
+  -- drive is slow. Only the unique asset references are pending, no row copy.
+  session.phase, session.done, session.total = "soundminer_verify_media", 0, session.pending_count
+  AppState.set("results_dirty", true)
+  coroutine.yield()
+  for asset in pairs(session.pending_media) do
+    local info = SoundminerPaths.stat(asset.path)
+    local now = os.time()
+    asset.size, asset.last_seen = info and info.size or 0, info and now or 0
+    asset._size_retry_at = not info and now + 15 or nil
+    if not info then session.offline = session.offline + 1 end
+    session.pending_media[asset] = nil
+    session.pending_count, session.done = session.pending_count - 1, session.done + 1
+    mark_database_snapshot_dirty()
+    if HostApi.time_precise() >= (session.deadline or 0) then coroutine.yield() end
+  end
 end
 
 function SoundminerImport.start(params)
@@ -423,20 +590,13 @@ function SoundminerImport.start(params)
   if not token then db:close(); error(job_error == "resource_busy" and "另一个目录写任务正在运行" or "导入任务已经在运行", 0) end
   local session = { soundminer = true, database = db, path = path, roots = {},
     name = basename(path):gsub("%.[^.]+$", ""), old_prefix = old_prefix, new_prefix = new_prefix,
-    local_wave = tables.waveform ~= nil, import_waveforms = params.waveforms ~= false,
-    started = HostApi.time_precise(), phase = "soundminer_inspect", label = "导入 Soundminer 音效库",
+    import_waveforms = params.waveforms ~= false, ahead = {}, ahead_count = 0,
+    pending_media = {}, pending_count = 0,
+    started = HostApi.time_precise(), phase = "soundminer_import", label = "导入 Soundminer 音效库",
     done = 0, total = 0, added = 0, duplicates = 0, offline = 0, failed = 0,
-    waveforms = 0, wave_skipped = 0, assets = {}, job_token = token }
-  if session.import_waveforms then
-    local cache_path = sm_path(params.cachePath)
-    if cache_path == "" then cache_path = sm_cache_path(path) end
-    if SoundminerReadOnly.stat(cache_path) then
-      local cache_ok, cache, cache_tables = pcall(sm_open, cache_path)
-      if cache_ok and cache_tables.overviews then session.cache = cache
-      elseif cache_ok then cache:close(); session.cache_error = "不支持的 Soundminer 波形缓存结构"
-      else session.cache_error = tostring(cache) end
-    end
-  end
+    job_token = token }
+  SoundminerImport.close_wave_sources()
+  SoundminerImport.wave_params = params
   session.worker = coroutine.create(function() sm_work(session) end)
   AppState.set("import_session", session)
   AppState.set("soundminer_report", nil)
@@ -448,11 +608,12 @@ end
 function SoundminerImport.process(session)
   if session.job_token.cancel_requested or state.import_cancel_requested then SoundminerImport.cancel(session); return end
   if not can_run_heavy_job() then return end
-  local deadline, steps = HostApi.time_precise() + 0.004, 0
+  session.deadline = HostApi.time_precise() + 0.004
+  local steps = 0
   repeat
     local ok, err = coroutine.resume(session.worker)
     if not ok then SoundminerImport.finish(session, tostring(err)); return end
     if coroutine.status(session.worker) == "dead" then SoundminerImport.finish(session); return end
     steps = steps + 1
-  until steps >= 32 or HostApi.time_precise() >= deadline
+  until steps >= 32 or HostApi.time_precise() >= session.deadline
 end

@@ -1,6 +1,6 @@
 # Soundminer 数据库与波形兼容记录
 
-本记录描述 2026-11-17 在本机既有 V6/V7 数据目录中只读观察到的格式，以及 PsyReaSFX 的兼容边界。它不是 Soundminer 官方格式保证，不能据此宣称兼容所有历史或未来版本。
+本记录描述 2026-11-17 至 2026-11-20 在本机既有 V6/V7 数据目录及其副本中只读观察到的格式，以及 PsyReaSFX 的兼容边界。它不是 Soundminer 官方格式保证，不能据此宣称兼容所有历史或未来版本。
 
 ## 素材与缓存关联
 
@@ -34,10 +34,22 @@
 - 对照原始路径；Windows 盘符/UNC 路径允许分隔符和大小写等价，POSIX 路径保留大小写。路径重定位不降低原始缓存身份校验。
 - 有 `TotalFrames` 时精确检查点数；否则可通过 `_Time × SampleRate` 恢复整数帧数再检查。帧数/声道不匹配的缓存交回原有波形生成流程。
 - 单个 BLOB 上限 4 MiB，每声道最多 262,144 个点，最多 8 声道。超过限额的缓存跳过，不对未知数据作近似解释。
-- 无需 Python、SQLite 或 zlib DLL；共享读取需要随 Beta 1 提供的 ReaWebAPI `0.3.9.30-prs.3`。Lua 解压器可通过回调在输出 8,192 字节、转换 4,096 点或完成压缩块时暂停，重采样每处理 4,096 个源点也可暂停，供后台协程分帧执行。
+- Windows x64 Beta 8 使用系统提供的 `winsqlite3.dll` 和随包 PRS 组件。原生引擎不可用时可沿用共享只读 Lua 读取器。共享文件接口随包提供。Lua 解压器可通过回调在输出 8,192 字节、转换 4,096 点或完成压缩块时暂停，重采样每处理 4,096 个源点也可暂停，供后台协程分帧执行。
 - 路径哈希不等于音频内容哈希。路径、声道及帧数校验不能识别同一路径下等长音频被替换的情况；需要时使用 PRS 原有缓存重建功能。
 
 ## 验证证据
+
+### Beta 8 原生读取验证 / Native reader verification
+
+REA 检查了 V7 素材库的普通元数据表及独立全文索引，并检查了真实波形缓存中目标表及唯一索引的副本。大库另以 SQLite 查询计划核对，波形查找使用 `fphash`。证据来自文件结构与配置；Soundminer 内部 UI 调用顺序未作动态跟踪。
+
+REA inspected a V7 catalog schema and its separate full-text index, plus an exact schema and row projection of the overview cache. SQLite query-plan inspection on the full private copy confirmed indexed waveform lookup. These observations describe the file format and settings. They do not establish Soundminer’s UI call sequence.
+
+| 检查 / Check | REA evidence |
+|---|---|
+| 素材字段 / Metadata fields | `ev_fae5f2439a0b93aa7621d1f113d259232cdc7bbd34cfd1729d85d01a99c304ca` |
+| 全文表 / Full-text schema | `ev_e359c276dae6fd7d7cf1b430fd49b52e94912ad315a287bcb56b06018fcdcfe9` |
+| 波形表及索引 / Overview table and index | `ev_71493e1f4dfa14778a18109cf1c168b03056ada70102781247bd19732526c409` |
 
 ### PRS 导入行为
 
@@ -49,11 +61,15 @@
 
 描述、关键词、分类、音频参数和备注进入所选独立库的索引，其他非内部的文本／数字字段保存在 `soundminer_metadata` JSON 列中；它们不会自动变成搜索字段。同一独立库内再次导入相同路径保留已导入的元数据和编辑。
 
-数据库读取器只遍历普通 SQLite rowid 表及已确认的单列 BINARY 升序索引，不执行库中的 SQL、视图、触发器或扩展。支持 UTF-8，遇到活动 WAL／journal、UTF-16、损坏结构或不支持的 schema 时拒绝读取。Soundminer 可以同时运行；每次有界读取都以 `GENERIC_READ`、`OPEN_EXISTING` 和 `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE` 打开并及时关闭句柄，不持有 SQLite 锁、不创建或删除源库 sidecar。文件身份、时间、大小、头部或日志发生变化时停止 PRS 的本次读取。该检测不构成事务快照；持续写入的库应使用 Soundminer 提供的一致数据库副本导入，不要求结束 Soundminer 进程。
+Beta 8 在 Windows x64 使用系统 SQLite 和 PRS 的私有只读 VFS。PRS 以有界批次读取普通的素材表，按 rowid 续读，通过已确认的路径哈希索引取波形，并对支持的 Soundminer FTS3／FTS4 表执行固定的参数化搜索。首次导入有明确根路径的库时，第一批素材即可进入列表；需推导共同来源目录的库先做路径预读。已保存的独立库可继续使用原索引。
+
+PRS 以 `GENERIC_READ`、`OPEN_EXISTING` 和 `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE` 打开源文件。VFS 不申请 SQLite 文件锁，不建立 journal、WAL 或共享内存。检测到活动日志，或原文件身份、时间、大小、头部发生变化时，PRS 停止该次读取。持续写入时应由 Soundminer 提供一致的数据库副本。此方案不提供事务快照。
+
+试听、插入、拖放和导出优先沿用独立库的显式映射。对其余条目，PRS 先检查可访问的 Windows 原路径，然后应用 Soundminer 已启用的 Live Relink。没有对应规则的 macOS 卷路径才按完整相对路径在本机磁盘上查找唯一匹配。来源身份、收藏和波形哈希仍使用原索引。Soundminer 官方文档介绍了实时重链接的使用方式。[Live Relink](https://info.soundminer.com/docs/prefs-relink)
 
 元数据、解压及重采样以后台协程分批处理，取消会保留已导入条目。尚未在本机出现过的离线条目在手动扫描后仍可重定位；明确移除来源仍按原功能执行。保存失败会显示错误并保留当前会话数据，不把写入失败报告为成功。
 
-兼容缓存转换为当前独立库的列表精度 RWF2，以及 2048／4096 点的聚合 RWF2 和独立声道 RWF3，不使用或覆盖原有 PRS 库的缓存。Soundminer 的峰值没有 PRS 频谱颜色数据，开启频谱显示时仍需按需分析源音频。同一独立库内重复素材的现有声道、采样率与时长也必须匹配 Soundminer 参数，才会补全缓存。
+可见列表或详情请求波形时，PRS 从兼容缓存提取并生成该次请求的分辨率和声道，保存到当前独立库。Soundminer 的峰值没有 PRS 频谱颜色数据，开启频谱显示时仍需按需分析源音频。同一独立库内重复素材的现有声道、采样率与时长也必须匹配 Soundminer 参数，才会补全缓存。
 
 `tools/lua_soundminer_sqlite_selftest.lua` 使用 Python 标准 SQLite 生成的多页、overflow 和索引数据，检查读取、变更与损坏拒绝；`tools/lua_soundminer_import_selftest.lua` 加载生成的完整 PRS 后端，在多个隔离实例中验证同路径 PRS／Soundminer 数据与缓存独立、旧配置不迁移、重复打开仅聚焦、清单身份碰撞拒绝、目录外来素材不会自动进入，以及路径映射、离线条目、取消后继续、缓存转换、源变更、写盘失败和重新载入。检查原 PRS 文件与源数据库字节不变。浏览器回归通过真实控件验证导入、库选择、预检、路径映射、继续导入、标题和浏览器偏好隔离。安装器回归另验证首次安装、重复安装、外部 DLL 保留、回滚以及候选与错误哈希拒绝。
 

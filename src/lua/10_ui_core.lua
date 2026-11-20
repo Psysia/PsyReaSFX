@@ -1053,14 +1053,15 @@ end
 
 function open_source_binary_file(path)
   if SoundminerReadOnly and type(SoundminerReadOnly.open) == "function" then
+    if SoundminerPaths then return SoundminerPaths.open(path) end
     return SoundminerReadOnly.open(path)
   end
   return nil, "原音频共享只读访问需要新版 PRS 原生扩展"
 end
 
 function source_file_exists(path)
-  local file = open_source_binary_file(path)
-  if not file then return false end
+  local file, reason, _, unresolved = open_source_binary_file(path)
+  if not file then return false, unresolved and reason or nil end
   file:close()
   return true
 end
@@ -1129,7 +1130,7 @@ function directory_exists(path)
   if path == "" or not SoundminerReadOnly then return false end
   -- Even a no-op rename requests mutation rights. Probe directories through
   -- the same shared read-only native handle used for source files.
-  local info = SoundminerReadOnly.stat(path)
+  local info = (SoundminerPaths or SoundminerReadOnly).stat(path, true)
   return info ~= nil and info.directory == true
 end
 

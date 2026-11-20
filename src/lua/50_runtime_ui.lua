@@ -2449,12 +2449,14 @@ function find_artwork_in_folder(folder)
 
   local best = nil
   local index = 0
+  local physical = folder
+  if SoundminerPaths then physical = SoundminerPaths.resolve(folder, true) end
 
   -- A bounded candidate set prevents a documentation folder with thousands
   -- of images from turning one low-priority Artwork job into a long stall.
-  while index < 128 do
+  while physical and index < 128 do
     local filename =
-      reaper.EnumerateFiles(folder, index)
+      reaper.EnumerateFiles(physical, index)
 
     if not filename then
       break
@@ -2506,9 +2508,11 @@ function find_artwork_in_tree(
 
   if found == "" and (maximum_depth or 0) > 0 then
     local index = 0
-    while budget.remaining > 0 do
+    local physical = folder
+    if SoundminerPaths then physical = SoundminerPaths.resolve(folder, true) end
+    while physical and budget.remaining > 0 do
       local subdir =
-        reaper.EnumerateSubdirectories(folder, index)
+        reaper.EnumerateSubdirectories(physical, index)
 
       if not subdir then
         break
@@ -2546,10 +2550,12 @@ end
 function artwork_candidate_folders(parent, excluded_path)
   local candidates = {}
   local index = 0
+  local physical = parent
+  if SoundminerPaths then physical = SoundminerPaths.resolve(parent, true) end
 
-  while index < 128 do
+  while physical and index < 128 do
     local subdir =
-      reaper.EnumerateSubdirectories(parent, index)
+      reaper.EnumerateSubdirectories(physical, index)
 
     if not subdir then
       break
@@ -4317,7 +4323,7 @@ function process_scan_finalize(scan)
           scan.root_keys[path_key(asset.root or "")] == true
         -- An imported offline reference has never been observed locally. Keep
         -- it available for relinking until the user explicitly removes it.
-        local imported_offline = (asset.soundminer_metadata or "") ~= "" and (asset.last_seen or 0) == 0
+        local imported_offline = (asset.soundminer_metadata or "") ~= "" and (asset.last_seen or 0) <= 0
         return belongs and not scan.seen[key] and not imported_offline
       end,
       function(key, asset)
@@ -4501,17 +4507,22 @@ function process_scan()
       scan.directories =
         scan.directories + 1
       watch_begin_directory(scan, dir)
+      dir.disk_path = dir.path
+      if SoundminerPaths then dir.disk_path = SoundminerPaths.resolve(dir.path, true) end
     end
 
-    if dir.stage == "refresh_files" then
+    local disk_path = dir.disk_path
+    if not disk_path then
+      scan.current = nil
+    elseif dir.stage == "refresh_files" then
       -- REAPER caches enumerations independently of our directory signatures.
       -- Invalidate only directories that actually require a new listing.
-      reaper.EnumerateFiles(dir.path, -1)
+      reaper.EnumerateFiles(disk_path, -1)
       dir.stage = "files"
     elseif dir.stage == "files" then
       local filename =
         reaper.EnumerateFiles(
-          dir.path,
+          disk_path,
           dir.file_index
         )
 
@@ -4558,7 +4569,7 @@ function process_scan()
         dir.stage = "refresh_subdirs"
       end
     elseif dir.stage == "refresh_subdirs" then
-      reaper.EnumerateSubdirectories(dir.path, -1)
+      reaper.EnumerateSubdirectories(disk_path, -1)
       dir.stage = "subdirs"
     elseif dir.stage == "cached" then
       local child = dir.cached_children[dir.sub_index + 1]
@@ -4574,7 +4585,7 @@ function process_scan()
     else
       local subdir =
         reaper.EnumerateSubdirectories(
-          dir.path,
+          disk_path,
           dir.sub_index
         )
 
@@ -5088,7 +5099,9 @@ end
 ----------------------------------------------------------------
 
 function wave_cache_key(asset, points, preserve_channels, spectral)
-  if not asset.size or asset.size <= 0 then
+  -- A streaming Soundminer import already owns the pending media check. Use
+  -- its logical cache key until verification, including for first-page rows.
+  if (not asset.size or asset.size <= 0) and asset.last_seen ~= -1 then
     -- file_size() answers 0 for missing or unreadable files. Rows draw this
     -- every frame, so retry that open at most every 15 s instead of per frame.
     local now = os.time()
@@ -5782,6 +5795,7 @@ function read_waveform_from_source(
 end
 
 function destroy_wave_job(job)
+  if job then job.soundminer_worker = nil end
   if job and job.stream_token then
     reaper.PRS_Audio_Close(job.stream_token)
     job.stream_token, job.stream_wave = nil, nil
@@ -5869,6 +5883,11 @@ end
 function step_wave_job(job)
   if not job then
     return "failed", nil, "空任务"
+  end
+
+  if SoundminerImport then
+    local status, wave = SoundminerImport.step_wave(job)
+    if status then return status, wave end
   end
 
   if SoundminerMedia and SoundminerMedia.requires(job.asset) and not job.source then
@@ -6142,10 +6161,19 @@ function process_wave_cache_queue()
   -- One cold or damaged source must never hold the other cached rows hostage.
   for index, job in ipairs(state.wave_queue) do
     local cached = state.wave_cache[job.key]
-    if cached or (job.probe_disk and not state.wave_checked[job.key]) then
+    local probe_disk = job.probe_disk and not state.wave_checked[job.key]
+    if cached or probe_disk or job.soundminer_worker then
       state.wave_checked[job.key] = true
       local wave = cached and cached.waveform
-        or load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral)
+        or (probe_disk and load_wave_from_disk(job.asset, job.points, job.preserve_channels, job.spectral))
+      if not wave and SoundminerImport then
+        local status, overview = SoundminerImport.step_wave(job)
+        if status == "working" then return true end
+        if overview then
+          wave = overview
+          save_wave_to_disk(job.asset, job.points, wave, job.preserve_channels, job.spectral)
+        end
+      end
       if wave then
         job.asset.wave_error = nil
         store_wave_memory(job.key, wave)
@@ -6230,7 +6258,7 @@ function process_wave_queue()
 
   if not state.wave_active then
     first = state.wave_queue[1]
-    if first and first.probe_disk and not state.wave_checked[first.key] then return end
+    if first and (first.soundminer_worker or (first.probe_disk and not state.wave_checked[first.key])) then return end
     local job = table.remove(state.wave_queue, 1)
 
     if not job then
@@ -6943,7 +6971,13 @@ function process_import_session()
   if not session then
     return
   end
-  if session.soundminer then return SoundminerImport.process(session) end
+  if session.soundminer then
+    if not session.job_token.cancel_requested and not state.import_cancel_requested and can_run_heavy_job() then
+      local ok, reason = pcall(SoundminerCatalog.process_search, session)
+      if not ok then return SoundminerImport.finish(session, tostring(reason)) end
+    end
+    return SoundminerImport.process(session)
+  end
 
   if session.job_token
     and session.job_token.cancel_requested then
@@ -7487,8 +7521,9 @@ function play_preview(
     return
   end
 
-  if not source_file_exists(asset.path) then
-    set_status("文件不存在：" .. asset.path, true)
+  local exists, location_error = source_file_exists(asset.path)
+  if not exists then
+    set_status(location_error or ("文件不存在：" .. asset.path), true)
     return
   end
 
@@ -8238,8 +8273,9 @@ function insert_asset(asset, new_track, bwf)
     return
   end
 
-  if not source_file_exists(asset.path) then
-    set_status("文件不存在：" .. asset.path, true)
+  local exists, location_error = source_file_exists(asset.path)
+  if not exists then
+    set_status(location_error or ("文件不存在：" .. asset.path), true)
     return
   end
   local position = reaper.GetCursorPosition()
@@ -8674,6 +8710,10 @@ function transfer_output_is_source(path, asset)
   if not soundminer_transfer_path_allowed(path, asset) then return true end
   local key = transfer_path_key(path)
   if not key then return true end -- Ambiguous relative/device paths cannot be proven safe.
+  if asset and SoundminerPaths and PsyReaSFXScope.kind == "soundminer" then
+    local physical = SoundminerPaths.resolve(asset.path)
+    if physical and transfer_path_key(physical) == key then return true end
+  end
   return (asset and transfer_path_key(asset.path) == key)
     or (state.by_path and state.by_path[key] ~= nil) or false
 end
@@ -10207,6 +10247,11 @@ end
 ----------------------------------------------------------------
 
 function reveal_file(path)
+  if SoundminerPaths then
+    local resolved, reason = SoundminerPaths.resolve(path)
+    if not resolved then set_status(reason, true); return end
+    path = resolved
+  end
   local os_name = reaper.GetOS()
 
   if os_name:match("Win") then
@@ -10258,6 +10303,11 @@ end
 
 function open_folder(path)
   path = normalize_slashes(trim(path or ""))
+  if SoundminerPaths then
+    local resolved, reason = SoundminerPaths.resolve(path, true)
+    if not resolved then set_status(reason, true); return false end
+    path = resolved
+  end
 
   if path == "" or not directory_exists(path) then
     set_status(
@@ -17891,7 +17941,7 @@ function row_popup(asset)
   end
 
   if ImGui.MenuItem(ctx, "复制完整路径") then
-    ImGui.SetClipboardText(ctx, asset.path)
+    ImGui.SetClipboardText(ctx, SoundminerPaths and SoundminerPaths.resolve(asset.path) or asset.path)
     set_status("已复制路径")
   end
 
@@ -21482,8 +21532,11 @@ function product_navigation_folder_cover(folder, reference)
   if source_file_exists(exact) then return exact end
   local cached = state.artwork_folder_cache[path_key(folder)]
   if type(cached) == "string" then return cached end
+  local physical = folder
+  if SoundminerPaths then physical = SoundminerPaths.resolve(folder, true) end
+  if not physical then return "" end
   for index=0,31 do
-    local name = reaper.EnumerateFiles(folder, index)
+    local name = reaper.EnumerateFiles(physical, index)
     if not name then break end
     if is_artwork_file(name) then return join_path(folder, name) end
   end
@@ -21776,7 +21829,7 @@ function draw_metadata_inspector()
     if dark_button("复制路径", -1) then
       ImGui.SetClipboardText(
         ctx,
-        primary.path or ""
+        SoundminerPaths and SoundminerPaths.resolve(primary.path) or primary.path or ""
       )
     end
   end
@@ -26319,6 +26372,9 @@ WatchFolders = { unchanged = 0 }
 -- A parent timestamp does not describe its descendants: cached children still
 -- get their own stat check. First visits and unavailable stats use enumeration.
 function watch_directory_signature(path)
+  -- Soundminer catalogs only scan on an explicit request and do not watch
+  -- source directories. Their listings already use the shared source adapter.
+  if PsyReaSFXScope and PsyReaSFXScope.kind == "soundminer" then return nil end
   if type(reaper.JS_File_Stat) ~= "function" then return nil end
   local ok, result, _, _, modified, created, device, _, inode, mode =
     pcall(reaper.JS_File_Stat, path)
@@ -26490,6 +26546,7 @@ end
 
 function cleanup()
   if QuickCatalog then QuickCatalog.shutdown() end
+  if SoundminerImport then SoundminerImport.close_wave_sources() end
   if WEBVIEW_MODE then webview_close() end
   if SoundminerMedia then SoundminerMedia.cancel_all() end
   if state.import_session and state.import_session.soundminer then

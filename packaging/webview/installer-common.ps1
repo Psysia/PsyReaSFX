@@ -21,9 +21,11 @@ function Get-AuditionMessage([string]$English, [string]$Chinese) {
     return $English
 }
 
-function Get-AuditionAction([string]$Plugin, [string]$Hash) {
-    if (-not (Test-Path -LiteralPath $Plugin)) { return 'install' }
-    if ((Get-SHA256 $Plugin) -ceq $Hash) { return 'reuse' }
+function Get-AuditionAction([string]$InstalledHash, [string]$Hash) {
+    if (-not $InstalledHash) { return 'install' }
+    if ($InstalledHash -ceq $Hash) { return 'reuse' }
+    # Bundled by 0.9.4 Beta 5 through Beta 7, including ReaPack installations.
+    if ($InstalledHash -ceq '46b4c320ed1edced2049945f2bf2ca46706543c44bc6530c43a2db77c12638c6') { return 'replace' }
     throw (Get-AuditionMessage 'The PRS audition component differs from this package. Move the existing file aside and retry.' '现有 PRS 试听组件与安装包不同。请先将该文件移至其他目录，再重试。')
 }
 
@@ -146,6 +148,18 @@ function Restore-Transaction([string]$Resource, [string]$Id) {
     $plugin = Get-ChildPath $Resource 'UserPlugins/reaper_reawebapi-x64.dll'
     $audition = Get-ChildPath $Resource 'UserPlugins/reaper_prs_audition.dll'
     $removeAudition = $receipt.auditionAction -eq 'install' -and (Test-Path -LiteralPath $audition)
+    $restoreAudition = $false
+    if ($receipt.auditionAction -eq 'replace') {
+        $currentAudition = if (Test-Path -LiteralPath $audition) { Get-SHA256 $audition } else { '' }
+        if ($currentAudition -cne $receipt.auditionHash -and $currentAudition -cne $receipt.previousAuditionHash) {
+            throw (Get-AuditionMessage 'The PRS component changed after installation. Restore the installed version and retry rollback.' '安装后 PRS 组件已更改。请还原安装时的版本，再重试回滚。')
+        }
+        $restoreAudition = $currentAudition -ceq $receipt.auditionHash
+        $backupAudition = Join-Path $transaction 'previous-audition.dll'
+        if ($restoreAudition -and (Get-SHA256 $backupAudition) -cne $receipt.previousAuditionHash) {
+            throw (Get-AuditionMessage 'The PRS component backup failed verification. Recover the component from the previous package.' 'PRS 组件备份校验失败。请从上个版本的安装包恢复组件。')
+        }
+    }
     if ($removeAudition -and (Get-SHA256 $audition) -cne $receipt.auditionHash) {
         throw (Get-AuditionMessage 'The PRS audition component changed after installation. Restore its installed version before rollback.' '安装后的 PRS 试听组件已更改。请还原安装时的组件后再回滚。')
     }
@@ -171,6 +185,11 @@ function Restore-Transaction([string]$Resource, [string]$Id) {
         }
     }
     if ($removeAudition) { Remove-Item -LiteralPath $audition }
+    if ($restoreAudition) {
+        $stagedAudition = Get-ChildPath $Resource "UserPlugins/.PsyReaSFX-audition-restore-$Id.dll"
+        Copy-Item -LiteralPath $backupAudition -Destination $stagedAudition -Force
+        [IO.File]::Replace($stagedAudition, $audition, [NullString]::Value)
+    }
     if ((Test-Path -LiteralPath $previousApp) -or -not $receipt.appExisted) {
         if (Test-Path -LiteralPath $app) {
             [IO.Directory]::Move($app, $retainedApp)

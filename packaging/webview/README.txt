@@ -1,4 +1,4 @@
-PsyReaSFX 0.9.4 Beta 7 WebView - Windows x64 prerelease
+PsyReaSFX 0.9.4 Beta 8 WebView - Windows x64 prerelease
 
 The default stable release remains 0.9.3. This beta retains the Beta18 fixes.
 Setup prompts follow the Windows display language: Chinese for Chinese UI,
@@ -11,6 +11,9 @@ for explicit native measurement.
 Soundminer import reads the observed V6/V7 SQLite catalogs and compatible
 overview caches into independent catalogs. Soundminer may remain open. Select a database, optionally
 map an old audio root to its current location, then use the import action.
+Beta 8 uses the Windows SQLite engine, Soundminer full-text and waveform indexes,
+and enabled Live Relink mappings. Fully restart REAPER after updating.
+Beta 8 使用 Windows SQLite、Soundminer 全文和波形索引以及已启用的 Live Relink 映射。更新后请完整重启 REAPER。
 See docs/SOUNDMINER_FORMAT_zh-CN.md for supported formats and cache limits.
 Active journals or changes stop PRS imports. All original media use shared
 read-only access. The included PRS decoder streams WAV, AIFF, FLAC and MP3
@@ -54,7 +57,7 @@ ReaWebAPI is LGPL-3.0-or-later. Its license texts and third-party notices are in
 licenses/reawebapi. The complete corresponding source archive is in sources/.
 The 0.3.9.30-prs.3 compatibility build is modified; see licenses/reawebapi/PRS_PATCH.md.
 It retains dock/float fixes and adds bounded shared read-only source access.
-ReaPack users enable pre-releases and update only PsyReaSFX.lua to 0.9.4-beta7.
+ReaPack users enable pre-releases and update only PsyReaSFX.lua to 0.9.4-beta8.
 First launch prepares the included component. A known old component is upgraded
 after all REAPER windows close, with a completion message before reopening.
 No process is terminated. Initial native setup requires one REAPER restart;

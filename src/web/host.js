@@ -204,10 +204,15 @@ export async function connectHost() {
         );
       return window.reaper.dragDrop.startFiles(paths);
     };
-    connection.reveal = (path) => {
+    connection.sourceLocation = async (path, allowOriginal = false) => {
+      if (connection.session.catalogScope?.kind !== "soundminer") return path;
+      const result = await connection.request("soundminer.sourceLocation", { path, allowOriginal });
+      return result.path;
+    };
+    connection.reveal = async (path) => {
       if (!window.reaper.system?.revealInFileManager)
         return Promise.reject(new Error("当前扩展不支持打开文件位置"));
-      return window.reaper.system.revealInFileManager(path);
+      return window.reaper.system.revealInFileManager(await connection.sourceLocation(path));
     };
     connection.artworkUrl = async (path) => {
       if (!window.reaper.fs?.stat || !window.reaper.fs?.readFile) return null;

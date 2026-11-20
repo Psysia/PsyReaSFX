@@ -1,6 +1,6 @@
 -- Read-only SQLite table reader for stable Soundminer snapshots.
 -- File-format reference: https://sqlite.org/fileformat2.html
--- No SQL is executed, no database is opened for writing, and no extensions load.
+-- The portable reader walks B-trees. Its optional native adapter uses fixed read-only queries.
 -- Active WAL/journals are refused without recovery/checkpoint/locking SQL.
 -- Soundminer may keep running: use a stable exported copy when it is writing.
 -- unchanged() detects observed changes; it does not lock another application's DB.
@@ -561,5 +561,6 @@ function SoundminerSQLite.open(path)
   file:close()
   if not ok then return nil, tostring(result) end
   if not result:unchanged() then return nil, "Soundminer SQLite: database changed while opening; use a stable copy" end
+  if SoundminerNative then return SoundminerNative.attach(result, path) end
   return result
 end

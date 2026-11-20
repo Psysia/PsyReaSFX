@@ -203,6 +203,11 @@ function action(callback) {
   };
 }
 
+async function copySourcePath(path) {
+  const location = host.sourceLocation ? await host.sourceLocation(path, true) : path;
+  return navigator.clipboard.writeText(location);
+}
+
 function command(method, params) {
   if (!host) return Promise.reject(new Error("宿主尚未连接"));
   if (
@@ -1480,18 +1485,14 @@ function applySnapshot(next) {
     report(next.status);
   $("empty-state").hidden = !ready || next.loaded > 0;
   const soundminer = next.catalogScope?.kind === "soundminer";
-  const smImport = next.taskDetails?.import;
-  const inspecting = smImport?.phase === "soundminer_inspect";
+  const smProgress = soundminerProgress(next.taskDetails?.import);
   if (!$("empty-state").hidden) {
     $("empty-add").hidden = soundminer;
     $("empty-resume").hidden = !soundminer || Boolean(next.tasks?.import || next.soundminerReport?.saving || next.soundminerWaiting);
     $("empty-title").textContent = soundminer
       ? `Soundminer · ${next.catalogScope.name}` : localizer.text("建立你的声音工作区");
-    const description = inspecting
-      ? `${localizer.text("已读取的素材记录")} · ${smImport.total.toLocaleString()}`
-      : smImport?.phase === "soundminer_import"
-        ? `${localizer.text("导入 Soundminer 音效库")} · ${smImport.completed.toLocaleString()} / ${smImport.total.toLocaleString()}`
-        : next.soundminerReport?.error || localizer.text(next.soundminerWaiting ? "正在读取 Soundminer 音效库…" : "当前独立库没有素材");
+    const description = smProgress || next.soundminerReport?.error
+      || localizer.text(next.soundminerWaiting ? "正在读取 Soundminer 音效库…" : "当前独立库没有素材");
     $("empty-description").textContent = soundminer ? description : localizer.text("添加来源文件夹，开始浏览、试听与整理。");
   }
   $("no-results").hidden =
@@ -1576,8 +1577,8 @@ function applySnapshot(next) {
     (key) => next.tasks[key],
   );
   const detail = next.taskDetails?.[firstTask];
-  if (firstTask === "import" && inspecting)
-    activity = `${localizer.text("已读取的素材记录")} · ${smImport.total.toLocaleString()}`;
+  if (firstTask === "import" && smProgress)
+    activity = smProgress;
   else if (detail?.total > 0)
     activity = `${localizer.text(taskLabels[firstTask] || firstTask)} ${detail.completed}/${detail.total}${tasks.length > 1 ? ` · +${tasks.length - 1}` : ""}`;
   else if (firstTask === "scan" && detail?.files != null)
@@ -3015,6 +3016,15 @@ const taskLabels = {
   loudness: "响度分析",
 };
 let tasksKey;
+function soundminerProgress(detail) {
+  if (detail?.phase === "soundminer_inspect")
+    return `${localizer.text("已读取的素材记录")} · ${detail.total.toLocaleString()}`;
+  if (detail?.phase === "soundminer_verify_media")
+    return `${localizer.text("已检查的音频文件")} · ${detail.completed.toLocaleString()} / ${detail.total.toLocaleString()}`;
+  if (detail?.phase !== "soundminer_import") return "";
+  const count = detail.completed.toLocaleString();
+  return `${localizer.text("已处理的素材记录")} · ${detail.total > 0 ? count + " / " + detail.total.toLocaleString() : count}`;
+}
 function renderTasks() {
   const entries = Object.entries(snapshot?.tasks || {}).filter(
     ([, active]) => active,
@@ -3057,7 +3067,9 @@ function renderTasks() {
       content.append(node("strong", null, label));
       if (detail) {
         if (detail.label) content.append(node("span", null, detail.label));
-        if (detail.total > 0)
+        const smProgress = task === "import" && soundminerProgress(detail);
+        if (smProgress) content.append(node("span", null, smProgress));
+        else if (detail.total > 0)
           content.append(
             node(
               "span",
@@ -3221,7 +3233,7 @@ for (const button of document.querySelectorAll("[data-menu]"))
         ["标记 / 取消标记", () => operate("mark"), "M", selected],
         [
           "复制完整路径",
-          () => navigator.clipboard.writeText(snapshot.selected.path),
+          () => copySourcePath(snapshot.selected.path),
           "",
           selected,
         ],
@@ -3505,7 +3517,7 @@ function rowMenu(event, asset) {
         ]),
       ],
       null,
-      ["复制完整路径", () => navigator.clipboard.writeText(asset.path)],
+      ["复制完整路径", () => copySourcePath(asset.path)],
       ["显示文件", () => host.reveal(asset.path)],
     ],
     asset.name,
