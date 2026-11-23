@@ -1092,8 +1092,40 @@ Requires Windows x64, REAPER 7 with region selection APIs, and ReaWwise 1.0.4 or
 节点预览多选区间与 Wwise WAV 的配对，批量替换并可同步到 Samples。采用 PRS 黑色配色，中英双语界面，随包提供 ReaWebAPI 运行时。
 需要 Windows x64、支持区间选择的 REAPER 7 和 ReaWwise 1.0.4 或更新版提供 WAAPI。
         ]]></description>
-        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta1">Release and setup / 发布与安装说明</link>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.2.0-beta2">Release and setup / 发布与安装说明</link>
       </metadata>
+      <version name="0.2.0-beta2" author="Psysia" time="2026-11-23T09:49:46Z">
+        <changelog><![CDATA[
+Fixes overlapping region routing through REAPER's render matrix. Choose native All settings render presets in PRW.
+修复重叠区间的渲染矩阵路由。支持在 PRW 选择 REAPER 的「所有设置」渲染预设。
+        ]]></changelog>
+        <source main="main" platform="win64" file="PsyReaWwise_WebView/PsyReaWwise_WebView.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/PsyReaWwise_WebView.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/files.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/files.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/i18n.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/i18n.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/json.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/json.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/presets.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/presets.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/project.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/project.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/runtime.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/runtime.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/samples.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/samples.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/webview.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/webview.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/workflow.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/workflow.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/lib/wwise.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/wwise.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/PsyReaWwise_WebView_Runtime.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/PsyReaWwise_WebView_Runtime.lua</source>
+        <source platform="win64" file="PsyReaWwise_WebView/README.md">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/README.md</source>
+        <source platform="win64" file="PsyReaWwise_WebView/README_zh-CN.md">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/README_zh-CN.md</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/licenses/COPYING">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.4-beta8/dependencies/reawebapi/licenses/COPYING</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/licenses/COPYING.LESSER">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.4-beta8/dependencies/reawebapi/licenses/COPYING.LESSER</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/licenses/LICENSE.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.4-beta8/dependencies/reawebapi/licenses/LICENSE.md</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/licenses/PRS_PATCH.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.4-beta8/dependencies/reawebapi/licenses/PRS_PATCH.md</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/licenses/THIRD_PARTY.md">https://raw.githubusercontent.com/Psysia/PsyReaSFX/v0.9.4-beta8/dependencies/reawebapi/licenses/THIRD_PARTY.md</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/reaper_reawebapi-x64.dll">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.4-beta8/reaper_reawebapi-x64.dll</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/ReaWebAPI-source.zip">https://github.com/Psysia/PsyReaSFX/releases/download/v0.9.4-beta8/ReaWebAPI-source.zip</source>
+        <source platform="win64" file="PsyReaWwise_WebView/runtime/reawebapi/runtime-lock.json">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/runtime-lock.json</source>
+        <source platform="win64" file="PsyReaWwise_WebView/web/app.js">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/app.js</source>
+        <source platform="win64" file="PsyReaWwise_WebView/web/app.json">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/app.json</source>
+        <source platform="win64" file="PsyReaWwise_WebView/web/index.html">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/index.html</source>
+        <source platform="win64" file="PsyReaWwise_WebView/web/style.css">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.2.0-beta2/style.css</source>
+      </version>
       <version name="0.2.0-beta1" author="Psysia" time="2026-11-23T08:59:54Z">
         <changelog><![CDATA[
 First WebView release. Batch region-to-WAV replacement, name matching, manual node connections, one-way naming from Wwise, and bundled runtime.
