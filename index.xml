@@ -1057,4 +1057,31 @@ Modified 0.3.9.30-prs.2 Windows x64 DLL: protect dock/float and docked-close tra
       </version>
     </reapack>
   </category>
+  <category name="Psysia/PsyReaWwise">
+    <reapack name="PsyReaWwise.lua" type="script" desc="PsyReaWwise · REAPER/Wwise Audio Workbench / Wwise 音频往返工作台">
+      <metadata>
+        <description><![CDATA[
+PsyReaWwise transfers audio between REAPER and Wwise on Windows x64. Render to the selected Wwise location and sync the same WAVs to the REAPER project's Samples folder.
+Requires REAPER 7 with region selection APIs, ReaImGui 0.10, and ReaWwise 1.0.4 or later. Enable WAAPI in Wwise.
+
+PsyReaWwise 用于 Windows x64 上的 REAPER 与 Wwise 音频往返。渲染到 Wwise 选中位置时，同一份 WAV 会同步到 REAPER 工程的 Samples 目录。
+需要支持区间选择接口的 REAPER 7、ReaImGui 0.10 和 ReaWwise 1.0.4 或更新版本。在 Wwise 中启用 WAAPI。
+        ]]></description>
+        <link rel="website" href="https://github.com/Psysia/PsyReaSFX/releases/tag/psyreawwise-v0.1.0">Release notes and setup / 发布说明与安装配置</link>
+      </metadata>
+      <version name="0.1.0" author="Psysia" time="2026-11-23T07:39:52Z">
+        <changelog><![CDATA[
+First release. Pull Wwise sources, update bound items or regions, and transfer to a Wwise destination with Samples sync. Includes English and Simplified Chinese.
+首版。支持取回 Wwise 音源、按绑定的素材或区间回写，以及传输到 Wwise 并同步 Samples。提供英文和简体中文。
+        ]]></changelog>
+        <source main="main" platform="win64" file="PsyReaWwise.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/PsyReaWwise.lua</source>
+        <source platform="win64" file="lib/files.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/files.lua</source>
+        <source platform="win64" file="lib/i18n.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/i18n.lua</source>
+        <source platform="win64" file="lib/project.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/project.lua</source>
+        <source platform="win64" file="lib/samples.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/samples.lua</source>
+        <source platform="win64" file="lib/workflow.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/workflow.lua</source>
+        <source platform="win64" file="lib/wwise.lua">https://github.com/Psysia/PsyReaSFX/releases/download/psyreawwise-v0.1.0/wwise.lua</source>
+      </version>
+    </reapack>
+  </category>
 </index>
