@@ -2,7 +2,9 @@
 param(
     [string]$OutputDirectory = '',
     [switch]$ReadOnlySync,
-    [ValidateRange(0, 1800)][int]$SyncWaitSeconds = 600
+    [ValidateRange(0, 1800)][int]$SyncWaitSeconds = 600,
+    [ValidatePattern('^v\d+(\.\d+){2,3}$')][string]$MirroredTag,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$MirroredCommit
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -12,11 +14,15 @@ if (-not $OutputDirectory) {
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Choose a new development output directory.' }
-$tag = & (Join-Path $PSScriptRoot 'Sync-ReaWebAPIFork.ps1') -ReadOnly:$ReadOnlySync -WaitSeconds $SyncWaitSeconds
+if ([bool]$MirroredTag -ne [bool]$MirroredCommit) { throw 'Supply both the checked mirror tag and commit.' }
+$tag = if ($MirroredTag) { $MirroredTag } else {
+    & (Join-Path $PSScriptRoot 'Sync-ReaWebAPIFork.ps1') -ReadOnly:$ReadOnlySync -WaitSeconds $SyncWaitSeconds
+}
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $candidate = Join-Path $OutputDirectory 'runtime.lock.json'
 & (Join-Path $PSScriptRoot 'New-ReaWebAPICandidate.ps1') -Tag $tag -OutputPath $candidate
 $selected = Get-Content -LiteralPath $candidate -Raw | ConvertFrom-Json
+if ($MirroredCommit -and $selected.commit -cne $MirroredCommit) { throw 'Mirror tag moved after its commit was checked.' }
 $source = Join-Path $env:LOCALAPPDATA "PsyReaSFX/build-cache/reawebapi/$($selected.version)/$($selected.source.file)"
 $report = Join-Path $OutputDirectory 'upstream-dock-compatibility.json'
 python (Join-Path $PSScriptRoot 'reawebapi-fork/check_dock_compatibility.py') $source --report $report

@@ -10,6 +10,10 @@ on:
         description: Upstream release tag, or latest
         default: latest
         type: string
+      publish_only:
+        description: Publish the tag after the release preflight has synchronized main
+        default: false
+        type: boolean
   push:
     branches: [psyreasfx]
     paths: ['.github/psysia/**', '.github/workflows/sync-upstream.yml']
@@ -31,14 +35,14 @@ jobs:
         with:
           ref: psyreasfx
           fetch-depth: 0
-      - name: Configure merge author
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: Check mirror integrity rules
         run: python .github/psysia/test_sync_upstream.py
       - name: Sync source and mirror release
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TAG: ${{ inputs.tag || 'latest' }}
-        run: python .github/psysia/sync_upstream.py --tag "$UPSTREAM_TAG"
+          PUBLISH_ONLY: ${{ inputs.publish_only }}
+        run: |
+          args=(--tag "$UPSTREAM_TAG" --defer-workflow-permission)
+          if [[ "$PUBLISH_ONLY" == "true" ]]; then args+=(--skip-source-sync); fi
+          python .github/psysia/sync_upstream.py "${args[@]}"
