@@ -1,4 +1,5 @@
 import hashlib
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -118,6 +119,7 @@ class SyncPolicy(unittest.TestCase):
         ):
             args = ["sync"] + (["--defer-workflow-permission"] if defer else [])
             with self.subTest(problem=problem, defer=defer), patch("sys.argv", args), \
+                    patch.dict(os.environ, GITHUB_REPOSITORY="Psysia/ReaWebAPI"), \
                     patch("sync_upstream.verify_origin"), patch("sync_upstream.sync_source", side_effect=problem), \
                     patch("sync_upstream.mirror_release") as mirror, patch("sync_upstream.report") as summary:
                 if allowed:

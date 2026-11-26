@@ -71,11 +71,11 @@ def main():
     state = inspect()
     args.state.write_text(json.dumps(state), encoding='utf-8')
     summary = (f"Runtime {state['tag']}: {'READY' if state['ready'] else 'WAITING'}. {state['reason']}. "
-               + ('Candidate validation follows. / 接下来验证上游版本。' if state['ready'] else
-                  'Latest runtime validation is deferred. / 等待镜像后验证最新运行时。'))
+               + ('Candidate validation follows.' if state['ready'] else 'Latest runtime validation is deferred.'))
+    localized = '接下来验证上游版本。' if state['ready'] else '等待镜像后验证最新运行时。'
     print(summary)
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
-        out.write(summary + '\n')
+        out.write(summary + ' / ' + localized + '\n')
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
         for key in ('tag', 'commit', 'source', 'ready'):
             value = str(state[key]).lower()
