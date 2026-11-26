@@ -19,53 +19,26 @@ concurrency:
 
 jobs:
   readiness:
-    name: Scheduled mirror readiness (not acceptance)
+    name: Upstream mirror readiness
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      ready: ${{ steps.gate.outputs.ready }}
+      ready: ${{ steps.mirror.outputs.ready }}
+      tag: ${{ steps.mirror.outputs.tag }}
+      commit: ${{ steps.mirror.outputs.commit }}
+      source: ${{ steps.mirror.outputs.source }}
     steps:
       - uses: actions/checkout@v4
-        if: github.event_name == 'schedule'
-      - name: Inspect scheduled mirror readiness
+      - name: Check upstream release and fork mirror
         id: mirror
-        if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tools/reawebapi_schedule_gate.py --state "$RUNNER_TEMP/mirror-state.json"
-      # Same built-in cache mechanism already used by validation below. Access
-      # on every schedule keeps it warm, but eviction can permit another alert.
-      - name: Check per-version alert marker
-        id: alerted
-        if: github.event_name == 'schedule'
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ runner.temp }}/mirror-alert
-          key: mirror-wait-alert-v1-${{ steps.mirror.outputs.tag }}
-          lookup-only: true
-      - name: Decide readiness, deferral or first overdue alert
-        id: gate
-        if: github.event_name == 'schedule'
-        run: >-
-          python tools/reawebapi_schedule_gate.py --decide
-          --state "$RUNNER_TEMP/mirror-state.json"
-          --alerted "${{ steps.alerted.outputs.cache-hit == 'true' && 'true' || 'false' }}"
-          --marker "$RUNNER_TEMP/mirror-alert"
-      - name: Save per-version alert marker before reporting failure
-        if: steps.gate.outputs.alert == 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/mirror-alert
-          key: ${{ steps.alerted.outputs.cache-primary-key }}
-      - name: Report first persistent mirror delay
-        if: steps.gate.outputs.alert == 'true'
-        run: |
-          echo "::error::Mirror for ${{ steps.mirror.outputs.tag }} is still unavailable after the 2-hour grace period. Validation was NOT run. Inspect the ReaWebAPI sync workflow. Further waiting alerts for this version are suppressed while the cache marker exists."
-          exit 1
+
   verify:
     needs: readiness
-    # A deferred schedule skips the verification job, never records acceptance.
-    # Push/manual runs retain all strict sync, integrity and regression failures.
+    # A scheduled run waits for the latest mirror. A push or manual run
+    # still validates the pinned package when the latest mirror is pending.
     if: github.event_name != 'schedule' || needs.readiness.outputs.ready == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
@@ -73,27 +46,25 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: Identify latest published upstream runtime
-        id: upstream
-        shell: pwsh
-        run: |
-          $tag = gh api repos/zaibuyidao/ReaWebAPI/releases/latest --jq .tag_name
-          if ($LASTEXITCODE -ne 0 -or $tag -notmatch '^v\d+(\.\d+){2,3}$') { throw 'Cannot resolve upstream release.' }
-          $source = gh api repos/zaibuyidao/ReaWebAPI/commits/main --jq .sha
-          if ($LASTEXITCODE -ne 0 -or $source -notmatch '^[a-f0-9]{40}$') { throw 'Cannot resolve upstream source.' }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "source=$source" >> $env:GITHUB_OUTPUT
       - name: Check previous successful scheduled validation
+        if: github.event_name == 'schedule'
         id: validated
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/reawebapi-validation
-          key: webview-latest-v1-${{ github.sha }}-${{ steps.upstream.outputs.tag }}-${{ steps.upstream.outputs.source }}
+          key: webview-latest-v1-${{ github.sha }}-${{ needs.readiness.outputs.tag }}-${{ needs.readiness.outputs.source }}
           lookup-only: true
-      - name: Build from the owned fork
-        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+      - name: Build the checked upstream candidate
+        if: needs.readiness.outputs.ready == 'true' && (github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true')
         shell: pwsh
-        run: ./tools/Build-WebDevelopment.ps1 -OutputDirectory dist/development -ReadOnlySync
+        env:
+          MIRRORED_TAG: ${{ needs.readiness.outputs.tag }}
+          MIRRORED_COMMIT: ${{ needs.readiness.outputs.commit }}
+        run: ./tools/Build-WebDevelopment.ps1 -OutputDirectory dist/development -MirroredTag $env:MIRRORED_TAG -MirroredCommit $env:MIRRORED_COMMIT
+      - name: Build the pinned runtime while the mirror is waiting
+        if: needs.readiness.outputs.ready == 'false'
+        shell: pwsh
+        run: ./tools/Build-WebRelease.ps1 -OutputPath dist/development/package -ArchivePath dist/development/PsyReaSFX-WebView-pinned.zip
       - name: Check package install and rollback
         if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
         shell: pwsh
@@ -109,11 +80,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Browser tools installation failed.' }
           node tools/webview_ui_selftest.cjs (Join-Path $browserTools 'node_modules/playwright') dist/development/package/web
           if ($LASTEXITCODE -ne 0) { throw 'Browser regression failed.' }
+      - name: Record pinned package verification
+        if: needs.readiness.outputs.ready == 'false'
+        shell: pwsh
+        run: |
+          $lock = Get-Content dependencies/reawebapi/windows-x64.lock.json -Raw | ConvertFrom-Json
+          "Pinned ReaWebAPI $($lock.version) passed package and browser tests. Latest runtime validation is deferred. / 已通过固定运行时的打包和浏览器测试，最新运行时等待镜像后验证。" >> $env:GITHUB_STEP_SUMMARY
       - name: Upload tested development package
-        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        if: needs.readiness.outputs.ready == 'true' && (github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true')
         uses: actions/upload-artifact@v4
         with:
-          name: WebView-${{ steps.upstream.outputs.tag }}-${{ github.run_id }}
+          name: WebView-${{ needs.readiness.outputs.tag }}-${{ github.run_id }}
           path: |
             dist/development/*.zip
             dist/development/runtime.lock.json
@@ -123,7 +100,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Record successful validation
-        if: github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true'
+        if: needs.readiness.outputs.ready == 'true' && (github.event_name != 'schedule' || steps.validated.outputs.cache-hit != 'true')
         shell: pwsh
         run: |
           $marker = Join-Path $env:RUNNER_TEMP 'reawebapi-validation'

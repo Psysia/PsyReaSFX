@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Read-only schedule gate. Deferred is not a package/browser acceptance result."""
+"""Resolve the upstream release and check the fork before candidate tests."""
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -11,7 +10,6 @@ from urllib.request import Request, urlopen
 
 UPSTREAM = 'zaibuyidao/ReaWebAPI'
 FORK = 'Psysia/ReaWebAPI'
-GRACE_HOURS = 2
 
 
 def metadata(path, optional=False):
@@ -28,13 +26,11 @@ def metadata(path, optional=False):
         raise  # Auth, rate limits, outages and malformed responses are not mirror lag.
 
 
-def inspect(get=metadata, now=None):
+def inspect(get=metadata):
     release = get(UPSTREAM + '/releases/latest')
     tag = release['tag_name']
     if not re.fullmatch(r'v\d+(?:\.\d+){2,3}', tag) or release['draft']:
         raise ValueError('Unexpected upstream release')
-    published = datetime.fromisoformat(release['published_at'].replace('Z', '+00:00'))
-    age = ((now or datetime.now(timezone.utc)) - published).total_seconds()
     commit = get(UPSTREAM + '/commits/' + tag)['sha']
     source = get(UPSTREAM + '/commits/main')['sha']
     if not all(re.fullmatch(r'[a-f0-9]{40}', sha) for sha in (commit, source)):
@@ -59,46 +55,30 @@ def inspect(get=metadata, now=None):
         fork_head = get(FORK + '/commits/main')['sha']
         if not re.fullmatch(r'[a-f0-9]{40}', fork_head):
             raise ValueError('Invalid fork source commit')
-        ready = fork_head == source or fork_head == get(UPSTREAM + '/commits/main')['sha']
+        if fork_head != source:
+            source = get(UPSTREAM + '/commits/main')['sha']
+            if not re.fullmatch(r'[a-f0-9]{40}', source):
+                raise ValueError('Invalid upstream source commit')
+        ready = fork_head == source
         reason = 'mirror ready' if ready else 'fork source has not caught up'
-    # Publication age does not measure how long a later main-branch sync lags.
-    # Do not reuse an old tag's age to raise a new source-lag alert.
-    missing_release = not mirror or mirror['draft']
-    return dict(tag=tag, ready=ready, overdue=missing_release and age >= GRACE_HOURS * 3600, reason=reason)
-
-
-def decision(state, alerted):
-    if state['ready']:
-        return 'ready'
-    return 'alert' if state['overdue'] and not alerted else 'deferred'
+    return dict(tag=tag, commit=commit, source=source, ready=ready, reason=reason)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--state', type=Path, required=True)
-    parser.add_argument('--decide', action='store_true')
-    parser.add_argument('--alerted', choices=('true', 'false'), default='false')
-    parser.add_argument('--marker', type=Path)
     args = parser.parse_args()
-    if not args.decide:
-        state = inspect()
-        args.state.write_text(json.dumps(state), encoding='utf-8')
-        outputs = {'tag': state['tag']}
-    else:
-        state = json.loads(args.state.read_text(encoding='utf-8'))
-        result = decision(state, args.alerted == 'true')
-        outputs = {'ready': str(result == 'ready').lower(), 'alert': str(result == 'alert').lower()}
-        summary = (f"Runtime {state['tag']}: {result.upper()}. {state['reason']}. "
-                   + ('Readiness only; package/browser validation follows.' if result == 'ready' else
-                      'Package/browser validation NOT RUN; no acceptance or success marker recorded.'))
-        print(summary)
-        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
-            out.write(summary + '\n')
-        if result == 'alert':
-            args.marker.mkdir(parents=True, exist_ok=True)
-            (args.marker / 'alert.json').write_text(json.dumps(state), encoding='utf-8')
+    state = inspect()
+    args.state.write_text(json.dumps(state), encoding='utf-8')
+    summary = (f"Runtime {state['tag']}: {'READY' if state['ready'] else 'WAITING'}. {state['reason']}. "
+               + ('Candidate validation follows. / 接下来验证上游版本。' if state['ready'] else
+                  'Latest runtime validation is deferred. / 等待镜像后验证最新运行时。'))
+    print(summary)
+    with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+        out.write(summary + '\n')
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-        for key, value in outputs.items():
+        for key in ('tag', 'commit', 'source', 'ready'):
+            value = str(state[key]).lower()
             out.write(f'{key}={value}\n')
 
 

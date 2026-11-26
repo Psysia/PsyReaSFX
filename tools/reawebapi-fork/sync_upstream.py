@@ -79,6 +79,75 @@ def inspect_bundle(path: Path, expected_dll: str) -> bytes:
     return binary
 
 
+def web_contract(runtime: str) -> int:
+    """Read the literal contract from this function, never a nearby declaration.
+
+    This is deliberately not a C++ parser: unfamiliar return shapes fail closed.
+    Tokenizing strings/comments keeps their braces and decoy returns out of the
+    structural scan while allowing capability setup before the final return.
+    """
+    tokens = re.findall(
+        r'\#[^\n]*|/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|'
+        r'[A-Za-z_]\w*|\d+|[^\s]', runtime, re.S)
+    tokens = [token for token in tokens if not token.startswith(("//", "/*"))]
+    signature = ["Json", "Runtime", ":", ":", "web_runtime", "(", "const", "Session", "&", "session", ")", "const", "{"]
+    starts = [i + len(signature) for i in range(len(tokens))
+              if tokens[i:i + len(signature)] == signature]
+    error = "Upstream web capability declaration changed; review before adopting this runtime"
+    if len(starts) != 1:
+        raise ValueError(error)
+    depth = 1
+    returns = []
+    conditional_depth = 0
+    for i in range(starts[0], len(tokens)):
+        token = tokens[i]
+        # Raw strings require a different lexer; do not guess at their contents.
+        if token in ("R", "u8R", "uR", "UR", "LR") and i + 1 < len(tokens) and tokens[i + 1].startswith('"'):
+            raise ValueError(error)
+        if token.startswith("#"):
+            directive = re.match(r"#\s*(\w+)", token)
+            name = directive.group(1) if directive else ""
+            if name in ("if", "ifdef", "ifndef"):
+                conditional_depth += 1
+            elif name == "endif" and conditional_depth:
+                conditional_depth -= 1
+            elif name not in ("else", "elif") or not conditional_depth:
+                raise ValueError(error)
+        if token == "return":
+            if conditional_depth:
+                raise ValueError(error)
+            returns.append((i, depth))
+        if token == "{":
+            depth += 1
+        elif token == "}":
+            depth -= 1
+            if depth == 0:
+                break
+    else:
+        raise ValueError(error)
+    end = i
+    if conditional_depth or len(returns) != 1 or returns[0][1] != 1:
+        raise ValueError(error)
+    if tokens[returns[0][0] - 1] not in (";", "{", "}"):
+        raise ValueError(error)
+    start = returns[0][0] + 1
+    declaration = tokens[start:start + 6]
+    if (len(declaration) != 6 or declaration[:4] != ["{", "{", '"contract"', ","]
+            or not re.fullmatch(r"\d+", declaration[4]) or declaration[5] != "}"):
+        raise ValueError(error)
+    initializer_depth = 0
+    for i in range(start, end):
+        if tokens[i] == "{":
+            initializer_depth += 1
+        elif tokens[i] == "}":
+            initializer_depth -= 1
+            if initializer_depth == 0:
+                break
+    if tokens[i + 1:end] != [";"]:
+        raise ValueError(error)
+    return int(declaration[4])
+
+
 def source_contracts(path: Path, commit: str) -> dict:
     with zipfile.ZipFile(path) as archive:
         prefix = f"ReaWebAPI-{commit}/"
@@ -99,25 +168,39 @@ def source_contracts(path: Path, commit: str) -> dict:
     return {
         "protocol": number(r'\{"protocol",\s*(\d+)\}', core),
         "runtime": number(r'\{"runtime",\s*\{\{"contract",\s*(\d+)\}', core),
-        "web": number(r'Json Runtime::web_runtime\([^)]*\)[^{]*\{\s*return\s*\{\{"contract",\s*(\d+)\}', runtime),
+        "web": web_contract(runtime),
         "max_message_bytes": capacity,
     }
 
 
-def sync_source(worktree: Path) -> None:
+def verify_origin(worktree: Path) -> None:
     origin = run("git", "remote", "get-url", "origin", cwd=worktree)
     if origin.removesuffix(".git").removesuffix("/") not in (f"https://github.com/{FORK}", f"git@github.com:{FORK}"):
         raise ValueError("Refusing to write an unexpected Git origin")
-    if run("git", "branch", "--show-current", cwd=worktree) != "psyreasfx":
-        raise ValueError("Run the mirror from the psyreasfx automation branch")
-    if run("git", "status", "--porcelain", "--untracked-files=no", cwd=worktree):
-        raise ValueError("Commit tracked work before syncing the fork")
-    run("git", "fetch", "--no-tags", "origin", "main:refs/remotes/origin/main", cwd=worktree)
-    run("git", "fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git", "main:refs/remotes/upstream/main", cwd=worktree)
-    run("git", "merge-base", "--is-ancestor", "refs/remotes/origin/main", "refs/remotes/upstream/main", cwd=worktree)
-    run("git", "push", "origin", "refs/remotes/upstream/main:refs/heads/main", cwd=worktree)
-    run("git", "merge", "--no-edit", "refs/remotes/upstream/main", cwd=worktree)
-    run("git", "push", "origin", "HEAD:refs/heads/psyreasfx", cwd=worktree)
+
+
+def sync_source(worktree: Path) -> None:
+    fork_ref, upstream_ref = "refs/remotes/origin/main", "refs/remotes/upstream/main"
+    run("git", "fetch", "--no-tags", "origin", f"main:{fork_ref}", cwd=worktree)
+    run("git", "fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git", f"main:{upstream_ref}", cwd=worktree)
+    if run("git", "rev-parse", fork_ref, cwd=worktree) == run("git", "rev-parse", upstream_ref, cwd=worktree):
+        return
+    run("git", "merge-base", "--is-ancestor", fork_ref, upstream_ref, cwd=worktree)
+    run("git", "push", "origin", f"{upstream_ref}:refs/heads/main", cwd=worktree)
+
+
+def workflow_permission_required(error: RuntimeError) -> bool:
+    message = str(error)
+    return (message.startswith("git push failed: ")
+            and "refusing to allow a GitHub App to create or update workflow" in message
+            and 'without `workflows` permission' in message)
+
+
+def report(message: str) -> None:
+    print(message)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+            summary.write(message + "\n")
 
 
 def mirror_release(worktree: Path, tag: str) -> dict:
@@ -190,16 +273,27 @@ def main() -> None:
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--tag", default="latest")
     parser.add_argument("--skip-source-sync", action="store_true")
+    parser.add_argument("--defer-workflow-permission", action="store_true")
     args = parser.parse_args()
     if os.environ.get("GITHUB_REPOSITORY", FORK) != FORK:
         raise ValueError("This workflow may only publish to the Psysia fork")
-    if not args.skip_source_sync:
-        sync_source(args.worktree.resolve())
-    result = mirror_release(args.worktree.resolve(), args.tag)
+    worktree = args.worktree.resolve()
+    verify_origin(worktree)
+    try:
+        if not args.skip_source_sync:
+            sync_source(worktree)
+        result = mirror_release(worktree, args.tag)
+    except RuntimeError as error:
+        if not args.defer_workflow_permission or not workflow_permission_required(error):
+            raise
+        report("**Waiting for fork synchronization / 等待 fork 同步**\n\n"
+               "GitHub requires workflow write permission for this upstream change. "
+               "The authenticated release preflight can fast-forward the fork and request the mirror.\n\n"
+               "本次上游变更需要工作流写入权限，发布前检查会使用已登录的 GitHub 凭据推进 fork 并请求镜像。")
+        return
     print(json.dumps(result))
     if os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-            summary.write(f"Mirrored [{result['tag']}](https://github.com/{FORK}/releases/tag/{result['tag']}) at `{result['commit']}`.\n")
+        report(f"Mirrored [{result['tag']}](https://github.com/{FORK}/releases/tag/{result['tag']}) at {result['commit']}.")
 
 
 if __name__ == "__main__":
