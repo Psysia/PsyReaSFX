@@ -82,7 +82,7 @@ class MirrorReadinessTests(unittest.TestCase):
                     self.assertIn('validation is deferred', (root / 'summary').read_text(encoding='utf-8'))
 
     def test_workflow_keeps_required_validation_and_defers_only_latest_runtime(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/development-webview.yml').read_text()
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/development-webview.yml').read_text(encoding='utf-8')
         self.assertIn("if: github.event_name != 'schedule' || needs.readiness.outputs.ready == 'true'", workflow)
         self.assertIn("Build the pinned runtime while the mirror is waiting", workflow)
         self.assertIn("-MirroredTag $env:MIRRORED_TAG -MirroredCommit $env:MIRRORED_COMMIT", workflow)
